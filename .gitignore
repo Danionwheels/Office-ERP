@@ -1,0 +1,31 @@
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+*.rsuser
+
+# Frontend
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+
+# Tauri
+desktop/tauri/target/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini

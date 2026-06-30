@@ -1,0 +1,208 @@
+using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
+using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
+using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
+using SafarSuite.ControlDesk.Application.Modules.Billing.ListChargeCodes;
+using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Billing;
+
+namespace SafarSuite.ControlDesk.Api.Modules.Billing;
+
+public static class BillingEndpoints
+{
+    public static IEndpointRouteBuilder MapBillingEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints
+            .MapGroup("/api/v1/billing")
+            .WithTags("Billing");
+
+        group.MapPost("/charge-codes", CreateChargeCodeAsync);
+        group.MapGet("/charge-codes", ListChargeCodesAsync);
+        group.MapPost("/client-charge-rules", CreateClientChargeRuleAsync);
+        group.MapPost("/invoice-drafts", GenerateInvoiceDraftAsync);
+        group.MapPost("/invoices/{invoiceId:guid}/issue", IssueInvoiceAsync);
+
+        return endpoints;
+    }
+
+    private static async Task<IResult> CreateChargeCodeAsync(
+        CreateChargeCodeRequest request,
+        CreateChargeCodeHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var command = new CreateChargeCodeCommand(
+            request.Code,
+            request.Name,
+            request.Description,
+            request.DefaultUnitPriceAmount,
+            request.CurrencyCode,
+            request.RevenueAccountId,
+            request.TaxAccountId);
+
+        var result = await handler.HandleAsync(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = new CreateChargeCodeResponse(
+            result.Value.ChargeCodeId,
+            result.Value.Code,
+            result.Value.Name,
+            result.Value.DefaultUnitPriceAmount,
+            result.Value.CurrencyCode,
+            result.Value.RevenueAccountId,
+            result.Value.TaxAccountId,
+            result.Value.Status);
+
+        return Results.Created($"/api/v1/billing/charge-codes/{response.ChargeCodeId}", response);
+    }
+
+    private static async Task<IResult> ListChargeCodesAsync(
+        ListChargeCodesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = new ListChargeCodesResponse(
+            result.Value.ChargeCodes.Select(chargeCode => new ChargeCodeLookupResponse(
+                chargeCode.ChargeCodeId,
+                chargeCode.Code,
+                chargeCode.Name,
+                chargeCode.DefaultUnitPriceAmount,
+                chargeCode.CurrencyCode,
+                chargeCode.RevenueAccountId,
+                chargeCode.TaxAccountId,
+                chargeCode.Status)).ToArray());
+
+        return Results.Ok(response);
+    }
+
+    private static async Task<IResult> CreateClientChargeRuleAsync(
+        CreateClientChargeRuleRequest request,
+        CreateClientChargeRuleHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var command = new CreateClientChargeRuleCommand(
+            request.ClientId,
+            request.ContractId,
+            request.ChargeCodeId,
+            request.DescriptionOverride,
+            request.UnitPriceAmount,
+            request.CurrencyCode,
+            request.Quantity,
+            request.BillingCycle,
+            request.BillingDayOfMonth,
+            request.EffectiveStartsOn,
+            request.EffectiveEndsOn);
+
+        var result = await handler.HandleAsync(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = new CreateClientChargeRuleResponse(
+            result.Value.ClientChargeRuleId,
+            result.Value.ClientId,
+            result.Value.ContractId,
+            result.Value.ChargeCodeId,
+            result.Value.UnitPriceAmount,
+            result.Value.CurrencyCode,
+            result.Value.Quantity,
+            result.Value.LineAmount,
+            result.Value.BillingCycle,
+            result.Value.BillingDayOfMonth,
+            result.Value.EffectiveStartsOn,
+            result.Value.EffectiveEndsOn,
+            result.Value.Status);
+
+        return Results.Created($"/api/v1/billing/client-charge-rules/{response.ClientChargeRuleId}", response);
+    }
+
+    private static async Task<IResult> GenerateInvoiceDraftAsync(
+        GenerateInvoiceDraftRequest request,
+        GenerateInvoiceDraftHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var command = new GenerateInvoiceDraftCommand(
+            request.ClientId,
+            request.ContractId,
+            request.InvoiceNumber,
+            request.IssueDate,
+            request.DueDate,
+            request.BillingDate,
+            request.CurrencyCode);
+
+        var result = await handler.HandleAsync(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = new GenerateInvoiceDraftResponse(
+            result.Value.InvoiceId,
+            result.Value.ClientId,
+            result.Value.ContractId,
+            result.Value.InvoiceNumber,
+            result.Value.IssueDate,
+            result.Value.DueDate,
+            result.Value.BillingDate,
+            result.Value.TotalAmount,
+            result.Value.BalanceDue,
+            result.Value.CurrencyCode,
+            result.Value.Status,
+            result.Value.Lines.Select(line => new GenerateInvoiceDraftLineResponse(
+                line.ChargeCodeId,
+                line.Description,
+                line.Amount,
+                line.CurrencyCode)).ToArray());
+
+        return Results.Created($"/api/v1/billing/invoices/{response.InvoiceId}", response);
+    }
+
+    private static async Task<IResult> IssueInvoiceAsync(
+        Guid invoiceId,
+        IssueInvoiceRequest request,
+        IssueInvoiceHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var command = new IssueInvoiceCommand(
+            invoiceId,
+            request.AccountsReceivableAccountId,
+            request.PostingDate);
+
+        var result = await handler.HandleAsync(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = new IssueInvoiceResponse(
+            result.Value.InvoiceId,
+            result.Value.InvoiceNumber,
+            result.Value.InvoiceStatus,
+            result.Value.JournalEntryId,
+            result.Value.JournalEntryStatus,
+            result.Value.PostingDate,
+            result.Value.TotalDebit,
+            result.Value.TotalCredit,
+            result.Value.CurrencyCode,
+            result.Value.JournalLines.Select(line => new IssueInvoiceJournalLineResponse(
+                line.LedgerAccountId,
+                line.Debit,
+                line.Credit,
+                line.Description)).ToArray());
+
+        return Results.Ok(response);
+    }
+}
