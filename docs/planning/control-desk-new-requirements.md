@@ -9,6 +9,7 @@ These requirements are not simply old Survey/FAS clone work. They are the reason
 | Requirement | Description | Priority | Status |
 | --- | --- | --- | --- |
 | Client master | Maintain every SafarSuite client/company | High | Basic done with UI |
+| Client contacts | Maintain owner, billing, support, technical, and accounts contacts per client | High | Basic done |
 | Client accounting profile | Link client to AR ledger, default currency, and cloud identity | High | Basic done |
 | Contract per client | Store custom commercial terms per client | High | Open |
 | Dynamic pricing | Allow each client to have different charges | High | Partial |

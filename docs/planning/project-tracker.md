@@ -34,6 +34,7 @@ SafarSuite Control Desk is a client maintenance system first. Accounting, billin
 | Client maintenance UI | Clients/Frontend | Done | Active frontend now opens the client desk with list, create, detail, edit, lifecycle, support notes, and accounting-profile status |
 | First domain model draft | Clients/Contracts/Billing/Payments/Entitlements/Audit | Done | Core aggregate roots and repository ports created |
 | Client maintenance basics | Clients | Done | Client detail, edit, activate, and suspend API actions are wired |
+| Client contacts | Clients | Done | Add/list structured contacts with roles and primary flag; active UI shows contacts |
 | Client support notes | Clients | Done | Add/list internal client notes; client detail includes note history |
 | Accounting/GL correction sweep | Accounting/Billing | Done | Invoice creation split clarified in `accounting-gl-foundation-sweep.md` |
 | Accounting/Billing foundation | Accounting/Billing | In Progress | Dynamic charge setup, invoice draft generation, profile-assisted invoice issue GL posting, approved invoice payment posting, and basic journal/ledger read models are wired through API; review, reversals, tax, reports, and persistence still pending |

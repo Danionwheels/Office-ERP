@@ -22,7 +22,7 @@ client setup
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Client master maintenance | Basic done | API and active frontend support create, list, detail, edit, activate, suspend, and support notes |
+| Client master maintenance | Basic done | API and active frontend support create, list, detail, edit, activate, suspend, contacts, and support notes |
 | Client accounting profile | Basic done | Client can be linked to AR ledger account, default currency, and cloud customer identity |
 | Ledger accounts | Partial | Create endpoint and activity view exist |
 | Charge codes | Partial | Create/list endpoints exist and link to revenue/tax accounts |
@@ -72,6 +72,7 @@ Same rule for payment and entitlement events.
 
 0. Done: add client detail, edit, activate, and suspend actions; remove Survey/FAS routes from active API mapping.
 0.1. Done: add internal support notes/history to client maintenance.
+0.2. Done: add structured client contacts with role and primary-contact handling.
 1. Done: add `ClientAccountingProfile` domain/application/API/in-memory persistence.
 2. Done: update client setup flow so a client can be linked to AR/default currency/cloud identity.
 3. Done: use the profile during invoice issue so AR account does not have to be manually provided every time.

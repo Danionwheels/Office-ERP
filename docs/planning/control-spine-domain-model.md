@@ -16,7 +16,7 @@ The active API surface is now client-centered. SurveyValuation code remains in t
 
 | Module | Current responsibility | Key types |
 | --- | --- | --- |
-| Clients | SafarSuite customer/company record and lifecycle plus accounting defaults | `Client`, `ClientId`, `ClientCode`, `ClientStatus`, `SupportNote`, `ClientAccountingProfile` |
+| Clients | SafarSuite customer/company record and lifecycle plus accounting defaults | `Client`, `ClientId`, `ClientCode`, `ClientStatus`, `ClientContact`, `SupportNote`, `ClientAccountingProfile` |
 | Contracts | commercial terms, pricing, modules, devices, branches | `ClientContract`, `ContractPricing`, `ModuleAllowance`, `DeviceAllowance`, `BranchAllowance` |
 | Accounting | chart of accounts and balanced journal postings | `LedgerAccount`, `LedgerAccountCode`, `JournalEntry`, `JournalLine` |
 | Billing | invoice lifecycle, invoice balances, charge catalog, dynamic charge rules | `Invoice`, `InvoiceLine`, `InvoiceNumber`, `InvoiceStatus`, `ChargeCode`, `ClientChargeRule` |
@@ -76,6 +76,8 @@ Clients:
 - client code is required, normalized uppercase, and between 3 and 32 characters
 - client legal name is required
 - client legal/display names can be maintained after creation
+- contacts require a full name and at least one email or phone value
+- only one contact can be primary for the same client contact role
 - support notes require text and an author
 - draft clients can be activated or suspended
 
@@ -212,6 +214,8 @@ The backend now exposes these control-spine create endpoints:
 | `POST` | `/api/v1/clients/{clientId}/suspend` | Suspend a client |
 | `POST` | `/api/v1/clients/{clientId}/support-notes` | Add an internal client support note |
 | `GET` | `/api/v1/clients/{clientId}/support-notes` | List internal client support notes newest-first |
+| `POST` | `/api/v1/clients/{clientId}/contacts` | Add a structured contact for the client |
+| `GET` | `/api/v1/clients/{clientId}/contacts` | List structured client contacts |
 | `PUT` | `/api/v1/clients/{clientId}/accounting-profile` | Link a client to AR ledger account, default currency, and cloud customer identity |
 | `GET` | `/api/v1/clients/{clientId}/accounting-profile` | Read a client's accounting profile |
 | `POST` | `/api/v1/accounting/ledger-accounts` | Create a ledger account |
