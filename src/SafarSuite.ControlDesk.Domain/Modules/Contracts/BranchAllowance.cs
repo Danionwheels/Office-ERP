@@ -4,12 +4,16 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Contracts;
 
 public sealed class BranchAllowance : ValueObject
 {
+    private BranchAllowance()
+    {
+    }
+
     private BranchAllowance(int allowedBranches)
     {
         AllowedBranches = allowedBranches;
     }
 
-    public int AllowedBranches { get; }
+    public int AllowedBranches { get; private set; }
 
     public static BranchAllowance Create(int allowedBranches)
     {

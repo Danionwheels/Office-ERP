@@ -8,6 +8,13 @@ public sealed class Invoice : Entity<InvoiceId>
 {
     private readonly List<InvoiceLine> _lines = [];
 
+    private Invoice()
+    {
+        Number = null!;
+        CurrencyCode = string.Empty;
+        AmountPaid = null!;
+    }
+
     private Invoice(
         InvoiceId id,
         ClientId clientId,
@@ -30,21 +37,21 @@ public sealed class Invoice : Entity<InvoiceId>
         Status = InvoiceStatus.Draft;
     }
 
-    public ClientId ClientId { get; }
+    public ClientId ClientId { get; private set; }
 
-    public ContractId ContractId { get; }
+    public ContractId ContractId { get; private set; }
 
-    public InvoiceNumber Number { get; }
+    public InvoiceNumber Number { get; private set; }
 
-    public DateOnly IssueDate { get; }
+    public DateOnly IssueDate { get; private set; }
 
-    public DateOnly DueDate { get; }
+    public DateOnly DueDate { get; private set; }
 
-    public string CurrencyCode { get; }
+    public string CurrencyCode { get; private set; }
 
     public InvoiceStatus Status { get; private set; }
 
-    public DateTimeOffset CreatedAtUtc { get; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public Money AmountPaid { get; private set; }
 

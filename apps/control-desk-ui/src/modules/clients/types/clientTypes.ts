@@ -40,6 +40,12 @@ export type ClientAccountingProfile = {
   updatedAtUtc: string;
 };
 
+export type ConfigureClientAccountingProfileInput = {
+  accountsReceivableAccountId: string;
+  defaultCurrencyCode: string;
+  cloudCustomerId: string;
+};
+
 export type CreateClientInput = {
   code: string;
   legalName: string;

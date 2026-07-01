@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
@@ -22,10 +23,23 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.ListClients;
 using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Clients.SuspendClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.UpdateClient;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.GetClientContract;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.ListClientContracts;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.ReplaceActiveClientContract;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.SuspendClientContract;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
+using SafarSuite.ControlDesk.Application.Modules.Entitlements.GetLatestEntitlementSnapshot;
+using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoice;
+using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoiceDefaults;
+using SafarSuite.ControlDesk.Application.Modules.Entitlements.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayment;
+using SafarSuite.ControlDesk.Infrastructure.ControlCloud;
+using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.InMemory;
 using SafarSuite.ControlDesk.Infrastructure.System;
 
@@ -33,21 +47,15 @@ namespace SafarSuite.ControlDesk.Api.Composition;
 
 public static class ControlDeskServiceRegistration
 {
-    public static IServiceCollection AddControlDeskServices(this IServiceCollection services)
+    public static IServiceCollection AddControlDeskServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IIdGenerator, GuidIdGenerator>();
+        services.AddSingleton<ICloudOutboxPublisher, LocalCloudOutboxPublisher>();
 
-        services.AddSingleton<IClientRepository, InMemoryClientRepository>();
-        services.AddSingleton<IClientAccountingProfileRepository, InMemoryClientAccountingProfileRepository>();
-        services.AddSingleton<ILedgerAccountRepository, InMemoryLedgerAccountRepository>();
-        services.AddSingleton<IChargeCodeRepository, InMemoryChargeCodeRepository>();
-        services.AddSingleton<IClientChargeRuleRepository, InMemoryClientChargeRuleRepository>();
-        services.AddSingleton<IInvoiceRepository, InMemoryInvoiceRepository>();
-        services.AddSingleton<IJournalEntryRepository, InMemoryJournalEntryRepository>();
-        services.AddSingleton<ICloudOutboxMessageRepository, InMemoryCloudOutboxMessageRepository>();
-        services.AddSingleton<IPaymentRepository, InMemoryPaymentRepository>();
-        services.AddScoped<IUnitOfWork, NoOpUnitOfWork>();
+        AddPersistence(services, configuration);
 
         services.AddScoped<CreateClientValidator>();
         services.AddScoped<CreateClientHandler>();
@@ -66,11 +74,22 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<ConfigureClientAccountingProfileValidator>();
         services.AddScoped<ConfigureClientAccountingProfileHandler>();
         services.AddScoped<GetClientAccountingProfileHandler>();
+        services.AddScoped<CreateClientContractValidator>();
+        services.AddScoped<CreateClientContractHandler>();
+        services.AddScoped<GetClientContractHandler>();
+        services.AddScoped<ListClientContractsHandler>();
+        services.AddScoped<SuspendClientContractHandler>();
+        services.AddScoped<ReplaceActiveClientContractHandler>();
         services.AddScoped<CreateLedgerAccountValidator>();
         services.AddScoped<CreateLedgerAccountHandler>();
         services.AddScoped<ListJournalEntriesHandler>();
         services.AddScoped<GetLedgerAccountActivityHandler>();
         services.AddScoped<ListCloudOutboxMessagesHandler>();
+        services.AddScoped<PublishPendingCloudOutboxMessagesHandler>();
+        services.AddScoped<IssueEntitlementSnapshotFromPaidInvoiceValidator>();
+        services.AddScoped<IssueEntitlementSnapshotFromPaidInvoiceHandler>();
+        services.AddScoped<IssueEntitlementSnapshotFromPaidInvoiceDefaultsHandler>();
+        services.AddScoped<GetLatestEntitlementSnapshotHandler>();
         services.AddScoped<CreateChargeCodeValidator>();
         services.AddScoped<CreateChargeCodeHandler>();
         services.AddScoped<ListChargeCodesHandler>();
@@ -84,5 +103,62 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<RecordInvoicePaymentHandler>();
 
         return services;
+    }
+
+    private static void AddPersistence(IServiceCollection services, IConfiguration configuration)
+    {
+        var provider = configuration.GetValue<string>("Persistence:Provider") ?? "InMemory";
+
+        if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+        {
+            var connectionString = configuration.GetConnectionString("ControlDesk");
+
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException(
+                    "ConnectionStrings:ControlDesk is required when Persistence:Provider is Postgres.");
+            }
+
+            services.AddDbContext<ControlDeskDbContext>(options =>
+            {
+                options.UseNpgsql(
+                    connectionString,
+                    npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", "control"));
+            });
+
+            services.AddScoped<IClientRepository, EfClientRepository>();
+            services.AddScoped<IContractRepository, EfContractRepository>();
+            services.AddScoped<IClientAccountingProfileRepository, EfClientAccountingProfileRepository>();
+            services.AddScoped<ILedgerAccountRepository, EfLedgerAccountRepository>();
+            services.AddScoped<IJournalEntryRepository, EfJournalEntryRepository>();
+            services.AddScoped<IChargeCodeRepository, EfChargeCodeRepository>();
+            services.AddScoped<IClientChargeRuleRepository, EfClientChargeRuleRepository>();
+            services.AddScoped<IInvoiceRepository, EfInvoiceRepository>();
+            services.AddScoped<ICloudOutboxMessageRepository, EfCloudOutboxMessageRepository>();
+            services.AddScoped<IPaymentRepository, EfPaymentRepository>();
+            services.AddScoped<IEntitlementSnapshotRepository, EfEntitlementSnapshotRepository>();
+            services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+
+            return;
+        }
+
+        if (!provider.Equals("InMemory", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Unsupported Persistence:Provider '{provider}'. Use 'InMemory' or 'Postgres'.");
+        }
+
+        services.AddSingleton<IClientRepository, InMemoryClientRepository>();
+        services.AddSingleton<IContractRepository, InMemoryContractRepository>();
+        services.AddSingleton<IClientAccountingProfileRepository, InMemoryClientAccountingProfileRepository>();
+        services.AddSingleton<ILedgerAccountRepository, InMemoryLedgerAccountRepository>();
+        services.AddSingleton<IJournalEntryRepository, InMemoryJournalEntryRepository>();
+        services.AddSingleton<IChargeCodeRepository, InMemoryChargeCodeRepository>();
+        services.AddSingleton<IClientChargeRuleRepository, InMemoryClientChargeRuleRepository>();
+        services.AddSingleton<IInvoiceRepository, InMemoryInvoiceRepository>();
+        services.AddSingleton<ICloudOutboxMessageRepository, InMemoryCloudOutboxMessageRepository>();
+        services.AddSingleton<IPaymentRepository, InMemoryPaymentRepository>();
+        services.AddSingleton<IEntitlementSnapshotRepository, InMemoryEntitlementSnapshotRepository>();
+        services.AddScoped<IUnitOfWork, NoOpUnitOfWork>();
     }
 }

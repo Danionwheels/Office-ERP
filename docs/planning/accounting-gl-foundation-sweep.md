@@ -135,11 +135,12 @@ Build the accounting and billing foundation in this order:
 
 1. Add an `Accounting` domain module with `LedgerAccount`, `JournalEntry`, `JournalLine`, and account type/nature enums. Done.
 2. Extend Billing with `ChargeCode` and `ClientChargeRule` so different clients can have different charges. Done.
-3. Add application use cases for creating charge codes and client charge rules.
-4. Add invoice draft generation from client charge rules.
+3. Add application use cases for creating charge codes and client charge rules. Done.
+4. Add invoice draft generation from client charge rules. Done.
 5. Add invoice finalization that creates a balanced journal entry. Done for the basic debit receivable / credit revenue path.
 6. Add receipt/payment allocation that updates invoice balance and posts a receipt journal entry. Done for immediately approved payment methods.
-7. Add client accounting profile and cloud outbox so invoices can post to GL and publish to SafarSuite Control Cloud reliably.
+7. Add client accounting profile and cloud outbox so invoices can post to GL and publish to SafarSuite Control Cloud reliably. Done.
+8. Add PostgreSQL persistence for payment records so receipt posting is durable end to end.
 
 ## Implementation Progress
 
@@ -152,27 +153,43 @@ Build the accounting and billing foundation in this order:
 | Invoice line charge link | Done | `InvoiceLine` can now optionally reference a `ChargeCodeId` |
 | Application use cases | In Progress | Create use cases added for clients, ledger accounts, charge codes, client charge rules, invoice draft generation, invoice issue posting, invoice payment posting, journal listing, and ledger account activity |
 | API endpoints | In Progress | Minimal create endpoints plus invoice draft, invoice issue, invoice payment, journal listing, and ledger account activity endpoints are wired |
-| Temporary in-memory repositories | Done | Added for clients, ledger accounts, journal entries, invoices, payments, charge codes, and client charge rules |
+| Temporary in-memory repositories | Replaced for active control spine | Clients, contacts, support notes, client accounting profiles, client contracts, contract module allowances, ledger accounts, journal entries, charge codes, client charge rules, invoices, invoice lines, payments, entitlement snapshots, entitlement modules, and cloud outbox messages now have PostgreSQL repositories |
 | Invoice draft generation | Done | `GenerateInvoiceDraft` creates draft invoices from effective client charge rules |
 | GL posting use cases | In Progress | Invoice issue and immediately approved invoice payment posting create posted balanced journal entries; tax, review, reversal, and reports remain pending |
 | Accounting read models | Done | Journal entry listing and ledger account activity read models expose the accounting trail created by invoice and receipt posting |
 | Survey invoice preparation bridge | Parked | Work exists, but SurveyValuation is no longer part of the active product path |
-| Client accounting profile | Proposed | Link client to receivable/default currency/cloud identity and stop passing AR account manually |
-| Cloud invoice outbox | Proposed | Enqueue invoice publish message when invoice is issued |
+| Client accounting profile | Done | Link client to receivable/default currency/cloud identity and stop passing AR account manually |
+| Cloud invoice outbox | Done for local durability | Enqueue persisted `InvoiceIssued` publish message when invoice is issued |
+| Payment outbox events | Done for local durability | Enqueue persisted `PaymentRecorded` and `ClientPaidStatusChanged` messages when an approved receipt is posted |
+| Local outbox publisher | Done for development | Manual dev endpoint marks pending outbox messages sent/failed without calling the real cloud |
+| Local entitlement snapshots | Done for local durability | Issue persisted entitlement snapshots from paid invoices and enqueue `EntitlementSnapshotIssued` |
+| Contract-driven entitlement defaults | Done for local durability | Entitlement issue can derive paid-until, grace/offline validity, device/branch limits, and modules from the paid invoice contract |
+| Contract maintenance API | Done for backend | Create/read/list/suspend/replace active contract flows are wired against PostgreSQL |
+| Client contract UI | Basic done | Client desk lists contracts and exposes create, replace-active, and suspend actions |
 
-Current create endpoints:
+Current control-spine endpoints:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/v1/clients` | Create a SafarSuite client |
+| `POST` | `/api/v1/contracts/client-contracts` | Create and activate a local client contract |
+| `GET` | `/api/v1/contracts/client-contracts/{contractId}` | Read a local client contract |
+| `GET` | `/api/v1/contracts/clients/{clientId}/client-contracts` | List local client contracts for a client |
+| `POST` | `/api/v1/contracts/client-contracts/{contractId}/suspend` | Suspend a local client contract |
+| `POST` | `/api/v1/contracts/client-contracts/replace-active` | Suspend the current active client contract and create the replacement |
 | `POST` | `/api/v1/accounting/ledger-accounts` | Create a ledger account |
 | `POST` | `/api/v1/billing/charge-codes` | Create a billable charge code linked to revenue/tax accounts |
 | `POST` | `/api/v1/billing/client-charge-rules` | Create a dynamic charge rule for a client |
 | `POST` | `/api/v1/billing/invoice-drafts` | Generate a draft invoice from active client charge rules |
 | `POST` | `/api/v1/billing/invoices/{invoiceId}/issue` | Issue a draft invoice and post the balanced GL journal entry |
 | `POST` | `/api/v1/payments/invoice-payments` | Record an approved invoice payment, update invoice balance, and post the receipt journal |
+| `POST` | `/api/v1/entitlements/snapshots/from-paid-invoice` | Issue a local entitlement snapshot from a paid invoice |
+| `POST` | `/api/v1/entitlements/snapshots/from-paid-invoice/defaults` | Issue a local entitlement snapshot using paid invoice contract defaults |
+| `GET` | `/api/v1/entitlements/clients/{clientId}/latest-snapshot` | Read the latest local entitlement snapshot for a client |
 | `GET` | `/api/v1/accounting/journal-entries` | List journal entries with optional date/source filters |
 | `GET` | `/api/v1/accounting/ledger-accounts/{ledgerAccountId}/activity` | Show account activity with running balance |
+| `GET` | `/api/v1/control-cloud/outbox-messages` | List cloud outbox messages |
+| `POST` | `/api/v1/control-cloud/outbox-messages/publish-local` | Mark pending outbox messages sent/failed through the local development publisher |
 | `PUT` | `/api/v1/survey-valuation/jobs/{surveyJobId}/invoice-lines` | Parked SurveyValuation endpoint |
 | `POST` | `/api/v1/survey-valuation/jobs/{surveyJobId}/billing-draft` | Parked SurveyValuation endpoint |
 
@@ -197,11 +214,29 @@ create revenue ledger account
        debit cash/bank
        credit accounts receivable
   -> invoice status becomes paid when balance reaches zero
+  -> issue local entitlement snapshot from the paid invoice
+  -> enqueue entitlement snapshot outbox message
   -> list journal entries
   -> view AR and cash ledger account activity
 ```
 
 The smoke test verified an issued invoice with a posted journal entry, then a posted payment journal entry, where total debit equals total credit for both postings. The read-model smoke test verified two journal entries, one payment receipt journal entry through source filtering, AR ending balance `0.00`, and cash ending balance `251.00`.
+
+The PostgreSQL persistence smoke test verified client accounting profile resolution, charge code/rule persistence, invoice draft persistence, invoice issue, posted balanced journal entry, and a pending persisted `InvoiceIssued` outbox message. The issued invoice posted `3000.00` debit and `3000.00` credit, and direct PostgreSQL inspection confirmed rows in `client_accounting_profiles`, `charge_codes`, `client_charge_rules`, `invoices`, `invoice_lines`, and `cloud_outbox_messages`.
+
+The payment persistence smoke test verified a persisted approved invoice payment, invoice status changing to `Paid`, invoice balance due changing to `0.00`, and a posted balanced receipt journal entry. Direct PostgreSQL inspection confirmed the row in `payments` plus the paid invoice state.
+
+The payment outbox smoke test verified that approved receipt posting also creates pending persisted `PaymentRecorded` and `ClientPaidStatusChanged` outbox messages. Direct PostgreSQL inspection confirmed both rows in `cloud_outbox_messages` with the invoice and payment IDs in the JSON payload.
+
+The local outbox publisher smoke test verified that `POST /api/v1/control-cloud/outbox-messages/publish-local?batchSize=5` marked five pending messages `Sent` with zero failures. Direct PostgreSQL inspection confirmed sent rows for `InvoiceIssued`, `PaymentRecorded`, and `ClientPaidStatusChanged`.
+
+The local entitlement smoke test verified that a paid invoice can issue an `Active` entitlement snapshot, persist two module rows, read the latest client snapshot, and enqueue a pending `EntitlementSnapshotIssued` outbox message.
+
+The contract-driven entitlement smoke test verified that an active persisted contract can feed entitlement defaults: paid-until came from the contract end date, grace/offline dates were derived locally, device/branch limits and module allowances were copied from the contract, and the latest entitlement snapshot matched the issued snapshot.
+
+The contract maintenance smoke test verified create, read, list, replace-active, and suspend flows. Replace-active suspended the previous active contract and created a new active contract; direct PostgreSQL inspection confirmed both contract statuses and their module allowance rows.
+
+The client contract UI smoke test verified that the Vite client desk renders the contract panel and create/replace actions with no browser console errors.
 
 ## Transaction Policy
 
@@ -221,15 +256,16 @@ Use `ExecuteInTransactionAsync` for:
 - payment reversal plus ledger reversal
 - opening balance import across accounts and invoices
 
-The current in-memory implementation only simulates this boundary. The PostgreSQL/EF implementation must use a real database transaction and rollback on failure.
+The PostgreSQL/EF implementation now uses a real database transaction for persisted slices. This covers invoice issue end to end: invoice status update, posted journal entry, journal lines, and `InvoiceIssued` outbox message are saved in one transaction. Payment posting is also durable end to end: payment record, invoice balance/status update, posted receipt journal entry, journal lines, and payment/client-status outbox messages are saved in one transaction.
 
 Next accounting slice:
 
 ```text
-client accounting profile
-  -> link client to AR/default currency/cloud identity
-  -> issue invoice without manually passing AR account each time
-  -> enqueue cloud invoice publish message in the same transaction
+client billing setup UI wiring
+  -> link/create client accounting profile from the client desk
+  -> create client charge rules from the client workflow
+  -> generate and issue draft invoices from the UI
+  -> keep real cloud publication out of accounting transactions
 ```
 
 SurveyValuation bridge work exists but is parked. Do not extend it while the active goal is SafarSuite client billing/control/cloud.

@@ -157,7 +157,7 @@ Repository ports now exist in the Application layer:
 - `ICloudOutboxMessageRepository`
 - `IAuditEventRepository`
 
-The current Infrastructure layer uses temporary in-memory implementations for active local slices. PostgreSQL/EF implementations belong later in Infrastructure.
+The Infrastructure layer now has PostgreSQL/EF wiring for the active client, contract, accounting, billing setup, invoice, payment, entitlement, client accounting profile, and cloud outbox persistence slices. Clients, contacts, support notes, client accounting profiles, client contracts, contract module allowances, ledger accounts, journal entries, journal lines, charge codes, client charge rules, invoices, invoice lines, payments, entitlement snapshots, entitlement modules, and cloud outbox messages are stored in PostgreSQL when `Persistence:Provider` is `Postgres`.
 
 ## Revised Product Chain
 
@@ -180,8 +180,9 @@ create client
   -> record/receive payment
        post receipt journal
        update invoice balance/status
-       enqueue paid-status/entitlement publish message
-  -> cloud issues signed entitlement/product command
+       enqueue payment recorded and paid-status messages
+  -> local entitlement snapshot is issued from paid invoice
+  -> cloud later signs/publishes entitlement/product command
   -> SafarSuite client becomes active/renewed
 ```
 
@@ -196,13 +197,17 @@ Invoices are generated from billing rules and charge setup, then posted into the
 | `SaveChangesAsync` | One action writes one aggregate/table |
 | `ExecuteInTransactionAsync` | One action writes multiple aggregates/tables and must be atomic |
 
-Invoice issue with GL posting uses `ExecuteInTransactionAsync` because it updates the invoice and creates a journal entry in the same business action. Invoice payment posting follows the same rule because it records the payment, updates the invoice balance, and creates a journal entry together.
+Invoice issue with GL posting uses `ExecuteInTransactionAsync` because it updates the invoice, creates a journal entry, and enqueues a cloud outbox message in the same business action. Invoice payment posting follows the same rule because it records the payment, updates the invoice balance/status, creates a receipt journal entry, and enqueues local payment/client-status outbox messages together.
+
+Entitlement snapshot issue from a paid invoice also uses `ExecuteInTransactionAsync` because it creates the local entitlement snapshot/modules and enqueues `EntitlementSnapshotIssued` together.
 
 Cloud publishing must not happen directly inside the accounting transaction. Invoice issue/payment approval should create a durable outbox message in the same transaction. A separate publisher sends it to SafarSuite Control Cloud and records sent/failed status.
 
+The current local publisher is a development-only adapter. It validates persisted JSON payloads and marks pending outbox messages sent/failed without calling SafarSuite Control Cloud.
+
 ## Current API Surface
 
-The backend now exposes these control-spine create endpoints:
+The backend now exposes these control-spine endpoints:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
@@ -218,6 +223,11 @@ The backend now exposes these control-spine create endpoints:
 | `GET` | `/api/v1/clients/{clientId}/contacts` | List structured client contacts |
 | `PUT` | `/api/v1/clients/{clientId}/accounting-profile` | Link a client to AR ledger account, default currency, and cloud customer identity |
 | `GET` | `/api/v1/clients/{clientId}/accounting-profile` | Read a client's accounting profile |
+| `POST` | `/api/v1/contracts/client-contracts` | Create and activate a local client contract with device, branch, module, and pricing defaults |
+| `GET` | `/api/v1/contracts/client-contracts/{contractId}` | Read a local client contract |
+| `GET` | `/api/v1/contracts/clients/{clientId}/client-contracts` | List local client contracts for a client |
+| `POST` | `/api/v1/contracts/client-contracts/{contractId}/suspend` | Suspend a local client contract |
+| `POST` | `/api/v1/contracts/client-contracts/replace-active` | Suspend the current active client contract and create the replacement |
 | `POST` | `/api/v1/accounting/ledger-accounts` | Create a ledger account |
 | `POST` | `/api/v1/billing/charge-codes` | Create a charge code tied to posting accounts |
 | `POST` | `/api/v1/billing/client-charge-rules` | Create a client-specific dynamic charge rule |
@@ -227,18 +237,22 @@ The backend now exposes these control-spine create endpoints:
 | `GET` | `/api/v1/accounting/journal-entries` | List journal entries with optional date/source filters |
 | `GET` | `/api/v1/accounting/ledger-accounts/{ledgerAccountId}/activity` | Show ledger account activity with running balance |
 | `GET` | `/api/v1/control-cloud/outbox-messages` | List cloud outbox messages with optional status/message type filters |
+| `POST` | `/api/v1/control-cloud/outbox-messages/publish-local` | Mark a batch of pending outbox messages sent/failed through the local development publisher |
+| `POST` | `/api/v1/entitlements/snapshots/from-paid-invoice` | Issue a local entitlement snapshot from a paid invoice and enqueue `EntitlementSnapshotIssued` |
+| `POST` | `/api/v1/entitlements/snapshots/from-paid-invoice/defaults` | Issue a local entitlement snapshot from a paid invoice using the invoice contract defaults |
+| `GET` | `/api/v1/entitlements/clients/{clientId}/latest-snapshot` | Read the latest local entitlement snapshot for a client |
 
 ## Explicitly Deferred
 
-- accounting persistence and migrations
 - tax payable posting during invoice issue
 - bank-transfer review and approval flow
 - payment reversal journal posting use case
+- client billing setup UI beyond contract maintenance
+- signed entitlement publication
 - persistence-backed accounting reports
 - payment settlement batches
 - product-kernel command signing
-- cloud publisher implementation
-- PostgreSQL-backed outbox durability
+- real SafarSuite Control Cloud publisher implementation
 - client portal mirror models
 - SurveyValuation docket model and screens
 - legacy report parity

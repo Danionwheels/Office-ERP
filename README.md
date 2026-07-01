@@ -51,3 +51,28 @@ SafarSuite Client Systems
 ## Legacy Reference
 
 Use `E:/travel tour/survey` as the canonical reference folder for cloning core legacy behavior. The rule is to clone business meaning and important workflows, not the old Access implementation directly.
+
+## Local Database
+
+Development uses PostgreSQL through Docker Compose.
+
+```powershell
+dotnet tool restore
+docker compose up -d safarsuite-control-desk-postgres
+dotnet tool run dotnet-ef database update --project src/SafarSuite.ControlDesk.Infrastructure --startup-project src/SafarSuite.ControlDesk.Api --context ControlDeskDbContext
+dotnet run --project src/SafarSuite.ControlDesk.Api
+```
+
+Connection string used by `appsettings.Development.json`:
+
+```text
+Host=localhost;Port=54329;Database=safarsuite_control_desk;Username=safarsuite;Password=safarsuite_dev_password
+```
+
+The current control-spine persistence slices store clients, contacts, support notes, client accounting profiles, client contracts, contract module allowances, ledger accounts, journal entries, journal lines, charge codes, client charge rules, invoices, invoice lines, payments, entitlement snapshots, entitlement modules, and cloud outbox messages in PostgreSQL.
+
+For local development, pending cloud outbox messages can be marked sent through:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:5188/api/v1/control-cloud/outbox-messages/publish-local?batchSize=20"
+```

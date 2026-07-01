@@ -2,15 +2,20 @@ namespace SafarSuite.ControlDesk.Domain.SharedKernel;
 
 public sealed class Money : ValueObject
 {
+    private Money()
+    {
+        CurrencyCode = string.Empty;
+    }
+
     private Money(decimal amount, string currencyCode)
     {
         Amount = amount;
         CurrencyCode = currencyCode;
     }
 
-    public decimal Amount { get; }
+    public decimal Amount { get; private set; }
 
-    public string CurrencyCode { get; }
+    public string CurrencyCode { get; private set; }
 
     public static Money Of(decimal amount, string currencyCode)
     {

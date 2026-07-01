@@ -23,15 +23,25 @@ client setup
 | Capability | Status | Notes |
 | --- | --- | --- |
 | Client master maintenance | Basic done | API and active frontend support create, list, detail, edit, activate, suspend, contacts, and support notes |
+| PostgreSQL client persistence | Done | Docker Compose and EF Core migration persist clients, contacts, and support notes |
+| PostgreSQL contract persistence | Done | Active client contracts and module allowances are persisted in PostgreSQL |
+| Client contract maintenance | Basic done | API and active frontend can create, read/list, suspend, and replace active client contracts |
+| PostgreSQL accounting persistence | Done | Ledger accounts, journal entries, and journal lines are persisted in PostgreSQL |
+| PostgreSQL billing/profile/outbox persistence | Done | Client accounting profiles, charge codes, client charge rules, invoices, invoice lines, and cloud outbox messages are persisted in PostgreSQL |
+| PostgreSQL payment persistence | Done | Approved invoice payment records are persisted with invoice balance/status update and receipt journal posting in one transaction |
 | Client accounting profile | Basic done | Client can be linked to AR ledger account, default currency, and cloud customer identity |
-| Ledger accounts | Partial | Create endpoint and activity view exist |
+| Ledger accounts | Partial | Create endpoint and activity view exist; accounts are persisted in PostgreSQL |
 | Charge codes | Partial | Create/list endpoints exist and link to revenue/tax accounts |
 | Client charge rules | Partial | Client-specific dynamic charge rules exist |
 | Invoice draft generation | Done for basic charges | Generates draft invoice from active client charge rules |
 | Invoice issue posting | Done for basic revenue | Issues invoice and posts balanced AR/revenue journal in one transaction; AR can resolve from client accounting profile |
-| Cloud invoice outbox | Basic done | Invoice issue enqueues a pending `InvoiceIssued` message and exposes an outbox read endpoint |
-| Payment posting | Done for approved payment methods | Records payment, updates invoice, posts balanced cash/AR journal |
-| Accounting visibility | Partial | Journal list and ledger activity endpoints exist |
+| Cloud invoice outbox | Basic done | Invoice issue enqueues a pending persisted `InvoiceIssued` message, exposes an outbox read endpoint, and can be processed by the local publisher |
+| Payment outbox events | Basic done | Approved receipt posting enqueues pending persisted `PaymentRecorded` and `ClientPaidStatusChanged` messages |
+| Local outbox publisher | Basic done | Manual dev endpoint marks pending outbox messages `Sent` or `Failed` without calling the real cloud |
+| Local entitlement snapshots | Basic done | Paid invoices can issue persisted entitlement snapshots with local limits/modules and enqueue `EntitlementSnapshotIssued` |
+| Contract-driven entitlement defaults | Basic done | Paid-invoice entitlement issue can derive paid-until, grace, offline validity, device/branch limits, and modules from the invoice contract |
+| Payment posting | Done for approved payment methods | Records persisted payment, updates invoice, posts balanced cash/AR journal |
+| Accounting visibility | Partial | Journal list and ledger activity endpoints exist and read PostgreSQL-backed journal entries |
 
 ## Correct Accounting Shape
 
@@ -73,14 +83,20 @@ Same rule for payment and entitlement events.
 0. Done: add client detail, edit, activate, and suspend actions; remove Survey/FAS routes from active API mapping.
 0.1. Done: add internal support notes/history to client maintenance.
 0.2. Done: add structured client contacts with role and primary-contact handling.
-1. Done: add `ClientAccountingProfile` domain/application/API/in-memory persistence.
+1. Done: add `ClientAccountingProfile` domain/application/API/PostgreSQL persistence.
 2. Done: update client setup flow so a client can be linked to AR/default currency/cloud identity.
 3. Done: use the profile during invoice issue so AR account does not have to be manually provided every time.
 4. Done: add `CloudOutboxMessage` domain/application/API read model.
 5. Done: enqueue `InvoiceIssued` cloud message inside invoice issue transaction.
-6. Add a fake/local cloud publisher that marks messages as sent for development.
-7. Add `PaymentRecorded` / `ClientPaidStatusChanged` outbox messages after receipt posting.
-8. Add entitlement snapshot issue/update once payment clears.
+5.1. Done: persist charge codes, client charge rules, invoices, invoice lines, client accounting profiles, and cloud outbox messages in PostgreSQL.
+5.2. Done: persist approved invoice payment records in PostgreSQL with invoice balance/status and receipt journal in one transaction.
+6. Done: add `PaymentRecorded` / `ClientPaidStatusChanged` outbox messages after receipt posting.
+7. Done: add a fake/local cloud publisher that marks messages as sent for development.
+8. Done: add local entitlement snapshot issue from paid invoice.
+9. Done: add contract-driven entitlement defaults so devices, branches, modules, paid-until, and grace rules no longer need manual request values.
+10. Done for backend: add contract maintenance API for list/read/suspend/replace active contract.
+11. Done: connect contract setup and maintenance into the client UI.
+12. Add minimal client billing setup UI for accounting profile, charge rules, invoice draft, and invoice issue.
 
 ## Guardrails
 

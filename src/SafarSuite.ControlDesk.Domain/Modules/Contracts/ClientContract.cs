@@ -7,6 +7,15 @@ public sealed class ClientContract : Entity<ContractId>
 {
     private readonly List<ModuleAllowance> _moduleAllowances = [];
 
+    private ClientContract()
+    {
+        Number = null!;
+        Term = null!;
+        Pricing = null!;
+        DeviceAllowance = null!;
+        BranchAllowance = null!;
+    }
+
     private ClientContract(
         ContractId id,
         ClientId clientId,
@@ -28,9 +37,9 @@ public sealed class ClientContract : Entity<ContractId>
         Status = ContractStatus.Draft;
     }
 
-    public ClientId ClientId { get; }
+    public ClientId ClientId { get; private set; }
 
-    public ContractNumber Number { get; }
+    public ContractNumber Number { get; private set; }
 
     public DateRange Term { get; private set; }
 
@@ -42,7 +51,7 @@ public sealed class ClientContract : Entity<ContractId>
 
     public ContractStatus Status { get; private set; }
 
-    public DateTimeOffset CreatedAtUtc { get; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public DateTimeOffset? ActivatedAtUtc { get; private set; }
 

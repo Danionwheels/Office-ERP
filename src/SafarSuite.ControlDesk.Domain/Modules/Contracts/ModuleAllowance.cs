@@ -4,15 +4,20 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Contracts;
 
 public sealed class ModuleAllowance : ValueObject
 {
+    private ModuleAllowance()
+    {
+        ModuleCode = null!;
+    }
+
     private ModuleAllowance(ModuleCode moduleCode, bool isEnabled)
     {
         ModuleCode = moduleCode;
         IsEnabled = isEnabled;
     }
 
-    public ModuleCode ModuleCode { get; }
+    public ModuleCode ModuleCode { get; private set; }
 
-    public bool IsEnabled { get; }
+    public bool IsEnabled { get; private set; }
 
     public static ModuleAllowance Enabled(ModuleCode moduleCode)
     {

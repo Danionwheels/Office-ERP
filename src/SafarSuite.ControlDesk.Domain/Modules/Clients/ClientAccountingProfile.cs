@@ -5,6 +5,11 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Clients;
 
 public sealed class ClientAccountingProfile : Entity<ClientAccountingProfileId>
 {
+    private ClientAccountingProfile()
+    {
+        DefaultCurrencyCode = string.Empty;
+    }
+
     private ClientAccountingProfile(
         ClientAccountingProfileId id,
         ClientId clientId,
@@ -22,7 +27,7 @@ public sealed class ClientAccountingProfile : Entity<ClientAccountingProfileId>
         UpdatedAtUtc = createdAtUtc;
     }
 
-    public ClientId ClientId { get; }
+    public ClientId ClientId { get; private set; }
 
     public LedgerAccountId AccountsReceivableAccountId { get; private set; }
 
@@ -30,7 +35,7 @@ public sealed class ClientAccountingProfile : Entity<ClientAccountingProfileId>
 
     public string? CloudCustomerId { get; private set; }
 
-    public DateTimeOffset CreatedAtUtc { get; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 

@@ -2,13 +2,19 @@ using SafarSuite.ControlDesk.Api.Composition;
 using SafarSuite.ControlDesk.Api.Modules.Accounting;
 using SafarSuite.ControlDesk.Api.Modules.Billing;
 using SafarSuite.ControlDesk.Api.Modules.Clients;
+using SafarSuite.ControlDesk.Api.Modules.Contracts;
 using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
+using SafarSuite.ControlDesk.Api.Modules.Entitlements;
 using SafarSuite.ControlDesk.Api.Modules.Payments;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Health;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControlDeskServices();
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
+builder.Services.AddControlDeskServices(builder.Configuration);
 
 var app = builder.Build();
 
@@ -25,9 +31,11 @@ app.MapGet("/health", () =>
 });
 
 app.MapClientEndpoints();
+app.MapContractEndpoints();
 app.MapAccountingEndpoints();
 app.MapBillingEndpoints();
 app.MapPaymentsEndpoints();
 app.MapControlCloudEndpoints();
+app.MapEntitlementEndpoints();
 
 app.Run();

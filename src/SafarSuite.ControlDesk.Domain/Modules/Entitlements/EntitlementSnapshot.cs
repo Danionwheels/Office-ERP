@@ -8,6 +8,10 @@ public sealed class EntitlementSnapshot : Entity<EntitlementSnapshotId>
 {
     private readonly List<EntitlementModule> _modules = [];
 
+    private EntitlementSnapshot()
+    {
+    }
+
     private EntitlementSnapshot(
         EntitlementSnapshotId id,
         ClientId clientId,
@@ -32,23 +36,23 @@ public sealed class EntitlementSnapshot : Entity<EntitlementSnapshotId>
         IssuedAtUtc = issuedAtUtc;
     }
 
-    public ClientId ClientId { get; }
+    public ClientId ClientId { get; private set; }
 
-    public ContractId ContractId { get; }
+    public ContractId ContractId { get; private set; }
 
-    public EntitlementStatus Status { get; }
+    public EntitlementStatus Status { get; private set; }
 
-    public DateOnly PaidUntil { get; }
+    public DateOnly PaidUntil { get; private set; }
 
-    public DateOnly GraceUntil { get; }
+    public DateOnly GraceUntil { get; private set; }
 
-    public DateOnly OfflineValidUntil { get; }
+    public DateOnly OfflineValidUntil { get; private set; }
 
-    public int AllowedDevices { get; }
+    public int AllowedDevices { get; private set; }
 
-    public int AllowedBranches { get; }
+    public int AllowedBranches { get; private set; }
 
-    public DateTimeOffset IssuedAtUtc { get; }
+    public DateTimeOffset IssuedAtUtc { get; private set; }
 
     public IReadOnlyCollection<EntitlementModule> Modules => _modules.AsReadOnly();
 

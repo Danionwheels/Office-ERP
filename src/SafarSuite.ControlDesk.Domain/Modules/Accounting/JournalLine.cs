@@ -4,6 +4,12 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Accounting;
 
 public sealed class JournalLine : ValueObject
 {
+    private JournalLine()
+    {
+        Debit = Money.Zero("PKR");
+        Credit = Money.Zero("PKR");
+    }
+
     private JournalLine(
         LedgerAccountId ledgerAccountId,
         Money debit,
@@ -16,13 +22,13 @@ public sealed class JournalLine : ValueObject
         Description = description;
     }
 
-    public LedgerAccountId LedgerAccountId { get; }
+    public LedgerAccountId LedgerAccountId { get; private set; }
 
-    public Money Debit { get; }
+    public Money Debit { get; private set; }
 
-    public Money Credit { get; }
+    public Money Credit { get; private set; }
 
-    public string? Description { get; }
+    public string? Description { get; private set; }
 
     public bool IsDebit => Debit.Amount > 0;
 

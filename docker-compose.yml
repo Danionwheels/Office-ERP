@@ -1,0 +1,20 @@
+services:
+  safarsuite-control-desk-postgres:
+    image: postgres:17-alpine
+    container_name: safarsuite-control-desk-postgres
+    environment:
+      POSTGRES_DB: safarsuite_control_desk
+      POSTGRES_USER: safarsuite
+      POSTGRES_PASSWORD: safarsuite_dev_password
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U safarsuite -d safarsuite_control_desk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - safarsuite-control-desk-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  safarsuite-control-desk-postgres-data:

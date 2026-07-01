@@ -5,6 +5,13 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Billing;
 
 public sealed class ChargeCode : Entity<ChargeCodeId>
 {
+    private ChargeCode()
+    {
+        Code = null!;
+        Name = string.Empty;
+        DefaultUnitPrice = null!;
+    }
+
     private ChargeCode(
         ChargeCodeId id,
         ChargeCodeKey code,
@@ -26,7 +33,7 @@ public sealed class ChargeCode : Entity<ChargeCodeId>
         Status = ChargeCodeStatus.Active;
     }
 
-    public ChargeCodeKey Code { get; }
+    public ChargeCodeKey Code { get; private set; }
 
     public string Name { get; private set; }
 
@@ -40,7 +47,7 @@ public sealed class ChargeCode : Entity<ChargeCodeId>
 
     public ChargeCodeStatus Status { get; private set; }
 
-    public DateTimeOffset CreatedAtUtc { get; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public static ChargeCode Create(
         ChargeCodeId id,

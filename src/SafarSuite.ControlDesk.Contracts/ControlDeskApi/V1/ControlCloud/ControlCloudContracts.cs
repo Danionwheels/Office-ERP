@@ -15,3 +15,20 @@ public sealed record CloudOutboxMessageResponse(
     DateTimeOffset? SentAtUtc,
     DateTimeOffset? FailedAtUtc,
     string? FailureReason);
+
+public sealed record PublishLocalCloudOutboxMessagesResponse(
+    int RequestedBatchSize,
+    int PublishedCount,
+    int FailedCount,
+    IReadOnlyCollection<PublishedCloudOutboxMessageResponse> Messages);
+
+public sealed record PublishedCloudOutboxMessageResponse(
+    Guid CloudOutboxMessageId,
+    string MessageType,
+    string SubjectType,
+    string SubjectId,
+    string Status,
+    int AttemptCount,
+    DateTimeOffset? SentAtUtc,
+    DateTimeOffset? FailedAtUtc,
+    string? FailureReason);

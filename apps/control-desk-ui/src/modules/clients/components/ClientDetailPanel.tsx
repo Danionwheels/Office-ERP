@@ -67,21 +67,31 @@ export function ClientDetailPanel({
   }
 
   return (
-    <section className="client-detail-panel">
-      <div className="client-detail-header">
+    <section className="client-detail-panel profile-workspace">
+      <div className="client-detail-header profile-hero">
         <div>
           <span>{client.code}</span>
           <h1>{client.displayName}</h1>
         </div>
-        <span className={`status-pill large ${client.status.toLowerCase()}`}>{client.status}</span>
+        <div className="profile-hero-actions">
+          <span className={`status-pill large ${client.status.toLowerCase()}`}>{client.status}</span>
+          <button className="icon-button" type="button" onClick={onActivate} disabled={isBusy} title="Activate client">
+            <CheckCircle2 size={16} />
+            Activate
+          </button>
+          <button className="icon-button" type="button" onClick={onSuspend} disabled={isBusy} title="Suspend client">
+            <PauseCircle size={16} />
+            Suspend
+          </button>
+        </div>
       </div>
 
-      <div className="client-detail-grid">
-        <form className="client-panel client-edit-form" onSubmit={handleSave}>
+      <div className="client-detail-grid profile-top-grid">
+        <form className="client-panel client-edit-form profile-panel" onSubmit={handleSave}>
           <div className="client-panel-heading">
             <div>
               <span>Profile</span>
-              <strong>Client</strong>
+              <strong>Client details</strong>
             </div>
             <button className="icon-button primary" type="submit" disabled={isBusy} title="Save client">
               <Save size={16} />
@@ -89,43 +99,34 @@ export function ClientDetailPanel({
             </button>
           </div>
 
-          <label className="form-field">
-            <span>Legal name</span>
-            <input
-              value={editValue.legalName}
-              onChange={(event) => onEditChange({ ...editValue, legalName: event.target.value })}
-              disabled={isBusy}
-            />
-          </label>
-          <label className="form-field">
-            <span>Display name</span>
-            <input
-              value={editValue.displayName}
-              onChange={(event) => onEditChange({ ...editValue, displayName: event.target.value })}
-              disabled={isBusy}
-            />
-          </label>
-
-          <div className="client-action-row">
-            <button className="icon-button" type="button" onClick={onActivate} disabled={isBusy} title="Activate client">
-              <CheckCircle2 size={16} />
-              Activate
-            </button>
-            <button className="icon-button" type="button" onClick={onSuspend} disabled={isBusy} title="Suspend client">
-              <PauseCircle size={16} />
-              Suspend
-            </button>
+          <div className="profile-form-grid">
+            <label className="form-field">
+              <span>Legal name</span>
+              <input
+                value={editValue.legalName}
+                onChange={(event) => onEditChange({ ...editValue, legalName: event.target.value })}
+                disabled={isBusy}
+              />
+            </label>
+            <label className="form-field">
+              <span>Display name</span>
+              <input
+                value={editValue.displayName}
+                onChange={(event) => onEditChange({ ...editValue, displayName: event.target.value })}
+                disabled={isBusy}
+              />
+            </label>
           </div>
         </form>
 
-        <div className="client-panel accounting-profile-panel">
+        <div className="client-panel accounting-profile-panel profile-panel">
           <div className="client-panel-heading">
             <div>
               <span>Accounting</span>
               <strong>{accountingProfileMissing ? "Not linked" : "Linked"}</strong>
             </div>
           </div>
-          <dl className="client-facts">
+          <dl className="client-facts profile-facts">
             <div>
               <dt>Currency</dt>
               <dd>{accountingProfile?.defaultCurrencyCode ?? "-"}</dd>
@@ -142,86 +143,82 @@ export function ClientDetailPanel({
         </div>
       </div>
 
-      <div className="client-contacts-zone">
-        <form className="client-panel client-contact-form" onSubmit={handleAddContact}>
-          <div className="client-panel-heading">
-            <div>
-              <span>Contacts</span>
-              <strong>New contact</strong>
-            </div>
-            <button className="icon-button primary" type="submit" disabled={isBusy} title="Add contact">
-              <UserPlus size={16} />
-              Add
-            </button>
-          </div>
-
-          <div className="contact-form-grid">
-            <label className="form-field">
-              <span>Role</span>
-              <select
-                value={contactValue.role}
-                onChange={(event) => onContactChange({ ...contactValue, role: event.target.value })}
-                disabled={isBusy}
-              >
-                <option value="Owner">Owner</option>
-                <option value="Billing">Billing</option>
-                <option value="Support">Support</option>
-                <option value="Technical">Technical</option>
-                <option value="Accounts">Accounts</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            <label className="form-field">
-              <span>Full name</span>
-              <input
-                value={contactValue.fullName}
-                onChange={(event) => onContactChange({ ...contactValue, fullName: event.target.value })}
-                disabled={isBusy}
-              />
-            </label>
-            <label className="form-field">
-              <span>Title</span>
-              <input
-                value={contactValue.jobTitle}
-                onChange={(event) => onContactChange({ ...contactValue, jobTitle: event.target.value })}
-                disabled={isBusy}
-              />
-            </label>
-            <label className="form-field">
-              <span>Email</span>
-              <input
-                value={contactValue.email}
-                onChange={(event) => onContactChange({ ...contactValue, email: event.target.value })}
-                disabled={isBusy}
-              />
-            </label>
-            <label className="form-field">
-              <span>Phone</span>
-              <input
-                value={contactValue.phone}
-                onChange={(event) => onContactChange({ ...contactValue, phone: event.target.value })}
-                disabled={isBusy}
-              />
-            </label>
-            <label className="checkbox-field contact-primary-field">
-              <input
-                type="checkbox"
-                checked={contactValue.isPrimary}
-                onChange={(event) => onContactChange({ ...contactValue, isPrimary: event.target.checked })}
-                disabled={isBusy}
-              />
-              Primary
-            </label>
-          </div>
-        </form>
-
-        <div className="client-panel client-contacts-list">
+      <div className="profile-secondary-grid">
+        <section className="client-panel profile-panel profile-section">
           <div className="client-panel-heading">
             <div>
               <span>Contacts</span>
               <strong>{client.contacts.length}</strong>
             </div>
           </div>
+
+          <form className="client-contact-form profile-inline-form" onSubmit={handleAddContact}>
+            <div className="contact-form-grid">
+              <label className="form-field">
+                <span>Role</span>
+                <select
+                  value={contactValue.role}
+                  onChange={(event) => onContactChange({ ...contactValue, role: event.target.value })}
+                  disabled={isBusy}
+                >
+                  <option value="Owner">Owner</option>
+                  <option value="Billing">Billing</option>
+                  <option value="Support">Support</option>
+                  <option value="Technical">Technical</option>
+                  <option value="Accounts">Accounts</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+              <label className="form-field">
+                <span>Full name</span>
+                <input
+                  value={contactValue.fullName}
+                  onChange={(event) => onContactChange({ ...contactValue, fullName: event.target.value })}
+                  disabled={isBusy}
+                />
+              </label>
+              <label className="form-field">
+                <span>Title</span>
+                <input
+                  value={contactValue.jobTitle}
+                  onChange={(event) => onContactChange({ ...contactValue, jobTitle: event.target.value })}
+                  disabled={isBusy}
+                />
+              </label>
+              <label className="form-field">
+                <span>Email</span>
+                <input
+                  value={contactValue.email}
+                  onChange={(event) => onContactChange({ ...contactValue, email: event.target.value })}
+                  disabled={isBusy}
+                />
+              </label>
+              <label className="form-field">
+                <span>Phone</span>
+                <input
+                  value={contactValue.phone}
+                  onChange={(event) => onContactChange({ ...contactValue, phone: event.target.value })}
+                  disabled={isBusy}
+                />
+              </label>
+              <label className="checkbox-field contact-primary-field">
+                <input
+                  type="checkbox"
+                  checked={contactValue.isPrimary}
+                  onChange={(event) => onContactChange({ ...contactValue, isPrimary: event.target.checked })}
+                  disabled={isBusy}
+                />
+                Primary
+              </label>
+            </div>
+            <div className="client-action-row">
+              <button className="icon-button primary" type="submit" disabled={isBusy} title="Add contact">
+                <UserPlus size={16} />
+                Add
+              </button>
+            </div>
+          </form>
+
           <div className="contact-list">
             {client.contacts.length === 0 && <div className="client-empty-state">No contacts</div>}
             {client.contacts.map((contact) => (
@@ -247,47 +244,42 @@ export function ClientDetailPanel({
               </article>
             ))}
           </div>
-        </div>
-      </div>
+        </section>
 
-      <div className="client-notes-zone">
-        <form className="client-panel client-note-form" onSubmit={handleAddNote}>
-          <div className="client-panel-heading">
-            <div>
-              <span>History</span>
-              <strong>New note</strong>
-            </div>
-            <button className="icon-button primary" type="submit" disabled={isBusy} title="Add note">
-              <MessageSquarePlus size={16} />
-              Add
-            </button>
-          </div>
-          <label className="form-field">
-            <span>Text</span>
-            <textarea
-              rows={4}
-              value={noteValue.text}
-              onChange={(event) => onNoteChange({ ...noteValue, text: event.target.value })}
-              disabled={isBusy}
-            />
-          </label>
-          <label className="form-field">
-            <span>Author</span>
-            <input
-              value={noteValue.createdBy}
-              onChange={(event) => onNoteChange({ ...noteValue, createdBy: event.target.value })}
-              disabled={isBusy}
-            />
-          </label>
-        </form>
-
-        <div className="client-panel client-notes-list">
+        <section className="client-panel profile-panel profile-section">
           <div className="client-panel-heading">
             <div>
               <span>History</span>
               <strong>{client.supportNotes.length}</strong>
             </div>
           </div>
+
+          <form className="client-note-form profile-inline-form" onSubmit={handleAddNote}>
+            <label className="form-field">
+              <span>Text</span>
+              <textarea
+                rows={3}
+                value={noteValue.text}
+                onChange={(event) => onNoteChange({ ...noteValue, text: event.target.value })}
+                disabled={isBusy}
+              />
+            </label>
+            <div className="profile-note-row">
+              <label className="form-field">
+                <span>Author</span>
+                <input
+                  value={noteValue.createdBy}
+                  onChange={(event) => onNoteChange({ ...noteValue, createdBy: event.target.value })}
+                  disabled={isBusy}
+                />
+              </label>
+              <button className="icon-button primary" type="submit" disabled={isBusy} title="Add note">
+                <MessageSquarePlus size={16} />
+                Add
+              </button>
+            </div>
+          </form>
+
           <div className="note-list">
             {client.supportNotes.length === 0 && <div className="note-empty">No notes</div>}
             {client.supportNotes.map((note) => (
@@ -300,7 +292,7 @@ export function ClientDetailPanel({
               </article>
             ))}
           </div>
-        </div>
+        </section>
       </div>
     </section>
   );

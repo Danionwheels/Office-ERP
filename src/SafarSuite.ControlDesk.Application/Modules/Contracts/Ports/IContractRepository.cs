@@ -10,4 +10,10 @@ public interface IContractRepository
     Task<ClientContract?> GetByIdAsync(ContractId id, CancellationToken cancellationToken = default);
 
     Task<ClientContract?> GetActiveForClientAsync(ClientId clientId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<ClientContract>> ListForClientAsync(
+        ClientId clientId,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> ExistsByNumberAsync(ContractNumber number, CancellationToken cancellationToken = default);
 }

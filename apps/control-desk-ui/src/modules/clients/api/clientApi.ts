@@ -7,6 +7,7 @@ import type {
   ClientDetails,
   ClientLookup,
   ClientSupportNote,
+  ConfigureClientAccountingProfileInput,
   CreateClientInput,
   UpdateClientInput
 } from "../types/clientTypes";
@@ -140,6 +141,20 @@ export async function getClientAccountingProfile(
   clientId: string
 ): Promise<ClientAccountingProfile> {
   return apiRequest<ClientAccountingProfile>(`/api/v1/clients/${clientId}/accounting-profile`);
+}
+
+export async function configureClientAccountingProfile(
+  clientId: string,
+  input: ConfigureClientAccountingProfileInput
+): Promise<ClientAccountingProfile> {
+  return apiRequest<ClientAccountingProfile>(`/api/v1/clients/${clientId}/accounting-profile`, {
+    method: "PUT",
+    body: JSON.stringify({
+      accountsReceivableAccountId: input.accountsReceivableAccountId,
+      defaultCurrencyCode: input.defaultCurrencyCode,
+      cloudCustomerId: optionalText(input.cloudCustomerId)
+    })
+  });
 }
 
 function optionalText(value: string): string | undefined {

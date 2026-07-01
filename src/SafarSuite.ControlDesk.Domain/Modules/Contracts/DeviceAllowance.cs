@@ -4,12 +4,16 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Contracts;
 
 public sealed class DeviceAllowance : ValueObject
 {
+    private DeviceAllowance()
+    {
+    }
+
     private DeviceAllowance(int allowedDevices)
     {
         AllowedDevices = allowedDevices;
     }
 
-    public int AllowedDevices { get; }
+    public int AllowedDevices { get; private set; }
 
     public static DeviceAllowance Create(int allowedDevices)
     {

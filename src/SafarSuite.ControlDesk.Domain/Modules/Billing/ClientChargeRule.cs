@@ -6,6 +6,12 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Billing;
 
 public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
 {
+    private ClientChargeRule()
+    {
+        UnitPrice = null!;
+        EffectivePeriod = null!;
+    }
+
     private ClientChargeRule(
         ClientChargeRuleId id,
         ClientId clientId,
@@ -33,11 +39,11 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
         Status = ClientChargeRuleStatus.Active;
     }
 
-    public ClientId ClientId { get; }
+    public ClientId ClientId { get; private set; }
 
-    public ContractId? ContractId { get; }
+    public ContractId? ContractId { get; private set; }
 
-    public ChargeCodeId ChargeCodeId { get; }
+    public ChargeCodeId ChargeCodeId { get; private set; }
 
     public string? DescriptionOverride { get; private set; }
 
@@ -53,7 +59,7 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
 
     public ClientChargeRuleStatus Status { get; private set; }
 
-    public DateTimeOffset CreatedAtUtc { get; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public Money LineAmount => Money.Of(UnitPrice.Amount * Quantity, UnitPrice.CurrencyCode);
 

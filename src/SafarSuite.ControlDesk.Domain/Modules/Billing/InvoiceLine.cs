@@ -4,6 +4,12 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Billing;
 
 public sealed class InvoiceLine : ValueObject
 {
+    private InvoiceLine()
+    {
+        Description = string.Empty;
+        Amount = null!;
+    }
+
     private InvoiceLine(string description, Money amount, ChargeCodeId? chargeCodeId)
     {
         Description = description;
@@ -11,11 +17,11 @@ public sealed class InvoiceLine : ValueObject
         ChargeCodeId = chargeCodeId;
     }
 
-    public string Description { get; }
+    public string Description { get; private set; }
 
-    public Money Amount { get; }
+    public Money Amount { get; private set; }
 
-    public ChargeCodeId? ChargeCodeId { get; }
+    public ChargeCodeId? ChargeCodeId { get; private set; }
 
     public static InvoiceLine Create(string description, Money amount)
     {

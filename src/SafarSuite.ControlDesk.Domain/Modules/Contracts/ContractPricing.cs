@@ -4,6 +4,11 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Contracts;
 
 public sealed class ContractPricing : ValueObject
 {
+    private ContractPricing()
+    {
+        RecurringAmount = null!;
+    }
+
     private ContractPricing(Money recurringAmount, BillingCycle billingCycle, int billingDayOfMonth)
     {
         RecurringAmount = recurringAmount;
@@ -11,11 +16,11 @@ public sealed class ContractPricing : ValueObject
         BillingDayOfMonth = billingDayOfMonth;
     }
 
-    public Money RecurringAmount { get; }
+    public Money RecurringAmount { get; private set; }
 
-    public BillingCycle BillingCycle { get; }
+    public BillingCycle BillingCycle { get; private set; }
 
-    public int BillingDayOfMonth { get; }
+    public int BillingDayOfMonth { get; private set; }
 
     public static ContractPricing Create(Money recurringAmount, BillingCycle billingCycle, int billingDayOfMonth)
     {

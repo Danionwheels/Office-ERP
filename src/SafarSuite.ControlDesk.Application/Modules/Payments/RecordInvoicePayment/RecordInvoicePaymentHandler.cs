@@ -1,10 +1,13 @@
+using System.Text.Json;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
 using SafarSuite.ControlDesk.Domain.Modules.Billing;
+using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Domain.Modules.Payments;
 using SafarSuite.ControlDesk.Domain.SharedKernel;
 
@@ -12,10 +15,13 @@ namespace SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayme
 
 public sealed class RecordInvoicePaymentHandler
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly IInvoiceRepository _invoices;
     private readonly IPaymentRepository _payments;
     private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
     private readonly IClock _clock;
@@ -26,6 +32,7 @@ public sealed class RecordInvoicePaymentHandler
         IPaymentRepository payments,
         ILedgerAccountRepository ledgerAccounts,
         IJournalEntryRepository journalEntries,
+        ICloudOutboxMessageRepository cloudOutboxMessages,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
         IClock clock,
@@ -35,6 +42,7 @@ public sealed class RecordInvoicePaymentHandler
         _payments = payments;
         _ledgerAccounts = ledgerAccounts;
         _journalEntries = journalEntries;
+        _cloudOutboxMessages = cloudOutboxMessages;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
         _clock = clock;
@@ -159,6 +167,16 @@ public sealed class RecordInvoicePaymentHandler
 
                     await _payments.AddAsync(payment, token);
                     await _journalEntries.AddAsync(journalEntry, token);
+                    await _cloudOutboxMessages.AddAsync(
+                        CreatePaymentRecordedOutboxMessage(payment, invoice, journalEntry),
+                        token);
+
+                    if (invoice.Status == InvoiceStatus.Paid)
+                    {
+                        await _cloudOutboxMessages.AddAsync(
+                            CreateClientPaidStatusChangedOutboxMessage(payment, invoice, journalEntry),
+                            token);
+                    }
 
                     return ToResult(payment, invoice, journalEntry);
                 },
@@ -241,6 +259,64 @@ public sealed class RecordInvoicePaymentHandler
         return journalEntry;
     }
 
+    private CloudOutboxMessage CreatePaymentRecordedOutboxMessage(
+        Payment payment,
+        Invoice invoice,
+        JournalEntry journalEntry)
+    {
+        var payload = new PaymentRecordedCloudPayload(
+            "1",
+            payment.Id.Value,
+            invoice.Id.Value,
+            invoice.Number.Value,
+            invoice.ClientId.Value,
+            payment.Status.ToString(),
+            payment.Method.ToString(),
+            payment.Reference.Value,
+            payment.Amount.Amount,
+            invoice.BalanceDue.Amount,
+            payment.Amount.CurrencyCode,
+            payment.ReceivedOn,
+            journalEntry.Id.Value,
+            journalEntry.EntryDate,
+            journalEntry.Status.ToString());
+
+        return CloudOutboxMessage.Create(
+            CloudOutboxMessageId.Create(_idGenerator.NewGuid()),
+            "PaymentRecorded",
+            "Payment",
+            payment.Id.Value.ToString(),
+            JsonSerializer.Serialize(payload, JsonOptions),
+            _clock.UtcNow);
+    }
+
+    private CloudOutboxMessage CreateClientPaidStatusChangedOutboxMessage(
+        Payment payment,
+        Invoice invoice,
+        JournalEntry journalEntry)
+    {
+        var payload = new ClientPaidStatusChangedCloudPayload(
+            "1",
+            invoice.ClientId.Value,
+            invoice.Id.Value,
+            invoice.Number.Value,
+            payment.Id.Value,
+            invoice.Status.ToString(),
+            true,
+            invoice.BalanceDue.Amount,
+            invoice.CurrencyCode,
+            journalEntry.Id.Value,
+            journalEntry.EntryDate);
+
+        return CloudOutboxMessage.Create(
+            CloudOutboxMessageId.Create(_idGenerator.NewGuid()),
+            "ClientPaidStatusChanged",
+            "Client",
+            invoice.ClientId.Value.ToString(),
+            JsonSerializer.Serialize(payload, JsonOptions),
+            _clock.UtcNow);
+    }
+
     private static RecordInvoicePaymentResult ToResult(
         Payment payment,
         Invoice invoice,
@@ -266,4 +342,34 @@ public sealed class RecordInvoicePaymentHandler
                 line.Credit.Amount,
                 line.Description)).ToArray());
     }
+
+    private sealed record PaymentRecordedCloudPayload(
+        string EventVersion,
+        Guid PaymentId,
+        Guid InvoiceId,
+        string InvoiceNumber,
+        Guid ClientId,
+        string PaymentStatus,
+        string PaymentMethod,
+        string PaymentReference,
+        decimal Amount,
+        decimal InvoiceBalanceDue,
+        string CurrencyCode,
+        DateOnly ReceivedOn,
+        Guid JournalEntryId,
+        DateOnly PostingDate,
+        string JournalEntryStatus);
+
+    private sealed record ClientPaidStatusChangedCloudPayload(
+        string EventVersion,
+        Guid ClientId,
+        Guid InvoiceId,
+        string InvoiceNumber,
+        Guid PaymentId,
+        string InvoiceStatus,
+        bool IsPaid,
+        decimal BalanceDue,
+        string CurrencyCode,
+        Guid JournalEntryId,
+        DateOnly PostingDate);
 }

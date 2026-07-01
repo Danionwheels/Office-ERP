@@ -4,6 +4,14 @@ namespace SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 
 public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
 {
+    private CloudOutboxMessage()
+    {
+        MessageType = string.Empty;
+        SubjectType = string.Empty;
+        SubjectId = string.Empty;
+        PayloadJson = string.Empty;
+    }
+
     private CloudOutboxMessage(
         CloudOutboxMessageId id,
         string messageType,
@@ -21,19 +29,19 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
         Status = CloudOutboxMessageStatus.Pending;
     }
 
-    public string MessageType { get; }
+    public string MessageType { get; private set; }
 
-    public string SubjectType { get; }
+    public string SubjectType { get; private set; }
 
-    public string SubjectId { get; }
+    public string SubjectId { get; private set; }
 
-    public string PayloadJson { get; }
+    public string PayloadJson { get; private set; }
 
     public CloudOutboxMessageStatus Status { get; private set; }
 
     public int AttemptCount { get; private set; }
 
-    public DateTimeOffset OccurredAtUtc { get; }
+    public DateTimeOffset OccurredAtUtc { get; private set; }
 
     public DateTimeOffset? SentAtUtc { get; private set; }
 

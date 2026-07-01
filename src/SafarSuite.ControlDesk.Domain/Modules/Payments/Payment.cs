@@ -6,6 +6,12 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Payments;
 
 public sealed class Payment : Entity<PaymentId>
 {
+    private Payment()
+    {
+        Reference = null!;
+        Amount = null!;
+    }
+
     private Payment(
         PaymentId id,
         ClientId clientId,
@@ -27,19 +33,19 @@ public sealed class Payment : Entity<PaymentId>
         Status = method == PaymentMethod.BankTransfer ? PaymentStatus.PendingReview : PaymentStatus.Approved;
     }
 
-    public ClientId ClientId { get; }
+    public ClientId ClientId { get; private set; }
 
-    public InvoiceId InvoiceId { get; }
+    public InvoiceId InvoiceId { get; private set; }
 
-    public PaymentMethod Method { get; }
+    public PaymentMethod Method { get; private set; }
 
-    public PaymentReference Reference { get; }
+    public PaymentReference Reference { get; private set; }
 
-    public Money Amount { get; }
+    public Money Amount { get; private set; }
 
-    public DateOnly ReceivedOn { get; }
+    public DateOnly ReceivedOn { get; private set; }
 
-    public DateTimeOffset RecordedAtUtc { get; }
+    public DateTimeOffset RecordedAtUtc { get; private set; }
 
     public PaymentStatus Status { get; private set; }
 

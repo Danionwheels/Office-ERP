@@ -2,15 +2,19 @@ namespace SafarSuite.ControlDesk.Domain.SharedKernel;
 
 public sealed class DateRange : ValueObject
 {
+    private DateRange()
+    {
+    }
+
     private DateRange(DateOnly startsOn, DateOnly endsOn)
     {
         StartsOn = startsOn;
         EndsOn = endsOn;
     }
 
-    public DateOnly StartsOn { get; }
+    public DateOnly StartsOn { get; private set; }
 
-    public DateOnly EndsOn { get; }
+    public DateOnly EndsOn { get; private set; }
 
     public static DateRange Create(DateOnly startsOn, DateOnly endsOn)
     {
