@@ -141,6 +141,7 @@ Build the accounting and billing foundation in this order:
 6. Add receipt/payment allocation that updates invoice balance and posts a receipt journal entry. Done for immediately approved payment methods.
 7. Add client accounting profile and cloud outbox so invoices can post to GL and publish to SafarSuite Control Cloud reliably. Done.
 8. Add PostgreSQL persistence for payment records so receipt posting is durable end to end.
+9. Add a client statement/receivables read model so client invoices, approved payments, open balance, and related journal postings can be reviewed from one screen. Done for the basic local view.
 
 ## Implementation Progress
 
@@ -161,11 +162,15 @@ Build the accounting and billing foundation in this order:
 | Client accounting profile | Done | Link client to receivable/default currency/cloud identity and stop passing AR account manually |
 | Cloud invoice outbox | Done for local durability | Enqueue persisted `InvoiceIssued` publish message when invoice is issued |
 | Payment outbox events | Done for local durability | Enqueue persisted `PaymentRecorded` and `ClientPaidStatusChanged` messages when an approved receipt is posted |
-| Local outbox publisher | Done for development | Manual dev endpoint marks pending outbox messages sent/failed without calling the real cloud |
+| Local outbox publisher | Done for development | Manual dev endpoint builds signed envelopes and marks ready outbox messages sent/failed without calling the real cloud |
+| Control Cloud publish readiness | Basic done | Signed v1 envelope, HTTP publisher adapter, publish mode config, retry attempt timestamps, and migration are wired |
 | Local entitlement snapshots | Done for local durability | Issue persisted entitlement snapshots from paid invoices and enqueue `EntitlementSnapshotIssued` |
 | Contract-driven entitlement defaults | Done for local durability | Entitlement issue can derive paid-until, grace/offline validity, device/branch limits, and modules from the paid invoice contract |
 | Contract maintenance API | Done for backend | Create/read/list/suspend/replace active contract flows are wired against PostgreSQL |
 | Client contract UI | Basic done | Client desk lists contracts and exposes create, replace-active, and suspend actions |
+| Client billing setup UI | Basic done | Client desk exposes accounting profile, charge setup, invoice draft, and invoice issue workflows |
+| Client payment and entitlement UI | Basic done | Client desk exposes approved payment receipt plus local entitlement issue/refresh workflows |
+| Client statement/receivables view | Basic done | Client desk exposes invoices, approved payments, currency summaries, running balance, and journal postings for the selected client |
 
 Current control-spine endpoints:
 
@@ -188,8 +193,10 @@ Current control-spine endpoints:
 | `GET` | `/api/v1/entitlements/clients/{clientId}/latest-snapshot` | Read the latest local entitlement snapshot for a client |
 | `GET` | `/api/v1/accounting/journal-entries` | List journal entries with optional date/source filters |
 | `GET` | `/api/v1/accounting/ledger-accounts/{ledgerAccountId}/activity` | Show account activity with running balance |
+| `GET` | `/api/v1/clients/{clientId}/statement` | Show a client statement with invoices, payments, balances, and related journal postings |
 | `GET` | `/api/v1/control-cloud/outbox-messages` | List cloud outbox messages |
-| `POST` | `/api/v1/control-cloud/outbox-messages/publish-local` | Mark pending outbox messages sent/failed through the local development publisher |
+| `POST` | `/api/v1/control-cloud/outbox-messages/publish` | Publish ready outbox messages through the configured local or HTTP publisher |
+| `POST` | `/api/v1/control-cloud/outbox-messages/publish-local` | Compatibility alias for the local development publishing flow |
 | `PUT` | `/api/v1/survey-valuation/jobs/{surveyJobId}/invoice-lines` | Parked SurveyValuation endpoint |
 | `POST` | `/api/v1/survey-valuation/jobs/{surveyJobId}/billing-draft` | Parked SurveyValuation endpoint |
 
@@ -238,6 +245,10 @@ The contract maintenance smoke test verified create, read, list, replace-active,
 
 The client contract UI smoke test verified that the Vite client desk renders the contract panel and create/replace actions with no browser console errors.
 
+The client statement smoke test verified both an invoice-only client and a fully paid client. The invoice-only statement showed one invoice, one statement line, one journal posting, and a `3000.00 PKR` balance. The paid-client statement showed one invoice, one approved payment, two statement lines, two journal postings, and a `0.00 PKR` ending balance.
+
+The cloud-readiness smoke test applied migration `20260701090000_AddCloudOutboxPublishReadiness`, then published three ready outbox messages through `POST /api/v1/control-cloud/outbox-messages/publish?batchSize=3`. The response returned three sent messages, attempt count `1`, sent timestamps, cloud references based on the idempotency key, and HMAC envelope signatures.
+
 ## Transaction Policy
 
 Accounting-sensitive actions must be atomic.
@@ -261,10 +272,10 @@ The PostgreSQL/EF implementation now uses a real database transaction for persis
 Next accounting slice:
 
 ```text
-client billing setup UI wiring
-  -> link/create client accounting profile from the client desk
-  -> create client charge rules from the client workflow
-  -> generate and issue draft invoices from the UI
+pre-cloud boundary decision
+  -> confirm whether to scaffold SafarSuite Control Cloud next
+  -> if yes, add a receiver skeleton with signature validation and idempotency
+  -> if no, stay local and add payment review/reversal plus tax posting
   -> keep real cloud publication out of accounting transactions
 ```
 

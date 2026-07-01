@@ -35,13 +35,19 @@ client setup
 | Client charge rules | Partial | Client-specific dynamic charge rules exist |
 | Invoice draft generation | Done for basic charges | Generates draft invoice from active client charge rules |
 | Invoice issue posting | Done for basic revenue | Issues invoice and posts balanced AR/revenue journal in one transaction; AR can resolve from client accounting profile |
-| Cloud invoice outbox | Basic done | Invoice issue enqueues a pending persisted `InvoiceIssued` message, exposes an outbox read endpoint, and can be processed by the local publisher |
+| Cloud invoice outbox | Basic done | Invoice issue enqueues a pending persisted `InvoiceIssued` message, exposes an outbox read endpoint, and can be processed through signed publishing |
 | Payment outbox events | Basic done | Approved receipt posting enqueues pending persisted `PaymentRecorded` and `ClientPaidStatusChanged` messages |
-| Local outbox publisher | Basic done | Manual dev endpoint marks pending outbox messages `Sent` or `Failed` without calling the real cloud |
+| Local outbox publisher | Basic done | Manual dev endpoint builds signed envelopes and marks ready outbox messages `Sent` or `Failed` without calling the real cloud |
+| Control Cloud publish envelope | Basic done | Invoice, payment, client paid-status, and entitlement payloads are wrapped in a signed v1 envelope with an idempotency key |
+| HTTP Control Cloud publisher adapter | Contract ready | Config can switch publishing from local validation to HTTP delivery once the real cloud endpoint exists |
+| Retry-safe outbox attempts | Basic done | Outbox rows track attempt count, last attempt time, next attempt time, sent/failed state, and retry eligibility |
 | Local entitlement snapshots | Basic done | Paid invoices can issue persisted entitlement snapshots with local limits/modules and enqueue `EntitlementSnapshotIssued` |
 | Contract-driven entitlement defaults | Basic done | Paid-invoice entitlement issue can derive paid-until, grace, offline validity, device/branch limits, and modules from the invoice contract |
 | Payment posting | Done for approved payment methods | Records persisted payment, updates invoice, posts balanced cash/AR journal |
-| Accounting visibility | Partial | Journal list and ledger activity endpoints exist and read PostgreSQL-backed journal entries |
+| Client billing setup UI | Basic done | Client desk includes accounting profile, charge rules, invoice draft, and invoice issue workflow |
+| Client payment and entitlement UI | Basic done | Client desk includes approved payment receipt plus local entitlement issue/refresh workflow |
+| Accounting visibility | Partial | Journal list, ledger activity, and client statement endpoints exist and read PostgreSQL-backed invoices, payments, and journal entries |
+| Client statement/receivables view | Basic done | Client desk can reconcile invoices, approved payments, running balance, and related journal postings for the selected client |
 
 ## Correct Accounting Shape
 
@@ -96,7 +102,10 @@ Same rule for payment and entitlement events.
 9. Done: add contract-driven entitlement defaults so devices, branches, modules, paid-until, and grace rules no longer need manual request values.
 10. Done for backend: add contract maintenance API for list/read/suspend/replace active contract.
 11. Done: connect contract setup and maintenance into the client UI.
-12. Add minimal client billing setup UI for accounting profile, charge rules, invoice draft, and invoice issue.
+12. Done: add minimal client billing setup UI for accounting profile, charge rules, invoice draft, and invoice issue.
+13. Done: add a client statement/receivables view that reconciles invoices, payments, balance due, and journal postings from the client desk.
+14. Done: add cloud-readiness contracts for invoice/payment/entitlement publishing: signed payload envelope, publisher interface, retry-safe status handling, and environment configuration.
+15. Before touching real cloud service code, confirm the cloud boundary; next cloud-side slice is a SafarSuite Control Cloud receiver skeleton with signature validation, idempotency handling, and persisted receipt status.
 
 ## Guardrails
 

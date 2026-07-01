@@ -474,6 +474,14 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasColumnType("character varying(128)")
                         .HasColumnName("message_type");
 
+                    b.Property<DateTimeOffset?>("LastAttemptedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_attempted_at_utc");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at_utc");
+
                     b.Property<DateTimeOffset>("OccurredAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("occurred_at_utc");
@@ -509,6 +517,9 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
 
                     b.HasIndex("Status", "MessageType", "OccurredAtUtc")
                         .HasDatabaseName("ix_cloud_outbox_messages_status_type_occurred");
+
+                    b.HasIndex("Status", "NextAttemptAtUtc", "AttemptCount")
+                        .HasDatabaseName("ix_cloud_outbox_messages_publish_ready");
 
                     b.ToTable("cloud_outbox_messages", "control");
                 });

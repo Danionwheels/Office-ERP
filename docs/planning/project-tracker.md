@@ -43,13 +43,17 @@ SafarSuite Control Desk is a client maintenance system first. Accounting, billin
 | Accounting persistence | Accounting/Persistence | Done | PostgreSQL slice persists ledger accounts, journal entries, and journal lines |
 | Billing/Profile/Outbox persistence | Billing/Clients/ControlCloud/Persistence | Done | PostgreSQL slice persists client accounting profiles, charge codes, client charge rules, invoices, invoice lines, and cloud outbox messages |
 | Payment persistence | Payments/Persistence | Done | PostgreSQL slice persists approved invoice payments and keeps payment, invoice balance/status, and receipt journal in one database transaction |
+| Client billing setup UI | Billing/Frontend | Basic done | Client desk can maintain accounting profile, charge setup, invoice draft, and invoice issue flow |
+| Client payment and entitlement UI | Payments/Entitlements/Frontend | Basic done | Client desk can record approved invoice payment and issue/refresh local entitlement snapshots |
+| Client statement/receivables UI | Clients/Billing/Accounting/Frontend | Basic done | Client desk can show invoices, payments, running receivable balance, and related journal postings |
 | Accounting/GL correction sweep | Accounting/Billing | Done | Invoice creation split clarified in `accounting-gl-foundation-sweep.md` |
-| Accounting/Billing foundation | Accounting/Billing | In Progress | Dynamic charge setup, invoice draft generation, profile-assisted invoice issue GL posting, approved invoice payment posting, local outbox publishing, and basic journal/ledger read models are wired through API with PostgreSQL persistence; review, reversals, tax, real cloud publishing, and reports are still pending |
+| Accounting/Billing foundation | Accounting/Billing | In Progress | Dynamic charge setup, invoice draft generation, profile-assisted invoice issue GL posting, approved invoice payment posting, signed local outbox publishing, basic journal/ledger read models, and client statement visibility are wired through API with PostgreSQL persistence; review, reversals, tax, real cloud receiver work, and reports are still pending |
 | Client accounting profile | Clients/Accounting | Done | Client can be linked to AR/default currency/cloud identity; invoice issue can resolve AR from the profile |
-| Cloud invoice outbox | Billing/ControlCloud | Done for local loop | Invoice issue creates persisted `InvoiceIssued` messages, and the local publisher can mark pending outbox messages sent |
+| Cloud invoice outbox | Billing/ControlCloud | Done for local loop | Invoice issue creates persisted `InvoiceIssued` messages, and the local publisher can mark signed pending outbox messages sent |
 | Payment outbox events | Payments/ControlCloud | Done | Approved receipt posting now enqueues persisted `PaymentRecorded` and `ClientPaidStatusChanged` messages in the same payment transaction |
-| Local outbox publisher | ControlCloud | Done | Manual dev endpoint marks pending outbox messages sent/failed without calling SafarSuite Control Cloud |
-| Client entitlement chain | Entitlements/ControlCloud | In Progress | Paid invoices can now issue persisted local entitlement snapshots from active contract defaults and enqueue `EntitlementSnapshotIssued`; signing and real cloud publishing remain pending |
+| Local outbox publisher | ControlCloud | Done | Manual dev endpoint builds signed envelopes and marks ready outbox messages sent/failed without calling SafarSuite Control Cloud |
+| Control Cloud publish readiness | ControlCloud | Basic done | Signed payload envelope, local/HTTP publisher adapter, retry attempt metadata, and config-driven publish mode are wired |
+| Client entitlement chain | Entitlements/ControlCloud | In Progress | Paid invoices can now issue persisted local entitlement snapshots from active contract defaults and enqueue signed `EntitlementSnapshotIssued` publish messages; real cloud receiver work remains pending |
 
 ## Parking Lot
 

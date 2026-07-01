@@ -12,11 +12,13 @@ public sealed record CloudOutboxMessageResponse(
     string Status,
     int AttemptCount,
     DateTimeOffset OccurredAtUtc,
+    DateTimeOffset? LastAttemptedAtUtc,
+    DateTimeOffset? NextAttemptAtUtc,
     DateTimeOffset? SentAtUtc,
     DateTimeOffset? FailedAtUtc,
     string? FailureReason);
 
-public sealed record PublishLocalCloudOutboxMessagesResponse(
+public sealed record PublishCloudOutboxMessagesResponse(
     int RequestedBatchSize,
     int PublishedCount,
     int FailedCount,
@@ -29,6 +31,10 @@ public sealed record PublishedCloudOutboxMessageResponse(
     string SubjectId,
     string Status,
     int AttemptCount,
+    DateTimeOffset? LastAttemptedAtUtc,
+    DateTimeOffset? NextAttemptAtUtc,
     DateTimeOffset? SentAtUtc,
     DateTimeOffset? FailedAtUtc,
-    string? FailureReason);
+    string? FailureReason,
+    string? CloudReference,
+    string? EnvelopeSignature);

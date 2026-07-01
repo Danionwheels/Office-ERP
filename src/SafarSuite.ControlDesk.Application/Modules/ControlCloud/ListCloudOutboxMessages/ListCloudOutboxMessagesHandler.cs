@@ -49,6 +49,8 @@ public sealed class ListCloudOutboxMessagesHandler
             message.Status.ToString(),
             message.AttemptCount,
             message.OccurredAtUtc,
+            message.LastAttemptedAtUtc,
+            message.NextAttemptAtUtc,
             message.SentAtUtc,
             message.FailedAtUtc,
             message.FailureReason);

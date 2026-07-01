@@ -17,6 +17,7 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientAccounti
 using SafarSuite.ControlDesk.Application.Modules.Clients.CreateClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientAccountingProfile;
+using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientContacts;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientSupportNotes;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClients;
@@ -53,7 +54,11 @@ public static class ControlDeskServiceRegistration
     {
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IIdGenerator, GuidIdGenerator>();
-        services.AddSingleton<ICloudOutboxPublisher, LocalCloudOutboxPublisher>();
+        services.Configure<ControlCloudPublisherOptions>(
+            configuration.GetSection(ControlCloudPublisherOptions.SectionName));
+        services.AddSingleton<ControlCloudEnvelopeBuilder>();
+        services.AddSingleton<ICloudOutboxPublishPolicy, ConfiguredCloudOutboxPublishPolicy>();
+        AddControlCloudPublisher(services, configuration);
 
         AddPersistence(services, configuration);
 
@@ -74,6 +79,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<ConfigureClientAccountingProfileValidator>();
         services.AddScoped<ConfigureClientAccountingProfileHandler>();
         services.AddScoped<GetClientAccountingProfileHandler>();
+        services.AddScoped<GetClientStatementHandler>();
         services.AddScoped<CreateClientContractValidator>();
         services.AddScoped<CreateClientContractHandler>();
         services.AddScoped<GetClientContractHandler>();
@@ -103,6 +109,28 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<RecordInvoicePaymentHandler>();
 
         return services;
+    }
+
+    private static void AddControlCloudPublisher(IServiceCollection services, IConfiguration configuration)
+    {
+        var mode = configuration.GetValue<string>($"{ControlCloudPublisherOptions.SectionName}:Mode") ?? "Local";
+
+        if (mode.Equals("Local", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<ICloudOutboxPublisher, LocalCloudOutboxPublisher>();
+
+            return;
+        }
+
+        if (mode.Equals("Http", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddHttpClient<ICloudOutboxPublisher, HttpControlCloudOutboxPublisher>();
+
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported ControlCloud:Publisher:Mode '{mode}'. Use 'Local' or 'Http'.");
     }
 
     private static void AddPersistence(IServiceCollection services, IConfiguration configuration)

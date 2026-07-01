@@ -747,6 +747,7 @@ td {
 .module-window-body .client-detail-header,
 .module-window-body .client-contracts-zone,
 .module-window-body .client-billing-zone,
+.module-window-body .payment-workspace,
 .module-window-body .payment-receipt-panel,
 .module-window-body .entitlement-panel {
   margin-top: 0;
@@ -923,6 +924,7 @@ td {
 .dashboard-tab-panel .client-detail-header,
 .dashboard-tab-panel .client-contracts-zone,
 .dashboard-tab-panel .client-billing-zone,
+.dashboard-tab-panel .payment-workspace,
 .dashboard-tab-panel .payment-receipt-panel,
 .dashboard-tab-panel .entitlement-panel {
   margin-top: 0;
@@ -1704,8 +1706,20 @@ td {
   display: none !important;
 }
 
+.payment-workspace {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: start;
+  margin-top: 0;
+}
+
+.payment-workspace > .billing-light-panel {
+  grid-column: 1 / -1;
+}
+
 .payment-receipt-panel {
-  margin-top: 10px;
+  margin-top: 0;
 }
 
 .entitlement-panel {
@@ -1869,6 +1883,25 @@ td {
   grid-column: span 3;
 }
 
+.payment-readiness-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid #e3e7eb;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.payment-receipt-heading,
+.payment-journal-table {
+  margin-top: 12px;
+}
+
+.payment-invoice-facts {
+  margin-bottom: 12px;
+}
+
 .payment-result-facts {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1962,6 +1995,140 @@ td {
   border-color: #a9afb6;
   color: #59606a;
   background: #f7f8f9;
+}
+
+.statement-workspace {
+  display: grid;
+  gap: 10px;
+}
+
+.statement-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.statement-header span,
+.statement-summary-card span {
+  display: block;
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.statement-header h2 {
+  margin: 0;
+  color: #20252b;
+  font-size: 18px;
+}
+
+.statement-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.statement-summary-card {
+  display: grid;
+  gap: 8px;
+  background: #f7f8f9;
+}
+
+.statement-summary-card strong {
+  color: #20252b;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.statement-summary-card dl,
+.statement-card dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.statement-summary-card dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.statement-summary-card dl div,
+.statement-card dl div {
+  min-width: 0;
+  border-top: 1px solid #c2c7cd;
+  padding-top: 6px;
+}
+
+.statement-summary-card dt,
+.statement-card dt {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.statement-summary-card dd,
+.statement-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-weight: 650;
+}
+
+.statement-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.statement-card-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.statement-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #a9afb6;
+  border-radius: 5px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.statement-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.statement-card header strong {
+  overflow-wrap: anywhere;
+  color: #20252b;
+}
+
+.statement-card dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.statement-table th:nth-child(1) {
+  width: 118px;
+}
+
+.statement-table th:nth-child(2) {
+  width: 92px;
+}
+
+.statement-table th:nth-child(5),
+.statement-table th:nth-child(6),
+.statement-table th:nth-child(7) {
+  width: 128px;
+}
+
+.statement-journal-panel,
+.statement-lines-panel {
+  overflow-x: auto;
 }
 
 .contact-primary-field {
@@ -2142,6 +2309,8 @@ td {
   .profile-secondary-grid,
   .client-contracts-zone,
   .client-billing-zone,
+  .statement-detail-grid,
+  .statement-summary-grid,
   .client-contacts-zone,
   .client-notes-zone {
     grid-template-columns: 1fr;
@@ -2164,7 +2333,8 @@ td {
   .billing-form-grid.three,
   .billing-form-grid.charge-code,
   .payment-result-facts,
-  .entitlement-facts {
+  .entitlement-facts,
+  .statement-summary-card dl {
     grid-template-columns: repeat(2, minmax(140px, 1fr));
   }
 
@@ -2267,6 +2437,8 @@ td {
   .payment-form-grid.receipt,
   .payment-result-facts,
   .entitlement-facts,
+  .statement-summary-card dl,
+  .statement-card dl,
   .contact-item dl div,
   .client-facts div {
     grid-template-columns: 1fr;

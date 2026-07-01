@@ -50,12 +50,14 @@ public sealed class InMemoryCloudOutboxMessageRepository : ICloudOutboxMessageRe
         return Task.FromResult<IReadOnlyCollection<CloudOutboxMessage>>(orderedMessages);
     }
 
-    public Task<IReadOnlyCollection<CloudOutboxMessage>> ListPendingForPublishingAsync(
+    public Task<IReadOnlyCollection<CloudOutboxMessage>> ListReadyForPublishingAsync(
         int batchSize,
+        DateTimeOffset readyAtUtc,
+        int maximumAttemptCount,
         CancellationToken cancellationToken = default)
     {
         var messages = _messagesById.Values
-            .Where(message => message.Status == CloudOutboxMessageStatus.Pending)
+            .Where(message => message.IsReadyForPublishing(readyAtUtc, maximumAttemptCount))
             .OrderBy(message => message.OccurredAtUtc)
             .ThenBy(message => message.Id.Value)
             .Take(batchSize)

@@ -52,12 +52,20 @@ public sealed class EfCloudOutboxMessageRepository : ICloudOutboxMessageReposito
             .ToArrayAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<CloudOutboxMessage>> ListPendingForPublishingAsync(
+    public async Task<IReadOnlyCollection<CloudOutboxMessage>> ListReadyForPublishingAsync(
         int batchSize,
+        DateTimeOffset readyAtUtc,
+        int maximumAttemptCount,
         CancellationToken cancellationToken = default)
     {
         return await _dbContext.CloudOutboxMessages
-            .Where(message => message.Status == CloudOutboxMessageStatus.Pending)
+            .Where(message =>
+                message.Status == CloudOutboxMessageStatus.Pending
+                || (message.Status == CloudOutboxMessageStatus.Failed
+                    && message.AttemptCount < maximumAttemptCount
+                    && message.NextAttemptAtUtc != null
+                    && message.NextAttemptAtUtc <= readyAtUtc))
+            .Where(message => message.AttemptCount < maximumAttemptCount)
             .OrderBy(message => message.OccurredAtUtc)
             .ThenBy(message => message.Id)
             .Take(batchSize)

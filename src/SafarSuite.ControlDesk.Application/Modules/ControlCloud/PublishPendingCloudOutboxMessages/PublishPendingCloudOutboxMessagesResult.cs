@@ -13,6 +13,10 @@ public sealed record PublishedCloudOutboxMessageResult(
     string SubjectId,
     string Status,
     int AttemptCount,
+    DateTimeOffset? LastAttemptedAtUtc,
+    DateTimeOffset? NextAttemptAtUtc,
     DateTimeOffset? SentAtUtc,
     DateTimeOffset? FailedAtUtc,
-    string? FailureReason);
+    string? FailureReason,
+    string? CloudReference,
+    string? EnvelopeSignature);

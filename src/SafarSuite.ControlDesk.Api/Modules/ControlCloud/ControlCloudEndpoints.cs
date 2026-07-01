@@ -14,7 +14,8 @@ public static class ControlCloudEndpoints
             .WithTags("Control Cloud");
 
         group.MapGet("/outbox-messages", ListOutboxMessagesAsync);
-        group.MapPost("/outbox-messages/publish-local", PublishLocalOutboxMessagesAsync);
+        group.MapPost("/outbox-messages/publish", PublishOutboxMessagesAsync);
+        group.MapPost("/outbox-messages/publish-local", PublishOutboxMessagesAsync);
 
         return endpoints;
     }
@@ -44,6 +45,8 @@ public static class ControlCloudEndpoints
                 message.Status,
                 message.AttemptCount,
                 message.OccurredAtUtc,
+                message.LastAttemptedAtUtc,
+                message.NextAttemptAtUtc,
                 message.SentAtUtc,
                 message.FailedAtUtc,
                 message.FailureReason)).ToArray());
@@ -51,7 +54,7 @@ public static class ControlCloudEndpoints
         return Results.Ok(response);
     }
 
-    private static async Task<IResult> PublishLocalOutboxMessagesAsync(
+    private static async Task<IResult> PublishOutboxMessagesAsync(
         int? batchSize,
         PublishPendingCloudOutboxMessagesHandler handler,
         CancellationToken cancellationToken)
@@ -65,7 +68,7 @@ public static class ControlCloudEndpoints
             return ApiResultMapper.ToErrorResult(result.Errors);
         }
 
-        var response = new PublishLocalCloudOutboxMessagesResponse(
+        var response = new PublishCloudOutboxMessagesResponse(
             result.Value.RequestedBatchSize,
             result.Value.PublishedCount,
             result.Value.FailedCount,
@@ -76,9 +79,13 @@ public static class ControlCloudEndpoints
                 message.SubjectId,
                 message.Status,
                 message.AttemptCount,
+                message.LastAttemptedAtUtc,
+                message.NextAttemptAtUtc,
                 message.SentAtUtc,
                 message.FailedAtUtc,
-                message.FailureReason)).ToArray());
+                message.FailureReason,
+                message.CloudReference,
+                message.EnvelopeSignature)).ToArray());
 
         return Results.Ok(response);
     }

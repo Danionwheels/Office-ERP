@@ -43,6 +43,10 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
 
     public DateTimeOffset OccurredAtUtc { get; private set; }
 
+    public DateTimeOffset? LastAttemptedAtUtc { get; private set; }
+
+    public DateTimeOffset? NextAttemptAtUtc { get; private set; }
+
     public DateTimeOffset? SentAtUtc { get; private set; }
 
     public DateTimeOffset? FailedAtUtc { get; private set; }
@@ -68,23 +72,57 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
 
     public void MarkSent(DateTimeOffset sentAtUtc)
     {
+        RegisterPublishAttempt(sentAtUtc);
         Status = CloudOutboxMessageStatus.Sent;
         SentAtUtc = sentAtUtc;
         FailedAtUtc = null;
+        NextAttemptAtUtc = null;
         FailureReason = null;
     }
 
-    public void MarkFailed(string reason, DateTimeOffset failedAtUtc)
+    public void MarkFailed(string reason, DateTimeOffset failedAtUtc, DateTimeOffset? nextAttemptAtUtc)
     {
         if (string.IsNullOrWhiteSpace(reason))
         {
             throw new ArgumentException("Failure reason is required.", nameof(reason));
         }
 
+        if (nextAttemptAtUtc.HasValue && nextAttemptAtUtc.Value <= failedAtUtc)
+        {
+            throw new ArgumentException(
+                "Next attempt time must be after the failure time.",
+                nameof(nextAttemptAtUtc));
+        }
+
+        RegisterPublishAttempt(failedAtUtc);
         Status = CloudOutboxMessageStatus.Failed;
         FailedAtUtc = failedAtUtc;
+        NextAttemptAtUtc = nextAttemptAtUtc;
         FailureReason = reason.Trim();
+    }
+
+    public bool IsReadyForPublishing(DateTimeOffset readyAtUtc, int maximumAttemptCount)
+    {
+        if (maximumAttemptCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumAttemptCount));
+        }
+
+        if (Status == CloudOutboxMessageStatus.Pending)
+        {
+            return AttemptCount < maximumAttemptCount;
+        }
+
+        return Status == CloudOutboxMessageStatus.Failed
+            && AttemptCount < maximumAttemptCount
+            && NextAttemptAtUtc.HasValue
+            && NextAttemptAtUtc.Value <= readyAtUtc;
+    }
+
+    private void RegisterPublishAttempt(DateTimeOffset attemptedAtUtc)
+    {
         AttemptCount += 1;
+        LastAttemptedAtUtc = attemptedAtUtc;
     }
 
     private static string CleanRequiredText(string value, string parameterName)

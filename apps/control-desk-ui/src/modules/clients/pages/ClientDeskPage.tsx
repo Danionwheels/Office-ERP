@@ -7,6 +7,7 @@ import {
   KeyRound,
   LayoutDashboard,
   ReceiptText,
+  ScrollText,
   UserRound,
   Users,
   type LucideIcon
@@ -59,6 +60,9 @@ import type {
   RecordedInvoicePayment,
   RecordInvoicePaymentInput
 } from "../../payments/types/paymentTypes";
+import { getClientStatement } from "../../statements/api/statementApi";
+import { ClientStatementPanel } from "../../statements/components/ClientStatementPanel";
+import type { ClientStatement } from "../../statements/types/statementTypes";
 import {
   activateClient,
   addClientContact,
@@ -117,7 +121,8 @@ type DashboardModule =
   | "contracts"
   | "billing"
   | "payments"
-  | "entitlements";
+  | "entitlements"
+  | "statement";
 
 export function ClientDeskPage() {
   const [clients, setClients] = useState<ClientLookup[]>([]);
@@ -169,6 +174,7 @@ export function ClientDeskPage() {
   const [latestEntitlementSnapshotMissing, setLatestEntitlementSnapshotMissing] = useState(false);
   const [issuedEntitlementSnapshot, setIssuedEntitlementSnapshot] =
     useState<IssuedEntitlementSnapshot | null>(null);
+  const [clientStatement, setClientStatement] = useState<ClientStatement | null>(null);
   const [activeDashboardModule, setActiveDashboardModule] =
     useState<DashboardModule>("dashboard");
   const [isBusy, setIsBusy] = useState(false);
@@ -207,6 +213,7 @@ export function ClientDeskPage() {
       setAccountingProfile(null);
       setAccountingProfileMissing(false);
       setContracts([]);
+      setClientStatement(null);
       resetBillingForms();
       return;
     }
@@ -217,18 +224,29 @@ export function ClientDeskPage() {
 
   async function loadClient(clientId: string) {
     await runClientAction(async () => {
-      const [client, clientContracts] = await Promise.all([
+      const [client, clientContracts, statement] = await Promise.all([
         getClient(clientId),
-        listClientContracts(clientId)
+        listClientContracts(clientId),
+        getClientStatement(clientId)
       ]);
 
       applyLoadedClient(client);
       setContracts(clientContracts);
+      setClientStatement(statement);
       setContractForm(createDefaultContractForm(client.code));
       applyBillingDefaults(client, getActiveContract(clientContracts));
       await loadAccountingProfile(clientId);
       await loadLatestEntitlementSnapshot(clientId);
     });
+  }
+
+  async function refreshClientStatement(clientId = selectedClient?.clientId) {
+    if (clientId === undefined) {
+      return;
+    }
+
+    const statement = await getClientStatement(clientId);
+    setClientStatement(statement);
   }
 
   async function loadAccountingProfile(clientId: string) {
@@ -502,6 +520,7 @@ export function ClientDeskPage() {
         issueInvoiceForm.accountsReceivableAccountId
       ));
       setRecordedPayment(null);
+      await refreshClientStatement(selectedClient.clientId);
       setMessage("Invoice draft generated.");
     });
   }
@@ -525,6 +544,7 @@ export function ClientDeskPage() {
         issueInvoiceForm.accountsReceivableAccountId
       ));
       setRecordedPayment(null);
+      await refreshClientStatement(selectedClient?.clientId);
       setMessage("Invoice issued.");
     });
   }
@@ -548,7 +568,19 @@ export function ClientDeskPage() {
         reference: defaultReceiptReference(selectedClient?.code, new Date())
       }));
       setIssuedEntitlementSnapshot(null);
+      await refreshClientStatement(selectedClient?.clientId);
       setMessage("Payment recorded.");
+    });
+  }
+
+  async function handleRefreshClientStatement() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      await refreshClientStatement(selectedClient.clientId);
+      setMessage("Statement refreshed.");
     });
   }
 
@@ -641,6 +673,7 @@ export function ClientDeskPage() {
     setLatestEntitlementSnapshot(null);
     setLatestEntitlementSnapshotMissing(false);
     setIssuedEntitlementSnapshot(null);
+    setClientStatement(null);
   }
 
   function applyBillingContractDefaults(
@@ -677,7 +710,8 @@ export function ClientDeskPage() {
     invoiceDraft,
     recordedPayment,
     issuedEntitlementSnapshot,
-    latestEntitlementSnapshot
+    latestEntitlementSnapshot,
+    clientStatement
   });
   const dashboardNavigation = getDashboardNavigation(dashboardMetrics, clients.length, selectedClient);
   const activeNavigationItem = getDashboardNavigationItem(
@@ -910,6 +944,15 @@ export function ClientDeskPage() {
                 onRefreshLatest={handleRefreshLatestEntitlementSnapshot}
               />
             )}
+
+            {activeDashboardModule === "statement" && (
+              <ClientStatementPanel
+                client={selectedClient}
+                statement={clientStatement}
+                isBusy={isBusy || selectedClient === null}
+                onRefresh={handleRefreshClientStatement}
+              />
+            )}
           </div>
         </section>
       </main>
@@ -942,6 +985,7 @@ type DashboardMetricInput = {
   recordedPayment: RecordedInvoicePayment | null;
   issuedEntitlementSnapshot: IssuedEntitlementSnapshot | null;
   latestEntitlementSnapshot: EntitlementSnapshot | null;
+  clientStatement: ClientStatement | null;
 };
 
 function getDashboardMetrics({
@@ -950,9 +994,11 @@ function getDashboardMetrics({
   invoiceDraft,
   recordedPayment,
   issuedEntitlementSnapshot,
-  latestEntitlementSnapshot
+  latestEntitlementSnapshot,
+  clientStatement
 }: DashboardMetricInput): DashboardMetric[] {
   const entitlementSnapshot = issuedEntitlementSnapshot ?? latestEntitlementSnapshot;
+  const primaryStatementSummary = clientStatement?.currencySummaries[0] ?? null;
 
   return [
     {
@@ -996,6 +1042,16 @@ function getDashboardMetrics({
       tone: entitlementSnapshot?.status.toLowerCase() === "active" ? "ready" : "neutral",
       Icon: KeyRound,
       module: "entitlements"
+    },
+    {
+      label: "Statement",
+      value: primaryStatementSummary === null
+        ? "No balance"
+        : `${primaryStatementSummary.balanceDue.toFixed(2)} ${primaryStatementSummary.currencyCode}`,
+      summary: "Invoices, receipts, and GL trail",
+      tone: primaryStatementSummary !== null && primaryStatementSummary.balanceDue === 0 ? "ready" : "neutral",
+      Icon: ScrollText,
+      module: "statement"
     }
   ];
 }
@@ -1010,6 +1066,7 @@ function getDashboardNavigation(
   const invoiceMetric = findDashboardMetric(metrics, "Invoice");
   const paymentMetric = findDashboardMetric(metrics, "Payment");
   const entitlementMetric = findDashboardMetric(metrics, "Entitlement");
+  const statementMetric = findDashboardMetric(metrics, "Statement");
   const selectedClientStatus = selectedClient?.status ?? "No client";
 
   return [
@@ -1068,6 +1125,14 @@ function getDashboardNavigation(
       description: "Issue and refresh the latest cloud entitlement snapshot.",
       tone: entitlementMetric.tone,
       Icon: KeyRound
+    },
+    {
+      module: "statement",
+      label: "Statement",
+      summary: statementMetric.value,
+      description: "Client invoices, payments, receivable balance, and journal postings.",
+      tone: statementMetric.tone,
+      Icon: ScrollText
     }
   ];
 }

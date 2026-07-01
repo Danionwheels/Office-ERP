@@ -13,7 +13,9 @@ public interface ICloudOutboxMessageRepository
         string? messageType = null,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyCollection<CloudOutboxMessage>> ListPendingForPublishingAsync(
+    Task<IReadOnlyCollection<CloudOutboxMessage>> ListReadyForPublishingAsync(
         int batchSize,
+        DateTimeOffset readyAtUtc,
+        int maximumAttemptCount,
         CancellationToken cancellationToken = default);
 }

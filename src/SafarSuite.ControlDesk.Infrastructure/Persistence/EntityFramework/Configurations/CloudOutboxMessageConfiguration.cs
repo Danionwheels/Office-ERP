@@ -53,6 +53,12 @@ internal sealed class CloudOutboxMessageConfiguration : IEntityTypeConfiguration
             .HasColumnName("occurred_at_utc")
             .IsRequired();
 
+        builder.Property(message => message.LastAttemptedAtUtc)
+            .HasColumnName("last_attempted_at_utc");
+
+        builder.Property(message => message.NextAttemptAtUtc)
+            .HasColumnName("next_attempt_at_utc");
+
         builder.Property(message => message.SentAtUtc)
             .HasColumnName("sent_at_utc");
 
@@ -65,5 +71,8 @@ internal sealed class CloudOutboxMessageConfiguration : IEntityTypeConfiguration
 
         builder.HasIndex(message => new { message.Status, message.MessageType, message.OccurredAtUtc })
             .HasDatabaseName("ix_cloud_outbox_messages_status_type_occurred");
+
+        builder.HasIndex(message => new { message.Status, message.NextAttemptAtUtc, message.AttemptCount })
+            .HasDatabaseName("ix_cloud_outbox_messages_publish_ready");
     }
 }

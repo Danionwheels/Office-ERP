@@ -12,6 +12,8 @@ public sealed record CloudOutboxMessageSummaryResult(
     string Status,
     int AttemptCount,
     DateTimeOffset OccurredAtUtc,
+    DateTimeOffset? LastAttemptedAtUtc,
+    DateTimeOffset? NextAttemptAtUtc,
     DateTimeOffset? SentAtUtc,
     DateTimeOffset? FailedAtUtc,
     string? FailureReason);

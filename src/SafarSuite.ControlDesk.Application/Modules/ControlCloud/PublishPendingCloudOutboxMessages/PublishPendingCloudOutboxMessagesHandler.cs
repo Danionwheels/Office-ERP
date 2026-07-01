@@ -11,17 +11,20 @@ public sealed class PublishPendingCloudOutboxMessagesHandler
 
     private readonly ICloudOutboxMessageRepository _messages;
     private readonly ICloudOutboxPublisher _publisher;
+    private readonly ICloudOutboxPublishPolicy _publishPolicy;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClock _clock;
 
     public PublishPendingCloudOutboxMessagesHandler(
         ICloudOutboxMessageRepository messages,
         ICloudOutboxPublisher publisher,
+        ICloudOutboxPublishPolicy publishPolicy,
         IUnitOfWork unitOfWork,
         IClock clock)
     {
         _messages = messages;
         _publisher = publisher;
+        _publishPolicy = publishPolicy;
         _unitOfWork = unitOfWork;
         _clock = clock;
     }
@@ -39,35 +42,40 @@ public sealed class PublishPendingCloudOutboxMessagesHandler
 
         try
         {
-            var result = await _unitOfWork.ExecuteInTransactionAsync(
-                async token =>
-                {
-                    var messages = await _messages.ListPendingForPublishingAsync(command.BatchSize, token);
-                    var publishedMessages = new List<PublishedCloudOutboxMessageResult>(messages.Count);
-
-                    foreach (var message in messages)
-                    {
-                        var publishResult = await _publisher.PublishAsync(message, token);
-
-                        if (publishResult.IsSuccess)
-                        {
-                            message.MarkSent(_clock.UtcNow);
-                        }
-                        else
-                        {
-                            message.MarkFailed(publishResult.FailureReason!, _clock.UtcNow);
-                        }
-
-                        publishedMessages.Add(ToResult(message));
-                    }
-
-                    return new PublishPendingCloudOutboxMessagesResult(
-                        command.BatchSize,
-                        publishedMessages.Count(message => message.Status == CloudOutboxMessageStatus.Sent.ToString()),
-                        publishedMessages.Count(message => message.Status == CloudOutboxMessageStatus.Failed.ToString()),
-                        publishedMessages);
-                },
+            var messages = await _messages.ListReadyForPublishingAsync(
+                command.BatchSize,
+                _clock.UtcNow,
+                _publishPolicy.MaximumAttemptCount,
                 cancellationToken);
+
+            var publishedMessages = new List<PublishedCloudOutboxMessageResult>(messages.Count);
+
+            foreach (var message in messages)
+            {
+                var publishResult = await _publisher.PublishAsync(message, cancellationToken);
+                var completedAtUtc = _clock.UtcNow;
+
+                if (publishResult.IsSuccess)
+                {
+                    message.MarkSent(completedAtUtc);
+                }
+                else
+                {
+                    message.MarkFailed(
+                        publishResult.FailureReason!,
+                        completedAtUtc,
+                        ResolveNextAttemptAtUtc(message, publishResult, completedAtUtc));
+                }
+
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                publishedMessages.Add(ToResult(message, publishResult));
+            }
+
+            var result = new PublishPendingCloudOutboxMessagesResult(
+                command.BatchSize,
+                publishedMessages.Count(message => message.Status == CloudOutboxMessageStatus.Sent.ToString()),
+                publishedMessages.Count(message => message.Status == CloudOutboxMessageStatus.Failed.ToString()),
+                publishedMessages);
 
             return Result<PublishPendingCloudOutboxMessagesResult>.Success(result);
         }
@@ -79,7 +87,22 @@ public sealed class PublishPendingCloudOutboxMessagesHandler
         }
     }
 
-    private static PublishedCloudOutboxMessageResult ToResult(CloudOutboxMessage message)
+    private DateTimeOffset? ResolveNextAttemptAtUtc(
+        CloudOutboxMessage message,
+        CloudOutboxPublishResult publishResult,
+        DateTimeOffset failedAtUtc)
+    {
+        if (!publishResult.ShouldRetry || message.AttemptCount + 1 >= _publishPolicy.MaximumAttemptCount)
+        {
+            return null;
+        }
+
+        return failedAtUtc.Add(_publishPolicy.RetryDelay);
+    }
+
+    private static PublishedCloudOutboxMessageResult ToResult(
+        CloudOutboxMessage message,
+        CloudOutboxPublishResult publishResult)
     {
         return new PublishedCloudOutboxMessageResult(
             message.Id.Value,
@@ -88,8 +111,12 @@ public sealed class PublishPendingCloudOutboxMessagesHandler
             message.SubjectId,
             message.Status.ToString(),
             message.AttemptCount,
+            message.LastAttemptedAtUtc,
+            message.NextAttemptAtUtc,
             message.SentAtUtc,
             message.FailedAtUtc,
-            message.FailureReason);
+            message.FailureReason,
+            publishResult.CloudReference,
+            publishResult.EnvelopeSignature);
     }
 }

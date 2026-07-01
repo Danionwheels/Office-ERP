@@ -7,6 +7,7 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientAccounti
 using SafarSuite.ControlDesk.Application.Modules.Clients.CreateClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientAccountingProfile;
+using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientContacts;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientSupportNotes;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClients;
@@ -36,6 +37,7 @@ public static class ClientEndpoints
         group.MapGet("/{clientId:guid}/support-notes", ListSupportNotesAsync);
         group.MapPut("/{clientId:guid}/accounting-profile", ConfigureAccountingProfileAsync);
         group.MapGet("/{clientId:guid}/accounting-profile", GetAccountingProfileAsync);
+        group.MapGet("/{clientId:guid}/statement", GetStatementAsync);
 
         return endpoints;
     }
@@ -284,6 +286,84 @@ public static class ClientEndpoints
             result.Value.CloudCustomerId,
             result.Value.CreatedAtUtc,
             result.Value.UpdatedAtUtc));
+    }
+
+    private static async Task<IResult> GetStatementAsync(
+        Guid clientId,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        GetClientStatementHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetClientStatementQuery(clientId, fromDate, toDate),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ClientStatementResponse(
+            result.Value.ClientId,
+            result.Value.FromDate,
+            result.Value.ToDate,
+            result.Value.CurrencySummaries.Select(summary => new ClientStatementCurrencySummaryResponse(
+                summary.CurrencyCode,
+                summary.TotalInvoiced,
+                summary.TotalPaid,
+                summary.BalanceDue,
+                summary.InvoiceCount,
+                summary.OpenInvoiceCount)).ToArray(),
+            result.Value.Invoices.Select(invoice => new ClientStatementInvoiceResponse(
+                invoice.InvoiceId,
+                invoice.ContractId,
+                invoice.InvoiceNumber,
+                invoice.IssueDate,
+                invoice.DueDate,
+                invoice.Status,
+                invoice.TotalAmount,
+                invoice.AmountPaid,
+                invoice.BalanceDue,
+                invoice.CurrencyCode,
+                invoice.JournalEntryId)).ToArray(),
+            result.Value.Payments.Select(payment => new ClientStatementPaymentResponse(
+                payment.PaymentId,
+                payment.InvoiceId,
+                payment.Reference,
+                payment.Method,
+                payment.Status,
+                payment.Amount,
+                payment.CurrencyCode,
+                payment.ReceivedOn,
+                payment.JournalEntryId)).ToArray(),
+            result.Value.Lines.Select(line => new ClientStatementLineResponse(
+                line.EntryDate,
+                line.DocumentType,
+                line.Reference,
+                line.InvoiceId,
+                line.PaymentId,
+                line.Description,
+                line.Debit,
+                line.Credit,
+                line.RunningBalance,
+                line.CurrencyCode,
+                line.JournalEntryId)).ToArray(),
+            result.Value.JournalPostings.Select(posting => new ClientStatementJournalPostingResponse(
+                posting.JournalEntryId,
+                posting.EntryDate,
+                posting.SourceType,
+                posting.SourceReference,
+                posting.Memo,
+                posting.Status,
+                posting.TotalDebit,
+                posting.TotalCredit,
+                posting.CurrencyCode,
+                posting.Lines.Select(line => new ClientStatementJournalLineResponse(
+                    line.LedgerAccountId,
+                    line.Debit,
+                    line.Credit,
+                    line.Description)).ToArray())).ToArray()));
     }
 
     private static ClientDetailsResponse ToClientDetailsResponse(ClientDetailsResult client)

@@ -93,3 +93,76 @@ public sealed record ClientAccountingProfileResponse(
     string? CloudCustomerId,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc);
+
+public sealed record ClientStatementResponse(
+    Guid ClientId,
+    DateOnly? FromDate,
+    DateOnly? ToDate,
+    IReadOnlyCollection<ClientStatementCurrencySummaryResponse> CurrencySummaries,
+    IReadOnlyCollection<ClientStatementInvoiceResponse> Invoices,
+    IReadOnlyCollection<ClientStatementPaymentResponse> Payments,
+    IReadOnlyCollection<ClientStatementLineResponse> Lines,
+    IReadOnlyCollection<ClientStatementJournalPostingResponse> JournalPostings);
+
+public sealed record ClientStatementCurrencySummaryResponse(
+    string CurrencyCode,
+    decimal TotalInvoiced,
+    decimal TotalPaid,
+    decimal BalanceDue,
+    int InvoiceCount,
+    int OpenInvoiceCount);
+
+public sealed record ClientStatementInvoiceResponse(
+    Guid InvoiceId,
+    Guid ContractId,
+    string InvoiceNumber,
+    DateOnly IssueDate,
+    DateOnly DueDate,
+    string Status,
+    decimal TotalAmount,
+    decimal AmountPaid,
+    decimal BalanceDue,
+    string CurrencyCode,
+    Guid? JournalEntryId);
+
+public sealed record ClientStatementPaymentResponse(
+    Guid PaymentId,
+    Guid InvoiceId,
+    string Reference,
+    string Method,
+    string Status,
+    decimal Amount,
+    string CurrencyCode,
+    DateOnly ReceivedOn,
+    Guid? JournalEntryId);
+
+public sealed record ClientStatementLineResponse(
+    DateOnly EntryDate,
+    string DocumentType,
+    string Reference,
+    Guid? InvoiceId,
+    Guid? PaymentId,
+    string Description,
+    decimal Debit,
+    decimal Credit,
+    decimal RunningBalance,
+    string CurrencyCode,
+    Guid? JournalEntryId);
+
+public sealed record ClientStatementJournalPostingResponse(
+    Guid JournalEntryId,
+    DateOnly EntryDate,
+    string SourceType,
+    string? SourceReference,
+    string? Memo,
+    string Status,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    string CurrencyCode,
+    IReadOnlyCollection<ClientStatementJournalLineResponse> Lines);
+
+public sealed record ClientStatementJournalLineResponse(
+    Guid LedgerAccountId,
+    decimal Debit,
+    decimal Credit,
+    string? Description);
