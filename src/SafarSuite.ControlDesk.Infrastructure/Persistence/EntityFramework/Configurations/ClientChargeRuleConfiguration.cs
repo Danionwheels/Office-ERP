@@ -55,6 +55,13 @@ internal sealed class ClientChargeRuleConfiguration : IEntityTypeConfiguration<C
             .HasColumnName("description_override")
             .HasMaxLength(512);
 
+        builder.Property(rule => rule.ProductModuleCode)
+            .HasColumnName("product_module_code")
+            .HasMaxLength(64)
+            .HasConversion(
+                code => code!.Value,
+                value => ModuleCode.Create(value));
+
         builder.OwnsOne(rule => rule.UnitPrice, money =>
         {
             MoneyConfiguration.Configure(money, "unit_price_amount", "unit_price_currency_code");
@@ -116,5 +123,8 @@ internal sealed class ClientChargeRuleConfiguration : IEntityTypeConfiguration<C
 
         builder.HasIndex(rule => rule.ChargeCodeId)
             .HasDatabaseName("ix_client_charge_rules_charge_code_id");
+
+        builder.HasIndex(rule => rule.ProductModuleCode)
+            .HasDatabaseName("ix_client_charge_rules_product_module_code");
     }
 }

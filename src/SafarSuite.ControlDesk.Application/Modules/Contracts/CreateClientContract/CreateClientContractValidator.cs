@@ -48,11 +48,6 @@ public sealed class CreateClientContractValidator
             errors.Add(ApplicationError.Validation(nameof(command.AllowedBranches), "Allowed branch count cannot be negative."));
         }
 
-        if (command.Modules.Count == 0)
-        {
-            errors.Add(ApplicationError.Validation(nameof(command.Modules), "At least one module is required."));
-        }
-
         foreach (var module in command.Modules)
         {
             if (string.IsNullOrWhiteSpace(module.ModuleCode))

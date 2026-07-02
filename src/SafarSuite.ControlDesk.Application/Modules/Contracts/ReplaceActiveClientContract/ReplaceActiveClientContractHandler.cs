@@ -1,6 +1,7 @@
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
 using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Contracts;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Clients;
 using SafarSuite.ControlDesk.Domain.Modules.Contracts;
@@ -15,19 +16,22 @@ public sealed class ReplaceActiveClientContractHandler
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
     private readonly IClock _clock;
+    private readonly ProductModuleSelectionService _moduleSelection;
 
     public ReplaceActiveClientContractHandler(
         IClientRepository clients,
         IContractRepository contracts,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
-        IClock clock)
+        IClock clock,
+        ProductModuleSelectionService moduleSelection)
     {
         _clients = clients;
         _contracts = contracts;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
         _clock = clock;
+        _moduleSelection = moduleSelection;
     }
 
     public async Task<Result<ReplaceActiveClientContractResult>> HandleAsync(
@@ -68,23 +72,16 @@ public sealed class ReplaceActiveClientContractHandler
                     "Billing cycle is invalid."));
             }
 
-            var moduleAllowances = command.Modules
-                .Select(module => module.IsEnabled
-                    ? ModuleAllowance.Enabled(ModuleCode.Create(module.ModuleCode))
-                    : ModuleAllowance.Disabled(ModuleCode.Create(module.ModuleCode)))
-                .ToArray();
+            var moduleAllowances = await _moduleSelection.BuildAllowancesAsync(
+                command.Modules.Select(module => new ProductModuleSelection(
+                        module.ModuleCode,
+                        module.IsEnabled))
+                    .ToArray(),
+                cancellationToken);
 
-            var duplicateModuleCode = moduleAllowances
-                .GroupBy(module => module.ModuleCode.Value, StringComparer.Ordinal)
-                .Where(group => group.Count() > 1)
-                .Select(group => group.Key)
-                .FirstOrDefault();
-
-            if (duplicateModuleCode is not null)
+            if (moduleAllowances.IsFailure)
             {
-                return Result<ReplaceActiveClientContractResult>.Failure(ApplicationError.Validation(
-                    nameof(command.Modules),
-                    $"Module code {duplicateModuleCode} is duplicated."));
+                return Result<ReplaceActiveClientContractResult>.Failure(moduleAllowances.Errors);
             }
 
             var result = await _unitOfWork.ExecuteInTransactionAsync(
@@ -106,7 +103,7 @@ public sealed class ReplaceActiveClientContractHandler
                         BranchAllowance.Create(command.AllowedBranches),
                         _clock.UtcNow);
 
-                    foreach (var moduleAllowance in moduleAllowances)
+                    foreach (var moduleAllowance in moduleAllowances.Value)
                     {
                         contract.SetModuleAllowance(moduleAllowance);
                     }
@@ -174,11 +171,6 @@ public sealed class ReplaceActiveClientContractHandler
         if (command.AllowedBranches < 0)
         {
             errors.Add(ApplicationError.Validation(nameof(command.AllowedBranches), "Allowed branch count cannot be negative."));
-        }
-
-        if (command.Modules.Count == 0)
-        {
-            errors.Add(ApplicationError.Validation(nameof(command.Modules), "At least one module is required."));
         }
 
         foreach (var module in command.Modules)

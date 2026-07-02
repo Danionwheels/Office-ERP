@@ -1,4 +1,13 @@
-import { CheckCircle2, MessageSquarePlus, PauseCircle, Save, Send, UserPlus } from "lucide-react";
+import {
+  CheckCircle2,
+  MessageSquarePlus,
+  PauseCircle,
+  RefreshCw,
+  Save,
+  Send,
+  UserPlus,
+  XCircle
+} from "lucide-react";
 import type { FormEvent } from "react";
 import type {
   AddClientContactInput,
@@ -17,6 +26,7 @@ type ClientDetailPanelProps = {
   contactValue: AddClientContactInput;
   noteValue: AddClientSupportNoteInput;
   latestPortalInvitation: ClientPortalInvitation | null;
+  portalInvitations: ClientPortalInvitation[];
   isBusy: boolean;
   onEditChange: (value: UpdateClientInput) => void;
   onContactChange: (value: AddClientContactInput) => void;
@@ -26,6 +36,9 @@ type ClientDetailPanelProps = {
   onSuspend: () => Promise<void>;
   onAddContact: () => Promise<void>;
   onInvitePortalContact: (clientContactId: string) => Promise<void>;
+  onRefreshPortalInvitations: () => Promise<void>;
+  onResendPortalInvitation: (invitationId: string) => Promise<void>;
+  onRevokePortalInvitation: (invitationId: string) => Promise<void>;
   onAddNote: () => Promise<void>;
 };
 
@@ -37,6 +50,7 @@ export function ClientDetailPanel({
   contactValue,
   noteValue,
   latestPortalInvitation,
+  portalInvitations,
   isBusy,
   onEditChange,
   onContactChange,
@@ -46,6 +60,9 @@ export function ClientDetailPanel({
   onSuspend,
   onAddContact,
   onInvitePortalContact,
+  onRefreshPortalInvitations,
+  onResendPortalInvitation,
+  onRevokePortalInvitation,
   onAddNote
 }: ClientDetailPanelProps) {
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -155,6 +172,16 @@ export function ClientDetailPanel({
               <span>Contacts</span>
               <strong>{client.contacts.length}</strong>
             </div>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={onRefreshPortalInvitations}
+              disabled={isBusy}
+              title="Refresh portal invitations"
+            >
+              <RefreshCw size={16} />
+              Refresh
+            </button>
           </div>
 
           {latestPortalInvitation !== null && (
@@ -169,6 +196,60 @@ export function ClientDetailPanel({
               />
             </div>
           )}
+
+          <div className="portal-invitation-list">
+            {portalInvitations.length === 0 && (
+              <div className="client-empty-state">No portal invitations loaded</div>
+            )}
+            {portalInvitations.map((invitation) => {
+              const status = invitation.status.toLowerCase();
+              const canChange = status !== "accepted" && status !== "revoked";
+
+              return (
+                <article className="portal-invitation-item" key={invitation.invitationId}>
+                  <header>
+                    <div>
+                      <strong>{invitation.email}</strong>
+                      <span>{invitation.role}</span>
+                    </div>
+                    <span className={`status-pill ${status}`}>{invitation.status}</span>
+                  </header>
+                  <dl>
+                    <div>
+                      <dt>Invited</dt>
+                      <dd>{formatDateTime(invitation.invitedAtUtc)}</dd>
+                    </div>
+                    <div>
+                      <dt>Expires</dt>
+                      <dd>{formatDateTime(invitation.expiresAtUtc)}</dd>
+                    </div>
+                  </dl>
+                  <div className="portal-invitation-actions">
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => onResendPortalInvitation(invitation.invitationId)}
+                      disabled={isBusy || !canChange}
+                      title="Resend invitation"
+                    >
+                      <Send size={14} />
+                      Resend
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => onRevokePortalInvitation(invitation.invitationId)}
+                      disabled={isBusy || !canChange}
+                      title="Revoke invitation"
+                    >
+                      <XCircle size={14} />
+                      Revoke
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
 
           <form className="client-contact-form profile-inline-form" onSubmit={handleAddContact}>
             <div className="contact-form-grid">

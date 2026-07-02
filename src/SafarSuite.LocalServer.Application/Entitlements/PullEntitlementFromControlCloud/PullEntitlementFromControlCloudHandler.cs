@@ -1,6 +1,7 @@
 using SafarSuite.LocalServer.Application.Common;
 using SafarSuite.LocalServer.Application.Entitlements.ImportSignedEntitlementBundle;
 using SafarSuite.LocalServer.Application.Entitlements.Ports;
+using SafarSuite.LocalServer.Domain.Entitlements;
 
 namespace SafarSuite.LocalServer.Application.Entitlements.PullEntitlementFromControlCloud;
 
@@ -56,7 +57,8 @@ public sealed class PullEntitlementFromControlCloudHandler
         var importResult = await _importHandler.HandleAsync(
             new ImportSignedEntitlementBundleCommand(
                 installationId,
-                pullResult.Bundle!),
+                pullResult.Bundle!,
+                LocalServerEntitlementImportSources.ControlCloudPull),
             cancellationToken);
 
         if (!importResult.IsSuccess)

@@ -43,6 +43,7 @@ export type ClientChargeRule = {
   clientId: string;
   contractId?: string | null;
   chargeCodeId: string;
+  productModuleCode?: string | null;
   unitPriceAmount: number;
   currencyCode: string;
   quantity: number;
@@ -60,6 +61,7 @@ export type ClientChargeRule = {
 export type ClientChargeRuleFormInput = {
   contractId: string;
   chargeCodeId: string;
+  productModuleCode: string;
   descriptionOverride: string;
   unitPriceAmount: string;
   currencyCode: string;
@@ -88,6 +90,7 @@ export type InvoiceDraft = {
 
 export type InvoiceDraftLine = {
   chargeCodeId?: string | null;
+  productModuleCode?: string | null;
   lineType: string;
   description: string;
   amount: number;

@@ -1,0 +1,82 @@
+name: safarsuite-local-server
+
+services:
+  local-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SAFARSUITE_LOCAL_DB_NAME:-safarsuite_local}
+      POSTGRES_USER: ${SAFARSUITE_LOCAL_DB_USER:-safarsuite}
+      POSTGRES_PASSWORD: ${SAFARSUITE_LOCAL_DB_PASSWORD:?Set SAFARSUITE_LOCAL_DB_PASSWORD}
+    volumes:
+      - safarsuite-local-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SAFARSUITE_LOCAL_DB_USER:-safarsuite} -d ${SAFARSUITE_LOCAL_DB_NAME:-safarsuite_local}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  local-api:
+    image: ${SAFARSUITE_LOCAL_SERVER_IMAGE:?Set SAFARSUITE_LOCAL_SERVER_IMAGE}
+    restart: unless-stopped
+    command: ["safarsuite-local-api"]
+    env_file:
+      - ./local-server.env
+    depends_on:
+      local-db:
+        condition: service_healthy
+    ports:
+      - "${SAFARSUITE_LOCAL_SERVER_HTTP_PORT:-8080}:8080"
+    volumes:
+      - safarsuite-local-data:/var/lib/safarsuite/local-server
+
+  local-worker:
+    image: ${SAFARSUITE_LOCAL_SERVER_IMAGE:?Set SAFARSUITE_LOCAL_SERVER_IMAGE}
+    restart: unless-stopped
+    command: ["safarsuite-local-worker"]
+    env_file:
+      - ./local-server.env
+    depends_on:
+      local-db:
+        condition: service_healthy
+    volumes:
+      - safarsuite-local-data:/var/lib/safarsuite/local-server
+
+  local-agent:
+    image: ${SAFARSUITE_LOCAL_SERVER_IMAGE:?Set SAFARSUITE_LOCAL_SERVER_IMAGE}
+    restart: unless-stopped
+    command: ["safarsuite-local-agent"]
+    env_file:
+      - ./local-server.env
+    depends_on:
+      local-db:
+        condition: service_healthy
+    volumes:
+      - safarsuite-local-data:/var/lib/safarsuite/local-server
+
+  safarsuite-app:
+    image: ${SAFARSUITE_APP_IMAGE:?Set SAFARSUITE_APP_IMAGE}
+    restart: unless-stopped
+    profiles:
+      - app-runtime
+    env_file:
+      - ./local-server.env
+    depends_on:
+      local-db:
+        condition: service_healthy
+      local-api:
+        condition: service_started
+    ports:
+      - "${SAFARSUITE_APP_HTTP_PORT:-8090}:8080"
+    environment:
+      SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-http://local-api:8080}
+      SAFARSUITE_MODULE_GATEWAY_URL: ${SAFARSUITE_MODULE_GATEWAY_URL:-http://local-api:8080}
+      SAFARSUITE_RUNTIME_MANIFEST_PATH: ${SAFARSUITE_RUNTIME_MANIFEST_PATH:-/etc/safarsuite/local-server/runtime-services.manifest.json}
+    volumes:
+      - safarsuite-local-data:/var/lib/safarsuite/local-server
+      - safarsuite-app-data:/var/lib/safarsuite/app
+
+volumes:
+  safarsuite-local-db:
+  safarsuite-local-data:
+  safarsuite-app-data:

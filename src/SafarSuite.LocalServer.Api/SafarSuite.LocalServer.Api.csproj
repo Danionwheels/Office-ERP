@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SafarSuite.ControlDesk.Contracts\SafarSuite.ControlDesk.Contracts.csproj" />
+    <ProjectReference Include="..\SafarSuite.LocalServer.Application\SafarSuite.LocalServer.Application.csproj" />
+    <ProjectReference Include="..\SafarSuite.LocalServer.Infrastructure\SafarSuite.LocalServer.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

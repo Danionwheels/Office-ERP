@@ -85,6 +85,11 @@ public sealed class ClientContract : Entity<ContractId>
             throw new InvalidOperationException("At least one module allowance is required before activation.");
         }
 
+        if (!_moduleAllowances.Any(module => module.IsEnabled))
+        {
+            throw new InvalidOperationException("At least one module must be enabled before activation.");
+        }
+
         Status = ContractStatus.Active;
         ActivatedAtUtc = activatedAtUtc;
     }

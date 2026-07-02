@@ -23,6 +23,7 @@ import {
   issueCreditNote,
   issueInvoice,
   listChargeCodes,
+  listClientChargeRules,
   voidInvoice
 } from "../../billing/api/billingApi";
 import { ClientBillingSetupPanel } from "../../billing/components/ClientBillingSetupPanel";
@@ -44,17 +45,37 @@ import type {
 import {
   createClientContract,
   listClientContracts,
+  listProductModules,
   replaceActiveClientContract,
   suspendClientContract
 } from "../../contracts/api/contractApi";
 import { ClientContractsPanel } from "../../contracts/components/ClientContractsPanel";
 import type {
   ClientContract,
-  ClientContractFormInput
+  ClientContractFormInput,
+  ProductModule
 } from "../../contracts/types/contractTypes";
-import { getCloudInstallationStatus } from "../../control-cloud/api/controlCloudApi";
+import { findProductModule } from "../../contracts/utils/productModuleDisplay";
+import {
+  createCloudInstallationBootstrapPackage,
+  createCloudInstallationSetupToken,
+  getLatestCloudInstallationDiagnostics,
+  getCloudInstallationStatus,
+  listCloudInstallationAuditEvents,
+  queueCloudInstallationSupportCommand
+} from "../../control-cloud/api/controlCloudApi";
 import { CloudInstallationStatusPanel } from "../../control-cloud/components/CloudInstallationStatusPanel";
-import type { ControlCloudInstallationStatus } from "../../control-cloud/types/controlCloudTypes";
+import type {
+  ControlCloudAuditEvent,
+  CreateCloudInstallationProvisioningInput,
+  CloudInstallationSupportCommandFormInput,
+  ControlCloudInstallationStatus,
+  LocalServerBootstrapPackage,
+  LocalServerDiagnosticReport,
+  LocalServerDeploymentProfile,
+  LocalServerSetupToken,
+  QueuedCloudInstallationSupportCommand
+} from "../../control-cloud/types/controlCloudTypes";
 import {
   getLatestEntitlementSnapshot,
   issueEntitlementFromPaidInvoiceDefaults
@@ -89,12 +110,17 @@ import {
   activateClient,
   addClientContact,
   addClientSupportNote,
+  configureClientDeployment,
   configureClientAccountingProfile,
   createClient,
   getClient,
   getClientAccountingProfile,
   inviteClientPortalContact,
+  listClientDeployments,
+  listClientPortalInvitations,
   listClients,
+  resendClientPortalInvitation,
+  revokeClientPortalInvitation,
   suspendClient,
   updateClient
 } from "../api/clientApi";
@@ -105,10 +131,12 @@ import type {
   AddClientContactInput,
   AddClientSupportNoteInput,
   ClientAccountingProfile,
+  ClientDeployment,
   ClientDetails,
   ClientLookup,
   ClientPortalInvitation,
   ConfigureClientAccountingProfileInput,
+  ConfigureClientDeploymentInput,
   CreateClientInput,
   UpdateClientInput
 } from "../types/clientTypes";
@@ -149,6 +177,8 @@ type DashboardModule =
   | "cloud"
   | "statement";
 
+type BillingDashboardStep = "accounting" | "rules" | "draft" | "issue";
+
 export function ClientDeskPage() {
   const [clients, setClients] = useState<ClientLookup[]>([]);
   const [selectedClientId, setSelectedClientId] = useState("");
@@ -156,6 +186,7 @@ export function ClientDeskPage() {
   const [accountingProfile, setAccountingProfile] = useState<ClientAccountingProfile | null>(null);
   const [accountingProfileMissing, setAccountingProfileMissing] = useState(false);
   const [contracts, setContracts] = useState<ClientContract[]>([]);
+  const [productModules, setProductModules] = useState<ProductModule[]>([]);
   const [chargeCodes, setChargeCodes] = useState<ChargeCodeLookup[]>([]);
   const [createForm, setCreateForm] = useState<CreateClientInput>(emptyCreateForm);
   const [editForm, setEditForm] = useState<UpdateClientInput>(emptyEditForm);
@@ -188,6 +219,7 @@ export function ClientDeskPage() {
     createDefaultIssueInvoiceForm()
   );
   const [latestChargeRule, setLatestChargeRule] = useState<ClientChargeRule | null>(null);
+  const [clientChargeRules, setClientChargeRules] = useState<ClientChargeRule[]>([]);
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceDraft | null>(null);
   const [issuedInvoice, setIssuedInvoice] = useState<IssuedInvoice | null>(null);
   const [voidedInvoice, setVoidedInvoice] = useState<VoidedInvoice | null>(null);
@@ -212,11 +244,29 @@ export function ClientDeskPage() {
   const [cloudInstallationId, setCloudInstallationId] = useState("");
   const [cloudInstallationStatus, setCloudInstallationStatus] =
     useState<ControlCloudInstallationStatus | null>(null);
+  const [clientDeployments, setClientDeployments] = useState<ClientDeployment[]>([]);
+  const [deploymentForm, setDeploymentForm] = useState<ConfigureClientDeploymentInput>(
+    createDefaultDeploymentForm()
+  );
+  const [setupTokenHours, setSetupTokenHours] = useState("72");
+  const [cloudSetupToken, setCloudSetupToken] = useState<LocalServerSetupToken | null>(null);
+  const [cloudBootstrapPackage, setCloudBootstrapPackage] =
+    useState<LocalServerBootstrapPackage | null>(null);
+  const [supportCommandForm, setSupportCommandForm] =
+    useState<CloudInstallationSupportCommandFormInput>(createDefaultSupportCommandForm());
+  const [queuedSupportCommand, setQueuedSupportCommand] =
+    useState<QueuedCloudInstallationSupportCommand | null>(null);
+  const [cloudAuditEvents, setCloudAuditEvents] = useState<ControlCloudAuditEvent[]>([]);
+  const [cloudDiagnosticsReport, setCloudDiagnosticsReport] =
+    useState<LocalServerDiagnosticReport | null>(null);
   const [latestPortalInvitation, setLatestPortalInvitation] =
     useState<ClientPortalInvitation | null>(null);
+  const [portalInvitations, setPortalInvitations] = useState<ClientPortalInvitation[]>([]);
   const [clientStatement, setClientStatement] = useState<ClientStatement | null>(null);
   const [activeDashboardModule, setActiveDashboardModule] =
     useState<DashboardModule>("dashboard");
+  const [preferredBillingStep, setPreferredBillingStep] =
+    useState<BillingDashboardStep>("accounting");
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -224,6 +274,7 @@ export function ClientDeskPage() {
   useEffect(() => {
     void refreshClients();
     void refreshChargeCodes();
+    void refreshProductModules();
   }, []);
 
   useEffect(() => {
@@ -243,6 +294,23 @@ export function ClientDeskPage() {
     });
   }
 
+  async function refreshProductModules() {
+    await runClientAction(async () => {
+      const nextProductModules = await listProductModules();
+      setProductModules(nextProductModules);
+      setContractForm((current) => {
+        if (current.moduleCodes.trim().toUpperCase() !== "CONTROL_DESK") {
+          return current;
+        }
+
+        return {
+          ...current,
+          moduleCodes: defaultContractModuleCodes(nextProductModules)
+        };
+      });
+    });
+  }
+
   async function loadClientList(nextSelectedClientId = selectedClientId) {
     const clientList = await listClients();
     setClients(clientList);
@@ -255,7 +323,11 @@ export function ClientDeskPage() {
       setContracts([]);
       setCloudInstallationId("");
       setCloudInstallationStatus(null);
+      setClientDeployments([]);
+      setDeploymentForm(createDefaultDeploymentForm());
+      clearCloudProvisioningArtifacts();
       setLatestPortalInvitation(null);
+      setPortalInvitations([]);
       setClientStatement(null);
       resetBillingForms();
       return;
@@ -267,21 +339,23 @@ export function ClientDeskPage() {
 
   async function loadClient(clientId: string) {
     await runClientAction(async () => {
-      const [client, clientContracts, statement] = await Promise.all([
+      const [client, clientContracts, statement, deployments] = await Promise.all([
         getClient(clientId),
         listClientContracts(clientId),
-        getClientStatement(clientId)
+        getClientStatement(clientId),
+        listClientDeployments(clientId)
       ]);
 
       applyLoadedClient(client);
-      setCloudInstallationId(createDefaultInstallationId(client.code));
-      setCloudInstallationStatus(null);
+      applyLoadedDeployments(client, deployments);
       setContracts(clientContracts);
       setClientStatement(statement);
-      setContractForm(createDefaultContractForm(client.code));
+      setContractForm(createDefaultContractForm(client.code, productModules));
       applyBillingDefaults(client, getActiveContract(clientContracts));
+      await loadClientChargeRules(clientId, getActiveContract(clientContracts)?.contractId);
       await loadAccountingProfile(clientId);
       await loadLatestEntitlementSnapshot(clientId);
+      await loadClientPortalInvitations(clientId, true);
     });
   }
 
@@ -357,6 +431,11 @@ export function ClientDeskPage() {
     }
   }
 
+  async function loadClientChargeRules(clientId: string, contractId?: string | null) {
+    const chargeRules = await listClientChargeRules(clientId, contractId);
+    setClientChargeRules(sortClientChargeRules(chargeRules));
+  }
+
   async function loadCloudInstallationStatus(
     clientId = selectedClient?.clientId,
     installationId = cloudInstallationId
@@ -372,6 +451,7 @@ export function ClientDeskPage() {
     try {
       const status = await getCloudInstallationStatus(clientId, normalizedInstallationId);
       setCloudInstallationStatus(status);
+      setDeploymentForm((current) => mergeDeploymentStatus(current, status));
 
       return true;
     } catch (caughtError) {
@@ -379,6 +459,87 @@ export function ClientDeskPage() {
         setCloudInstallationStatus(null);
 
         return false;
+      }
+
+      throw caughtError;
+    }
+  }
+
+  async function loadCloudInstallationAuditEvents(
+    clientId = selectedClient?.clientId,
+    installationId = cloudInstallationId
+  ): Promise<boolean> {
+    const normalizedInstallationId = installationId.trim();
+
+    if (clientId === undefined || normalizedInstallationId === "") {
+      setCloudAuditEvents([]);
+
+      return false;
+    }
+
+    const auditEvents = await listCloudInstallationAuditEvents(
+      clientId,
+      normalizedInstallationId,
+      50);
+    setCloudAuditEvents(auditEvents);
+
+    return true;
+  }
+
+  async function loadCloudInstallationDiagnostics(
+    clientId = selectedClient?.clientId,
+    installationId = cloudInstallationId
+  ): Promise<boolean> {
+    const normalizedInstallationId = installationId.trim();
+
+    if (clientId === undefined || normalizedInstallationId === "") {
+      setCloudDiagnosticsReport(null);
+
+      return false;
+    }
+
+    try {
+      const diagnostics = await getLatestCloudInstallationDiagnostics(
+        clientId,
+        normalizedInstallationId);
+      setCloudDiagnosticsReport(diagnostics);
+
+      return true;
+    } catch (caughtError) {
+      if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
+        setCloudDiagnosticsReport(null);
+
+        return false;
+      }
+
+      throw caughtError;
+    }
+  }
+
+  async function loadClientPortalInvitations(
+    clientId = selectedClient?.clientId,
+    suppressUnavailable = false
+  ) {
+    if (clientId === undefined) {
+      setPortalInvitations([]);
+
+      return;
+    }
+
+    try {
+      const invitations = await listClientPortalInvitations(clientId);
+      setPortalInvitations(invitations);
+    } catch (caughtError) {
+      if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
+        setPortalInvitations([]);
+
+        return;
+      }
+
+      if (suppressUnavailable && caughtError instanceof ApiError && caughtError.statusCode >= 500) {
+        setPortalInvitations([]);
+
+        return;
       }
 
       throw caughtError;
@@ -465,7 +626,48 @@ export function ClientDeskPage() {
         clientContactId
       );
       setLatestPortalInvitation(invitation);
+      upsertPortalInvitation(invitation);
       setMessage(`Portal invite created for ${invitation.email}.`);
+    });
+  }
+
+  async function handleRefreshPortalInvitations() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      await loadClientPortalInvitations(selectedClient.clientId);
+      setMessage("Portal invitations refreshed.");
+    });
+  }
+
+  async function handleResendPortalInvitation(invitationId: string) {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const invitation = await resendClientPortalInvitation(selectedClient.clientId, invitationId);
+      setLatestPortalInvitation(invitation);
+      upsertPortalInvitation(invitation);
+      setMessage(`Portal invite resent to ${invitation.email}.`);
+    });
+  }
+
+  async function handleRevokePortalInvitation(invitationId: string) {
+    if (selectedClient === null) {
+      return;
+    }
+
+    if (!confirmPortalAction("Revoke this portal invitation? The current invite link will stop working.")) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const invitation = await revokeClientPortalInvitation(selectedClient.clientId, invitationId);
+      upsertPortalInvitation(invitation);
+      setMessage(`Portal invite revoked for ${invitation.email}.`);
     });
   }
 
@@ -496,9 +698,11 @@ export function ClientDeskPage() {
     await runClientAction(async () => {
       const contract = await createClientContract(selectedClient.clientId, contractForm);
       const nextContracts = sortContracts([contract, ...contracts]);
+      const activeContract = getActiveContract(nextContracts);
       setContracts(nextContracts);
-      setContractForm(createDefaultContractForm(selectedClient.code));
-      applyBillingContractDefaults(selectedClient, getActiveContract(nextContracts));
+      setContractForm(createDefaultContractForm(selectedClient.code, productModules));
+      applyBillingContractDefaults(selectedClient, activeContract);
+      await loadClientChargeRules(selectedClient.clientId, activeContract?.contractId);
       setMessage("Contract created.");
     });
   }
@@ -511,9 +715,11 @@ export function ClientDeskPage() {
     await runClientAction(async () => {
       const result = await replaceActiveClientContract(selectedClient.clientId, contractForm);
       const refreshedContracts = await listClientContracts(selectedClient.clientId);
+      const activeContract = getActiveContract(refreshedContracts);
       setContracts(refreshedContracts);
-      setContractForm(createDefaultContractForm(selectedClient.code));
-      applyBillingContractDefaults(selectedClient, getActiveContract(refreshedContracts));
+      setContractForm(createDefaultContractForm(selectedClient.code, productModules));
+      applyBillingContractDefaults(selectedClient, activeContract);
+      await loadClientChargeRules(selectedClient.clientId, activeContract?.contractId);
       setMessage(result.suspendedContract === null ? "Contract activated." : "Active contract replaced.");
     });
   }
@@ -524,8 +730,12 @@ export function ClientDeskPage() {
       const nextContracts = sortContracts(
         contracts.map((item) => (item.contractId === contract.contractId ? contract : item))
       );
+      const activeContract = getActiveContract(nextContracts);
       setContracts(nextContracts);
-      applyBillingContractDefaults(selectedClient, getActiveContract(nextContracts));
+      applyBillingContractDefaults(selectedClient, activeContract);
+      if (selectedClient !== null) {
+        await loadClientChargeRules(selectedClient.clientId, activeContract?.contractId);
+      }
       setMessage("Contract suspended.");
     });
   }
@@ -621,8 +831,73 @@ export function ClientDeskPage() {
     await runClientAction(async () => {
       const chargeRule = await createClientChargeRule(selectedClient.clientId, chargeRuleForm);
       setLatestChargeRule(chargeRule);
+      await loadClientChargeRules(selectedClient.clientId, getActiveContract(contracts)?.contractId);
       setMessage("Charge rule added.");
     });
+  }
+
+  function handlePrepareModuleBilling(moduleCode: string) {
+    if (selectedClient === null) {
+      return;
+    }
+
+    const activeContract = getActiveContract(contracts);
+
+    if (activeContract === null) {
+      return;
+    }
+
+    const productModule = findProductModule(productModules, moduleCode);
+    const billingDefaults = productModule?.billingDefaults;
+    const displayName = productModule?.displayName ?? moduleCode;
+
+    if (billingDefaults !== null && billingDefaults !== undefined) {
+      const existingChargeCode = chargeCodes.find(
+        (chargeCode) => chargeCode.code === billingDefaults.chargeCode
+      ) ?? null;
+
+      setChargeCodeForm((current) => ({
+        ...current,
+        code: billingDefaults.chargeCode,
+        name: billingDefaults.chargeName,
+        description: billingDefaults.description,
+        defaultUnitPriceAmount: billingDefaults.defaultUnitPriceAmount.toFixed(2),
+        currencyCode: billingDefaults.currencyCode
+      }));
+      setChargeRuleForm((current) => ({
+        ...current,
+        contractId: activeContract.contractId,
+        chargeCodeId: existingChargeCode?.chargeCodeId ?? "",
+        productModuleCode: productModule?.moduleCode ?? moduleCode,
+        descriptionOverride: billingDefaults.description,
+        unitPriceAmount: billingDefaults.defaultUnitPriceAmount.toFixed(2),
+        currencyCode: billingDefaults.currencyCode,
+        billingCycle: billingDefaults.billingCycle,
+        billingDayOfMonth: activeContract.billingDayOfMonth.toString(),
+        effectiveStartsOn: activeContract.startsOn,
+        effectiveEndsOn: activeContract.endsOn
+      }));
+      setMessage(existingChargeCode === null
+        ? `${displayName} billing prepared. Create the charge code first.`
+        : `${displayName} billing prepared. Add the charge rule.`);
+    } else {
+      setChargeRuleForm((current) => ({
+        ...current,
+        contractId: activeContract.contractId,
+        chargeCodeId: "",
+        productModuleCode: productModule?.moduleCode ?? moduleCode,
+        currencyCode: activeContract.currencyCode,
+        billingCycle: activeContract.billingCycle,
+        billingDayOfMonth: activeContract.billingDayOfMonth.toString(),
+        effectiveStartsOn: activeContract.startsOn,
+        effectiveEndsOn: activeContract.endsOn
+      }));
+      setMessage(`${displayName} billing prepared. Fill the charge code and price.`);
+    }
+
+    setError("");
+    setPreferredBillingStep("rules");
+    setActiveDashboardModule("billing");
   }
 
   async function handleGenerateInvoiceDraft() {
@@ -1043,10 +1318,154 @@ export function ClientDeskPage() {
 
     await runClientAction(async () => {
       const found = await loadCloudInstallationStatus();
+      await loadCloudInstallationAuditEvents();
       setMessage(found
         ? "Cloud installation status refreshed."
         : "No cloud installation status found.");
     });
+  }
+
+  async function handleRefreshCloudAuditEvents() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const found = await loadCloudInstallationAuditEvents();
+      setMessage(found
+        ? "Cloud installation history refreshed."
+        : "Select an installation before refreshing cloud history.");
+    });
+  }
+
+  async function handleRefreshCloudDiagnostics() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const found = await loadCloudInstallationDiagnostics();
+      setMessage(found
+        ? "Cloud diagnostics refreshed."
+        : "No diagnostics report found for this installation.");
+    });
+  }
+
+  function handleCloudInstallationIdChange(value: string) {
+    setCloudInstallationId(value);
+    setDeploymentForm((current) => ({
+      ...current,
+      installationId: value
+    }));
+    clearCloudProvisioningArtifacts();
+  }
+
+  function handleDeploymentValueChange(value: ConfigureClientDeploymentInput) {
+    setDeploymentForm(value);
+    setCloudInstallationId(value.installationId);
+    clearCloudProvisioningArtifacts();
+  }
+
+  function handleSupportCommandValueChange(value: CloudInstallationSupportCommandFormInput) {
+    setSupportCommandForm(value);
+    setQueuedSupportCommand(null);
+  }
+
+  function handleSelectClientDeployment(clientDeploymentId: string) {
+    if (selectedClient === null) {
+      return;
+    }
+
+    const deployment = clientDeployments.find((item) => item.clientDeploymentId === clientDeploymentId) ?? null;
+    const nextForm = deployment === null
+      ? createDefaultDeploymentForm(selectedClient)
+      : toDeploymentForm(deployment);
+
+    setDeploymentForm(nextForm);
+    setCloudInstallationId(nextForm.installationId);
+    setCloudInstallationStatus(null);
+    clearCloudProvisioningArtifacts();
+  }
+
+  async function handleSaveClientDeployment() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      await saveDeploymentForClient(selectedClient.clientId);
+      setMessage("Client deployment saved.");
+    });
+  }
+
+  async function handleCreateCloudSetupToken() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
+      const setupToken = await createCloudInstallationSetupToken(
+        selectedClient.clientId,
+        savedDeployment.installationId,
+        toCloudProvisioningInput(toDeploymentForm(savedDeployment), setupTokenHours));
+      setCloudSetupToken(setupToken);
+      setCloudBootstrapPackage(null);
+      await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
+      setMessage("Cloud setup token created.");
+    });
+  }
+
+  async function handleCreateCloudBootstrapPackage() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
+      const bootstrapPackage = await createCloudInstallationBootstrapPackage(
+        selectedClient.clientId,
+        savedDeployment.installationId,
+        toCloudProvisioningInput(toDeploymentForm(savedDeployment), setupTokenHours));
+      setCloudBootstrapPackage(bootstrapPackage);
+      setCloudSetupToken(null);
+      await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
+      setMessage("Cloud bootstrap package created.");
+    });
+  }
+
+  async function handleQueueCloudSupportCommand() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
+      const queuedCommand = await queueCloudInstallationSupportCommand(
+        selectedClient.clientId,
+        savedDeployment.installationId,
+        {
+          commandType: supportCommandForm.commandType,
+          reason: supportCommandForm.reason,
+          requestedBy: supportCommandForm.requestedBy,
+          expiresInHours: parseSupportCommandHours(supportCommandForm.expiresInHours)
+        });
+      setQueuedSupportCommand(queuedCommand);
+      await loadCloudInstallationStatus(selectedClient.clientId, savedDeployment.installationId);
+      await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
+      setMessage(`${formatSupportCommandType(queuedCommand.commandType)} command queued.`);
+    });
+  }
+
+  async function saveDeploymentForClient(clientId: string): Promise<ClientDeployment> {
+    const savedDeployment = await configureClientDeployment(clientId, deploymentForm);
+    const deployments = await listClientDeployments(clientId);
+
+    setClientDeployments(sortClientDeployments(deployments));
+    setDeploymentForm(toDeploymentForm(savedDeployment));
+    setCloudInstallationId(savedDeployment.installationId);
+
+    return savedDeployment;
   }
 
   async function handleIssueEntitlementSnapshot() {
@@ -1061,6 +1480,22 @@ export function ClientDeskPage() {
       setLatestEntitlementSnapshotMissing(false);
       setMessage("Entitlement snapshot issued.");
     });
+  }
+
+  async function handleResolveEntitlementReadiness() {
+    setActiveDashboardModule("entitlements");
+
+    if (selectedClient === null) {
+      return;
+    }
+
+    if (!canIssueEntitlementSnapshot(invoiceDraft, recordedPayment)) {
+      setError("");
+      setMessage("Open entitlements. A paid invoice is required before issuing a new snapshot.");
+      return;
+    }
+
+    await handleIssueEntitlementSnapshot();
   }
 
   async function runClientAction(action: () => Promise<void>) {
@@ -1080,9 +1515,35 @@ export function ClientDeskPage() {
   function applyLoadedClient(client: ClientDetails) {
     setSelectedClient(client);
     setLatestPortalInvitation(null);
+    setPortalInvitations([]);
     setEditForm({
       legalName: client.legalName,
       displayName: client.displayName
+    });
+  }
+
+  function applyLoadedDeployments(client: ClientDetails, deployments: ClientDeployment[]) {
+    const sortedDeployments = sortClientDeployments(deployments);
+    const primaryDeployment = getPrimaryDeployment(sortedDeployments);
+    const nextForm = primaryDeployment === null
+      ? createDefaultDeploymentForm(client)
+      : toDeploymentForm(primaryDeployment);
+
+    setClientDeployments(sortedDeployments);
+    setDeploymentForm(nextForm);
+    setCloudInstallationId(nextForm.installationId);
+    setCloudInstallationStatus(null);
+    clearCloudProvisioningArtifacts();
+  }
+
+  function upsertPortalInvitation(invitation: ClientPortalInvitation) {
+    setPortalInvitations((current) => {
+      const exists = current.some((item) => item.invitationId === invitation.invitationId);
+      const next = exists
+        ? current.map((item) => (item.invitationId === invitation.invitationId ? invitation : item))
+        : [invitation, ...current];
+
+      return [...next].sort((left, right) => right.invitedAtUtc.localeCompare(left.invitedAtUtc));
     });
   }
 
@@ -1105,6 +1566,7 @@ export function ClientDeskPage() {
     setRefundForm(createDefaultRefundForm());
     setCreditApplicationForm(createDefaultCreditApplicationForm());
     setLatestChargeRule(null);
+    setClientChargeRules([]);
     setInvoiceDraft(null);
     setIssuedInvoice(null);
     setVoidedInvoice(null);
@@ -1116,6 +1578,9 @@ export function ClientDeskPage() {
     setLatestEntitlementSnapshotMissing(false);
     setIssuedEntitlementSnapshot(null);
     setCloudInstallationStatus(null);
+    setClientDeployments([]);
+    setDeploymentForm(createDefaultDeploymentForm());
+    clearCloudProvisioningArtifacts();
   }
 
   function applyBillingDefaults(client: ClientDetails, contract: ClientContract | null) {
@@ -1131,6 +1596,7 @@ export function ClientDeskPage() {
     setRefundForm(createDefaultRefundForm(client));
     setCreditApplicationForm(createDefaultCreditApplicationForm(client));
     setLatestChargeRule(null);
+    setClientChargeRules([]);
     setInvoiceDraft(null);
     setIssuedInvoice(null);
     setVoidedInvoice(null);
@@ -1142,7 +1608,18 @@ export function ClientDeskPage() {
     setLatestEntitlementSnapshotMissing(false);
     setIssuedEntitlementSnapshot(null);
     setCloudInstallationStatus(null);
+    setClientDeployments([]);
+    setDeploymentForm(createDefaultDeploymentForm(client));
+    clearCloudProvisioningArtifacts();
     setClientStatement(null);
+  }
+
+  function clearCloudProvisioningArtifacts() {
+    setCloudSetupToken(null);
+    setCloudBootstrapPackage(null);
+    setQueuedSupportCommand(null);
+    setCloudAuditEvents([]);
+    setCloudDiagnosticsReport(null);
   }
 
   function applyBillingContractDefaults(
@@ -1179,6 +1656,22 @@ export function ClientDeskPage() {
   }
 
   const activeContract = getActiveContract(contracts);
+  const canIssueCurrentEntitlementSnapshot = canIssueEntitlementSnapshot(
+    invoiceDraft,
+    recordedPayment
+  );
+  const clientReadinessItems = getClientReadinessItems({
+    activeContract,
+    accountingProfile,
+    productModules,
+    chargeRules: clientChargeRules,
+    issuedEntitlementSnapshot,
+    latestEntitlementSnapshot,
+    latestEntitlementSnapshotMissing,
+    cloudInstallationStatus,
+    latestPortalInvitation,
+    portalInvitations
+  });
   const dashboardMetrics = getDashboardMetrics({
     activeContract,
     accountingProfile,
@@ -1263,6 +1756,13 @@ export function ClientDeskPage() {
             )}
           </header>
 
+          {selectedClient !== null && (
+            <ClientReadinessStrip
+              items={clientReadinessItems}
+              onNavigate={setActiveDashboardModule}
+            />
+          )}
+
           <div className="module-window-body">
             {activeDashboardModule === "clients" && (
               <section className="client-window-strip client-window-module" aria-label="Client workspace">
@@ -1333,6 +1833,7 @@ export function ClientDeskPage() {
                 contactValue={contactForm}
                 noteValue={noteForm}
                 latestPortalInvitation={latestPortalInvitation}
+                portalInvitations={portalInvitations}
                 isBusy={isBusy}
                 onEditChange={setEditForm}
                 onContactChange={setContactForm}
@@ -1342,6 +1843,9 @@ export function ClientDeskPage() {
                 onSuspend={handleSuspendClient}
                 onAddContact={handleAddContact}
                 onInvitePortalContact={handleInvitePortalContact}
+                onRefreshPortalInvitations={handleRefreshPortalInvitations}
+                onResendPortalInvitation={handleResendPortalInvitation}
+                onRevokePortalInvitation={handleRevokePortalInvitation}
                 onAddNote={handleAddNote}
               />
             )}
@@ -1349,12 +1853,19 @@ export function ClientDeskPage() {
             {activeDashboardModule === "contracts" && (
               <ClientContractsPanel
                 contracts={contracts}
+                productModules={productModules}
+                chargeRules={clientChargeRules}
+                latestSnapshot={latestEntitlementSnapshot}
+                latestSnapshotMissing={latestEntitlementSnapshotMissing}
+                canIssueEntitlementSnapshot={canIssueCurrentEntitlementSnapshot}
                 value={contractForm}
                 isBusy={isBusy || selectedClient === null}
                 onChange={setContractForm}
                 onCreate={handleCreateContract}
                 onReplaceActive={handleReplaceActiveContract}
                 onSuspend={handleSuspendContract}
+                onPrepareModuleBilling={handlePrepareModuleBilling}
+                onResolveEntitlementReadiness={handleResolveEntitlementReadiness}
               />
             )}
 
@@ -1362,6 +1873,8 @@ export function ClientDeskPage() {
               <ClientBillingSetupPanel
                 client={selectedClient}
                 contracts={contracts}
+                productModules={productModules}
+                initialStep={preferredBillingStep}
                 accountingProfile={accountingProfile}
                 accountingProfileMissing={accountingProfileMissing}
                 chargeCodes={chargeCodes}
@@ -1430,6 +1943,7 @@ export function ClientDeskPage() {
               <EntitlementSnapshotPanel
                 invoiceDraft={invoiceDraft}
                 recordedPayment={recordedPayment}
+                productModules={productModules}
                 latestSnapshot={latestEntitlementSnapshot}
                 latestSnapshotMissing={latestEntitlementSnapshotMissing}
                 issuedSnapshot={issuedEntitlementSnapshot}
@@ -1443,9 +1957,29 @@ export function ClientDeskPage() {
               <CloudInstallationStatusPanel
                 client={selectedClient}
                 installationId={cloudInstallationId}
+                deployments={clientDeployments}
+                selectedDeploymentId={getSelectedDeploymentId(clientDeployments, cloudInstallationId)}
+                deploymentValue={deploymentForm}
+                setupTokenHours={setupTokenHours}
                 status={cloudInstallationStatus}
+                setupToken={cloudSetupToken}
+                bootstrapPackage={cloudBootstrapPackage}
+                supportCommandValue={supportCommandForm}
+                queuedSupportCommand={queuedSupportCommand}
+                auditEvents={cloudAuditEvents}
+                diagnosticsReport={cloudDiagnosticsReport}
                 isBusy={isBusy || selectedClient === null}
-                onInstallationIdChange={setCloudInstallationId}
+                onInstallationIdChange={handleCloudInstallationIdChange}
+                onDeploymentValueChange={handleDeploymentValueChange}
+                onSetupTokenHoursChange={setSetupTokenHours}
+                onDeploymentSelect={handleSelectClientDeployment}
+                onSaveDeployment={handleSaveClientDeployment}
+                onCreateSetupToken={handleCreateCloudSetupToken}
+                onCreateBootstrapPackage={handleCreateCloudBootstrapPackage}
+                onSupportCommandValueChange={handleSupportCommandValueChange}
+                onQueueSupportCommand={handleQueueCloudSupportCommand}
+                onRefreshAuditEvents={handleRefreshCloudAuditEvents}
+                onRefreshDiagnostics={handleRefreshCloudDiagnostics}
                 onRefresh={handleRefreshCloudInstallationStatus}
               />
             )}
@@ -1462,6 +1996,35 @@ export function ClientDeskPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+function ClientReadinessStrip({
+  items,
+  onNavigate
+}: {
+  items: ClientReadinessItem[];
+  onNavigate: (module: DashboardModule) => void;
+}) {
+  return (
+    <section className="client-readiness-strip" aria-label="Client readiness">
+      {items.map((item) => (
+        <button
+          className={`client-readiness-item ${item.tone}`}
+          key={item.key}
+          type="button"
+          onClick={() => onNavigate(item.module)}
+          title={item.label}
+        >
+          <item.Icon size={16} />
+          <span>
+            <small>{item.label}</small>
+            <strong>{item.value}</strong>
+            <em>{item.summary}</em>
+          </span>
+        </button>
+      ))}
+    </section>
   );
 }
 
@@ -1483,6 +2046,16 @@ type DashboardNavigationItem = {
   Icon: LucideIcon;
 };
 
+type ClientReadinessItem = {
+  key: string;
+  label: string;
+  value: string;
+  summary: string;
+  tone: DashboardMetric["tone"];
+  Icon: LucideIcon;
+  module: DashboardModule;
+};
+
 type DashboardMetricInput = {
   activeContract: ClientContract | null;
   accountingProfile: ClientAccountingProfile | null;
@@ -1493,6 +2066,243 @@ type DashboardMetricInput = {
   cloudInstallationStatus: ControlCloudInstallationStatus | null;
   clientStatement: ClientStatement | null;
 };
+
+type ClientReadinessInput = {
+  activeContract: ClientContract | null;
+  accountingProfile: ClientAccountingProfile | null;
+  productModules: ProductModule[];
+  chargeRules: ClientChargeRule[];
+  issuedEntitlementSnapshot: IssuedEntitlementSnapshot | null;
+  latestEntitlementSnapshot: EntitlementSnapshot | null;
+  latestEntitlementSnapshotMissing: boolean;
+  cloudInstallationStatus: ControlCloudInstallationStatus | null;
+  latestPortalInvitation: ClientPortalInvitation | null;
+  portalInvitations: ClientPortalInvitation[];
+};
+
+function getClientReadinessItems({
+  activeContract,
+  accountingProfile,
+  productModules,
+  chargeRules,
+  issuedEntitlementSnapshot,
+  latestEntitlementSnapshot,
+  latestEntitlementSnapshotMissing,
+  cloudInstallationStatus,
+  latestPortalInvitation,
+  portalInvitations
+}: ClientReadinessInput): ClientReadinessItem[] {
+  const contractStatus = activeContract?.status ?? "Missing";
+  const contractIsReady = activeContract?.status.toLowerCase() === "active";
+
+  return [
+    {
+      key: "contract",
+      label: "Contract",
+      value: contractStatus,
+      summary: activeContract === null
+        ? "Create agreement"
+        : `${activeContract.allowedDevices} devices, ${activeContract.allowedBranches} branches`,
+      tone: contractIsReady ? "ready" : "warning",
+      Icon: FileText,
+      module: "contracts"
+    },
+    getBillingReadinessItem(activeContract, accountingProfile, productModules, chargeRules),
+    getEntitlementReadinessItem(
+      activeContract,
+      issuedEntitlementSnapshot ?? latestEntitlementSnapshot,
+      latestEntitlementSnapshotMissing
+    ),
+    getCloudReadinessItem(cloudInstallationStatus),
+    getPortalReadinessItem(latestPortalInvitation, portalInvitations)
+  ];
+}
+
+function getBillingReadinessItem(
+  activeContract: ClientContract | null,
+  accountingProfile: ClientAccountingProfile | null,
+  productModules: ProductModule[],
+  chargeRules: ClientChargeRule[]
+): ClientReadinessItem {
+  if (accountingProfile === null) {
+    return {
+      key: "billing",
+      label: "Billing",
+      value: "Not linked",
+      summary: "Accounting profile",
+      tone: "warning",
+      Icon: ReceiptText,
+      module: "billing"
+    };
+  }
+
+  if (activeContract === null) {
+    return {
+      key: "billing",
+      label: "Billing",
+      value: accountingProfile.defaultCurrencyCode,
+      summary: "Needs contract",
+      tone: "warning",
+      Icon: ReceiptText,
+      module: "billing"
+    };
+  }
+
+  const paidAddOnCodes = getPaidAddOnModuleCodes(activeContract, productModules);
+  const billedModuleCodes = getBilledModuleCodes(chargeRules, activeContract);
+  const missingCount = paidAddOnCodes.filter((moduleCode) => !billedModuleCodes.has(moduleCode)).length;
+
+  if (missingCount > 0) {
+    return {
+      key: "billing",
+      label: "Billing",
+      value: `${missingCount} missing`,
+      summary: "Paid add-on rules",
+      tone: "warning",
+      Icon: ReceiptText,
+      module: "billing"
+    };
+  }
+
+  return {
+    key: "billing",
+    label: "Billing",
+    value: "Ready",
+    summary: paidAddOnCodes.length === 0 ? "Base plan" : `${paidAddOnCodes.length} add-ons covered`,
+    tone: "ready",
+    Icon: ReceiptText,
+    module: "billing"
+  };
+}
+
+function getEntitlementReadinessItem(
+  activeContract: ClientContract | null,
+  snapshot: EntitlementSnapshot | null,
+  latestEntitlementSnapshotMissing: boolean
+): ClientReadinessItem {
+  if (activeContract === null) {
+    return {
+      key: "entitlement",
+      label: "Entitlement",
+      value: "Blocked",
+      summary: "Needs contract",
+      tone: "warning",
+      Icon: KeyRound,
+      module: "entitlements"
+    };
+  }
+
+  if (snapshot === null) {
+    return {
+      key: "entitlement",
+      label: "Entitlement",
+      value: latestEntitlementSnapshotMissing ? "Missing" : "Not loaded",
+      summary: "Snapshot required",
+      tone: "warning",
+      Icon: KeyRound,
+      module: "entitlements"
+    };
+  }
+
+  const contractModuleCodes = getEnabledModuleCodes(activeContract.modules);
+  const snapshotModuleCodes = getEnabledModuleCodes(snapshot.modules);
+  const hasContractMismatch = snapshot.contractId !== activeContract.contractId;
+  const hasLimitMismatch =
+    snapshot.allowedDevices !== activeContract.allowedDevices
+    || snapshot.allowedBranches !== activeContract.allowedBranches;
+  const hasModuleMismatch =
+    contractModuleCodes.some((moduleCode) => !snapshotModuleCodes.includes(moduleCode))
+    || snapshotModuleCodes.some((moduleCode) => !contractModuleCodes.includes(moduleCode));
+
+  if (hasContractMismatch || hasLimitMismatch || hasModuleMismatch) {
+    const differences = [
+      hasContractMismatch ? "contract" : null,
+      hasLimitMismatch ? "limits" : null,
+      hasModuleMismatch ? "modules" : null
+    ].filter((item): item is string => item !== null);
+
+    return {
+      key: "entitlement",
+      label: "Entitlement",
+      value: "Out of sync",
+      summary: differences.join(", "),
+      tone: "warning",
+      Icon: KeyRound,
+      module: "entitlements"
+    };
+  }
+
+  return {
+    key: "entitlement",
+    label: "Entitlement",
+    value: snapshot.status,
+    summary: `${snapshotModuleCodes.length} modules aligned`,
+    tone: snapshot.status.toLowerCase() === "active" ? "ready" : "warning",
+    Icon: KeyRound,
+    module: "entitlements"
+  };
+}
+
+function getCloudReadinessItem(
+  cloudInstallationStatus: ControlCloudInstallationStatus | null
+): ClientReadinessItem {
+  const cloudHeartbeat = cloudInstallationStatus?.latestHeartbeat ?? null;
+  const deploymentProfile = getCloudDeploymentProfile(cloudInstallationStatus);
+  const deploymentSummary = formatCloudDeploymentSummary(deploymentProfile);
+  const cloudStatus = cloudHeartbeat?.licenseStatus
+    ?? cloudInstallationStatus?.installationStatus
+    ?? "Not loaded";
+  const normalizedCloudStatus = cloudStatus.toLowerCase();
+  const cloudReady =
+    normalizedCloudStatus === "active"
+    || normalizedCloudStatus === "healthy"
+    || normalizedCloudStatus === "registered";
+
+  return {
+    key: "cloud",
+    label: "Cloud",
+    value: cloudStatus,
+    summary: cloudHeartbeat === null
+      ? deploymentSummary
+      : `${deploymentSummary} / ${formatDashboardDateTime(cloudHeartbeat.receivedAtUtc)}`,
+    tone: cloudReady ? "ready" : cloudInstallationStatus === null ? "neutral" : "warning",
+    Icon: Cloud,
+    module: "cloud"
+  };
+}
+
+function getPortalReadinessItem(
+  latestPortalInvitation: ClientPortalInvitation | null,
+  portalInvitations: ClientPortalInvitation[]
+): ClientReadinessItem {
+  const invitation = getLatestPortalInvitation(latestPortalInvitation, portalInvitations);
+
+  if (invitation === null) {
+    return {
+      key: "portal",
+      label: "Portal",
+      value: "No invite",
+      summary: "Client access",
+      tone: "neutral",
+      Icon: UserRound,
+      module: "profile"
+    };
+  }
+
+  const status = invitation.status.toLowerCase();
+  const isReady = status === "accepted";
+  const isWarning = status === "revoked" || status === "expired";
+
+  return {
+    key: "portal",
+    label: "Portal",
+    value: invitation.status,
+    summary: invitation.email,
+    tone: isReady ? "ready" : isWarning ? "warning" : "neutral",
+    Icon: UserRound,
+    module: "profile"
+  };
+}
 
 function getDashboardMetrics({
   activeContract,
@@ -1506,6 +2316,8 @@ function getDashboardMetrics({
 }: DashboardMetricInput): DashboardMetric[] {
   const entitlementSnapshot = issuedEntitlementSnapshot ?? latestEntitlementSnapshot;
   const cloudHeartbeat = cloudInstallationStatus?.latestHeartbeat ?? null;
+  const deploymentProfile = getCloudDeploymentProfile(cloudInstallationStatus);
+  const deploymentSummary = formatCloudDeploymentSummary(deploymentProfile);
   const cloudStatus = cloudHeartbeat?.licenseStatus
     ?? cloudInstallationStatus?.installationStatus
     ?? "Not loaded";
@@ -1559,8 +2371,8 @@ function getDashboardMetrics({
       label: "Cloud",
       value: cloudStatus,
       summary: cloudHeartbeat === null
-        ? "Heartbeat, license, and commands"
-        : `Last seen ${formatDashboardDateTime(cloudHeartbeat.receivedAtUtc)}`,
+        ? deploymentSummary
+        : `${deploymentSummary} / ${formatDashboardDateTime(cloudHeartbeat.receivedAtUtc)}`,
       tone:
         normalizedCloudStatus === "active"
           || normalizedCloudStatus === "healthy"
@@ -1744,6 +2556,34 @@ function createDefaultAccountingProfileForm(
   };
 }
 
+function createDefaultDeploymentForm(client?: ClientDetails): ConfigureClientDeploymentInput {
+  const installationId = createDefaultInstallationId(client?.code);
+
+  return {
+    installationId,
+    displayName: client === undefined ? "Main office" : `${client.displayName} main`,
+    bootstrapMode: "OnlineBootstrap",
+    clientDeploymentMode: "OfflineLocal",
+    siteId: "main",
+    siteRole: "Standalone",
+    parentSiteId: "",
+    branchCode: "",
+    syncTopologyId: "",
+    localServerVersion: "latest",
+    safarSuiteAppVersion: "latest",
+    isPrimary: true
+  };
+}
+
+function createDefaultSupportCommandForm(): CloudInstallationSupportCommandFormInput {
+  return {
+    commandType: "request_diagnostics",
+    reason: "Support review",
+    requestedBy: "SafarSuite Control Desk",
+    expiresInHours: "72"
+  };
+}
+
 function createDefaultChargeCodeForm(
   client?: ClientDetails,
   contract?: ClientContract | null
@@ -1769,6 +2609,7 @@ function createDefaultChargeRuleForm(
   return {
     contractId: contract?.contractId ?? "",
     chargeCodeId: "",
+    productModuleCode: "",
     descriptionOverride: "",
     unitPriceAmount: contract?.recurringAmount.toFixed(2) ?? "0.00",
     currencyCode: contract?.currencyCode ?? "PKR",
@@ -1909,7 +2750,60 @@ function toAccountingProfileForm(
   };
 }
 
-function createDefaultContractForm(clientCode = ""): ClientContractFormInput {
+function toDeploymentForm(deployment: ClientDeployment): ConfigureClientDeploymentInput {
+  return {
+    installationId: deployment.installationId,
+    displayName: deployment.displayName,
+    bootstrapMode: deployment.bootstrapMode,
+    clientDeploymentMode: deployment.clientDeploymentMode,
+    siteId: deployment.siteId,
+    siteRole: deployment.siteRole,
+    parentSiteId: deployment.parentSiteId ?? "",
+    branchCode: deployment.branchCode ?? "",
+    syncTopologyId: deployment.syncTopologyId ?? "",
+    localServerVersion: deployment.localServerVersion,
+    safarSuiteAppVersion: deployment.safarSuiteAppVersion,
+    isPrimary: deployment.isPrimary
+  };
+}
+
+function toCloudProvisioningInput(
+  deployment: ConfigureClientDeploymentInput,
+  setupTokenHours: string
+): CreateCloudInstallationProvisioningInput {
+  return {
+    expiresInHours: parseSetupTokenHours(setupTokenHours),
+    createdBy: "SafarSuite Control Desk",
+    bootstrapMode: deployment.bootstrapMode,
+    clientDeploymentMode: deployment.clientDeploymentMode,
+    siteId: deployment.siteId,
+    siteRole: deployment.siteRole,
+    parentSiteId: deployment.parentSiteId,
+    branchCode: deployment.branchCode,
+    syncTopologyId: deployment.syncTopologyId,
+    localServerVersion: deployment.localServerVersion,
+    safarSuiteAppVersion: deployment.safarSuiteAppVersion
+  };
+}
+
+function parseSetupTokenHours(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsed)) {
+    return 72;
+  }
+
+  return Math.min(168, Math.max(1, parsed));
+}
+
+function parseSupportCommandHours(value: string): number {
+  return parseSetupTokenHours(value);
+}
+
+function createDefaultContractForm(
+  clientCode = "",
+  productModules: ProductModule[] = []
+): ClientContractFormInput {
   const startsOn = new Date();
   const endsOn = new Date(startsOn);
   endsOn.setFullYear(endsOn.getFullYear() + 1);
@@ -1924,8 +2818,27 @@ function createDefaultContractForm(clientCode = ""): ClientContractFormInput {
     billingDayOfMonth: "1",
     allowedDevices: "1",
     allowedBranches: "1",
-    moduleCodes: "CONTROL_DESK"
+    moduleCodes: defaultContractModuleCodes(productModules)
   };
+}
+
+function defaultContractModuleCodes(productModules: ProductModule[]): string {
+  const activeModules = productModules.filter((module) => module.isActive);
+
+  if (activeModules.length === 0) {
+    return "CONTROL_DESK";
+  }
+
+  const includedModules = activeModules.filter(
+    (module) => module.commercialMode === "IncludedForAll"
+  );
+  const defaultModules = includedModules.length > 0
+    ? includedModules
+    : activeModules.length === 1
+      ? activeModules
+      : [];
+
+  return defaultModules.map((module) => module.moduleCode).join(", ");
 }
 
 function defaultContractNumber(clientCode: string, value: Date): string {
@@ -2037,6 +2950,10 @@ function confirmAccountingAction(message: string): boolean {
   return typeof window === "undefined" || window.confirm(message);
 }
 
+function confirmPortalAction(message: string): boolean {
+  return typeof window === "undefined" || window.confirm(message);
+}
+
 function formatAccountingAmount(amount: number, currencyCode: string): string {
   const safeAmount = Number.isFinite(amount) ? amount : 0;
   const normalizedCurrency = currencyCode.trim().toUpperCase() === ""
@@ -2051,6 +2968,60 @@ function formatDashboardDateTime(value: string): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function getCloudDeploymentProfile(
+  status: ControlCloudInstallationStatus | null
+): LocalServerDeploymentProfile | null {
+  return status?.deploymentProfile ?? status?.latestHeartbeat?.deploymentProfile ?? null;
+}
+
+function mergeDeploymentStatus(
+  current: ConfigureClientDeploymentInput,
+  status: ControlCloudInstallationStatus
+): ConfigureClientDeploymentInput {
+  const deploymentProfile = getCloudDeploymentProfile(status);
+
+  if (deploymentProfile === null) {
+    return current;
+  }
+
+  return {
+    ...current,
+    installationId: status.installationId,
+    bootstrapMode: deploymentProfile.bootstrapMode,
+    clientDeploymentMode: deploymentProfile.clientDeploymentMode,
+    siteId: deploymentProfile.siteId,
+    siteRole: deploymentProfile.siteRole,
+    parentSiteId: deploymentProfile.parentSiteId ?? "",
+    branchCode: deploymentProfile.branchCode ?? "",
+    syncTopologyId: deploymentProfile.syncTopologyId ?? "",
+    localServerVersion: status.latestHeartbeat?.localServerVersion ?? current.localServerVersion
+  };
+}
+
+function formatCloudDeploymentSummary(profile: LocalServerDeploymentProfile | null): string {
+  if (profile === null) {
+    return "Install status";
+  }
+
+  const role = profile.siteRole.trim();
+  const site = profile.branchCode?.trim() || profile.siteId.trim();
+  const mode = profile.clientDeploymentMode.trim();
+
+  if (role !== "" && site !== "") {
+    return `${role} ${site}`;
+  }
+
+  return mode === "" ? "Install status" : mode;
+}
+
+function formatSupportCommandType(commandType: string): string {
+  return commandType
+    .split("_")
+    .filter((part) => part.trim() !== "")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function defaultCode(prefix: string, clientCode: string | undefined): string {
@@ -2093,6 +3064,127 @@ function sortContracts(contracts: ClientContract[]): ClientContract[] {
 
 function sortChargeCodes(chargeCodes: ChargeCodeLookup[]): ChargeCodeLookup[] {
   return [...chargeCodes].sort((left, right) => left.code.localeCompare(right.code));
+}
+
+function sortClientChargeRules(chargeRules: ClientChargeRule[]): ClientChargeRule[] {
+  return [...chargeRules].sort((left, right) => {
+    const moduleOrder = (left.productModuleCode ?? "").localeCompare(right.productModuleCode ?? "");
+
+    if (moduleOrder !== 0) {
+      return moduleOrder;
+    }
+
+    const startOrder = left.effectiveStartsOn.localeCompare(right.effectiveStartsOn);
+
+    if (startOrder !== 0) {
+      return startOrder;
+    }
+
+    return left.clientChargeRuleId.localeCompare(right.clientChargeRuleId);
+  });
+}
+
+function sortClientDeployments(deployments: ClientDeployment[]): ClientDeployment[] {
+  return [...deployments].sort((left, right) => {
+    if (left.isPrimary !== right.isPrimary) {
+      return left.isPrimary ? -1 : 1;
+    }
+
+    const nameOrder = left.displayName.localeCompare(right.displayName);
+
+    return nameOrder !== 0
+      ? nameOrder
+      : left.installationId.localeCompare(right.installationId);
+  });
+}
+
+function getPrimaryDeployment(deployments: ClientDeployment[]): ClientDeployment | null {
+  return deployments.find((deployment) => deployment.isPrimary) ?? deployments[0] ?? null;
+}
+
+function getSelectedDeploymentId(deployments: ClientDeployment[], installationId: string): string {
+  return deployments.find((deployment) =>
+    deployment.installationId.toLowerCase() === installationId.trim().toLowerCase()
+  )?.clientDeploymentId ?? "";
+}
+
+function getPaidAddOnModuleCodes(
+  contract: ClientContract,
+  productModules: ProductModule[]
+): string[] {
+  return getEnabledModuleCodes(contract.modules).filter((moduleCode) =>
+    findProductModule(productModules, moduleCode)?.commercialMode === "PaidAddOn"
+  );
+}
+
+function getBilledModuleCodes(
+  chargeRules: ClientChargeRule[],
+  contract: ClientContract
+): Set<string> {
+  return new Set(
+    chargeRules
+      .filter((rule) => rule.status.toLowerCase() === "active")
+      .filter((rule) => rule.contractId === undefined
+        || rule.contractId === null
+        || rule.contractId === contract.contractId)
+      .map((rule) => normalizeOptionalModuleCode(rule.productModuleCode))
+      .filter((moduleCode): moduleCode is string => moduleCode !== null)
+  );
+}
+
+function getEnabledModuleCodes(modules: Array<{ moduleCode: string; isEnabled: boolean }>): string[] {
+  const seen = new Set<string>();
+
+  return modules
+    .filter((module) => module.isEnabled)
+    .map((module) => normalizeModuleCode(module.moduleCode))
+    .filter((moduleCode) => {
+      if (moduleCode === "" || seen.has(moduleCode)) {
+        return false;
+      }
+
+      seen.add(moduleCode);
+      return true;
+    });
+}
+
+function getLatestPortalInvitation(
+  latestPortalInvitation: ClientPortalInvitation | null,
+  portalInvitations: ClientPortalInvitation[]
+): ClientPortalInvitation | null {
+  const invitations = latestPortalInvitation === null
+    ? portalInvitations
+    : [latestPortalInvitation, ...portalInvitations];
+
+  return invitations
+    .filter((invitation, index, source) =>
+      source.findIndex((item) => item.invitationId === invitation.invitationId) === index
+    )
+    .sort((left, right) => right.invitedAtUtc.localeCompare(left.invitedAtUtc))[0]
+    ?? null;
+}
+
+function normalizeOptionalModuleCode(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalizedModuleCode = normalizeModuleCode(value);
+
+  return normalizedModuleCode === "" ? null : normalizedModuleCode;
+}
+
+function normalizeModuleCode(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function canIssueEntitlementSnapshot(
+  invoiceDraft: InvoiceDraft | null,
+  recordedPayment: RecordedInvoicePayment | null
+): boolean {
+  return invoiceDraft !== null
+    && invoiceDraft.status.toLowerCase() === "paid"
+    && recordedPayment !== null;
 }
 
 function getActiveContract(contracts: ClientContract[]): ClientContract | null {

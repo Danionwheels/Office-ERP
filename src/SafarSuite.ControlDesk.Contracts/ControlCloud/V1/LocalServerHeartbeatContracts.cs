@@ -10,7 +10,8 @@ public sealed record ReportLocalServerHeartbeatRequest(
     DateOnly? WarningStartsAt,
     DateOnly? GraceUntil,
     DateOnly? OfflineValidUntil,
-    string? Detail);
+    string? Detail,
+    LocalServerDeploymentProfileResponse? DeploymentProfile = null);
 
 public sealed record LocalServerHeartbeatResponse(
     Guid HeartbeatId,
@@ -26,4 +27,5 @@ public sealed record LocalServerHeartbeatResponse(
     DateOnly? GraceUntil,
     DateOnly? OfflineValidUntil,
     string? LocalServerVersion,
-    string? Detail);
+    string? Detail,
+    LocalServerDeploymentProfileResponse? DeploymentProfile = null);

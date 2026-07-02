@@ -54,10 +54,44 @@ export type ClientAccountingProfile = {
   updatedAtUtc: string;
 };
 
+export type ClientDeployment = {
+  clientDeploymentId: string;
+  clientId: string;
+  displayName: string;
+  installationId: string;
+  bootstrapMode: string;
+  clientDeploymentMode: string;
+  siteId: string;
+  siteRole: string;
+  parentSiteId?: string | null;
+  branchCode?: string | null;
+  syncTopologyId?: string | null;
+  localServerVersion: string;
+  safarSuiteAppVersion: string;
+  isPrimary: boolean;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+};
+
 export type ConfigureClientAccountingProfileInput = {
   accountsReceivableAccountId: string;
   defaultCurrencyCode: string;
   cloudCustomerId: string;
+};
+
+export type ConfigureClientDeploymentInput = {
+  installationId: string;
+  displayName: string;
+  bootstrapMode: string;
+  clientDeploymentMode: string;
+  siteId: string;
+  siteRole: string;
+  parentSiteId: string;
+  branchCode: string;
+  syncTopologyId: string;
+  localServerVersion: string;
+  safarSuiteAppVersion: string;
+  isPrimary: boolean;
 };
 
 export type CreateClientInput = {

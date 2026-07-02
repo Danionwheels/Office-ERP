@@ -37,6 +37,10 @@ public sealed class IssueEntitlementSnapshotFromPaidInvoiceValidator
         {
             errors.Add(ApplicationError.Validation(nameof(command.Modules), "At least one entitlement module is required."));
         }
+        else if (!command.Modules.Any(module => module.IsEnabled))
+        {
+            errors.Add(ApplicationError.Validation(nameof(command.Modules), "At least one entitlement module must be enabled."));
+        }
 
         foreach (var module in command.Modules)
         {

@@ -36,6 +36,7 @@ public sealed record CreateClientChargeRuleRequest(
     Guid ClientId,
     Guid? ContractId,
     Guid ChargeCodeId,
+    string? ProductModuleCode,
     string? DescriptionOverride,
     decimal UnitPriceAmount,
     string CurrencyCode,
@@ -51,6 +52,30 @@ public sealed record CreateClientChargeRuleResponse(
     Guid ClientId,
     Guid? ContractId,
     Guid ChargeCodeId,
+    string? ProductModuleCode,
+    decimal UnitPriceAmount,
+    string CurrencyCode,
+    decimal Quantity,
+    decimal TaxPercent,
+    decimal TaxAmount,
+    decimal LineAmount,
+    decimal TotalLineAmount,
+    string BillingCycle,
+    int BillingDayOfMonth,
+    DateOnly EffectiveStartsOn,
+    DateOnly EffectiveEndsOn,
+    string Status);
+
+public sealed record ListClientChargeRulesResponse(
+    DateOnly EffectiveOn,
+    IReadOnlyCollection<ClientChargeRuleLookupResponse> ChargeRules);
+
+public sealed record ClientChargeRuleLookupResponse(
+    Guid ClientChargeRuleId,
+    Guid ClientId,
+    Guid? ContractId,
+    Guid ChargeCodeId,
+    string? ProductModuleCode,
     decimal UnitPriceAmount,
     string CurrencyCode,
     decimal Quantity,
@@ -89,6 +114,7 @@ public sealed record GenerateInvoiceDraftResponse(
 
 public sealed record GenerateInvoiceDraftLineResponse(
     Guid? ChargeCodeId,
+    string? ProductModuleCode,
     string LineType,
     string Description,
     decimal Amount,

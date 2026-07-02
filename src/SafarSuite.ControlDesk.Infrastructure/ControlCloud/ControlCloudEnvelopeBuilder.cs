@@ -13,6 +13,7 @@ public sealed class ControlCloudEnvelopeBuilder
 {
     private const string EnvelopeVersion = "1";
     private const string SignatureAlgorithm = "HMAC-SHA256";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IOptions<ControlCloudPublisherOptions> _options;
     private readonly IClock _clock;
@@ -33,10 +34,9 @@ public sealed class ControlCloudEnvelopeBuilder
         var signingKeyId = CleanRequiredText(options.SigningKeyId, nameof(options.SigningKeyId));
         var signingSecret = CleanRequiredText(options.SigningSecret, nameof(options.SigningSecret));
         var preparedAtUtc = _clock.UtcNow;
-        var payloadSha256 = ComputeSha256(message.PayloadJson);
+        var payload = CreateCanonicalPayload(message.PayloadJson, out var canonicalPayloadJson);
+        var payloadSha256 = ComputeSha256(canonicalPayloadJson);
 
-        using var payloadDocument = JsonDocument.Parse(message.PayloadJson);
-        var payload = payloadDocument.RootElement.Clone();
         var idempotencyKey = $"{sourceSystem}:{message.Id.Value:N}";
         var signatureValue = Sign(
             signingSecret,
@@ -65,6 +65,18 @@ public sealed class ControlCloudEnvelopeBuilder
                 signingKeyId,
                 payloadSha256,
                 signatureValue));
+    }
+
+    private static JsonElement CreateCanonicalPayload(
+        string payloadJson,
+        out string canonicalPayloadJson)
+    {
+        using var payloadDocument = JsonDocument.Parse(payloadJson);
+        canonicalPayloadJson = JsonSerializer.Serialize(payloadDocument.RootElement, JsonOptions);
+
+        using var canonicalPayloadDocument = JsonDocument.Parse(canonicalPayloadJson);
+
+        return canonicalPayloadDocument.RootElement.Clone();
     }
 
     private static string BuildSignatureInput(

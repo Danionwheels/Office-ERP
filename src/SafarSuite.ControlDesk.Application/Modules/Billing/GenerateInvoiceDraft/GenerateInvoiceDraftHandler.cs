@@ -113,7 +113,11 @@ public sealed class GenerateInvoiceDraftHandler
                 }
 
                 var description = rule.DescriptionOverride ?? chargeCode.Name;
-                invoice.AddLine(InvoiceLine.Create(description, rule.LineAmount, rule.ChargeCodeId));
+                invoice.AddLine(InvoiceLine.Create(
+                    description,
+                    rule.LineAmount,
+                    rule.ChargeCodeId,
+                    rule.ProductModuleCode));
 
                 if (rule.TaxAmount.Amount > 0)
                 {
@@ -127,7 +131,8 @@ public sealed class GenerateInvoiceDraftHandler
                     invoice.AddLine(InvoiceLine.CreateTax(
                         $"Tax - {description}",
                         rule.TaxAmount,
-                        rule.ChargeCodeId));
+                        rule.ChargeCodeId,
+                        rule.ProductModuleCode));
                 }
             }
 
@@ -166,6 +171,7 @@ public sealed class GenerateInvoiceDraftHandler
             invoice.Status.ToString(),
             invoice.Lines.Select(line => new GenerateInvoiceDraftLineResult(
                 line.ChargeCodeId?.Value,
+                line.ProductModuleCode?.Value,
                 line.LineType.ToString(),
                 line.Description,
                 line.Amount.Amount,

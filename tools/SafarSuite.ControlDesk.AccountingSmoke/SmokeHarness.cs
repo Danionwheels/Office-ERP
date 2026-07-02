@@ -12,6 +12,7 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientAccounti
 using SafarSuite.ControlDesk.Application.Modules.Clients.CreateClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
 using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Contracts;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
@@ -23,6 +24,7 @@ using SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayment;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.InMemory;
 using SafarSuite.ControlDesk.Infrastructure.System;
+using SafarSuite.ControlDesk.Domain.Modules.Contracts;
 
 namespace SafarSuite.ControlDesk.AccountingSmoke;
 
@@ -103,7 +105,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
             UnitOfWork,
             IdGenerator,
             Clock,
-            new CreateClientContractValidator());
+            new CreateClientContractValidator(),
+            new ProductModuleSelectionService(new EmptyProductModuleCatalog()));
 
         CreateChargeCode = new CreateChargeCodeHandler(
             ChargeCodes,
@@ -329,6 +332,17 @@ internal sealed class SmokeHarness : IAsyncDisposable
         if (_dbContext is not null)
         {
             await _dbContext.DisposeAsync();
+        }
+    }
+
+    private sealed class EmptyProductModuleCatalog : IProductModuleCatalog
+    {
+        public Task<IReadOnlyCollection<ProductModuleCatalogItem>> ListAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult<IReadOnlyCollection<ProductModuleCatalogItem>>([]);
         }
     }
 }

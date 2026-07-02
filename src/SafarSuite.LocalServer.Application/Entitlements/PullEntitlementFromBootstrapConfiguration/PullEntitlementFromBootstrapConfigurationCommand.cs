@@ -1,0 +1,3 @@
+namespace SafarSuite.LocalServer.Application.Entitlements.PullEntitlementFromBootstrapConfiguration;
+
+public sealed record PullEntitlementFromBootstrapConfigurationCommand;

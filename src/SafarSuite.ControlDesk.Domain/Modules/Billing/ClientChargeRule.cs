@@ -17,6 +17,7 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
         ClientId clientId,
         ContractId? contractId,
         ChargeCodeId chargeCodeId,
+        ModuleCode? productModuleCode,
         string? descriptionOverride,
         Money unitPrice,
         decimal quantity,
@@ -30,6 +31,7 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
         ClientId = clientId;
         ContractId = contractId;
         ChargeCodeId = chargeCodeId;
+        ProductModuleCode = productModuleCode;
         DescriptionOverride = descriptionOverride;
         UnitPrice = unitPrice;
         Quantity = quantity;
@@ -46,6 +48,8 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
     public ContractId? ContractId { get; private set; }
 
     public ChargeCodeId ChargeCodeId { get; private set; }
+
+    public ModuleCode? ProductModuleCode { get; private set; }
 
     public string? DescriptionOverride { get; private set; }
 
@@ -76,6 +80,7 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
         ClientId clientId,
         ContractId? contractId,
         ChargeCodeId chargeCodeId,
+        ModuleCode? productModuleCode,
         string? descriptionOverride,
         Money unitPrice,
         decimal quantity,
@@ -94,6 +99,7 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
             clientId,
             contractId,
             chargeCodeId,
+            productModuleCode,
             CleanText(descriptionOverride),
             unitPrice,
             decimal.Round(quantity, 4),

@@ -38,3 +38,26 @@ public sealed record PublishedCloudOutboxMessageResponse(
     string? FailureReason,
     string? CloudReference,
     string? EnvelopeSignature);
+
+public sealed record QueueCloudInstallationSupportCommandRequest(
+    string CommandType,
+    string Reason,
+    string RequestedBy,
+    int ExpiresInHours);
+
+public sealed record QueueCloudInstallationSupportCommandResponse(
+    Guid CommandId,
+    Guid ClientId,
+    string InstallationId,
+    long CommandVersion,
+    string CommandType,
+    string Status,
+    string IdempotencyKey,
+    DateTimeOffset QueuedAtUtc,
+    DateTimeOffset? NotBeforeUtc,
+    DateTimeOffset ExpiresAtUtc,
+    DateTimeOffset? AcknowledgedAtUtc,
+    string? AcknowledgementStatus,
+    string? AcknowledgementDetail,
+    string SignatureKeyId,
+    string PayloadSha256);

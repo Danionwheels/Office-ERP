@@ -239,6 +239,7 @@ internal sealed class AccountingSmokeRunner
                     contractId,
                     chargeCode.ChargeCodeId,
                     null,
+                    null,
                     100m,
                     CurrencyCode,
                     1m,
@@ -494,7 +495,12 @@ internal sealed class AccountingSmokeRunner
                 !string.IsNullOrWhiteSpace(publishResult.EnvelopeSignature),
                 "cloud publish should include the envelope signature.");
 
-            message.MarkSent(_harness.Clock.UtcNow);
+            var trackedMessage = await _harness.CloudOutboxMessages.GetByIdAsync(
+                message.Id,
+                cancellationToken)
+                ?? throw new SmokeFailureException($"published outbox message {message.Id.Value} could not be reloaded.");
+
+            trackedMessage.MarkSent(_harness.Clock.UtcNow);
             await _harness.UnitOfWork.SaveChangesAsync(cancellationToken);
         }
 

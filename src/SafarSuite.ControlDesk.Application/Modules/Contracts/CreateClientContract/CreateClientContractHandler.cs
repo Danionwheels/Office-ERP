@@ -1,6 +1,7 @@
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
 using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Contracts;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Clients;
 using SafarSuite.ControlDesk.Domain.Modules.Contracts;
@@ -16,6 +17,7 @@ public sealed class CreateClientContractHandler
     private readonly IIdGenerator _idGenerator;
     private readonly IClock _clock;
     private readonly CreateClientContractValidator _validator;
+    private readonly ProductModuleSelectionService _moduleSelection;
 
     public CreateClientContractHandler(
         IClientRepository clients,
@@ -23,7 +25,8 @@ public sealed class CreateClientContractHandler
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
         IClock clock,
-        CreateClientContractValidator validator)
+        CreateClientContractValidator validator,
+        ProductModuleSelectionService moduleSelection)
     {
         _clients = clients;
         _contracts = contracts;
@@ -31,6 +34,7 @@ public sealed class CreateClientContractHandler
         _idGenerator = idGenerator;
         _clock = clock;
         _validator = validator;
+        _moduleSelection = moduleSelection;
     }
 
     public async Task<Result<CreateClientContractResult>> HandleAsync(
@@ -78,23 +82,16 @@ public sealed class CreateClientContractHandler
                     "Billing cycle is invalid."));
             }
 
-            var moduleAllowances = command.Modules
-                .Select(module => module.IsEnabled
-                    ? ModuleAllowance.Enabled(ModuleCode.Create(module.ModuleCode))
-                    : ModuleAllowance.Disabled(ModuleCode.Create(module.ModuleCode)))
-                .ToArray();
+            var moduleAllowances = await _moduleSelection.BuildAllowancesAsync(
+                command.Modules.Select(module => new ProductModuleSelection(
+                        module.ModuleCode,
+                        module.IsEnabled))
+                    .ToArray(),
+                cancellationToken);
 
-            var duplicateModuleCode = moduleAllowances
-                .GroupBy(module => module.ModuleCode.Value, StringComparer.Ordinal)
-                .Where(group => group.Count() > 1)
-                .Select(group => group.Key)
-                .FirstOrDefault();
-
-            if (duplicateModuleCode is not null)
+            if (moduleAllowances.IsFailure)
             {
-                return Result<CreateClientContractResult>.Failure(ApplicationError.Validation(
-                    nameof(command.Modules),
-                    $"Module code {duplicateModuleCode} is duplicated."));
+                return Result<CreateClientContractResult>.Failure(moduleAllowances.Errors);
             }
 
             var contract = ClientContract.Create(
@@ -110,7 +107,7 @@ public sealed class CreateClientContractHandler
                 BranchAllowance.Create(command.AllowedBranches),
                 _clock.UtcNow);
 
-            foreach (var moduleAllowance in moduleAllowances)
+            foreach (var moduleAllowance in moduleAllowances.Value)
             {
                 contract.SetModuleAllowance(moduleAllowance);
             }

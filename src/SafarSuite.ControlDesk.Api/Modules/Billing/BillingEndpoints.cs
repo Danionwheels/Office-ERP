@@ -5,6 +5,7 @@ using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueCreditNote;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Billing.ListChargeCodes;
+using SafarSuite.ControlDesk.Application.Modules.Billing.ListClientChargeRules;
 using SafarSuite.ControlDesk.Application.Modules.Billing.VoidInvoice;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Billing;
 
@@ -21,6 +22,7 @@ public static class BillingEndpoints
         group.MapPost("/charge-codes", CreateChargeCodeAsync);
         group.MapGet("/charge-codes", ListChargeCodesAsync);
         group.MapPost("/client-charge-rules", CreateClientChargeRuleAsync);
+        group.MapGet("/clients/{clientId:guid}/client-charge-rules", ListClientChargeRulesAsync);
         group.MapPost("/invoice-drafts", GenerateInvoiceDraftAsync);
         group.MapPost("/invoices/{invoiceId:guid}/issue", IssueInvoiceAsync);
         group.MapPost("/invoices/{invoiceId:guid}/void", VoidInvoiceAsync);
@@ -97,6 +99,7 @@ public static class BillingEndpoints
             request.ClientId,
             request.ContractId,
             request.ChargeCodeId,
+            request.ProductModuleCode,
             request.DescriptionOverride,
             request.UnitPriceAmount,
             request.CurrencyCode,
@@ -119,6 +122,7 @@ public static class BillingEndpoints
             result.Value.ClientId,
             result.Value.ContractId,
             result.Value.ChargeCodeId,
+            result.Value.ProductModuleCode,
             result.Value.UnitPriceAmount,
             result.Value.CurrencyCode,
             result.Value.Quantity,
@@ -133,6 +137,46 @@ public static class BillingEndpoints
             result.Value.Status);
 
         return Results.Created($"/api/v1/billing/client-charge-rules/{response.ClientChargeRuleId}", response);
+    }
+
+    private static async Task<IResult> ListClientChargeRulesAsync(
+        Guid clientId,
+        Guid? contractId,
+        DateOnly? effectiveOn,
+        ListClientChargeRulesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListClientChargeRulesQuery(clientId, contractId, effectiveOn),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = new ListClientChargeRulesResponse(
+            result.Value.EffectiveOn,
+            result.Value.ChargeRules.Select(rule => new ClientChargeRuleLookupResponse(
+                rule.ClientChargeRuleId,
+                rule.ClientId,
+                rule.ContractId,
+                rule.ChargeCodeId,
+                rule.ProductModuleCode,
+                rule.UnitPriceAmount,
+                rule.CurrencyCode,
+                rule.Quantity,
+                rule.TaxPercent,
+                rule.TaxAmount,
+                rule.LineAmount,
+                rule.TotalLineAmount,
+                rule.BillingCycle,
+                rule.BillingDayOfMonth,
+                rule.EffectiveStartsOn,
+                rule.EffectiveEndsOn,
+                rule.Status)).ToArray());
+
+        return Results.Ok(response);
     }
 
     private static async Task<IResult> GenerateInvoiceDraftAsync(
@@ -170,6 +214,7 @@ public static class BillingEndpoints
             result.Value.Status,
             result.Value.Lines.Select(line => new GenerateInvoiceDraftLineResponse(
                 line.ChargeCodeId,
+                line.ProductModuleCode,
                 line.LineType,
                 line.Description,
                 line.Amount,

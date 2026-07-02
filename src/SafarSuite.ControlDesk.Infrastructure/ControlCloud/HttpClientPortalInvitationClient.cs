@@ -21,6 +21,64 @@ public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationCl
         _options = options;
     }
 
+    public async Task<ClientPortalInvitationListClientResult> ListInvitationsAsync(
+        Guid clientId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Uri.TryCreate(_options.Value.BaseUrl, UriKind.Absolute, out var baseUri))
+        {
+            return ClientPortalInvitationListClientResult.Failure(
+                "ControlCloudInvitationNotConfigured",
+                "Control Cloud portal invitation base URL is not configured.");
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.Value.ProviderAccessSecret))
+        {
+            return ClientPortalInvitationListClientResult.Failure(
+                "ControlCloudInvitationNotConfigured",
+                "Control Cloud provider invitation key is not configured.");
+        }
+
+        var requestUri = new Uri(baseUri, $"/api/v1/client-portal/clients/{clientId:D}/invitations");
+
+        try
+        {
+            using var message = CreateRequest(HttpMethod.Get, requestUri);
+            using var response = await _httpClient.SendAsync(message, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var invitations = await response.Content
+                    .ReadFromJsonAsync<ListClientPortalInvitationsResponse>(
+                        cancellationToken: cancellationToken);
+
+                return invitations is null
+                    ? ClientPortalInvitationListClientResult.Failure(
+                        "ControlCloudInvitationResponseInvalid",
+                        "Control Cloud returned an empty invitation list response.")
+                    : ClientPortalInvitationListClientResult.Success(invitations.Invitations);
+            }
+
+            var error = await ReadErrorAsync(response, cancellationToken);
+
+            return ClientPortalInvitationListClientResult.Failure(
+                error.Code ?? ToDefaultFailureCode(response.StatusCode),
+                error.Detail);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return ClientPortalInvitationListClientResult.Failure(
+                "ControlCloudInvitationUnavailable",
+                "Timed out while listing Control Cloud portal invitations.");
+        }
+        catch (HttpRequestException exception)
+        {
+            return ClientPortalInvitationListClientResult.Failure(
+                "ControlCloudInvitationUnavailable",
+                exception.Message);
+        }
+    }
+
     public async Task<ClientPortalInvitationClientResult> CreateInvitationAsync(
         Guid clientId,
         string email,
@@ -55,10 +113,7 @@ public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationCl
 
         try
         {
-            using var message = new HttpRequestMessage(HttpMethod.Post, requestUri);
-            message.Headers.TryAddWithoutValidation(
-                ProviderAccessHeaderName,
-                _options.Value.ProviderAccessSecret.Trim());
+            using var message = CreateRequest(HttpMethod.Post, requestUri);
             message.Content = JsonContent.Create(request);
 
             using var response = await _httpClient.SendAsync(message, cancellationToken);
@@ -90,7 +145,7 @@ public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationCl
                     error.Code ?? "PortalUserAlreadyExists",
                     error.Detail),
                 _ => ClientPortalInvitationClientResult.Failure(
-                    error.Code ?? "ControlCloudInvitationUnavailable",
+                    error.Code ?? ToDefaultFailureCode(response.StatusCode),
                     error.Detail)
             };
         }
@@ -106,6 +161,123 @@ public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationCl
                 "ControlCloudInvitationUnavailable",
                 exception.Message);
         }
+    }
+
+    public Task<ClientPortalInvitationClientResult> ResendInvitationAsync(
+        Guid clientId,
+        Guid invitationId,
+        int expiresInDays,
+        string createdBy,
+        CancellationToken cancellationToken = default)
+    {
+        return SendInvitationCommandAsync(
+            clientId,
+            invitationId,
+            "resend",
+            new ResendClientPortalInvitationRequest(expiresInDays, createdBy),
+            "resending",
+            cancellationToken);
+    }
+
+    public Task<ClientPortalInvitationClientResult> RevokeInvitationAsync(
+        Guid clientId,
+        Guid invitationId,
+        string revokedBy,
+        CancellationToken cancellationToken = default)
+    {
+        return SendInvitationCommandAsync(
+            clientId,
+            invitationId,
+            "revoke",
+            new RevokeClientPortalInvitationRequest(revokedBy),
+            "revoking",
+            cancellationToken);
+    }
+
+    private async Task<ClientPortalInvitationClientResult> SendInvitationCommandAsync<TRequest>(
+        Guid clientId,
+        Guid invitationId,
+        string action,
+        TRequest request,
+        string actionLabel,
+        CancellationToken cancellationToken)
+    {
+        if (!Uri.TryCreate(_options.Value.BaseUrl, UriKind.Absolute, out var baseUri))
+        {
+            return ClientPortalInvitationClientResult.Failure(
+                "ControlCloudInvitationNotConfigured",
+                "Control Cloud portal invitation base URL is not configured.");
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.Value.ProviderAccessSecret))
+        {
+            return ClientPortalInvitationClientResult.Failure(
+                "ControlCloudInvitationNotConfigured",
+                "Control Cloud provider invitation key is not configured.");
+        }
+
+        var requestUri = new Uri(
+            baseUri,
+            $"/api/v1/client-portal/clients/{clientId:D}/invitations/{invitationId:D}/{action}");
+
+        try
+        {
+            using var message = CreateRequest(HttpMethod.Post, requestUri);
+            message.Content = JsonContent.Create(request);
+            using var response = await _httpClient.SendAsync(message, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var invitation = await response.Content
+                    .ReadFromJsonAsync<ClientPortalInvitationResponse>(
+                        cancellationToken: cancellationToken);
+
+                return invitation is null
+                    ? ClientPortalInvitationClientResult.Failure(
+                        "ControlCloudInvitationResponseInvalid",
+                        "Control Cloud returned an empty invitation response.")
+                    : ClientPortalInvitationClientResult.Success(invitation);
+            }
+
+            var error = await ReadErrorAsync(response, cancellationToken);
+
+            return ClientPortalInvitationClientResult.Failure(
+                error.Code ?? ToDefaultFailureCode(response.StatusCode),
+                error.Detail);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return ClientPortalInvitationClientResult.Failure(
+                "ControlCloudInvitationUnavailable",
+                $"Timed out while {actionLabel} the Control Cloud portal invitation.");
+        }
+        catch (HttpRequestException exception)
+        {
+            return ClientPortalInvitationClientResult.Failure(
+                "ControlCloudInvitationUnavailable",
+                exception.Message);
+        }
+    }
+
+    private HttpRequestMessage CreateRequest(HttpMethod method, Uri requestUri)
+    {
+        var message = new HttpRequestMessage(method, requestUri);
+        message.Headers.TryAddWithoutValidation(
+            ProviderAccessHeaderName,
+            _options.Value.ProviderAccessSecret.Trim());
+
+        return message;
+    }
+
+    private static string ToDefaultFailureCode(HttpStatusCode statusCode)
+    {
+        return statusCode switch
+        {
+            HttpStatusCode.Unauthorized => "ControlCloudInvitationUnauthorized",
+            HttpStatusCode.NotFound => "ClientNotFound",
+            HttpStatusCode.Conflict => "ControlCloudInvitationConflict",
+            _ => "ControlCloudInvitationUnavailable"
+        };
     }
 
     private static async Task<CloudError> ReadErrorAsync(

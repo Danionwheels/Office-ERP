@@ -72,6 +72,29 @@ public sealed record InviteClientPortalContactResponse(
     string? InvitationToken,
     string? InvitationUrl);
 
+public sealed record ClientPortalInvitationResponse(
+    Guid InvitationId,
+    Guid ClientId,
+    string Email,
+    string FullName,
+    string Role,
+    string Status,
+    DateTimeOffset InvitedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    string? InvitationToken,
+    string? InvitationUrl);
+
+public sealed record ListClientPortalInvitationsResponse(
+    Guid ClientId,
+    IReadOnlyCollection<ClientPortalInvitationResponse> Invitations);
+
+public sealed record ResendClientPortalInvitationRequest(
+    int ExpiresInDays = 7,
+    string CreatedBy = "SafarSuite Control Desk");
+
+public sealed record RevokeClientPortalInvitationRequest(
+    string RevokedBy = "SafarSuite Control Desk");
+
 public sealed record ClientContactResponse(
     Guid ClientContactId,
     string Role,
@@ -111,6 +134,41 @@ public sealed record ClientAccountingProfileResponse(
     string? CloudCustomerId,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc);
+
+public sealed record ConfigureClientDeploymentRequest(
+    string DisplayName,
+    string BootstrapMode,
+    string ClientDeploymentMode,
+    string SiteId,
+    string SiteRole,
+    string? ParentSiteId = null,
+    string? BranchCode = null,
+    string? SyncTopologyId = null,
+    string LocalServerVersion = "latest",
+    string? SafarSuiteAppVersion = null,
+    bool IsPrimary = true);
+
+public sealed record ClientDeploymentResponse(
+    Guid ClientDeploymentId,
+    Guid ClientId,
+    string DisplayName,
+    string InstallationId,
+    string BootstrapMode,
+    string ClientDeploymentMode,
+    string SiteId,
+    string SiteRole,
+    string? ParentSiteId,
+    string? BranchCode,
+    string? SyncTopologyId,
+    string LocalServerVersion,
+    string SafarSuiteAppVersion,
+    bool IsPrimary,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record ListClientDeploymentsResponse(
+    Guid ClientId,
+    IReadOnlyCollection<ClientDeploymentResponse> Deployments);
 
 public sealed record ClientStatementResponse(
     Guid ClientId,

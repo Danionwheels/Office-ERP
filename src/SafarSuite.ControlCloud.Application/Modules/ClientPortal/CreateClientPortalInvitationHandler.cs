@@ -9,6 +9,7 @@ public sealed class CreateClientPortalInvitationHandler
     private readonly IControlCloudClientCommercialProjectionRepository _projections;
     private readonly IClientPortalIdentityRepository _identities;
     private readonly IClientPortalCredentialService _credentials;
+    private readonly IClientPortalAuditRecorder _audit;
     private readonly IControlCloudUnitOfWork _unitOfWork;
     private readonly IControlCloudClock _clock;
 
@@ -16,12 +17,14 @@ public sealed class CreateClientPortalInvitationHandler
         IControlCloudClientCommercialProjectionRepository projections,
         IClientPortalIdentityRepository identities,
         IClientPortalCredentialService credentials,
+        IClientPortalAuditRecorder audit,
         IControlCloudUnitOfWork unitOfWork,
         IControlCloudClock clock)
     {
         _projections = projections;
         _identities = identities;
         _credentials = credentials;
+        _audit = audit;
         _unitOfWork = unitOfWork;
         _clock = clock;
     }
@@ -81,11 +84,24 @@ public sealed class CreateClientPortalInvitationHandler
 
         return await _unitOfWork.ExecuteInTransactionAsync(
             async transactionToken =>
-            {
-                await _identities.AddInvitationAsync(invitation, transactionToken);
+                {
+                    await _identities.AddInvitationAsync(invitation, transactionToken);
+                    await ControlCloudAuditWriter.TryRecordAsync(
+                        _audit,
+                        new ClientPortalAuditRecord(
+                            Guid.NewGuid(),
+                            invitation.ClientId,
+                            invitation.InvitationId,
+                            null,
+                            invitation.Email,
+                            ClientPortalAuditEventTypes.InvitationCreated,
+                            ControlCloudAuditWriter.NormalizeActor(command.CreatedBy, ClientPortalAuditActors.ControlDesk),
+                            "Client portal invitation was created.",
+                            now),
+                        transactionToken);
 
-                return CreateClientPortalInvitationResult.Success(
-                    invitation.InvitationId,
+                    return CreateClientPortalInvitationResult.Success(
+                        invitation.InvitationId,
                     invitation.ClientId,
                     invitation.Email,
                     invitation.FullName,

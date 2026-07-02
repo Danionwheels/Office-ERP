@@ -105,16 +105,15 @@ public sealed class GetClientPortalSignedEntitlementBundleHandler
                 async token =>
                 {
                     var installation = await _installations.GetByInstallationIdAsync(installationId, token);
-                    var isNewInstallation = installation is null;
 
                     if (installation is null)
                     {
-                        installation = ControlCloudClientInstallation.Register(
-                            projection.ClientId,
-                            installationId,
-                            bundleIssuedAtUtc);
+                        return GetClientPortalSignedEntitlementBundleResult.Failure(
+                            "InstallationNotRegistered",
+                            "Installation must be registered with a setup token before an entitlement bundle can be issued.");
                     }
-                    else if (installation.ClientId != projection.ClientId)
+
+                    if (installation.ClientId != projection.ClientId)
                     {
                         return GetClientPortalSignedEntitlementBundleResult.Failure(
                             "InstallationClientMismatch",
@@ -148,14 +147,7 @@ public sealed class GetClientPortalSignedEntitlementBundleHandler
 
                     installation.RecordBundleIssued(entitlementVersion, bundleIssuedAtUtc);
 
-                    if (isNewInstallation)
-                    {
-                        await _installations.AddAsync(installation, token);
-                    }
-                    else
-                    {
-                        await _installations.SaveAsync(installation, token);
-                    }
+                    await _installations.SaveAsync(installation, token);
 
                     await _bundleIssues.AddAsync(issue, token);
 

@@ -3,6 +3,23 @@ export type ClientContractModule = {
   isEnabled: boolean;
 };
 
+export type ProductModule = {
+  moduleCode: string;
+  displayName: string;
+  commercialMode: "IncludedForAll" | "PaidAddOn" | string;
+  isActive: boolean;
+  billingDefaults?: ProductModuleBillingDefaults | null;
+};
+
+export type ProductModuleBillingDefaults = {
+  chargeCode: string;
+  chargeName: string;
+  description: string;
+  defaultUnitPriceAmount: number;
+  currencyCode: string;
+  billingCycle: string;
+};
+
 export type ClientContract = {
   contractId: string;
   clientId: string;

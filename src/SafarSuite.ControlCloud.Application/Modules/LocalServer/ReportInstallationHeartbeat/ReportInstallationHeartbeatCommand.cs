@@ -1,3 +1,5 @@
+using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
+
 namespace SafarSuite.ControlCloud.Application.Modules.LocalServer.ReportInstallationHeartbeat;
 
 public sealed record ReportInstallationHeartbeatCommand(
@@ -11,4 +13,5 @@ public sealed record ReportInstallationHeartbeatCommand(
     DateOnly? WarningStartsAt,
     DateOnly? GraceUntil,
     DateOnly? OfflineValidUntil,
-    string? Detail);
+    string? Detail,
+    LocalServerDeploymentProfileResponse? DeploymentProfile = null);

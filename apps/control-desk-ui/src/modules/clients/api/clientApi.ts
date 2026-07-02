@@ -4,11 +4,13 @@ import type {
   AddClientSupportNoteInput,
   ClientAccountingProfile,
   ClientContact,
+  ClientDeployment,
   ClientDetails,
   ClientLookup,
   ClientPortalInvitation,
   ClientSupportNote,
   ConfigureClientAccountingProfileInput,
+  ConfigureClientDeploymentInput,
   CreateClientInput,
   UpdateClientInput
 } from "../types/clientTypes";
@@ -38,6 +40,16 @@ type ListClientSupportNotesResponse = {
 };
 
 type InviteClientPortalContactResponse = ClientPortalInvitation;
+
+type ListClientPortalInvitationsResponse = {
+  clientId: string;
+  invitations: ClientPortalInvitation[];
+};
+
+type ListClientDeploymentsResponse = {
+  clientId: string;
+  deployments: ClientDeployment[];
+};
 
 export async function listClients(): Promise<ClientLookup[]> {
   const response = await apiRequest<ListClientsResponse>("/api/v1/clients");
@@ -133,6 +145,47 @@ export async function inviteClientPortalContact(
   );
 }
 
+export async function listClientPortalInvitations(
+  clientId: string
+): Promise<ClientPortalInvitation[]> {
+  const response = await apiRequest<ListClientPortalInvitationsResponse>(
+    `/api/v1/clients/${clientId}/portal-invitations`
+  );
+
+  return response.invitations;
+}
+
+export async function resendClientPortalInvitation(
+  clientId: string,
+  invitationId: string
+): Promise<ClientPortalInvitation> {
+  return apiRequest<ClientPortalInvitation>(
+    `/api/v1/clients/${clientId}/portal-invitations/${invitationId}/resend`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        expiresInDays: 7,
+        createdBy: "SafarSuite Control Desk"
+      })
+    }
+  );
+}
+
+export async function revokeClientPortalInvitation(
+  clientId: string,
+  invitationId: string
+): Promise<ClientPortalInvitation> {
+  return apiRequest<ClientPortalInvitation>(
+    `/api/v1/clients/${clientId}/portal-invitations/${invitationId}/revoke`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        revokedBy: "SafarSuite Control Desk"
+      })
+    }
+  );
+}
+
 export async function addClientSupportNote(
   clientId: string,
   input: AddClientSupportNoteInput
@@ -174,6 +227,39 @@ export async function configureClientAccountingProfile(
       cloudCustomerId: optionalText(input.cloudCustomerId)
     })
   });
+}
+
+export async function listClientDeployments(clientId: string): Promise<ClientDeployment[]> {
+  const response = await apiRequest<ListClientDeploymentsResponse>(
+    `/api/v1/clients/${clientId}/deployments`
+  );
+
+  return response.deployments;
+}
+
+export async function configureClientDeployment(
+  clientId: string,
+  input: ConfigureClientDeploymentInput
+): Promise<ClientDeployment> {
+  return apiRequest<ClientDeployment>(
+    `/api/v1/clients/${clientId}/deployments/${encodeURIComponent(input.installationId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        displayName: input.displayName,
+        bootstrapMode: input.bootstrapMode,
+        clientDeploymentMode: input.clientDeploymentMode,
+        siteId: input.siteId,
+        siteRole: input.siteRole,
+        parentSiteId: optionalText(input.parentSiteId),
+        branchCode: optionalText(input.branchCode),
+        syncTopologyId: optionalText(input.syncTopologyId),
+        localServerVersion: input.localServerVersion,
+        safarSuiteAppVersion: optionalText(input.safarSuiteAppVersion),
+        isPrimary: input.isPrimary
+      })
+    }
+  );
 }
 
 function optionalText(value: string): string | undefined {

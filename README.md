@@ -31,9 +31,11 @@ SafarSuite Client Systems
 
 ## Initial Docs
 
+- `docs/architecture/product-direction.md`
 - `docs/architecture/product-naming.md`
 - `docs/architecture/layered-architecture.md`
 - `docs/architecture/cloud-local-communication-map.md`
+- `docs/architecture/product-module-catalog-boundary.md`
 - `docs/architecture/why-and-cloud-portal-link.md`
 - `docs/architecture/current-cloud-server-reuse-assessment.md`
 - `docs/legacy/source-reference.md`

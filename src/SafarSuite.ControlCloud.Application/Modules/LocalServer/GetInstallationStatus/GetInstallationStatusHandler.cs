@@ -84,10 +84,11 @@ public sealed class GetInstallationStatusHandler
             installation.ClientId,
             installation.InstallationId,
             installation.Status,
+            ToResponse(installation.DeploymentProfile),
             installation.RegisteredAtUtc,
             installation.LastBundleIssuedAtUtc,
             installation.LatestEntitlementVersion,
-            latestHeartbeat is null ? null : ToResponse(latestHeartbeat),
+            latestHeartbeat is null ? null : ToResponse(latestHeartbeat, installation.DeploymentProfile),
             latestEntitlement is null ? null : ToResponse(latestEntitlement),
             ToCommandStatus(pendingCommands.Count, latestCommand));
 
@@ -95,7 +96,8 @@ public sealed class GetInstallationStatusHandler
     }
 
     private static LocalServerHeartbeatResponse ToResponse(
-        ControlCloudInstallationHeartbeat heartbeat)
+        ControlCloudInstallationHeartbeat heartbeat,
+        ControlCloudInstallationDeploymentProfile deploymentProfile)
     {
         return new LocalServerHeartbeatResponse(
             heartbeat.HeartbeatId,
@@ -111,7 +113,21 @@ public sealed class GetInstallationStatusHandler
             heartbeat.GraceUntil,
             heartbeat.OfflineValidUntil,
             heartbeat.LocalServerVersion,
-            heartbeat.Detail);
+            heartbeat.Detail,
+            ToResponse(deploymentProfile));
+    }
+
+    private static LocalServerDeploymentProfileResponse ToResponse(
+        ControlCloudInstallationDeploymentProfile deploymentProfile)
+    {
+        return new LocalServerDeploymentProfileResponse(
+            deploymentProfile.BootstrapMode,
+            deploymentProfile.ClientDeploymentMode,
+            deploymentProfile.SiteId,
+            deploymentProfile.SiteRole,
+            deploymentProfile.ParentSiteId,
+            deploymentProfile.BranchCode,
+            deploymentProfile.SyncTopologyId);
     }
 
     private static ControlCloudInstallationEntitlementStatusResponse ToResponse(

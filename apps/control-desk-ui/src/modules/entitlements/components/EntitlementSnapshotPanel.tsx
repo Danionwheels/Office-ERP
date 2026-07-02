@@ -1,7 +1,15 @@
 import { BadgeCheck, KeyRound } from "lucide-react";
 import type { InvoiceDraft } from "../../billing/types/billingTypes";
+import type { ProductModule } from "../../contracts/types/contractTypes";
+import {
+  findProductModule,
+  formatProductModuleBillingDefaults,
+  getProductModuleDisplayName,
+  getProductModuleMeta
+} from "../../contracts/utils/productModuleDisplay";
 import type { RecordedInvoicePayment } from "../../payments/types/paymentTypes";
 import type {
+  EntitlementModule,
   EntitlementSnapshot,
   IssuedEntitlementSnapshot
 } from "../types/entitlementTypes";
@@ -9,6 +17,7 @@ import type {
 type EntitlementSnapshotPanelProps = {
   invoiceDraft: InvoiceDraft | null;
   recordedPayment: RecordedInvoicePayment | null;
+  productModules: ProductModule[];
   latestSnapshot: EntitlementSnapshot | null;
   latestSnapshotMissing: boolean;
   issuedSnapshot: IssuedEntitlementSnapshot | null;
@@ -20,6 +29,7 @@ type EntitlementSnapshotPanelProps = {
 export function EntitlementSnapshotPanel({
   invoiceDraft,
   recordedPayment,
+  productModules,
   latestSnapshot,
   latestSnapshotMissing,
   issuedSnapshot,
@@ -111,16 +121,10 @@ export function EntitlementSnapshotPanel({
             </div>
           </dl>
 
-          <div className="entitlement-module-list">
-            {displaySnapshot.modules.map((module) => (
-              <span
-                className={`entitlement-module ${module.isEnabled ? "enabled" : "disabled"}`}
-                key={module.moduleCode}
-              >
-                {module.moduleCode}
-              </span>
-            ))}
-          </div>
+          <EntitlementModuleList
+            modules={displaySnapshot.modules}
+            productModules={productModules}
+          />
 
           {issuedSnapshot !== null && (
             <div className="billing-small-fact">
@@ -130,6 +134,49 @@ export function EntitlementSnapshotPanel({
         </>
       )}
     </section>
+  );
+}
+
+function EntitlementModuleList({
+  modules,
+  productModules
+}: {
+  modules: EntitlementModule[];
+  productModules: ProductModule[];
+}) {
+  if (modules.length === 0) {
+    return (
+      <div className="module-control-list">
+        <span className="entitlement-module disabled">No modules</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="module-control-list">
+      {modules.map((module) => {
+        const productModule = findProductModule(productModules, module.moduleCode);
+        const billingDefaults = formatProductModuleBillingDefaults(productModule);
+
+        return (
+          <article
+            className={`module-control-item entitlement-module-item${
+              module.isEnabled ? "" : " disabled"
+            }`}
+            key={module.moduleCode}
+          >
+            <header>
+              <span>
+                <strong>{getProductModuleDisplayName(productModules, module.moduleCode)}</strong>
+                <small>{getProductModuleMeta(productModules, module.moduleCode)}</small>
+              </span>
+              <em>{module.isEnabled ? "Enabled" : "Disabled"}</em>
+            </header>
+            {billingDefaults !== null && <p>{billingDefaults}</p>}
+          </article>
+        );
+      })}
+    </div>
   );
 }
 

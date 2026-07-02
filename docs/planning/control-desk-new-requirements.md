@@ -42,6 +42,7 @@ These requirements are not simply old Survey/FAS clone work. They are the reason
 | Issue product command | Cloud signs module/status/device changes | High | Concept exists |
 | Heartbeat and command acknowledgement | Client local server pulls entitlement/product commands and acknowledges applied versions | High | Designed |
 | Offline renewal file | Allow paid clients to renew by importing a signed file when the local server has no internet | High | Designed |
+| Client data sync boundary | Keep branch/HQ/cloud operational data sync separate from billing, license, and entitlement control | High | Boundary/profile foundation done; data-plane implementation open |
 | Audit every change | Record who changed pricing/license/payment status | High | Partial in CloudServer |
 | Key rotation | Signing keys must support production rotation | High | Partial concept |
 
@@ -69,6 +70,16 @@ Survey/FAS clone work is removed from the active API surface because it does not
 | HQ sync | Branches sync to one client HQ server | Entitlement controls branch/device limits | Open |
 | Cloud sync | Branches/HQ sync to SafarSuite cloud data plane | Entitlement controls cloud-sync module | Open |
 | Hosted SaaS | Client uses hosted SafarSuite | Subscription renews hosted tenant access | Open |
+
+These are deployment modes for the same SafarSuite product, not separate products. Offline local is one supported mode, but the product must also support multi-branch clients where branches sync to HQ or to a cloud data plane. The current control work should therefore keep branch/site identity, allowed branch limits, cloud-sync module access, heartbeat, diagnostics, and signed commands compatible with future multi-branch sync without mixing operational business-data sync into the billing/license channel.
+
+The canonical deployment and data-sync boundary is documented in:
+
+```text
+docs/architecture/client-deployment-and-data-sync-boundary.md
+```
+
+The first installation/deployment profile foundation now exists in Control Cloud setup and status contracts. The Control Desk client page can save a deployment profile, create a cloud setup token from that profile, create a bootstrap package/install command from that profile, and display the stored cloud profile returned by installation status.
 
 ## Desktop App Requirements
 

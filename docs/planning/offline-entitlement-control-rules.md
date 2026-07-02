@@ -115,13 +115,21 @@ Offline fallback renewal:
 
 ```text
 client pays or office approves renewal
-  -> Control Cloud or Control Desk generates a signed renewal file
+  -> Control Cloud generates a signed renewal file
   -> client transfers file to the offline local server
   -> local server imports the file and verifies signature/version/installation
   -> access extends without direct internet on that machine
 ```
 
 This fallback is mandatory for clients whose local server cannot reach the internet near expiry.
+
+Basic implementation now exists:
+
+```text
+GET /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/offline-renewal-file
+```
+
+The exported JSON file wraps the same installation-bound signed entitlement bundle used by direct cloud pull. The local server imports the file by unwrapping the signed bundle and running the existing signature, payload-hash, issuer/audience, installation-id, date-order, and monotonic-version checks before updating its local cache.
 
 ## Revocation Rule
 
@@ -157,7 +165,35 @@ Reporting: active, 10 users
 AI Assistant: trial until 2026-07-15
 ```
 
-The local app gates features by product entitlement and limit, while still showing global subscription and payment state.
+The local app gates features by product entitlement and limit, while still showing global subscription and payment state. SafarSuite is module-composed: a customer may receive IncludedForAll modules and pay for PaidAddOn modules in any supported combination. A missing or disabled module in the signed entitlement bundle means the customer does not currently have access to that module and the deployed app must not enable it.
+
+## Deployment Mode Rule
+
+Offline licensing is one supported runtime shape, not the whole product.
+
+Canonical deployment modes are:
+
+```text
+OfflineLocal
+BranchToHqSync
+CloudSyncMultiBranch
+HostedSaas
+```
+
+These modes are separate from bootstrap modes:
+
+```text
+OnlineBootstrap
+OfflineAssistedBootstrap
+```
+
+The commercial/control channel may entitle modules, allowed branches, allowed devices/users, heartbeat, commands, diagnostics, and setup visibility for every deployment mode. Operational branch/HQ/cloud business-data sync remains a separate future data plane and must not be implemented inside the billing/license channel.
+
+See:
+
+```text
+docs/architecture/client-deployment-and-data-sync-boundary.md
+```
 
 ## Command Queue Rule
 
@@ -191,6 +227,17 @@ Offline licensing depends on local time, so the local server must track:
 - entitlement issue time and expiry time
 
 Clock tampering should trigger warnings and support review. It should not instantly destroy access for a paid client unless the policy explicitly marks the installation as high risk.
+
+Basic implementation now exists in the shared local-server licensing library:
+
+- `LocalServerEntitlementTrustState` stores last accepted entitlement version, bundle issue, last trusted cloud time, last local check time, replay warning, and clock rollback warning.
+- Direct bundle import and offline renewal import reject older accepted versions.
+- Re-importing the same accepted offline renewal file is rejected as replay.
+- A newer entitlement issued before the last trusted cloud time is accepted but recorded as a replay warning for support review.
+- Feature checks and heartbeat/reporting update the local check/trusted-cloud timestamps.
+- Accepted and rejected local entitlement imports are persisted in a local import-audit file with source, result, version, bundle issue, failure code, payload hash, and signing key id, then included in diagnostics.
+
+The actual deployed SafarSuite app/runtime is not in this workspace. When we wire production enforcement screens, local warnings, installer service registration, install script execution, or local audit UI, those changes must happen in the SafarSuite app workspace and should consume this shared local-server licensing boundary.
 
 ## Support Safety
 
@@ -233,5 +280,19 @@ The audit trail is part of the product, not optional debug logging.
 8. Basic done: add heartbeat endpoint and local-server heartbeat state reporting, keeping heartbeat receipt status separate from reported license validity.
 9. Basic done: add portal and Control Desk visibility for license state, heartbeat state, pending commands, and latest entitlement.
 10. Basic done: add client portal identity/session boundaries while keeping local-server entitlement pull on a machine-facing endpoint.
-11. Next: add offline renewal file import/export as the fallback path for sites that cannot connect near expiry.
-12. Add clock/replay protection, richer audit views, and diagnostics.
+11. Basic done: add offline renewal file export/import as the fallback path for sites that cannot connect near expiry. Control Cloud exports a JSON renewal file around the signed entitlement bundle, and the local server imports it through the existing verifier/cache path.
+12. Basic done: add local-server clock/replay protection. The local-server trust state records accepted bundle versions/issues, last trusted cloud time, last local check time, replay warnings, and clock rollback warnings; same-file replay is rejected without changing normal paid-period enforcement.
+13. Basic done: add setup-token registration. Control Cloud creates one-time hashed setup tokens, local servers register outward with the token, and entitlement issue requires the installation to already be registered.
+14. Basic done: add first bootstrap package generation. Control Cloud returns a setup token, cloud endpoints, copyable install command, signed bootstrap bundle metadata/download, template artifact checksums, a served install script template, and Docker Compose/environment templates for a client installation.
+15. Basic done: add setup/bootstrap/registration audit visibility. Control Cloud records setup-token creation, bootstrap package generation, and local-server registration accept/reject events, then exposes them through a filtered audit-events endpoint.
+16. Basic done: add diagnostics export/upload. Local-server libraries can generate a support bundle from cached entitlement, trust-state, local import audit, runtime, Docker/Compose, bootstrap, service-state, and recent-error data, upload it to Control Cloud, and Control Cloud stores/latest-reads the report.
+17. Basic done: tighten module guardrails. Client contracts and entitlement snapshots require at least one enabled module, and local feature access remains denied when a requested module is missing or disabled.
+18. Basic done: add signed bootstrap bundle/download generation and the first install script template.
+19. Basic done: add first Docker Compose local-server service template and environment template artifacts.
+20. Basic done: add richer deployed-runtime diagnostics slots for runtime version/build/channel, Docker/Compose availability, bootstrap checksums, service state, and recent error summaries.
+21. Basic done: add local import audit persistence. Local imports now record accepted/rejected Control Cloud pulls, direct bundle imports, and offline renewal-file imports, and diagnostics surfaces the recent records for support review.
+22. Basic done: add the first runtime integration boundary. Bootstrap packages include a signed runtime plan, diagnostics endpoint, runtime services manifest, and an optional `safarsuite-app` Compose profile slot for the separate app workspace.
+23. Basic done: add the shared local module-gateway contract and application handler. The future local API can expose `LocalServerModuleAccessResponse` so the SafarSuite app can enforce enabled/disabled/expired module states.
+24. Basic done: define deployment topology and data-sync boundaries for offline local, branch-to-HQ sync, cloud-sync multi-branch, and hosted SaaS modes. The boundary separates bootstrap modes from client deployment modes, reserves branch/site identity room, and keeps operational business-data sync out of the billing/license channel.
+25. Basic done: add an explicit installation/deployment profile model that carries bootstrap mode, client deployment mode, site/branch identity, parent HQ/site links, and sync topology metadata through setup, registration, status, heartbeat, diagnostics, and bootstrap responses.
+26. Next: add minimal Control Desk/client-desk setup controls for deployment profile values before implementing any operational branch/HQ/cloud business-data sync.

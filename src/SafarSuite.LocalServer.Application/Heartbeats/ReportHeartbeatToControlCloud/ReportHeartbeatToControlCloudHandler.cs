@@ -8,19 +8,24 @@ namespace SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatToControl
 
 public sealed class ReportHeartbeatToControlCloudHandler
 {
+    private static readonly TimeSpan ClockBackwardTolerance = TimeSpan.FromMinutes(5);
+
     private readonly IControlCloudHeartbeatClient _cloudClient;
     private readonly ILocalServerEntitlementCache _cache;
+    private readonly ILocalServerEntitlementTrustStateStore _trustStateStore;
     private readonly LocalServerEntitlementPolicy _policy;
     private readonly ILocalServerClock _clock;
 
     public ReportHeartbeatToControlCloudHandler(
         IControlCloudHeartbeatClient cloudClient,
         ILocalServerEntitlementCache cache,
+        ILocalServerEntitlementTrustStateStore trustStateStore,
         LocalServerEntitlementPolicy policy,
         ILocalServerClock clock)
     {
         _cloudClient = cloudClient;
         _cache = cache;
+        _trustStateStore = trustStateStore;
         _policy = policy;
         _clock = clock;
     }
@@ -48,6 +53,13 @@ public sealed class ReportHeartbeatToControlCloudHandler
         }
 
         var reportedAtUtc = _clock.UtcNow;
+        var trustState = await LoadTrustStateAsync(
+            installationId,
+            reportedAtUtc,
+            cancellationToken);
+        trustState = trustState.RecordLocalCheck(
+            reportedAtUtc,
+            ClockBackwardTolerance);
         var asOfDate = command.AsOfDate
             ?? DateOnly.FromDateTime(reportedAtUtc.UtcDateTime);
         var entitlement = await _cache.GetCurrentAsync(cancellationToken);
@@ -73,15 +85,31 @@ public sealed class ReportHeartbeatToControlCloudHandler
 
         if (!report.IsSuccess)
         {
+            await _trustStateStore.SaveAsync(trustState, cancellationToken);
+
             return ReportHeartbeatToControlCloudResult.Failure(
                 entitlementState,
                 report.FailureCode ?? "ControlCloudHeartbeatFailed",
                 report.Detail ?? "Control Cloud did not accept the heartbeat.");
         }
 
+        trustState = trustState.RecordSuccessfulCloudTime(
+            report.Heartbeat!.ReceivedAtUtc,
+            reportedAtUtc);
+        await _trustStateStore.SaveAsync(trustState, cancellationToken);
+
         return ReportHeartbeatToControlCloudResult.Success(
-            report.Heartbeat!,
+            report.Heartbeat,
             entitlementState);
+    }
+
+    private async Task<LocalServerEntitlementTrustState> LoadTrustStateAsync(
+        string installationId,
+        DateTimeOffset createdAtUtc,
+        CancellationToken cancellationToken)
+    {
+        return await _trustStateStore.GetAsync(installationId, cancellationToken)
+            ?? LocalServerEntitlementTrustState.Empty(installationId, createdAtUtc);
     }
 
     private static string? NormalizeRequiredText(string? value)

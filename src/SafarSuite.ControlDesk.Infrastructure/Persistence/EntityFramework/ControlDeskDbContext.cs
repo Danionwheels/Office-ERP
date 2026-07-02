@@ -21,6 +21,8 @@ public sealed class ControlDeskDbContext : DbContext
 
     public DbSet<ClientAccountingProfile> ClientAccountingProfiles => Set<ClientAccountingProfile>();
 
+    public DbSet<ClientDeployment> ClientDeployments => Set<ClientDeployment>();
+
     public DbSet<LedgerAccount> LedgerAccounts => Set<LedgerAccount>();
 
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
@@ -50,6 +52,7 @@ public sealed class ControlDeskDbContext : DbContext
         modelBuilder.HasDefaultSchema("control");
         modelBuilder.ApplyConfiguration(new ClientConfiguration());
         modelBuilder.ApplyConfiguration(new ClientAccountingProfileConfiguration());
+        modelBuilder.ApplyConfiguration(new ClientDeploymentConfiguration());
         modelBuilder.ApplyConfiguration(new LedgerAccountConfiguration());
         modelBuilder.ApplyConfiguration(new JournalEntryConfiguration());
         modelBuilder.ApplyConfiguration(new ChargeCodeConfiguration());

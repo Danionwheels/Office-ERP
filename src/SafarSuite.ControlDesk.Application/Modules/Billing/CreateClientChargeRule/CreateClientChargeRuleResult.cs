@@ -5,6 +5,7 @@ public sealed record CreateClientChargeRuleResult(
     Guid ClientId,
     Guid? ContractId,
     Guid ChargeCodeId,
+    string? ProductModuleCode,
     decimal UnitPriceAmount,
     string CurrencyCode,
     decimal Quantity,

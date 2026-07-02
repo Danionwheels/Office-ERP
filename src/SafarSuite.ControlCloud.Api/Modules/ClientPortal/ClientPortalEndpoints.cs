@@ -20,6 +20,16 @@ public static class ClientPortalEndpoints
 
         group.MapPost("/invitations", CreateInvitationAsync)
             .WithName("CreateClientPortalInvitation");
+        group.MapGet("/clients/{clientId:guid}/invitations", ListInvitationsAsync)
+            .WithName("ListClientPortalInvitations");
+        group.MapPost(
+                "/clients/{clientId:guid}/invitations/{invitationId:guid}/resend",
+                ResendInvitationAsync)
+            .WithName("ResendClientPortalInvitation");
+        group.MapPost(
+                "/clients/{clientId:guid}/invitations/{invitationId:guid}/revoke",
+                RevokeInvitationAsync)
+            .WithName("RevokeClientPortalInvitation");
         group.MapPost("/invitations/accept", AcceptInvitationAsync)
             .WithName("AcceptClientPortalInvitation");
         group.MapPost("/sessions", CreateSessionAsync)
@@ -40,6 +50,8 @@ public static class ClientPortalEndpoints
         CreateClientPortalInvitationRequest request,
         HttpRequest httpRequest,
         ClientPortalProviderAccessOptions providerAccess,
+        IClientPortalInvitationDeliveryRecorder deliveries,
+        IClientPortalAuditRecorder audit,
         CreateClientPortalInvitationHandler handler,
         CancellationToken cancellationToken)
     {
@@ -63,6 +75,33 @@ public static class ClientPortalEndpoints
         if (invitation.IsSuccess)
         {
             var invitationUrl = BuildInvitationUrl(httpRequest, invitation.InvitationToken!);
+            var delivered = await RecordDeliveryAsync(
+                deliveries,
+                invitation.InvitationId,
+                invitation.ClientId,
+                invitation.Email,
+                invitation.FullName,
+                invitation.Role,
+                invitation.ExpiresAtUtc,
+                invitation.InvitationToken!,
+                invitationUrl,
+                "Created",
+                cancellationToken);
+            await RecordAuditAsync(
+                audit,
+                new ClientPortalAuditRecord(
+                    Guid.NewGuid(),
+                    invitation.ClientId,
+                    invitation.InvitationId,
+                    null,
+                    invitation.Email,
+                    ClientPortalAuditEventTypes.InvitationDeliveryRecorded,
+                    NormalizeActor(request.CreatedBy),
+                    delivered
+                        ? "Client portal invitation delivery was recorded."
+                        : "Client portal invitation delivery recording failed.",
+                    DateTimeOffset.UtcNow),
+                cancellationToken);
 
             return Results.Ok(new ClientPortalInvitationResponse(
                 invitation.InvitationId,
@@ -83,6 +122,222 @@ public static class ClientPortalEndpoints
             "PortalUserAlreadyExists" => Results.Conflict(new { code = invitation.FailureCode, detail = invitation.Detail }),
             _ => Results.BadRequest(new { code = invitation.FailureCode, detail = invitation.Detail })
         };
+    }
+
+    private static IResult ToInvitationFailureResult(string? failureCode, string? detail)
+    {
+        var response = new { code = failureCode, detail };
+
+        return failureCode switch
+        {
+            "ClientNotFound" => Results.NotFound(response),
+            "InvitationNotFound" => Results.NotFound(response),
+            "PortalUserAlreadyExists" => Results.Conflict(response),
+            "InvitationClientMismatch" => Results.Conflict(response),
+            "InvitationNotUsable" => Results.Conflict(response),
+            _ => Results.BadRequest(response)
+        };
+    }
+
+    private static ClientPortalInvitationResponse ToResponse(
+        HttpRequest request,
+        ClientPortalInvitationItemResult invitation)
+    {
+        var invitationUrl = string.IsNullOrWhiteSpace(invitation.InvitationToken)
+            ? null
+            : BuildInvitationUrl(request, invitation.InvitationToken);
+
+        return new ClientPortalInvitationResponse(
+            invitation.InvitationId,
+            invitation.ClientId,
+            invitation.Email,
+            invitation.FullName,
+            invitation.Role,
+            invitation.Status,
+            invitation.InvitedAtUtc,
+            invitation.ExpiresAtUtc,
+            invitation.InvitationToken,
+            invitationUrl);
+    }
+
+    private static async Task<bool> RecordDeliveryAsync(
+        IClientPortalInvitationDeliveryRecorder deliveries,
+        Guid invitationId,
+        Guid clientId,
+        string email,
+        string fullName,
+        string role,
+        DateTimeOffset expiresAtUtc,
+        string invitationToken,
+        string invitationUrl,
+        string deliveryReason,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await deliveries.RecordAsync(
+                new ClientPortalInvitationDeliveryRecord(
+                    Guid.NewGuid(),
+                    invitationId,
+                    clientId,
+                    email,
+                    fullName,
+                    role,
+                    deliveryReason,
+                    invitationUrl,
+                    invitationToken,
+                    DateTimeOffset.UtcNow,
+                    expiresAtUtc),
+                cancellationToken);
+
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task RecordAuditAsync(
+        IClientPortalAuditRecorder audit,
+        ClientPortalAuditRecord record,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await audit.RecordAsync(record, cancellationToken);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static async Task<IResult> ListInvitationsAsync(
+        Guid clientId,
+        HttpRequest httpRequest,
+        ClientPortalProviderAccessOptions providerAccess,
+        ListClientPortalInvitationsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(httpRequest, providerAccess);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var invitations = await handler.HandleAsync(
+            new ListClientPortalInvitationsQuery(clientId),
+            cancellationToken);
+
+        if (invitations.IsSuccess)
+        {
+            return Results.Ok(new ListClientPortalInvitationsResponse(
+                invitations.ClientId,
+                invitations.Invitations!
+                    .Select(invitation => ToResponse(httpRequest, invitation))
+                    .ToArray()));
+        }
+
+        return ToInvitationFailureResult(invitations.FailureCode, invitations.Detail);
+    }
+
+    private static async Task<IResult> ResendInvitationAsync(
+        Guid clientId,
+        Guid invitationId,
+        ResendClientPortalInvitationRequest request,
+        HttpRequest httpRequest,
+        ClientPortalProviderAccessOptions providerAccess,
+        IClientPortalInvitationDeliveryRecorder deliveries,
+        IClientPortalAuditRecorder audit,
+        ResendClientPortalInvitationHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(httpRequest, providerAccess);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var invitation = await handler.HandleAsync(
+            new ResendClientPortalInvitationCommand(
+                clientId,
+                invitationId,
+                request.ExpiresInDays,
+                request.CreatedBy),
+            cancellationToken);
+
+        if (invitation.IsSuccess)
+        {
+            var invitationItem = invitation.Invitation!;
+            var response = ToResponse(httpRequest, invitationItem);
+
+            var delivered = await RecordDeliveryAsync(
+                deliveries,
+                invitationItem.InvitationId,
+                invitationItem.ClientId,
+                invitationItem.Email,
+                invitationItem.FullName,
+                invitationItem.Role,
+                invitationItem.ExpiresAtUtc,
+                invitationItem.InvitationToken!,
+                response.InvitationUrl!,
+                "Resent",
+                cancellationToken);
+            await RecordAuditAsync(
+                audit,
+                new ClientPortalAuditRecord(
+                    Guid.NewGuid(),
+                    invitationItem.ClientId,
+                    invitationItem.InvitationId,
+                    null,
+                    invitationItem.Email,
+                    ClientPortalAuditEventTypes.InvitationDeliveryRecorded,
+                    NormalizeActor(request.CreatedBy),
+                    delivered
+                        ? "Client portal invitation resend delivery was recorded."
+                        : "Client portal invitation resend delivery recording failed.",
+                    DateTimeOffset.UtcNow),
+                cancellationToken);
+
+            return Results.Ok(response);
+        }
+
+        return ToInvitationFailureResult(invitation.FailureCode, invitation.Detail);
+    }
+
+    private static async Task<IResult> RevokeInvitationAsync(
+        Guid clientId,
+        Guid invitationId,
+        RevokeClientPortalInvitationRequest request,
+        HttpRequest httpRequest,
+        ClientPortalProviderAccessOptions providerAccess,
+        RevokeClientPortalInvitationHandler handler,
+        CancellationToken cancellationToken)
+    {
+        _ = request;
+        var providerAuthorizationFailure = AuthorizeProviderAccess(httpRequest, providerAccess);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var invitation = await handler.HandleAsync(
+            new RevokeClientPortalInvitationCommand(clientId, invitationId),
+            cancellationToken);
+
+        return invitation.IsSuccess
+            ? Results.Ok(ToResponse(httpRequest, invitation.Invitation!))
+            : ToInvitationFailureResult(invitation.FailureCode, invitation.Detail);
     }
 
     private static IResult? AuthorizeProviderAccess(
@@ -126,6 +381,13 @@ public static class ClientPortalEndpoints
 
         return leftBytes.Length == rightBytes.Length
             && CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
+    }
+
+    private static string NormalizeActor(string value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? ClientPortalAuditActors.ControlDesk
+            : value.Trim();
     }
 
     private static async Task<IResult> AcceptInvitationAsync(
@@ -431,41 +693,6 @@ public static class ClientPortalEndpoints
     internal static ClientPortalSignedEntitlementBundleResponse ToResponse(
         ControlCloudSignedEntitlementBundle bundle)
     {
-        return new ClientPortalSignedEntitlementBundleResponse(
-            bundle.PayloadJson,
-            new ClientPortalEntitlementBundlePayloadResponse(
-                bundle.Payload.BundleVersion,
-                bundle.Payload.Issuer,
-                bundle.Payload.Audience,
-                bundle.Payload.ClientId,
-                bundle.Payload.InstallationId,
-                bundle.Payload.EntitlementVersion,
-                bundle.Payload.BundleIssueId,
-                bundle.Payload.EntitlementSnapshotId,
-                bundle.Payload.ContractId,
-                bundle.Payload.SourceInvoiceId,
-                bundle.Payload.SourceInvoiceNumber,
-                bundle.Payload.Status,
-                bundle.Payload.BundleIssuedAtUtc,
-                bundle.Payload.EntitlementIssuedAtUtc,
-                bundle.Payload.ValidFrom,
-                bundle.Payload.PaidUntil,
-                bundle.Payload.WarningStartsAt,
-                bundle.Payload.GraceUntil,
-                bundle.Payload.OfflineValidUntil,
-                bundle.Payload.AllowedDevices,
-                bundle.Payload.AllowedBranches,
-                bundle.Payload.Modules
-                    .OrderBy(module => module.ModuleCode, StringComparer.Ordinal)
-                    .Select(module => new ClientPortalEntitlementBundleModuleResponse(
-                        module.ModuleCode,
-                        module.Status,
-                        module.IsEnabled))
-                    .ToArray()),
-            new ClientPortalEntitlementBundleSignatureResponse(
-                bundle.Signature.Algorithm,
-                bundle.Signature.KeyId,
-                bundle.Signature.PayloadSha256,
-                bundle.Signature.Value));
+        return ControlCloudEntitlementBundleContractMapper.ToResponse(bundle);
     }
 }

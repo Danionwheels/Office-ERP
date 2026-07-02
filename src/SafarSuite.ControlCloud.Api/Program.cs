@@ -1,16 +1,25 @@
+using SafarSuite.ControlCloud.Api.Modules.Audit;
 using SafarSuite.ControlCloud.Api.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Api.Modules.InboundControlDesk;
 using SafarSuite.ControlCloud.Api.Modules.LocalServer;
 using SafarSuite.ControlCloud.Application.Common;
+using SafarSuite.ControlCloud.Application.Modules.Audit.ListControlCloudAuditEvents;
+using SafarSuite.ControlCloud.Application.Modules.Audit.Ports;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 using SafarSuite.ControlCloud.Application.Modules.InboundControlDesk;
 using SafarSuite.ControlCloud.Application.Modules.InboundControlDesk.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.AcknowledgeInstallationCommand;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.ExportOfflineRenewalFile;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateInstallationSetupToken;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateLocalServerBootstrapPackage;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationStatus;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetLatestInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetPendingInstallationCommands;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.QueueInstallationCommand;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.ReceiveInstallationDiagnostics;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.RegisterLocalServerInstallation;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ReportInstallationHeartbeat;
 using SafarSuite.ControlCloud.Infrastructure;
 using SafarSuite.ControlCloud.Infrastructure.ClientPortal;
@@ -29,9 +38,24 @@ var entitlementSigningOptions =
 var commandQueueOptions =
     builder.Configuration.GetSection(ControlCloudCommandQueueOptions.SectionName).Get<ControlCloudCommandQueueOptions>()
     ?? new ControlCloudCommandQueueOptions();
+var setupTokenOptions =
+    builder.Configuration.GetSection(ControlCloudSetupTokenOptions.SectionName).Get<ControlCloudSetupTokenOptions>()
+    ?? new ControlCloudSetupTokenOptions();
+var bootstrapPackageOptions =
+    builder.Configuration.GetSection(ControlCloudBootstrapPackageOptions.SectionName).Get<ControlCloudBootstrapPackageOptions>()
+    ?? new ControlCloudBootstrapPackageOptions();
+var diagnosticsOptions =
+    builder.Configuration.GetSection(ControlCloudDiagnosticsOptions.SectionName).Get<ControlCloudDiagnosticsOptions>()
+    ?? new ControlCloudDiagnosticsOptions();
 var clientPortalAccessOptions =
     builder.Configuration.GetSection(ClientPortalAccessOptions.SectionName).Get<ClientPortalAccessOptions>()
     ?? new ClientPortalAccessOptions();
+var clientPortalInvitationDeliveryOptions =
+    builder.Configuration.GetSection(ClientPortalInvitationDeliveryOptions.SectionName).Get<ClientPortalInvitationDeliveryOptions>()
+    ?? new ClientPortalInvitationDeliveryOptions();
+var clientPortalAuditOptions =
+    builder.Configuration.GetSection(ClientPortalAuditOptions.SectionName).Get<ClientPortalAuditOptions>()
+    ?? new ClientPortalAuditOptions();
 var clientPortalProviderAccessOptions =
     builder.Configuration.GetSection(ClientPortalProviderAccessOptions.SectionName).Get<ClientPortalProviderAccessOptions>()
     ?? new ClientPortalProviderAccessOptions();
@@ -39,7 +63,12 @@ var clientPortalProviderAccessOptions =
 builder.Services.AddSingleton(receiverOptions);
 builder.Services.AddSingleton(entitlementSigningOptions);
 builder.Services.AddSingleton(commandQueueOptions);
+builder.Services.AddSingleton(setupTokenOptions);
+builder.Services.AddSingleton(bootstrapPackageOptions);
+builder.Services.AddSingleton(diagnosticsOptions);
 builder.Services.AddSingleton(clientPortalAccessOptions);
+builder.Services.AddSingleton(clientPortalInvitationDeliveryOptions);
+builder.Services.AddSingleton(clientPortalAuditOptions);
 builder.Services.AddSingleton(clientPortalProviderAccessOptions);
 builder.Services.AddSingleton(new ControlCloudEntitlementBundleIdentity(
     entitlementSigningOptions.Issuer,
@@ -47,21 +76,39 @@ builder.Services.AddSingleton(new ControlCloudEntitlementBundleIdentity(
 builder.Services.AddSingleton<IControlCloudClock, SystemControlCloudClock>();
 builder.Services.AddSingleton<IControlCloudSigningKeyStore, ConfiguredControlCloudSigningKeyStore>();
 builder.Services.AddSingleton<IControlCloudEntitlementBundleSigner, HmacControlCloudEntitlementBundleSigner>();
+builder.Services.AddSingleton<IControlCloudBootstrapPackageSigner, HmacControlCloudBootstrapPackageSigner>();
 builder.Services.AddSingleton<IControlCloudInstallationCommandSigner, HmacControlCloudInstallationCommandSigner>();
+builder.Services.AddSingleton<IControlCloudInstallationSetupTokenService, RandomControlCloudInstallationSetupTokenService>();
 builder.Services.AddSingleton<IClientPortalCredentialService, HmacClientPortalCredentialService>();
+AddClientPortalInvitationDelivery(builder.Services, clientPortalInvitationDeliveryOptions);
+builder.Services.AddSingleton<FileClientPortalAuditRecorder>();
+builder.Services.AddSingleton<IClientPortalAuditRecorder>(
+    services => services.GetRequiredService<FileClientPortalAuditRecorder>());
+builder.Services.AddSingleton<IControlCloudAuditEventReader>(
+    services => services.GetRequiredService<FileClientPortalAuditRecorder>());
 builder.Services.AddSingleton<IClientPortalSessionService, HmacClientPortalSessionService>();
 builder.Services.AddSingleton<ControlCloudEnvelopeSignatureValidator>();
 AddPersistence(builder.Services, builder.Configuration);
 builder.Services.AddScoped<ControlDeskEnvelopeProjectionService>();
 builder.Services.AddScoped<AcknowledgeInstallationCommandHandler>();
 builder.Services.AddScoped<AcceptClientPortalInvitationHandler>();
+builder.Services.AddScoped<CreateInstallationSetupTokenHandler>();
+builder.Services.AddScoped<CreateLocalServerBootstrapPackageHandler>();
 builder.Services.AddScoped<CreateClientPortalInvitationHandler>();
 builder.Services.AddScoped<CreateClientPortalSessionHandler>();
+builder.Services.AddScoped<ExportOfflineRenewalFileHandler>();
+builder.Services.AddScoped<ListControlCloudAuditEventsHandler>();
+builder.Services.AddScoped<ListClientPortalInvitationsHandler>();
+builder.Services.AddScoped<ResendClientPortalInvitationHandler>();
+builder.Services.AddScoped<RevokeClientPortalInvitationHandler>();
 builder.Services.AddScoped<GetInstallationStatusHandler>();
+builder.Services.AddScoped<GetLatestInstallationDiagnosticsHandler>();
 builder.Services.AddScoped<GetClientPortalCommercialSummaryHandler>();
 builder.Services.AddScoped<GetClientPortalSignedEntitlementBundleHandler>();
 builder.Services.AddScoped<GetPendingInstallationCommandsHandler>();
 builder.Services.AddScoped<QueueInstallationCommandHandler>();
+builder.Services.AddScoped<ReceiveInstallationDiagnosticsHandler>();
+builder.Services.AddScoped<RegisterLocalServerInstallationHandler>();
 builder.Services.AddScoped<ReportInstallationHeartbeatHandler>();
 builder.Services.AddScoped<ReceiveControlDeskEnvelopeHandler>();
 
@@ -76,10 +123,31 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.MapInboundControlDeskEndpoints();
+app.MapControlCloudAuditEndpoints();
 app.MapClientPortalEndpoints();
 app.MapLocalServerCommandEndpoints();
 
 app.Run();
+
+static void AddClientPortalInvitationDelivery(
+    IServiceCollection services,
+    ClientPortalInvitationDeliveryOptions options)
+{
+    if (options.Provider.Equals("File", StringComparison.OrdinalIgnoreCase))
+    {
+        services.AddSingleton<IClientPortalInvitationDeliveryRecorder, FileClientPortalInvitationDeliveryRecorder>();
+        return;
+    }
+
+    if (options.Provider.Equals("Smtp", StringComparison.OrdinalIgnoreCase))
+    {
+        services.AddSingleton<IClientPortalInvitationDeliveryRecorder, SmtpClientPortalInvitationDeliveryRecorder>();
+        return;
+    }
+
+    throw new InvalidOperationException(
+        $"Unsupported ClientPortal:InvitationDelivery:Provider '{options.Provider}'. Use 'File' or 'Smtp'.");
+}
 
 static void AddPersistence(IServiceCollection services, IConfiguration configuration)
 {
@@ -109,8 +177,10 @@ static void AddPersistence(IServiceCollection services, IConfiguration configura
         services.AddScoped<IControlCloudClientInstallationRepository, EfControlCloudClientInstallationRepository>();
         services.AddScoped<IControlCloudEntitlementBundleIssueRepository, EfControlCloudEntitlementBundleIssueRepository>();
         services.AddScoped<IControlCloudInstallationCommandRepository, EfControlCloudInstallationCommandRepository>();
+        services.AddScoped<IControlCloudInstallationSetupTokenRepository, EfControlCloudInstallationSetupTokenRepository>();
         services.AddScoped<IControlCloudInstallationCommandAcknowledgementRepository, EfControlCloudInstallationCommandAcknowledgementRepository>();
         services.AddScoped<IControlCloudInstallationHeartbeatRepository, EfControlCloudInstallationHeartbeatRepository>();
+        services.AddScoped<IControlCloudInstallationDiagnosticReportRepository, EfControlCloudInstallationDiagnosticReportRepository>();
         services.AddScoped<IControlCloudUnitOfWork, EfControlCloudUnitOfWork>();
 
         return;
@@ -128,7 +198,9 @@ static void AddPersistence(IServiceCollection services, IConfiguration configura
     services.AddSingleton<IControlCloudClientInstallationRepository, FileControlCloudClientInstallationRepository>();
     services.AddSingleton<IControlCloudEntitlementBundleIssueRepository, FileControlCloudEntitlementBundleIssueRepository>();
     services.AddSingleton<IControlCloudInstallationCommandRepository, FileControlCloudInstallationCommandRepository>();
+    services.AddSingleton<IControlCloudInstallationSetupTokenRepository, FileControlCloudInstallationSetupTokenRepository>();
     services.AddSingleton<IControlCloudInstallationCommandAcknowledgementRepository, FileControlCloudInstallationCommandAcknowledgementRepository>();
     services.AddSingleton<IControlCloudInstallationHeartbeatRepository, FileControlCloudInstallationHeartbeatRepository>();
+    services.AddSingleton<IControlCloudInstallationDiagnosticReportRepository, FileControlCloudInstallationDiagnosticReportRepository>();
     services.AddSingleton<IControlCloudUnitOfWork, FileControlCloudUnitOfWork>();
 }

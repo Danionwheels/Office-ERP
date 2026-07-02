@@ -32,11 +32,17 @@ public sealed class ControlCloudDbContext : DbContext
     public DbSet<ControlCloudInstallationCommandEntity> InstallationCommands =>
         Set<ControlCloudInstallationCommandEntity>();
 
+    public DbSet<ControlCloudInstallationSetupTokenEntity> InstallationSetupTokens =>
+        Set<ControlCloudInstallationSetupTokenEntity>();
+
     public DbSet<ControlCloudInstallationCommandAcknowledgementEntity> InstallationCommandAcknowledgements =>
         Set<ControlCloudInstallationCommandAcknowledgementEntity>();
 
     public DbSet<ControlCloudInstallationHeartbeatEntity> InstallationHeartbeats =>
         Set<ControlCloudInstallationHeartbeatEntity>();
+
+    public DbSet<ControlCloudInstallationDiagnosticReportEntity> InstallationDiagnosticReports =>
+        Set<ControlCloudInstallationDiagnosticReportEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -48,7 +54,9 @@ public sealed class ControlCloudDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ControlCloudClientInstallationEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ControlCloudEntitlementBundleIssueEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ControlCloudInstallationCommandEntityConfiguration());
+        modelBuilder.ApplyConfiguration(new ControlCloudInstallationSetupTokenEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ControlCloudInstallationCommandAcknowledgementEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ControlCloudInstallationHeartbeatEntityConfiguration());
+        modelBuilder.ApplyConfiguration(new ControlCloudInstallationDiagnosticReportEntityConfiguration());
     }
 }

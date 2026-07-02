@@ -163,8 +163,11 @@ Some objects should be cloned closely. Some should be modernized. Some should be
 Read these first:
 
 ```text
+docs/architecture/product-direction.md
 docs/architecture/product-naming.md
 docs/architecture/layered-architecture.md
+docs/architecture/cloud-local-communication-map.md
+docs/architecture/product-module-catalog-boundary.md
 README.md
 docs/architecture/why-and-cloud-portal-link.md
 docs/architecture/current-cloud-server-reuse-assessment.md
@@ -275,6 +278,7 @@ This proves the new business value before pulling in every legacy Survey/FAS scr
 - SafarSuite Control Desk is office-use only.
 - Final app should be desktop.
 - Development UI can run in browser.
+- `docs/architecture/product-direction.md` is the canonical direction note for keeping Control Desk, Control Cloud, Client Portal, and SafarSuite responsibilities aligned.
 - Cloud sync for client business data is optional.
 - Control Cloud for billing/licensing/portal is still needed.
 - Dynamic pricing is per client and owned by SafarSuite Control Desk.

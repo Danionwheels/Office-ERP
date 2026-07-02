@@ -53,6 +53,13 @@ public sealed class EfControlCloudClientInstallationRepository : IControlCloudCl
 
         entity.ClientId = installation.ClientId;
         entity.Status = installation.Status;
+        entity.BootstrapMode = installation.DeploymentProfile.BootstrapMode;
+        entity.ClientDeploymentMode = installation.DeploymentProfile.ClientDeploymentMode;
+        entity.SiteId = installation.DeploymentProfile.SiteId;
+        entity.SiteRole = installation.DeploymentProfile.SiteRole;
+        entity.ParentSiteId = installation.DeploymentProfile.ParentSiteId;
+        entity.BranchCode = installation.DeploymentProfile.BranchCode;
+        entity.SyncTopologyId = installation.DeploymentProfile.SyncTopologyId;
         entity.RegisteredAtUtc = installation.RegisteredAtUtc;
         entity.LastBundleIssuedAtUtc = installation.LastBundleIssuedAtUtc;
         entity.LatestEntitlementVersion = installation.LatestEntitlementVersion;
@@ -66,7 +73,14 @@ public sealed class EfControlCloudClientInstallationRepository : IControlCloudCl
             entity.Status,
             entity.RegisteredAtUtc,
             entity.LastBundleIssuedAtUtc,
-            entity.LatestEntitlementVersion);
+            entity.LatestEntitlementVersion,
+            entity.BootstrapMode,
+            entity.ClientDeploymentMode,
+            entity.SiteId,
+            entity.SiteRole,
+            entity.ParentSiteId,
+            entity.BranchCode,
+            entity.SyncTopologyId);
     }
 
     private static ControlCloudClientInstallationEntity FromDomain(ControlCloudClientInstallation installation)
@@ -76,6 +90,13 @@ public sealed class EfControlCloudClientInstallationRepository : IControlCloudCl
             ClientId = installation.ClientId,
             InstallationId = installation.InstallationId,
             Status = installation.Status,
+            BootstrapMode = installation.DeploymentProfile.BootstrapMode,
+            ClientDeploymentMode = installation.DeploymentProfile.ClientDeploymentMode,
+            SiteId = installation.DeploymentProfile.SiteId,
+            SiteRole = installation.DeploymentProfile.SiteRole,
+            ParentSiteId = installation.DeploymentProfile.ParentSiteId,
+            BranchCode = installation.DeploymentProfile.BranchCode,
+            SyncTopologyId = installation.DeploymentProfile.SyncTopologyId,
             RegisteredAtUtc = installation.RegisteredAtUtc,
             LastBundleIssuedAtUtc = installation.LastBundleIssuedAtUtc,
             LatestEntitlementVersion = installation.LatestEntitlementVersion

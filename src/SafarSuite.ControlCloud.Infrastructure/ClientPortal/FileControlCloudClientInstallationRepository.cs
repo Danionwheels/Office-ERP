@@ -90,7 +90,14 @@ public sealed class FileControlCloudClientInstallationRepository : IControlCloud
                 record.Status,
                 record.RegisteredAtUtc,
                 record.LastBundleIssuedAtUtc,
-                record.LatestEntitlementVersion))
+                record.LatestEntitlementVersion,
+                record.BootstrapMode,
+                record.ClientDeploymentMode,
+                record.SiteId,
+                record.SiteRole,
+                record.ParentSiteId,
+                record.BranchCode,
+                record.SyncTopologyId))
             .GroupBy(installation => installation.InstallationId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
     }
@@ -114,7 +121,14 @@ public sealed class FileControlCloudClientInstallationRepository : IControlCloud
                 installation.Status,
                 installation.RegisteredAtUtc,
                 installation.LastBundleIssuedAtUtc,
-                installation.LatestEntitlementVersion))
+                installation.LatestEntitlementVersion,
+                installation.DeploymentProfile.BootstrapMode,
+                installation.DeploymentProfile.ClientDeploymentMode,
+                installation.DeploymentProfile.SiteId,
+                installation.DeploymentProfile.SiteRole,
+                installation.DeploymentProfile.ParentSiteId,
+                installation.DeploymentProfile.BranchCode,
+                installation.DeploymentProfile.SyncTopologyId))
             .ToArray();
 
         await using var stream = new FileStream(
@@ -142,5 +156,12 @@ public sealed class FileControlCloudClientInstallationRepository : IControlCloud
         string Status,
         DateTimeOffset RegisteredAtUtc,
         DateTimeOffset? LastBundleIssuedAtUtc,
-        long LatestEntitlementVersion);
+        long LatestEntitlementVersion,
+        string? BootstrapMode,
+        string? ClientDeploymentMode,
+        string? SiteId,
+        string? SiteRole,
+        string? ParentSiteId,
+        string? BranchCode,
+        string? SyncTopologyId);
 }

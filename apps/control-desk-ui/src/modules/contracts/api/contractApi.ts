@@ -2,13 +2,24 @@ import { apiRequest } from "../../../shared/api/httpClient";
 import type {
   ClientContract,
   ClientContractFormInput,
+  ProductModule,
   ReplaceActiveClientContractResult
 } from "../types/contractTypes";
+
+type ListProductModulesResponse = {
+  modules: ProductModule[];
+};
 
 type ListClientContractsResponse = {
   clientId: string;
   contracts: ClientContract[];
 };
+
+export async function listProductModules(): Promise<ProductModule[]> {
+  const response = await apiRequest<ListProductModulesResponse>("/api/v1/contracts/product-modules");
+
+  return response.modules;
+}
 
 export async function listClientContracts(clientId: string): Promise<ClientContract[]> {
   const response = await apiRequest<ListClientContractsResponse>(

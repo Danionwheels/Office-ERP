@@ -1,0 +1,54 @@
+{
+  "runtimeMode": "DockerCompose",
+  "composeProjectName": "safarsuite-local-server",
+  "configDirectory": "/etc/safarsuite/local-server",
+  "stateDirectory": "/var/lib/safarsuite/local-server",
+  "localServerVersion": "{{SAFARSUITE_LOCAL_SERVER_VERSION}}",
+  "safarSuiteAppVersion": "{{SAFARSUITE_APP_VERSION}}",
+  "services": [
+    {
+      "serviceName": "local-api",
+      "serviceRole": "Local entitlement, diagnostics, and module-gateway API",
+      "startsByDefault": true,
+      "composeProfile": null,
+      "imageEnvironmentVariable": "SAFARSUITE_LOCAL_SERVER_IMAGE",
+      "publishedPortEnvironmentVariable": "SAFARSUITE_LOCAL_SERVER_HTTP_PORT",
+      "internalBaseUrl": "http://local-api:8080",
+      "healthUrl": "http://local-api:8080/health",
+      "dependsOn": ["local-db"]
+    },
+    {
+      "serviceName": "local-worker",
+      "serviceRole": "Background cloud pull, heartbeat, and command processing",
+      "startsByDefault": true,
+      "composeProfile": null,
+      "imageEnvironmentVariable": "SAFARSUITE_LOCAL_SERVER_IMAGE",
+      "publishedPortEnvironmentVariable": null,
+      "internalBaseUrl": "n/a",
+      "healthUrl": "n/a",
+      "dependsOn": ["local-db"]
+    },
+    {
+      "serviceName": "local-agent",
+      "serviceRole": "Host/runtime diagnostics and support command bridge",
+      "startsByDefault": true,
+      "composeProfile": null,
+      "imageEnvironmentVariable": "SAFARSUITE_LOCAL_SERVER_IMAGE",
+      "publishedPortEnvironmentVariable": null,
+      "internalBaseUrl": "n/a",
+      "healthUrl": "n/a",
+      "dependsOn": ["local-db"]
+    },
+    {
+      "serviceName": "safarsuite-app",
+      "serviceRole": "Customer-facing SafarSuite application runtime",
+      "startsByDefault": false,
+      "composeProfile": "app-runtime",
+      "imageEnvironmentVariable": "SAFARSUITE_APP_IMAGE",
+      "publishedPortEnvironmentVariable": "SAFARSUITE_APP_HTTP_PORT",
+      "internalBaseUrl": "http://safarsuite-app:8080",
+      "healthUrl": "http://safarsuite-app:8080/health",
+      "dependsOn": ["local-api", "local-db"]
+    }
+  ]
+}

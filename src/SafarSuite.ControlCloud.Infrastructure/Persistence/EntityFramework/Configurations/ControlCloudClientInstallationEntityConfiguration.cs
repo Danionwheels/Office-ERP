@@ -24,6 +24,27 @@ public sealed class ControlCloudClientInstallationEntityConfiguration
             .HasColumnName("status")
             .HasMaxLength(32)
             .IsRequired();
+        builder.Property(installation => installation.BootstrapMode)
+            .HasColumnName("bootstrap_mode")
+            .HasMaxLength(40);
+        builder.Property(installation => installation.ClientDeploymentMode)
+            .HasColumnName("client_deployment_mode")
+            .HasMaxLength(40);
+        builder.Property(installation => installation.SiteId)
+            .HasColumnName("site_id")
+            .HasMaxLength(160);
+        builder.Property(installation => installation.SiteRole)
+            .HasColumnName("site_role")
+            .HasMaxLength(40);
+        builder.Property(installation => installation.ParentSiteId)
+            .HasColumnName("parent_site_id")
+            .HasMaxLength(160);
+        builder.Property(installation => installation.BranchCode)
+            .HasColumnName("branch_code")
+            .HasMaxLength(80);
+        builder.Property(installation => installation.SyncTopologyId)
+            .HasColumnName("sync_topology_id")
+            .HasMaxLength(160);
         builder.Property(installation => installation.RegisteredAtUtc)
             .HasColumnName("registered_at_utc")
             .IsRequired();

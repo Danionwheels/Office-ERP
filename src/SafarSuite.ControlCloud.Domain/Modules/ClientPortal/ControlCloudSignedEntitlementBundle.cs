@@ -1,3 +1,5 @@
+using SafarSuite.ControlCloud.Domain.Modules.LocalServer;
+
 namespace SafarSuite.ControlCloud.Domain.Modules.ClientPortal;
 
 public sealed record ControlCloudSignedEntitlementBundle(
@@ -46,6 +48,7 @@ public sealed class ControlCloudClientInstallation
         Guid clientId,
         string installationId,
         string status,
+        ControlCloudInstallationDeploymentProfile deploymentProfile,
         DateTimeOffset registeredAtUtc,
         DateTimeOffset? lastBundleIssuedAtUtc,
         long latestEntitlementVersion)
@@ -53,6 +56,7 @@ public sealed class ControlCloudClientInstallation
         ClientId = clientId;
         InstallationId = installationId;
         Status = status;
+        DeploymentProfile = deploymentProfile;
         RegisteredAtUtc = registeredAtUtc;
         LastBundleIssuedAtUtc = lastBundleIssuedAtUtc;
         LatestEntitlementVersion = latestEntitlementVersion;
@@ -64,6 +68,8 @@ public sealed class ControlCloudClientInstallation
 
     public string Status { get; private set; }
 
+    public ControlCloudInstallationDeploymentProfile DeploymentProfile { get; private set; }
+
     public DateTimeOffset RegisteredAtUtc { get; }
 
     public DateTimeOffset? LastBundleIssuedAtUtc { get; private set; }
@@ -73,12 +79,16 @@ public sealed class ControlCloudClientInstallation
     public static ControlCloudClientInstallation Register(
         Guid clientId,
         string installationId,
-        DateTimeOffset registeredAtUtc)
+        DateTimeOffset registeredAtUtc,
+        ControlCloudInstallationDeploymentProfile deploymentProfile)
     {
+        var normalizedInstallationId = NormalizeInstallationId(installationId);
+
         return new ControlCloudClientInstallation(
             clientId,
-            NormalizeInstallationId(installationId),
+            normalizedInstallationId,
             "Active",
+            deploymentProfile,
             registeredAtUtc,
             lastBundleIssuedAtUtc: null,
             latestEntitlementVersion: 0);
@@ -90,15 +100,39 @@ public sealed class ControlCloudClientInstallation
         string status,
         DateTimeOffset registeredAtUtc,
         DateTimeOffset? lastBundleIssuedAtUtc,
-        long latestEntitlementVersion)
+        long latestEntitlementVersion,
+        string? bootstrapMode = null,
+        string? clientDeploymentMode = null,
+        string? siteId = null,
+        string? siteRole = null,
+        string? parentSiteId = null,
+        string? branchCode = null,
+        string? syncTopologyId = null)
     {
+        var normalizedInstallationId = NormalizeInstallationId(installationId);
+
         return new ControlCloudClientInstallation(
             clientId,
-            NormalizeInstallationId(installationId),
+            normalizedInstallationId,
             string.IsNullOrWhiteSpace(status) ? "Active" : status.Trim(),
+            ControlCloudInstallationDeploymentProfile.Create(
+                normalizedInstallationId,
+                bootstrapMode,
+                clientDeploymentMode,
+                siteId,
+                siteRole,
+                parentSiteId,
+                branchCode,
+                syncTopologyId),
             registeredAtUtc,
             lastBundleIssuedAtUtc,
             latestEntitlementVersion);
+    }
+
+    public void UpdateDeploymentProfile(
+        ControlCloudInstallationDeploymentProfile deploymentProfile)
+    {
+        DeploymentProfile = deploymentProfile;
     }
 
     public void RecordBundleIssued(

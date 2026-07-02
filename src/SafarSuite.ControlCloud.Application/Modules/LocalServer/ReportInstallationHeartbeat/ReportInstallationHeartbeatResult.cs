@@ -6,10 +6,12 @@ public sealed class ReportInstallationHeartbeatResult
 {
     private ReportInstallationHeartbeatResult(
         ControlCloudInstallationHeartbeat? heartbeat,
+        ControlCloudInstallationDeploymentProfile? deploymentProfile,
         string? failureCode,
         string? detail)
     {
         Heartbeat = heartbeat;
+        DeploymentProfile = deploymentProfile;
         FailureCode = failureCode;
         Detail = detail;
     }
@@ -18,15 +20,19 @@ public sealed class ReportInstallationHeartbeatResult
 
     public ControlCloudInstallationHeartbeat? Heartbeat { get; }
 
+    public ControlCloudInstallationDeploymentProfile? DeploymentProfile { get; }
+
     public string? FailureCode { get; }
 
     public string? Detail { get; }
 
     public static ReportInstallationHeartbeatResult Success(
-        ControlCloudInstallationHeartbeat heartbeat)
+        ControlCloudInstallationHeartbeat heartbeat,
+        ControlCloudInstallationDeploymentProfile deploymentProfile)
     {
         return new ReportInstallationHeartbeatResult(
             heartbeat,
+            deploymentProfile,
             failureCode: null,
             detail: null);
     }
@@ -37,6 +43,7 @@ public sealed class ReportInstallationHeartbeatResult
     {
         return new ReportInstallationHeartbeatResult(
             heartbeat: null,
+            deploymentProfile: null,
             failureCode,
             detail);
     }

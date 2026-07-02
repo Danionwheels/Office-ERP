@@ -20,6 +20,17 @@ public sealed record ClientPortalInvitationResponse(
     string? InvitationToken,
     string? InvitationUrl);
 
+public sealed record ListClientPortalInvitationsResponse(
+    Guid ClientId,
+    IReadOnlyCollection<ClientPortalInvitationResponse> Invitations);
+
+public sealed record ResendClientPortalInvitationRequest(
+    int ExpiresInDays,
+    string CreatedBy);
+
+public sealed record RevokeClientPortalInvitationRequest(
+    string RevokedBy);
+
 public sealed record AcceptClientPortalInvitationRequest(
     string InvitationToken,
     string Password,

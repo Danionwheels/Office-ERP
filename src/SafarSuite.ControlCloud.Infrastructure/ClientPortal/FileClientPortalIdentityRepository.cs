@@ -19,6 +19,24 @@ public sealed class FileClientPortalIdentityRepository : IClientPortalIdentityRe
         _storePath = ResolveStorePath(options.IdentityStorePath);
     }
 
+    public async Task<ControlCloudClientPortalInvitation?> GetInvitationByIdAsync(
+        Guid invitationId,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var store = await ReadStoreAsync(cancellationToken);
+
+            return store.Invitations.FirstOrDefault(invitation => invitation.InvitationId == invitationId);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<ControlCloudClientPortalInvitation?> GetInvitationByTokenHashAsync(
         string tokenHash,
         CancellationToken cancellationToken = default)
@@ -30,6 +48,28 @@ public sealed class FileClientPortalIdentityRepository : IClientPortalIdentityRe
             var store = await ReadStoreAsync(cancellationToken);
 
             return store.Invitations.FirstOrDefault(invitation => invitation.TokenHash == tokenHash);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyCollection<ControlCloudClientPortalInvitation>> ListInvitationsByClientIdAsync(
+        Guid clientId,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var store = await ReadStoreAsync(cancellationToken);
+
+            return store.Invitations
+                .Where(invitation => invitation.ClientId == clientId)
+                .OrderByDescending(invitation => invitation.InvitedAtUtc)
+                .ThenBy(invitation => invitation.Email)
+                .ToArray();
         }
         finally
         {

@@ -110,7 +110,9 @@ public sealed class ReportInstallationHeartbeatHandler
 
                 await _heartbeats.AddAsync(heartbeat, token);
 
-                return ReportInstallationHeartbeatResult.Success(heartbeat);
+                return ReportInstallationHeartbeatResult.Success(
+                    heartbeat,
+                    installation.DeploymentProfile);
             },
             cancellationToken);
     }

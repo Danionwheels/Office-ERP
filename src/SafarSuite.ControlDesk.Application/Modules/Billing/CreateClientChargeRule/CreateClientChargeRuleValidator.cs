@@ -24,6 +24,11 @@ public sealed class CreateClientChargeRuleValidator : IValidator<CreateClientCha
             errors.Add(ApplicationError.Validation(nameof(value.ChargeCodeId), "Charge code id is required."));
         }
 
+        if (value.ProductModuleCode is not null && value.ProductModuleCode.Length > 64)
+        {
+            errors.Add(ApplicationError.Validation(nameof(value.ProductModuleCode), "Product module code cannot exceed 64 characters."));
+        }
+
         if (value.UnitPriceAmount < 0)
         {
             errors.Add(ApplicationError.Validation(nameof(value.UnitPriceAmount), "Unit price cannot be negative."));

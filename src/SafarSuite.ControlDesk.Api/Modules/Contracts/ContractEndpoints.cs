@@ -3,6 +3,7 @@ using SafarSuite.ControlDesk.Application.Modules.Contracts;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.GetClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ListClientContracts;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.ListProductModules;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ReplaceActiveClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.SuspendClientContract;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Contracts;
@@ -22,8 +23,36 @@ public static class ContractEndpoints
         group.MapPost("/client-contracts/{contractId:guid}/suspend", SuspendClientContractAsync);
         group.MapPost("/client-contracts/replace-active", ReplaceActiveClientContractAsync);
         group.MapGet("/clients/{clientId:guid}/client-contracts", ListClientContractsAsync);
+        group.MapGet("/product-modules", ListProductModulesAsync);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> ListProductModulesAsync(
+        ListProductModulesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ListProductModulesResponse(
+            result.Value.Modules.Select(module => new ProductModuleResponse(
+                    module.ModuleCode,
+                    module.DisplayName,
+                    module.CommercialMode,
+                    module.IsActive,
+                    module.BillingDefaults is null ? null : new ProductModuleBillingDefaultsResponse(
+                        module.BillingDefaults.ChargeCode,
+                        module.BillingDefaults.ChargeName,
+                        module.BillingDefaults.Description,
+                        module.BillingDefaults.DefaultUnitPriceAmount,
+                        module.BillingDefaults.CurrencyCode,
+                        module.BillingDefaults.BillingCycle)))
+                .ToArray()));
     }
 
     private static async Task<IResult> CreateClientContractAsync(

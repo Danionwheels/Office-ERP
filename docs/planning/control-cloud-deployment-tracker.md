@@ -42,7 +42,7 @@ Preferred model:
 
 ```text
 Portal creates installation
-  -> portal issues one-time setup token and signed bootstrap bundle
+  -> portal issues one-time setup token and bootstrap package
 technician copies/runs bundle on client Linux server
   -> installer verifies bundle
   -> installer starts SafarSuite local services
@@ -67,10 +67,18 @@ V1 should support two setup modes:
 
 | Mode | Use Case | V1 Status |
 | --- | --- | --- |
-| Online bootstrap | Client Linux server has internet during install | Accepted |
-| Offline-assisted bootstrap | Portal bundle is downloaded elsewhere, copied to Linux server, then the server connects outward when internet is available | Accepted |
+| `OnlineBootstrap` | Client Linux server has internet during install | Accepted |
+| `OfflineAssistedBootstrap` | Portal bundle is downloaded elsewhere, copied to Linux server, then the server connects outward when internet is available | Accepted |
 
 V1 does not require `.deb` packaging. A `.deb` installer can come later after the Docker Compose service layout, directories, ports, update behavior, and backup rules are stable.
+
+Setup mode is not the same as the client's runtime deployment mode. Runtime deployment modes are `OfflineLocal`, `BranchToHqSync`, `CloudSyncMultiBranch`, and `HostedSaas`.
+
+See:
+
+```text
+docs/architecture/client-deployment-and-data-sync-boundary.md
+```
 
 ## V1 Deployment Shape
 
@@ -163,34 +171,40 @@ One backend can serve these areas. Separate permissions decide what each user ca
 
 | Module | Responsibility | Status |
 | --- | --- | --- |
-| Identity and roles | Provider admins, support users, client users | Basic client contact invitation/user/session foundation exists with provider-key invite protection; real provider/admin users, MFA, email delivery, and audit pending |
+| Identity and roles | Provider admins, support users, client users | Basic client contact invitation/user/session foundation exists with provider-key invite management, file/SMTP invitation delivery, and invite/session audit records; real provider/admin users, MFA, password reset, and production mail retry handling pending |
 | Client portal projection | Client-facing invoice/payment/subscription state | Basic backend projection exists |
-| Activation/installations | Installation profiles, setup tokens, registered machines | Basic entitlement installation registry exists; setup tokens pending |
+| Activation/installations | Installation profiles, setup tokens, registered machines | Basic entitlement installation registry, one-time setup-token registration, Control Desk setup-token/bootstrap controls, signed bootstrap bundle/download generation, Docker Compose template artifacts, and bootstrap package command generation exist; installer/runtime integration pending |
 | Deployment packages | Versioned bundles, manifests, checksums, release channels | Proposed |
-| Bootstrap downloads | Online command and offline-assisted bundle download | Proposed |
-| Entitlements | Signed license bundles, direct pull, offline renewal files | Basic signing boundary plus local-server direct pull/verification/cache/gating exist; offline renewal files remain a fallback pending item |
-| Command queue | Renew, revoke, change limits, diagnostics, update commands | Basic command queue exists |
+| Bootstrap downloads | Online command and offline-assisted bundle download | Basic Control Desk provisioning action, copyable online command package, signed JSON bootstrap bundle download, served `install.sh`, Docker Compose template, environment template, and runtime service manifest exist; real SafarSuite image bundle download pending |
+| Entitlements | Signed license bundles, direct pull, offline renewal files | Basic signing boundary, setup-token-bound installation registration, local-server direct pull/verification/cache/gating, offline renewal file export/import, local import audit persistence, and local clock/replay trust state exist |
+| Command queue | Renew, revoke, change limits, diagnostics, update commands | Basic local execution loop exists for diagnostics and entitlement refresh |
 | Heartbeat/status view | Last seen, version, license state, entitlement issue, command acknowledgement | Basic heartbeat endpoint, persistence, shared status endpoint, Control Desk status panel, and minimal Client Portal status preview exist |
-| Audit | Every setup, token, entitlement, command, renewal, support action | Partial; must be expanded |
+| Diagnostics | Local-server support bundle export/upload | Basic typed diagnostics bundle, local exporter, upload client, Control Cloud receive endpoint, latest-report endpoint, PostgreSQL/file persistence, local import-audit section, runtime service manifest boundary, runtime/bootstrap/service/error diagnostic slots, and Control Desk latest diagnostics review/download exist; deployed runtime log tail collection pending |
+| Audit | Every setup, token, entitlement, command, renewal, support action | Partial; invite/session, entitlement issue, setup-token creation, signed bootstrap package generation/download, local-server registration accept/reject, diagnostics upload, offline renewal file generation, local import audit persistence, local replay/clock-warning state, command, acknowledgement, heartbeat trails, basic audit-events read endpoint, and Control Desk installation history visibility exist; support override audit still pending |
 
 ## V1 Todo
 
 | Step | Goal | Status |
 | --- | --- | --- |
 | 1 | Document one-cloud rule and deployment rule | Done in this tracker |
-| 2 | Define installation profile model: client, installation ID, mode, token, status, expiry | Proposed |
-| 3 | Add one-time setup token generation and expiry rules | Proposed |
+| 2 | Define installation profile model: client, installation ID, mode, token, status, expiry | Basic done |
+| 3 | Add one-time setup token generation and expiry rules | Basic done |
 | 4 | Add deployment package manifest model: version, channel, checksum, signature, required services | Proposed |
-| 5 | Add portal/API endpoint to download bootstrap bundle or copy install command | Proposed |
-| 6 | Create first Docker Compose local-server template | Proposed |
-| 7 | Create `install.sh` bootstrap script with signature/checksum verification | Proposed |
-| 8 | Add outbound registration endpoint for local Linux server | Proposed |
+| 5 | Add portal/API endpoint to download bootstrap bundle or copy install command | Basic done: API can generate a bootstrap package with setup token, cloud endpoints, install command, signed bundle metadata, artifact manifest, and a signed JSON bundle download |
+| 6 | Create first Docker Compose local-server template | Basic done: first `docker-compose.yml`, `local-server.env`, and `runtime-services.manifest.json` template artifacts cover local API, worker, agent, database, and optional `safarsuite-app` profile slots |
+| 7 | Create `install.sh` bootstrap script with signature/checksum verification | Basic done: Control Cloud serves the first `install.sh` template; it can verify a supplied bundle checksum, write bootstrap/compose/env files, register online, and only starts Compose when explicitly requested |
+| 8 | Add outbound registration endpoint for local Linux server | Basic done |
 | 9 | Add heartbeat endpoint and portal status view | Basic done: heartbeat endpoint/reporting, shared status endpoint, Control Desk status panel, and `/client-portal/index.html` preview are in place |
-| 10 | Connect first signed entitlement pull after registration | Direct HTTP pull adapter exists; registration-bound pull wiring pending |
-| 11 | Add command pull/acknowledgement to the local agent | Proposed |
-| 12 | Add diagnostics export/upload for failed installs | Proposed |
-| 13 | Add support/admin audit for every token, download, install, heartbeat, command, and entitlement | Proposed |
-| 14 | Add persisted client user invitations, password credentials, role assignment, and session audit | Basic Control Desk contact invites, provider-key invite protection, and password credentials done; real provider/admin authorization, email delivery, resend/revoke/list, and session audit pending |
+| 10 | Connect first signed entitlement pull after registration | Basic done: entitlement issue now requires a registered installation |
+| 11 | Add command pull/acknowledgement to the local agent | Basic done: local-server application/infrastructure layers can pull signed pending commands, verify HMAC signatures, execute `request_diagnostics` and `refresh_entitlement`, and post Applied/Failed/Rejected acknowledgements |
+| 12 | Add diagnostics export/upload for failed installs | Basic done: local-server libraries can export cached entitlement/trust-state diagnostics plus local import audit and runtime/bootstrap/service/error facts, then upload them to Control Cloud; runtime manifest boundary exists, deployed log collection pending |
+| 13 | Add support/admin audit for every token, download, install, heartbeat, command, and entitlement | Partial: setup token, bootstrap package, registration accept/reject, invite/session, command, acknowledgement, heartbeat, entitlement issue, offline renewal generation, and local import audit records are recorded; basic audit-events API is available |
+| 14 | Add persisted client user invitations, password credentials, role assignment, and session audit | Basic Control Desk contact invites, provider-key invite management, password credentials, list/resend/revoke, file/SMTP delivery boundary, and invite/session audit done; real provider/admin authorization, MFA, password reset, and production mail retry handling pending |
+| 15 | Add explicit installation/deployment profile fields for bootstrap mode, client deployment mode, site/branch identity, parent site, and sync topology metadata | Basic done: setup tokens and registered installations persist the profile, and bootstrap/status/registration/heartbeat/diagnostics surfaces can expose it |
+| 16 | Add provider-facing Control Desk setup-token/bootstrap package actions | Basic done: the client desk Cloud tab saves the selected deployment profile, proxies setup-token/bootstrap-package creation to Control Cloud, and displays the generated setup token or install command |
+| 17 | Add provider-facing installation audit history to Control Desk | Basic done: the client desk Cloud tab can refresh setup/bootstrap/registration/diagnostics/renewal audit events for the selected installation through the Control Desk API |
+| 18 | Add provider-facing latest diagnostics review to Control Desk | Basic done: the client desk Cloud tab can refresh and download the latest diagnostics report for the selected installation through the Control Desk API |
+| 19 | Add provider-facing low-risk support command actions | Basic done: the client desk Cloud tab can queue whitelisted `request_diagnostics` and `refresh_entitlement` commands through Control Desk into Control Cloud's signed installation command queue, and the local-server command processor executes and acknowledges those two command types |
 
 ## Later Todo
 
@@ -215,10 +229,11 @@ One backend can serve these areas. Separate permissions decide what each user ca
 ## Security Rules
 
 - Setup tokens are one-time, short-lived, and installation-scoped.
-- Bootstrap bundles are signed and checksum verified.
+- Setup tokens are stored only as hashes and consumed on successful registration.
+- Bootstrap packages expose one-time setup tokens only once; the current JSON bootstrap bundle is signed and downloadable with template artifact checksums, and later full Docker image bundles must include full manifest checksums.
 - Local server registration binds the installation to a generated local identity.
 - Entitlement bundles are signed, versioned, installation-bound, locally verified, cached, and older-version protected.
-- Every install, token use, heartbeat, command, entitlement, renewal file, and support action is audited.
+- Every install, token use, heartbeat, command, entitlement issue/import, renewal file, and support action is audited.
 - The local server connects outward over HTTPS.
 - Any emergency support path must require consent, expiry, reason, actor, and audit.
 

@@ -1,0 +1,3 @@
+namespace SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommandsFromBootstrapConfiguration;
+
+public sealed record ProcessInstallationCommandsFromBootstrapConfigurationCommand;

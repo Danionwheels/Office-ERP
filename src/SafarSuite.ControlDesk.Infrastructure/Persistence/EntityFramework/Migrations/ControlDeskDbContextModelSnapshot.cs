@@ -234,6 +234,11 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasColumnType("character varying(512)")
                         .HasColumnName("description_override");
 
+                    b.Property<string>("ProductModuleCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("product_module_code");
+
                     b.Property<decimal>("Quantity")
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)")
@@ -257,6 +262,9 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
 
                     b.HasIndex("ClientId")
                         .HasDatabaseName("ix_client_charge_rules_client_id");
+
+                    b.HasIndex("ProductModuleCode")
+                        .HasDatabaseName("ix_client_charge_rules_product_module_code");
 
                     b.ToTable("client_charge_rules", "control");
                 });
@@ -476,6 +484,103 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasDatabaseName("ux_client_accounting_profiles_client_id");
 
                     b.ToTable("client_accounting_profiles", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Clients.ClientDeployment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_deployment_id");
+
+                    b.Property<string>("BootstrapMode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("bootstrap_mode");
+
+                    b.Property<string>("BranchCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("branch_code");
+
+                    b.Property<string>("ClientDeploymentMode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("client_deployment_mode");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("InstallationId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("installation_id");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_primary");
+
+                    b.Property<string>("LocalServerVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("local_server_version");
+
+                    b.Property<string>("ParentSiteId")
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("parent_site_id");
+
+                    b.Property<string>("SafarSuiteAppVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("safarsuite_app_version");
+
+                    b.Property<string>("SiteId")
+                        .IsRequired()
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("site_id");
+
+                    b.Property<string>("SiteRole")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("site_role");
+
+                    b.Property<string>("SyncTopologyId")
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("sync_topology_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "InstallationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_deployments_client_installation");
+
+                    b.HasIndex("ClientId", "IsPrimary")
+                        .HasDatabaseName("ix_client_deployments_client_primary");
+
+                    b.ToTable("client_deployments", "control");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Contracts.ClientContract", b =>
@@ -1140,6 +1245,11 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                                 .HasDefaultValue("Charge")
                                 .HasColumnName("line_type");
 
+                            b1.Property<string>("ProductModuleCode")
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("product_module_code");
+
                             b1.Property<Guid>("invoice_id")
                                 .HasColumnType("uuid");
 
@@ -1147,6 +1257,9 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
 
                             b1.HasIndex("ChargeCodeId")
                                 .HasDatabaseName("ix_invoice_lines_charge_code_id");
+
+                            b1.HasIndex("ProductModuleCode")
+                                .HasDatabaseName("ix_invoice_lines_product_module_code");
 
                             b1.HasIndex("invoice_id");
 
@@ -1304,6 +1417,15 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Clients.ClientDeployment", b =>
+                {
                     b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
                         .WithMany()
                         .HasForeignKey("ClientId")

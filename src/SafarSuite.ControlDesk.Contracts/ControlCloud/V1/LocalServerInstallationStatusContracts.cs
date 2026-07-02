@@ -4,6 +4,7 @@ public sealed record ControlCloudInstallationStatusResponse(
     Guid ClientId,
     string InstallationId,
     string InstallationStatus,
+    LocalServerDeploymentProfileResponse DeploymentProfile,
     DateTimeOffset RegisteredAtUtc,
     DateTimeOffset? LastBundleIssuedAtUtc,
     long LatestEntitlementVersion,

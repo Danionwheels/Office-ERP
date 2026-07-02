@@ -16,6 +16,7 @@ public sealed record GenerateInvoiceDraftResult(
 
 public sealed record GenerateInvoiceDraftLineResult(
     Guid? ChargeCodeId,
+    string? ProductModuleCode,
     string LineType,
     string Description,
     decimal Amount,

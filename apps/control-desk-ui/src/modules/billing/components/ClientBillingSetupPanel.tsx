@@ -12,7 +12,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import type { ClientContract } from "../../contracts/types/contractTypes";
+import type { ClientContract, ProductModule } from "../../contracts/types/contractTypes";
 import type {
   ClientAccountingProfile,
   ClientDetails,
@@ -34,9 +34,13 @@ import type {
   VoidInvoiceInput
 } from "../types/billingTypes";
 
+type BillingStep = "accounting" | "rules" | "draft" | "issue";
+
 type ClientBillingSetupPanelProps = {
   client: ClientDetails | null;
   contracts: ClientContract[];
+  productModules: ProductModule[];
+  initialStep?: BillingStep;
   accountingProfile: ClientAccountingProfile | null;
   accountingProfileMissing: boolean;
   chargeCodes: ChargeCodeLookup[];
@@ -72,7 +76,11 @@ type ClientBillingSetupPanelProps = {
   onIssueCreditNote: (input: IssueCreditNoteInput) => Promise<void>;
 };
 
-type BillingStep = "accounting" | "rules" | "draft" | "issue";
+type ModuleBillingSuggestion = {
+  module: ProductModule;
+  contract: ClientContract;
+  existingChargeCode: ChargeCodeLookup | null;
+};
 
 type BillingStepItem = {
   step: BillingStep;
@@ -85,6 +93,7 @@ type BillingStepItem = {
 export function ClientBillingSetupPanel({
   client,
   contracts,
+  productModules,
   accountingProfile,
   accountingProfileMissing,
   chargeCodes,
@@ -117,14 +126,19 @@ export function ClientBillingSetupPanel({
   onGenerateInvoiceDraft,
   onIssueInvoice,
   onVoidInvoice,
-  onIssueCreditNote
+  onIssueCreditNote,
+  initialStep = "accounting"
 }: ClientBillingSetupPanelProps) {
-  const [activeBillingStep, setActiveBillingStep] = useState<BillingStep>("accounting");
+  const [activeBillingStep, setActiveBillingStep] = useState<BillingStep>(initialStep);
   const [voidDate, setVoidDate] = useState(toDateInputValue(new Date()));
   const [voidReason, setVoidReason] = useState("");
   const [creditNoteNumber, setCreditNoteNumber] = useState("");
   const [creditDate, setCreditDate] = useState(toDateInputValue(new Date()));
   const [creditReason, setCreditReason] = useState("");
+
+  useEffect(() => {
+    setActiveBillingStep(initialStep);
+  }, [initialStep]);
 
   useEffect(() => {
     if (invoiceDraft !== null) {
@@ -181,6 +195,36 @@ export function ClientBillingSetupPanel({
       creditNoteNumber,
       creditDate,
       reason: creditReason
+    });
+  }
+
+  function handleApplyModuleBillingSuggestion(suggestion: ModuleBillingSuggestion) {
+    const billingDefaults = suggestion.module.billingDefaults;
+
+    if (billingDefaults === null || billingDefaults === undefined) {
+      return;
+    }
+
+    onChargeCodeChange({
+      ...chargeCodeValue,
+      code: billingDefaults.chargeCode,
+      name: billingDefaults.chargeName,
+      description: billingDefaults.description,
+      defaultUnitPriceAmount: billingDefaults.defaultUnitPriceAmount.toFixed(2),
+      currencyCode: billingDefaults.currencyCode
+    });
+    onChargeRuleChange({
+      ...chargeRuleValue,
+      contractId: suggestion.contract.contractId,
+      chargeCodeId: suggestion.existingChargeCode?.chargeCodeId ?? "",
+      productModuleCode: suggestion.module.moduleCode,
+      descriptionOverride: billingDefaults.description,
+      unitPriceAmount: billingDefaults.defaultUnitPriceAmount.toFixed(2),
+      currencyCode: billingDefaults.currencyCode,
+      billingCycle: billingDefaults.billingCycle,
+      billingDayOfMonth: suggestion.contract.billingDayOfMonth.toString(),
+      effectiveStartsOn: suggestion.contract.startsOn,
+      effectiveEndsOn: suggestion.contract.endsOn
     });
   }
 
@@ -242,6 +286,11 @@ export function ClientBillingSetupPanel({
     && creditNoteNumber.trim() !== ""
     && creditDate !== ""
     && creditReason.trim() !== "";
+  const moduleBillingSuggestions = getModuleBillingSuggestions(
+    contracts,
+    productModules,
+    chargeCodes
+  );
 
   if (client === null) {
     return (
@@ -600,6 +649,35 @@ export function ClientBillingSetupPanel({
           </button>
         </div>
 
+        {moduleBillingSuggestions.length > 0 && (
+          <div className="billing-module-suggestions">
+            {moduleBillingSuggestions.map((suggestion) => {
+              const billingDefaults = suggestion.module.billingDefaults!;
+
+              return (
+                <button
+                  className="billing-module-suggestion"
+                  type="button"
+                  key={suggestion.module.moduleCode}
+                  onClick={() => handleApplyModuleBillingSuggestion(suggestion)}
+                  disabled={isBusy}
+                >
+                  <FilePlus2 size={15} />
+                  <span>
+                    <strong>{suggestion.module.displayName}</strong>
+                    <small>
+                      {billingDefaults.chargeCode} - {formatMoney(
+                        billingDefaults.defaultUnitPriceAmount,
+                        billingDefaults.currencyCode
+                      )} - {suggestion.existingChargeCode === null ? "new code" : "code ready"}
+                    </small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="billing-form-grid rule">
           <label className="form-field wide">
             <span>Contract</span>
@@ -641,6 +719,20 @@ export function ClientBillingSetupPanel({
                 </option>
               ))}
             </select>
+          </label>
+          <label className="form-field">
+            <span>Module</span>
+            <input
+              value={chargeRuleValue.productModuleCode}
+              onChange={(event) =>
+                onChargeRuleChange({
+                  ...chargeRuleValue,
+                  productModuleCode: event.target.value.toUpperCase()
+                })
+              }
+              disabled={isBusy}
+              maxLength={64}
+            />
           </label>
           <label className="form-field">
             <span>Unit price</span>
@@ -960,6 +1052,7 @@ export function ClientBillingSetupPanel({
               <thead>
                 <tr>
                   <th>Type</th>
+                  <th>Module</th>
                   <th>Description</th>
                   <th className="numeric">Amount</th>
                 </tr>
@@ -968,6 +1061,7 @@ export function ClientBillingSetupPanel({
                 {invoiceDraft.lines.map((line, index) => (
                   <tr key={`${line.description}-${index}`}>
                     <td>{line.lineType}</td>
+                    <td>{line.productModuleCode ?? "-"}</td>
                     <td>{line.description}</td>
                     <td className="numeric">{formatMoney(line.amount, line.currencyCode)}</td>
                   </tr>
@@ -1281,6 +1375,45 @@ function chargeRulePatchForChargeCode(
     currencyCode: chargeCode.currencyCode,
     descriptionOverride: chargeCode.name
   };
+}
+
+function getModuleBillingSuggestions(
+  contracts: ClientContract[],
+  productModules: ProductModule[],
+  chargeCodes: ChargeCodeLookup[]
+): ModuleBillingSuggestion[] {
+  const activeContract = getActiveContract(contracts);
+
+  if (activeContract === null) {
+    return [];
+  }
+
+  const enabledModuleCodes = new Set(
+    activeContract.modules
+      .filter((module) => module.isEnabled)
+      .map((module) => module.moduleCode)
+  );
+
+  return productModules
+    .filter((module) =>
+      module.isActive
+      && module.commercialMode === "PaidAddOn"
+      && module.billingDefaults !== null
+      && module.billingDefaults !== undefined
+      && enabledModuleCodes.has(module.moduleCode))
+    .map((module) => ({
+      module,
+      contract: activeContract,
+      existingChargeCode: chargeCodes.find(
+        (chargeCode) => chargeCode.code === module.billingDefaults!.chargeCode
+      ) ?? null
+    }));
+}
+
+function getActiveContract(contracts: ClientContract[]): ClientContract | null {
+  return contracts.find((contract) => contract.status.toLowerCase() === "active")
+    ?? contracts[0]
+    ?? null;
 }
 
 function formatMoney(amount: number, currencyCode: string): string {

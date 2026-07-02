@@ -111,6 +111,11 @@ public sealed class EntitlementSnapshot : Entity<EntitlementSnapshotId>
             throw new InvalidOperationException("Entitlement snapshot requires at least one module.");
         }
 
+        if (!snapshot._modules.Any(module => module.IsEnabled))
+        {
+            throw new InvalidOperationException("Entitlement snapshot requires at least one enabled module.");
+        }
+
         return snapshot;
     }
 

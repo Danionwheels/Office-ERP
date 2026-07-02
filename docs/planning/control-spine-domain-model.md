@@ -17,7 +17,7 @@ The active API surface is now client-centered. SurveyValuation code remains in t
 | Module | Current responsibility | Key types |
 | --- | --- | --- |
 | Clients | SafarSuite customer/company record and lifecycle plus accounting defaults | `Client`, `ClientId`, `ClientCode`, `ClientStatus`, `ClientContact`, `SupportNote`, `ClientAccountingProfile` |
-| Contracts | commercial terms, pricing, modules, devices, branches | `ClientContract`, `ContractPricing`, `ModuleAllowance`, `DeviceAllowance`, `BranchAllowance` |
+| Contracts | commercial terms, pricing, modules, devices, branches | `ClientContract`, `ContractPricing`, `ModuleAllowance`, `DeviceAllowance`, `BranchAllowance`, `ProductModuleCatalogItem` |
 | Accounting | chart of accounts and balanced journal postings | `LedgerAccount`, `LedgerAccountCode`, `JournalEntry`, `JournalLine` |
 | Billing | invoice lifecycle, invoice balances, charge catalog, dynamic charge rules | `Invoice`, `InvoiceLine`, `InvoiceNumber`, `InvoiceStatus`, `ChargeCode`, `ClientChargeRule` |
 | Payments | payment capture/review/reversal decisions | `Payment`, `PaymentReference`, `PaymentMethod`, `PaymentStatus` |
@@ -87,7 +87,9 @@ Contracts:
 - billing day is restricted to 1-28 to avoid month-end edge cases
 - device and branch allowances cannot be negative
 - at least one module allowance is required before activation
+- at least one enabled module is required before activation
 - module allowance updates replace the previous allowance for the same module code
+- product module catalog entries classify configurable modules as `IncludedForAll` or `PaidAddOn` without fixing the final product lineup in code
 
 Accounting:
 
@@ -105,9 +107,11 @@ Billing:
 - due date cannot be before issue date
 - invoice line amounts cannot be negative
 - invoice lines may optionally reference a charge code
+- invoice lines may optionally preserve the originating product module code
 - charge code key is required, normalized uppercase, and between 2 and 32 characters
 - charge code default unit price cannot be negative
 - client charge unit price cannot be negative
+- client charge rules may optionally preserve the product module code that caused the rule
 - client charge quantity must be positive
 - client charge billing day is restricted to 1-28
 - active client charge rules must be effective on the billing date before invoice generation
@@ -132,6 +136,7 @@ Entitlements:
 - offline-valid-until cannot be before paid-until date
 - device and branch limits cannot be negative
 - at least one module is required
+- at least one enabled module is required
 - active entitlement allows use until paid-until
 - grace entitlement allows use until grace-until
 
@@ -151,13 +156,14 @@ Repository ports now exist in the Application layer:
 - `IChargeCodeRepository`
 - `IClientChargeRuleRepository`
 - `IContractRepository`
+- `IProductModuleCatalog`
 - `IInvoiceRepository`
 - `IPaymentRepository`
 - `IEntitlementSnapshotRepository`
 - `ICloudOutboxMessageRepository`
 - `IAuditEventRepository`
 
-The Infrastructure layer now has PostgreSQL/EF wiring for the active client, contract, accounting, billing setup, invoice, payment, entitlement, client accounting profile, and cloud outbox persistence slices. Clients, contacts, support notes, client accounting profiles, client contracts, contract module allowances, ledger accounts, journal entries, journal lines, charge codes, client charge rules, invoices, invoice lines, payments, entitlement snapshots, entitlement modules, and cloud outbox messages are stored in PostgreSQL when `Persistence:Provider` is `Postgres`.
+The Infrastructure layer now has PostgreSQL/EF wiring for the active client, contract, accounting, billing setup, invoice, payment, entitlement, client accounting profile, and cloud outbox persistence slices. Clients, contacts, support notes, client accounting profiles, client contracts, contract module allowances, ledger accounts, journal entries, journal lines, charge codes, client charge rules, invoices, invoice lines, payments, entitlement snapshots, entitlement modules, and cloud outbox messages are stored in PostgreSQL when `Persistence:Provider` is `Postgres`. Module-backed billing intent is persisted on client charge rules and generated invoice lines through nullable product module codes.
 
 ## Revised Product Chain
 
@@ -224,6 +230,7 @@ The backend now exposes these control-spine endpoints:
 | `PUT` | `/api/v1/clients/{clientId}/accounting-profile` | Link a client to AR ledger account, default currency, and cloud customer identity |
 | `GET` | `/api/v1/clients/{clientId}/accounting-profile` | Read a client's accounting profile |
 | `POST` | `/api/v1/contracts/client-contracts` | Create and activate a local client contract with device, branch, module, and pricing defaults |
+| `GET` | `/api/v1/contracts/product-modules` | List configurable product modules and whether each module is IncludedForAll or a PaidAddOn |
 | `GET` | `/api/v1/contracts/client-contracts/{contractId}` | Read a local client contract |
 | `GET` | `/api/v1/contracts/clients/{clientId}/client-contracts` | List local client contracts for a client |
 | `POST` | `/api/v1/contracts/client-contracts/{contractId}/suspend` | Suspend a local client contract |

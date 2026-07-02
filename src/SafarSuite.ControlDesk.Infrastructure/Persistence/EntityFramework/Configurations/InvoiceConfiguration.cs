@@ -117,6 +117,13 @@ internal sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
                 .HasDefaultValue(InvoiceLineType.Charge)
                 .IsRequired();
 
+            line.Property(invoiceLine => invoiceLine.ProductModuleCode)
+                .HasColumnName("product_module_code")
+                .HasMaxLength(64)
+                .HasConversion(
+                    code => code!.Value,
+                    value => ModuleCode.Create(value));
+
             line.OwnsOne(invoiceLine => invoiceLine.Amount, money =>
             {
                 MoneyConfiguration.Configure(money, "amount", "currency_code");
@@ -138,6 +145,9 @@ internal sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
 
             line.HasIndex(invoiceLine => invoiceLine.ChargeCodeId)
                 .HasDatabaseName("ix_invoice_lines_charge_code_id");
+
+            line.HasIndex(invoiceLine => invoiceLine.ProductModuleCode)
+                .HasDatabaseName("ix_invoice_lines_product_module_code");
         });
     }
 }

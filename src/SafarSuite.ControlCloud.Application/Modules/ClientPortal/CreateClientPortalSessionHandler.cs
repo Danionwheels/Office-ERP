@@ -9,6 +9,7 @@ public sealed class CreateClientPortalSessionHandler
     private readonly IClientPortalIdentityRepository _identities;
     private readonly IClientPortalCredentialService _credentials;
     private readonly IClientPortalSessionService _sessions;
+    private readonly IClientPortalAuditRecorder _audit;
     private readonly IControlCloudUnitOfWork _unitOfWork;
     private readonly IControlCloudClock _clock;
 
@@ -16,12 +17,14 @@ public sealed class CreateClientPortalSessionHandler
         IClientPortalIdentityRepository identities,
         IClientPortalCredentialService credentials,
         IClientPortalSessionService sessions,
+        IClientPortalAuditRecorder audit,
         IControlCloudUnitOfWork unitOfWork,
         IControlCloudClock clock)
     {
         _identities = identities;
         _credentials = credentials;
         _sessions = sessions;
+        _audit = audit;
         _unitOfWork = unitOfWork;
         _clock = clock;
     }
@@ -63,6 +66,20 @@ public sealed class CreateClientPortalSessionHandler
                     || !string.Equals(user.Status, ControlCloudClientPortalUserStatuses.Active, StringComparison.Ordinal)
                     || !_credentials.VerifyPassword(command.Password, user.PasswordHash))
                 {
+                    await ControlCloudAuditWriter.TryRecordAsync(
+                        _audit,
+                        new ClientPortalAuditRecord(
+                            Guid.NewGuid(),
+                            command.ClientId,
+                            null,
+                            user?.UserId,
+                            ControlCloudAuditWriter.NormalizeEmail(command.Email),
+                            ClientPortalAuditEventTypes.SessionRejected,
+                            ClientPortalAuditActors.ClientPortal,
+                            "Client portal session credentials were rejected.",
+                            _clock.UtcNow),
+                        token);
+
                     return CreateClientPortalSessionResult.Failure(
                         "InvalidCredentials",
                         "Email or password is not valid for this client.");
@@ -71,10 +88,29 @@ public sealed class CreateClientPortalSessionHandler
                 user.RecordLogin(_clock.UtcNow);
                 await _identities.SaveUserAsync(user, token);
 
-                return await _sessions.CreateSessionAsync(
+                var session = await _sessions.CreateSessionAsync(
                     user.ClientId,
                     user.Role,
                     token);
+
+                if (session.IsSuccess)
+                {
+                    await ControlCloudAuditWriter.TryRecordAsync(
+                        _audit,
+                        new ClientPortalAuditRecord(
+                            Guid.NewGuid(),
+                            user.ClientId,
+                            null,
+                            user.UserId,
+                            user.Email,
+                            ClientPortalAuditEventTypes.SessionCreated,
+                            ClientPortalAuditActors.ClientPortal,
+                            "Client portal session was created.",
+                            _clock.UtcNow),
+                        token);
+                }
+
+                return session;
             },
             cancellationToken);
     }

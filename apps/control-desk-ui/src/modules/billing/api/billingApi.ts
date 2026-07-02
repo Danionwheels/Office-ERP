@@ -20,6 +20,10 @@ type ListChargeCodesResponse = {
   chargeCodes: ChargeCodeLookup[];
 };
 
+type ListClientChargeRulesResponse = {
+  chargeRules: ClientChargeRule[];
+};
+
 export async function createLedgerAccount(
   input: LedgerAccountFormInput
 ): Promise<LedgerAccount> {
@@ -69,6 +73,7 @@ export async function createClientChargeRule(
       clientId,
       contractId: optionalText(input.contractId),
       chargeCodeId: input.chargeCodeId,
+      productModuleCode: optionalText(input.productModuleCode),
       descriptionOverride: optionalText(input.descriptionOverride),
       unitPriceAmount: Number(input.unitPriceAmount),
       currencyCode: input.currencyCode,
@@ -80,6 +85,30 @@ export async function createClientChargeRule(
       effectiveEndsOn: input.effectiveEndsOn
     })
   });
+}
+
+export async function listClientChargeRules(
+  clientId: string,
+  contractId?: string | null,
+  effectiveOn?: string
+): Promise<ClientChargeRule[]> {
+  const query = new URLSearchParams();
+
+  if (contractId !== null && contractId !== undefined && contractId.trim() !== "") {
+    query.set("contractId", contractId);
+  }
+
+  if (effectiveOn !== undefined && effectiveOn.trim() !== "") {
+    query.set("effectiveOn", effectiveOn);
+  }
+
+  const queryString = query.toString();
+  const suffix = queryString === "" ? "" : `?${queryString}`;
+  const response = await apiRequest<ListClientChargeRulesResponse>(
+    `/api/v1/billing/clients/${clientId}/client-charge-rules${suffix}`
+  );
+
+  return response.chargeRules;
 }
 
 export async function generateInvoiceDraft(

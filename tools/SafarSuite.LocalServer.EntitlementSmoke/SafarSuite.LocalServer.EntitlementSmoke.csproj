@@ -2,6 +2,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SafarSuite.ControlDesk.Contracts\SafarSuite.ControlDesk.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\SafarSuite.ControlCloud.Application\SafarSuite.ControlCloud.Application.csproj" />
+    <ProjectReference Include="..\..\src\SafarSuite.ControlCloud.Domain\SafarSuite.ControlCloud.Domain.csproj" />
+    <ProjectReference Include="..\..\src\SafarSuite.ControlCloud.Infrastructure\SafarSuite.ControlCloud.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\SafarSuite.LocalServer.Application\SafarSuite.LocalServer.Application.csproj" />
     <ProjectReference Include="..\..\src\SafarSuite.LocalServer.Domain\SafarSuite.LocalServer.Domain.csproj" />
     <ProjectReference Include="..\..\src\SafarSuite.LocalServer.Infrastructure\SafarSuite.LocalServer.Infrastructure.csproj" />

@@ -46,6 +46,78 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                     b.ToTable("client_commercial_projections", "cloud");
                 });
 
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientInstallationEntity", b =>
+                {
+                    b.Property<string>("InstallationId")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("installation_id");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<string>("BootstrapMode")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("bootstrap_mode");
+
+                    b.Property<string>("BranchCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("branch_code");
+
+                    b.Property<string>("ClientDeploymentMode")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("client_deployment_mode");
+
+                    b.Property<DateTimeOffset?>("LastBundleIssuedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_bundle_issued_at_utc");
+
+                    b.Property<long>("LatestEntitlementVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("latest_entitlement_version");
+
+                    b.Property<DateTimeOffset>("RegisteredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("registered_at_utc");
+
+                    b.Property<string>("ParentSiteId")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("parent_site_id");
+
+                    b.Property<string>("SiteId")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("site_id");
+
+                    b.Property<string>("SiteRole")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("site_role");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("SyncTopologyId")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("sync_topology_id");
+
+                    b.HasKey("InstallationId");
+
+                    b.HasIndex("ClientId")
+                        .HasDatabaseName("ix_client_installations_client_id");
+
+                    b.ToTable("client_installations", "cloud");
+                });
+
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientPortalInvitationEntity", b =>
                 {
                     b.Property<Guid>("InvitationId")
@@ -182,51 +254,14 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
 
                     b.HasKey("UserId");
 
-                    b.HasIndex("ClientId", "Status")
-                        .HasDatabaseName("ix_client_portal_users_client_status");
-
                     b.HasIndex("ClientId", "NormalizedEmail")
                         .IsUnique()
                         .HasDatabaseName("ux_client_portal_users_client_email");
 
+                    b.HasIndex("ClientId", "Status")
+                        .HasDatabaseName("ix_client_portal_users_client_status");
+
                     b.ToTable("client_portal_users", "cloud");
-                });
-
-            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientInstallationEntity", b =>
-                {
-                    b.Property<string>("InstallationId")
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)")
-                        .HasColumnName("installation_id");
-
-                    b.Property<Guid>("ClientId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("client_id");
-
-                    b.Property<DateTimeOffset?>("LastBundleIssuedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_bundle_issued_at_utc");
-
-                    b.Property<long>("LatestEntitlementVersion")
-                        .HasColumnType("bigint")
-                        .HasColumnName("latest_entitlement_version");
-
-                    b.Property<DateTimeOffset>("RegisteredAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("registered_at_utc");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("status");
-
-                    b.HasKey("InstallationId");
-
-                    b.HasIndex("ClientId")
-                        .HasDatabaseName("ix_client_installations_client_id");
-
-                    b.ToTable("client_installations", "cloud");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudEntitlementBundleIssueEntity", b =>
@@ -483,6 +518,76 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                     b.ToTable("installation_commands", "cloud");
                 });
 
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudInstallationDiagnosticReportEntity", b =>
+                {
+                    b.Property<Guid>("DiagnosticReportId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("diagnostic_report_id");
+
+                    b.Property<string>("BundleJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("bundle_json");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<DateTimeOffset>("GeneratedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("generated_at_utc");
+
+                    b.Property<string>("InstallationId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("installation_id");
+
+                    b.Property<string>("LicenseStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("license_status");
+
+                    b.Property<string>("LocalServerVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("local_server_version");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset>("ReceivedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at_utc");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("uploaded_by");
+
+                    b.HasKey("DiagnosticReportId");
+
+                    b.HasIndex("ClientId")
+                        .HasDatabaseName("ix_installation_diagnostic_reports_client_id");
+
+                    b.HasIndex("InstallationId", "ReceivedAtUtc")
+                        .HasDatabaseName("ix_installation_diagnostic_reports_installation_received");
+
+                    b.ToTable("installation_diagnostic_reports", "cloud");
+                });
+
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudInstallationHeartbeatEntity", b =>
                 {
                     b.Property<Guid>("HeartbeatId")
@@ -561,6 +666,105 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasDatabaseName("ix_installation_heartbeats_installation_received_at");
 
                     b.ToTable("installation_heartbeats", "cloud");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudInstallationSetupTokenEntity", b =>
+                {
+                    b.Property<Guid>("SetupTokenId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("setup_token_id");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<string>("BranchCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("branch_code");
+
+                    b.Property<string>("ClientDeploymentMode")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("client_deployment_mode");
+
+                    b.Property<DateTimeOffset?>("ConsumedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at_utc");
+
+                    b.Property<string>("ConsumedLocalServerVersion")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("consumed_local_server_version");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("DeploymentMode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("deployment_mode");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc");
+
+                    b.Property<string>("InstallationId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("installation_id");
+
+                    b.Property<string>("ParentSiteId")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("parent_site_id");
+
+                    b.Property<string>("SiteId")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("site_id");
+
+                    b.Property<string>("SiteRole")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("site_role");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("SyncTopologyId")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("sync_topology_id");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("token_hash");
+
+                    b.HasKey("SetupTokenId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_installation_setup_tokens_token_hash");
+
+                    b.HasIndex("ClientId", "InstallationId", "Status")
+                        .HasDatabaseName("ix_installation_setup_tokens_client_installation_status");
+
+                    b.ToTable("installation_setup_tokens", "cloud");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlDeskEnvelopeReceiptEntity", b =>
@@ -685,6 +889,15 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                 });
 
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudInstallationCommandEntity", b =>
+                {
+                    b.HasOne("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientInstallationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudInstallationDiagnosticReportEntity", b =>
                 {
                     b.HasOne("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientInstallationEntity", null)
                         .WithMany()

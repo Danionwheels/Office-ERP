@@ -48,13 +48,20 @@ client setup
 | Retry-safe outbox attempts | Basic done | Outbox rows track attempt count, last attempt time, next attempt time, sent/failed state, and retry eligibility |
 | Local entitlement snapshots | Basic done | Paid invoices can issue persisted entitlement snapshots with local limits/modules and enqueue `EntitlementSnapshotIssued` |
 | Contract-driven entitlement defaults | Basic done | Paid-invoice entitlement issue can derive paid-until, warning window, grace, offline validity, device/branch limits, and modules from the invoice contract |
+| Paid product module composition | Basic catalog and billing defaults done | Client contracts and entitlement snapshots must include at least one enabled module; a flexible product module catalog can separate IncludedForAll modules from PaidAddOn modules without fixing the final lineup yet, active paid add-ons can prefill billing charge setup, saved charge rules and invoice draft lines preserve the originating module code, and runtime access is enforced through signed entitlements |
 | Control Cloud commercial projection | Basic done | Accepted Control Desk invoice/payment/credit/refund/settlement envelopes project into a PostgreSQL-backed cloud-owned client commercial summary for the Client Portal |
-| Client Portal identity/session boundary | Basic contact invite foundation done | Control Desk can request portal invites for client contacts, Control Cloud protects invitation creation with a provider key, and Control Cloud owns portal invitations, password-backed users, and signed client-scoped sessions through `POST /api/v1/client-portal/invitations`, `/invitations/accept`, and `/sessions`; real provider users, MFA, email delivery, resend/revoke/list, and audit remain pending |
-| Control Cloud entitlement signing | Basic done | Latest projected entitlement snapshot can be returned to the Client Portal as an installation-bound signed bundle with payload hash, key id, HMAC signature, bundle issue id, paid/grace/offline dates, warning start, module states, and limits; issue audit and installation registry state persist in PostgreSQL |
+| Client Portal identity/session boundary | Basic invite management foundation done | Control Desk can request, list, resend, and revoke portal invites for client contacts; Control Cloud protects invitation management with a provider key, supports file or SMTP invitation delivery through a pluggable adapter, records invitation/session audit events, and owns portal invitations, password-backed users, and signed client-scoped sessions through `POST /api/v1/client-portal/invitations`, `/invitations/accept`, and `/sessions`; real provider users, MFA, password reset, and production mail retry handling remain pending |
+| Control Cloud entitlement signing | Basic done | Latest projected entitlement snapshot can be returned to the Client Portal/local server as an installation-bound signed bundle with payload hash, key id, HMAC signature, bundle issue id, paid/grace/offline dates, warning start, module states, and limits; issue audit and installation registry state persist in PostgreSQL; offline renewal files wrap the same signed bundle |
 | Control Cloud installation commands | Basic done | Control Cloud can queue signed monotonic commands for registered installations; local servers can pull pending commands and acknowledge Applied/Failed/Rejected outcomes with persisted audit |
 | Control Cloud/local-server heartbeat | Basic done | Local servers can report heartbeat to Control Cloud with heartbeat status stored separately from reported license state, entitlement version, paid/grace/offline dates, and local-server version |
 | Control Cloud installation status view | Basic portal preview done | Shared status endpoint returns installation identity, latest heartbeat/license state, latest entitlement bundle issue, pending command count, and latest command acknowledgement summary; the Control Desk client page has a minimal manual refresh panel, and Control Cloud serves a minimal Client Portal preview at `/client-portal/index.html` |
-| Local server entitlement verification | Basic done | Local-server layers can pull the latest signed bundle from Control Cloud, import HMAC-signed entitlement bundles, reject bad signatures and older versions, cache the latest accepted bundle, gate module access through active, warning, grace, restricted, expired, and module-disabled states, and report the current license state during heartbeat |
+| Local server setup-token registration | Basic done | Control Cloud can create one-time hashed setup tokens for client installations, local servers can register outward with the token, and entitlement bundle issue now requires the installation to be registered |
+| Control Cloud bootstrap package generation | Basic done | Control Cloud can generate a setup-token-backed local-server bootstrap package with cloud endpoints, a copyable install command, signed JSON bootstrap bundle download, artifact checksums, first served `install.sh`, Docker Compose template, environment template, runtime services manifest, deployment profile metadata, and an optional `safarsuite-app` Compose profile slot; bootstrap mode vocabulary is now constrained to online or offline-assisted setup, while real SafarSuite image bundles and deployed app workspace changes remain pending |
+| Control Cloud setup/bootstrap audit visibility | Basic done | Control Cloud records setup token creation, bootstrap package generation, local-server registration acceptance/rejection, and exposes a filtered audit-events endpoint for support review |
+| Local server diagnostics export/upload | Basic done | Local-server libraries can export diagnostics from cached entitlement, trust-state, local import audit, runtime, Docker/Compose, bootstrap config, local service status, and recent-error data, upload it to Control Cloud, and Control Cloud persists/latest-reads the report for support |
+| Local server entitlement verification | Basic done | Local-server layers can pull the latest signed bundle from Control Cloud, import HMAC-signed entitlement bundles directly or from offline renewal files, reject bad signatures, older versions, and same-file replay, persist trust state for last accepted bundle/last trusted cloud time/local clock rollback, persist local import audit records for accepted/rejected imports, cache the latest accepted bundle, gate module access through active, warning, grace, restricted, expired, and module-disabled states, and report the current license state during heartbeat |
+| Client deployment/data-sync boundary | Basic done | `docs/architecture/client-deployment-and-data-sync-boundary.md` defines bootstrap mode versus client deployment mode, the four supported runtime modes, branch/site identity room, and the separation between commercial control and future operational business-data sync |
+| Installation/deployment profile | Basic done | Setup tokens and registered installations persist bootstrap mode, client deployment mode, site id, site role, optional parent site, branch code, and sync topology id; bootstrap/status/registration/heartbeat/diagnostics contracts can surface the profile without implementing operational business-data sync |
 | Payment posting | Done for local review loop | Records persisted payment, supports pending bank-transfer review, posts balanced cash/AR journal on approval, and posts balanced reversal journals |
 | Client billing setup UI | Basic done | Client desk includes accounting profile, charge/tax rules, invoice draft, invoice issue, unpaid invoice void, and full credit-note workflow |
 | Client payment and entitlement UI | Basic done | Client desk includes payment receipt, bank-transfer approval/rejection, approved-payment reversal, credit settlement, client refund, and local entitlement issue/refresh workflow |
@@ -116,12 +123,13 @@ The implementation must support:
 
 - signed entitlement bundles verified locally
 - paid-until, warning-start, grace-until, and product/module limits
+- paid module composition, where clients can combine configurable IncludedForAll and PaidAddOn modules without hard-coding the final module list into the contract flow
 - heartbeat when internet is available
 - command queue and acknowledgement for renew/revoke/change-limit actions
 - offline renewal file import when the local server cannot connect near expiry
 - trust-based lease lengths for normal vs high-risk clients
 - clock/replay protection
-- full audit trail for every entitlement and command action
+- full audit trail for every entitlement issue, local import, and command action
 
 ## Next Implementation Slices
 
@@ -164,13 +172,38 @@ The implementation must support:
 32. Done for Control Desk and portal visibility: add shared Control Cloud installation status for installation heartbeat, reported license state, pending commands, latest entitlement, and latest command acknowledgement summary; Control Desk can refresh it from the client page, and the Client Portal preview can read it through the portal namespace.
 33. Done: add the first Client Portal identity/session boundary. Control Cloud now stores client portal invitations and users, accepts one-time invitation tokens, hashes passwords, and mints signed client-scoped sessions.
 34. Done: wire basic provider-key authorization and Control Desk contact-level invite action so invitations are created from the client maintenance workflow.
-35. Next: add email delivery plus invitation resend/revoke/list and invite/session audit.
-36. Next after identity hardening: add offline renewal file import/export as a fallback for sites that cannot connect near expiry.
+35. Done: add invitation list/resend/revoke management and local invitation delivery outbox records.
+36. Done: add a pluggable Client Portal invitation delivery boundary with local file delivery and SMTP delivery, plus invite/session audit records.
+37. Done: add offline renewal file export/import as a fallback for sites that cannot connect near expiry.
+38. Done: add local-server clock/replay trust state for accepted bundle version/issue tracking, last trusted cloud time, same-file replay rejection, replay warnings, and clock rollback warnings.
+39. Done: add setup-token registration so Control Cloud creates one-time setup tokens and local servers register outward before entitlement pulls.
+40. Done: add first bootstrap package generation so Control Cloud can return a setup token, cloud endpoints, copyable local-server install command, signed bootstrap bundle metadata/download, template artifact checksums, and the first served install script template.
+41. Done: add setup/bootstrap/registration audit visibility with filtered Control Cloud audit-events API.
+42. Done: add diagnostics export/upload foundation with local-server bundle generation, Control Cloud receive/latest endpoints, file/PostgreSQL persistence, richer runtime/service/bootstrap/error fields, and smoke coverage.
+43. Done: tighten module guardrails so contracts and entitlement snapshots require at least one enabled module.
+44. Done: preserve product-module billing intent from module-backed charge rules through generated invoice draft lines.
+45. Done: add signed bootstrap bundle/download generation and the first `install.sh` template served by Control Cloud.
+46. Done: add first Docker Compose local-server service template and environment template artifacts to the signed bootstrap bundle path.
+47. Done: add richer deployed-runtime diagnostics slots for runtime version/build/channel, Docker/Compose availability, bootstrap checksums, service state, and recent error summaries.
+48. Done: add local import audit persistence so accepted/rejected Control Cloud pulls, direct bundle imports, and offline renewal-file imports are stored locally and surfaced in diagnostics.
+49. Done: add the first SafarSuite runtime integration boundary. Bootstrap packages now carry a signed runtime plan, a runtime services manifest artifact, a diagnostics endpoint, app image/version environment variables, and an optional `safarsuite-app` Compose profile slot.
+50. Done: add the shared local module-gateway contract and application handler so the future SafarSuite app/local API can evaluate module access through `LocalServerModuleAccessResponse`.
+51. Done: define the client deployment topology and data-sync boundary for offline local, branch-to-HQ sync, cloud-sync multi-branch, and hosted SaaS modes. The boundary note separates bootstrap mode from client deployment mode, reserves branch/site identity fields, and keeps operational business-data sync out of the billing/license channel.
+52. Done: add an explicit installation/deployment profile model that carries `bootstrapMode`, `clientDeploymentMode`, `siteId`, `siteRole`, `parentSiteId`, `branchCode`, and `syncTopologyId` through Control Cloud setup, registration, status, heartbeat, diagnostics, and bootstrap responses without requiring operational data sync.
+53. Done: add minimal Control Desk/client-desk controls for creating setup tokens/bootstrap packages with deployment profile values, plus status visibility for the stored profile. Control Desk now proxies setup-token and bootstrap-package creation to Control Cloud through layered application/infrastructure clients, and the client desk Cloud tab can save the deployment profile before provisioning.
+54. Done: add provider-facing installation history visibility on the client desk. Control Desk now proxies recent Control Cloud audit events, filters installation setup/bootstrap/registration/diagnostics/renewal events for the selected installation, and shows them in the Cloud tab next to setup-token/bootstrap controls.
+55. Done: add the first read-only diagnostics review/download lane to the client desk. Control Desk now proxies the latest Control Cloud diagnostics report, and the Cloud tab can show runtime, Docker, service, check, recent-error, and license facts plus download the diagnostics JSON.
+56. Done: add low-risk command queue support actions from the client desk. Control Desk now exposes a support-command proxy that only allows `request_diagnostics` and `refresh_entitlement`, signs them through Control Cloud's registered-installation command queue, and the Cloud tab can queue a command with reason/actor/expiry while refreshing pending-command status.
+57. Done: wire local-agent handling for the low-risk commands so `request_diagnostics` verifies the signed command, exports/uploads diagnostics, and acknowledges the command, while `refresh_entitlement` verifies the signed command, pulls/imports the latest entitlement bundle, and acknowledges the command. The local-server API also exposes a manual command-processing endpoint, and the disabled-by-default runtime worker can poll commands on an interval.
+58. Next: prepare real SafarSuite image publication/runtime log collection, then move into the SafarSuite app workspace for actual module-gateway enforcement inside the deployed app.
 
 ## Guardrails
 
 - No more Survey/FAS clone work unless it becomes a paid/current requirement again.
 - Client maintenance is the product center; supporting modules must tie back to client control.
+- Product access is module-composed: a client may receive baseline IncludedForAll modules plus selected PaidAddOn modules in any allowed combination, and the local app must only enable modules present as enabled entries in the signed entitlement bundle.
+- SafarSuite is not an offline-only product. The client-side runtime/control path must support offline local, HQ-sync, cloud-sync multi-branch, and hosted SaaS deployments; operational branch/HQ/cloud business-data sync stays separate from billing, license, portal, heartbeat, diagnostics, and command control.
+- Bootstrap mode and client deployment mode are separate concepts. `OnlineBootstrap` and `OfflineAssistedBootstrap` describe setup; `OfflineLocal`, `BranchToHqSync`, `CloudSyncMultiBranch`, and `HostedSaas` describe how the client runs SafarSuite.
 - No cloud HTTP call inside accounting transactions.
 - Every multi-write accounting action uses `ExecuteInTransactionAsync`.
 - Bank transfers stay pending until reviewed; approval and reversal each own their GL transaction.
@@ -181,8 +214,8 @@ The implementation must support:
 - Control Cloud persistence owns its own `cloud` schema even while local development uses the same PostgreSQL container/database.
 - Client Portal reads cloud-owned projections, not the Control Desk operational database.
 - Client Portal commercial/license/deployment reads require a client-scoped portal session.
-- Portal invitation creation is protected by a local provider key for now; production use must replace that with real provider/admin users, email delivery, expiry/audit, and role management.
+- Portal invitation creation is protected by a local provider key for now; production use must replace that with real provider/admin users, production mail delivery/retry handling, expiry/audit review screens, and role management.
 - Heartbeat status and license validity remain separate; missed heartbeat alone must not disturb a paid offline client.
 - Warnings start near `paid_until`; grace and restriction begin only after configured dates.
-- Offline renewal files and emergency unlocks must be signed, installation-bound, versioned, expiring, and audited.
+- Offline renewal files, local entitlement imports, and emergency unlocks must be signed or signature-verified where applicable, installation-bound, versioned, expiring, and audited.
 - Revocation can be immediate only for installations that can receive the command; otherwise it takes effect on next heartbeat, next renewal file import, or the next license boundary.

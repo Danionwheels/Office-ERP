@@ -60,6 +60,9 @@ public sealed class CreateClientChargeRuleHandler
             }
 
             var chargeCodeId = ChargeCodeId.Create(command.ChargeCodeId);
+            var productModuleCode = string.IsNullOrWhiteSpace(command.ProductModuleCode)
+                ? null
+                : ModuleCode.Create(command.ProductModuleCode);
 
             if (await _chargeCodes.GetByIdAsync(chargeCodeId, cancellationToken) is null)
             {
@@ -80,6 +83,7 @@ public sealed class CreateClientChargeRuleHandler
                 clientId,
                 command.ContractId.HasValue ? ContractId.Create(command.ContractId.Value) : null,
                 chargeCodeId,
+                productModuleCode,
                 command.DescriptionOverride,
                 Money.Of(command.UnitPriceAmount, command.CurrencyCode),
                 command.Quantity,
@@ -97,6 +101,7 @@ public sealed class CreateClientChargeRuleHandler
                 clientChargeRule.ClientId.Value,
                 clientChargeRule.ContractId?.Value,
                 clientChargeRule.ChargeCodeId.Value,
+                clientChargeRule.ProductModuleCode?.Value,
                 clientChargeRule.UnitPrice.Amount,
                 clientChargeRule.UnitPrice.CurrencyCode,
                 clientChargeRule.Quantity,

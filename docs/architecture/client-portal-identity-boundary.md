@@ -42,7 +42,13 @@ The current code has the first invitation and session boundary:
 
 ```text
 POST /api/v1/clients/{clientId}/contacts/{clientContactId}/portal-invitation
+GET /api/v1/clients/{clientId}/portal-invitations
+POST /api/v1/clients/{clientId}/portal-invitations/{invitationId}/resend
+POST /api/v1/clients/{clientId}/portal-invitations/{invitationId}/revoke
 POST /api/v1/client-portal/invitations
+GET /api/v1/client-portal/clients/{clientId}/invitations
+POST /api/v1/client-portal/clients/{clientId}/invitations/{invitationId}/resend
+POST /api/v1/client-portal/clients/{clientId}/invitations/{invitationId}/revoke
 POST /api/v1/client-portal/invitations/accept
 POST /api/v1/client-portal/sessions
 ```
@@ -52,6 +58,24 @@ The Control Desk client profile can request a portal invitation for a selected c
 Control Cloud requires `X-SafarSuite-Provider-Key` before creating an invitation. This is a basic internal/provider gate for the local phase, not the final provider-user authorization model.
 
 Invitation creation stores only a hash of the one-time invitation token.
+
+Invitation resend replaces the pending token hash, which invalidates the old link. Accepted invitations cannot be resent or revoked.
+
+Invitation delivery is now a pluggable Control Cloud adapter. Local development uses `ClientPortal:InvitationDelivery:Provider = File` and writes invitation delivery records to:
+
+```text
+App_Data/client-portal-invitation-deliveries-dev.jsonl
+```
+
+`ClientPortal:InvitationDelivery:Provider = Smtp` switches the same boundary to SMTP delivery with configured sender, host, port, SSL, and credentials. A later production mail-provider adapter can sit behind the same port without changing invitation endpoints.
+
+Control Cloud also records invitation/session audit events through a separate audit boundary. Local development writes those events to:
+
+```text
+App_Data/client-portal-audit-events-dev.jsonl
+```
+
+The current audit events cover invitation created, delivery recorded, invitation resent, invitation revoked, invitation accepted, session created, and session rejected.
 
 Invitation acceptance creates a client-scoped portal user with a hashed password.
 
@@ -78,9 +102,7 @@ GET /api/v1/local-server/installations/{installationId}/entitlement-bundle?clien
 ## Pending Hardening
 
 - Real provider/admin users and role checks before creating invitations
-- Email delivery for invitation links
-- Invitation resend/revoke/list endpoints
-- Session audit records
+- Production mail-provider configuration and retry/failure handling
 - Password reset
 - MFA
 - Rate limiting and lockout
@@ -92,4 +114,4 @@ GET /api/v1/local-server/installations/{installationId}/entitlement-bundle?clien
 - Portal sessions must be scoped to a client id.
 - Client users must not be allowed to read another client's commercial, license, deployment, or heartbeat data.
 - Local server entitlement pull remains a machine-to-cloud path and should not depend on a human Client Portal session.
-- Payment/self-service actions must wait until provider/admin authorization, role checks, session audit, and payment-specific audit are in place.
+- Payment/self-service actions must wait until provider/admin authorization, role checks, audit review visibility, and payment-specific audit are in place.

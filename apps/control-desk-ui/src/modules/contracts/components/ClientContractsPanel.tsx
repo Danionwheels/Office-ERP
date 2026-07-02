@@ -1,25 +1,49 @@
 import {
+  AlertTriangle,
+  CheckCircle2,
   FilePlus2,
   FileText,
   History,
+  KeyRound,
+  ListChecks,
   PauseCircle,
   RefreshCw,
+  WalletCards,
   type LucideIcon
 } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import type { ClientChargeRule } from "../../billing/types/billingTypes";
+import type { EntitlementSnapshot } from "../../entitlements/types/entitlementTypes";
 import type {
   ClientContract,
-  ClientContractFormInput
+  ClientContractModule,
+  ClientContractFormInput,
+  ProductModule
 } from "../types/contractTypes";
+import {
+  findProductModule,
+  formatProductModuleBillingDefaults,
+  formatProductModuleCommercialMode,
+  getProductModuleDisplayName,
+  getProductModuleMeta,
+  normalizeProductModuleCode
+} from "../utils/productModuleDisplay";
 
 type ClientContractsPanelProps = {
   contracts: ClientContract[];
+  productModules: ProductModule[];
+  chargeRules: ClientChargeRule[];
+  latestSnapshot: EntitlementSnapshot | null;
+  latestSnapshotMissing: boolean;
+  canIssueEntitlementSnapshot: boolean;
   value: ClientContractFormInput;
   isBusy: boolean;
   onChange: (value: ClientContractFormInput) => void;
   onCreate: () => Promise<void>;
   onReplaceActive: () => Promise<void>;
   onSuspend: (contractId: string) => Promise<void>;
+  onPrepareModuleBilling: (moduleCode: string) => void;
+  onResolveEntitlementReadiness: () => Promise<void>;
 };
 
 type ContractWorkspaceView = "current" | "setup" | "history";
@@ -34,18 +58,27 @@ type ContractWorkspaceItem = {
 
 export function ClientContractsPanel({
   contracts,
+  productModules,
+  chargeRules,
+  latestSnapshot,
+  latestSnapshotMissing,
+  canIssueEntitlementSnapshot,
   value,
   isBusy,
   onChange,
   onCreate,
   onReplaceActive,
-  onSuspend
+  onSuspend,
+  onPrepareModuleBilling,
+  onResolveEntitlementReadiness
 }: ClientContractsPanelProps) {
   const [activeView, setActiveView] = useState<ContractWorkspaceView>("current");
   const activeContract = getActiveContract(contracts);
   const workspaceItems = getContractWorkspaceItems(contracts, activeContract);
   const activeWorkspaceItem =
     workspaceItems.find((item) => item.view === activeView) ?? workspaceItems[0];
+  const activeProductModules = productModules.filter((module) => module.isActive);
+  const selectedModuleCodes = moduleCodesFromText(value.moduleCodes);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,6 +87,17 @@ export function ClientContractsPanel({
 
   async function handleReplaceActive() {
     await onReplaceActive();
+  }
+
+  function handleModuleToggle(moduleCode: string, isSelected: boolean) {
+    if (isIncludedForAll(moduleCode, activeProductModules)) {
+      return;
+    }
+
+    onChange({
+      ...value,
+      moduleCodes: toggleModuleCode(value.moduleCodes, moduleCode, isSelected)
+    });
   }
 
   return (
@@ -143,19 +187,22 @@ export function ClientContractsPanel({
                 </div>
               </dl>
 
-              <div className="contract-module-list">
-                {activeContract.modules.length === 0 && (
-                  <span className="contract-module-pill disabled">No modules</span>
-                )}
-                {activeContract.modules.map((module) => (
-                  <span
-                    className={`contract-module-pill${module.isEnabled ? "" : " disabled"}`}
-                    key={module.moduleCode}
-                  >
-                    {module.moduleCode}
-                  </span>
-                ))}
-              </div>
+              <ModulePlanList
+                modules={activeContract.modules}
+                productModules={productModules}
+              />
+
+              <ModulePlanReadinessPanel
+                contract={activeContract}
+                productModules={productModules}
+                chargeRules={chargeRules}
+                latestSnapshot={latestSnapshot}
+                latestSnapshotMissing={latestSnapshotMissing}
+                canIssueEntitlementSnapshot={canIssueEntitlementSnapshot}
+                isBusy={isBusy}
+                onPrepareModuleBilling={onPrepareModuleBilling}
+                onResolveEntitlementReadiness={onResolveEntitlementReadiness}
+              />
 
               <div className="contract-current-actions">
                 <button
@@ -299,15 +346,43 @@ export function ClientContractsPanel({
               disabled={isBusy}
             />
           </label>
-          <label className="form-field contract-modules-field">
-            <span>Modules</span>
-            <textarea
-              rows={2}
-              value={value.moduleCodes}
-              onChange={(event) => onChange({ ...value, moduleCodes: event.target.value })}
-              disabled={isBusy}
-            />
-          </label>
+          {activeProductModules.length === 0 ? (
+            <label className="form-field contract-modules-field">
+              <span>Modules</span>
+              <textarea
+                rows={2}
+                value={value.moduleCodes}
+                onChange={(event) => onChange({ ...value, moduleCodes: event.target.value })}
+                disabled={isBusy}
+              />
+            </label>
+          ) : (
+            <fieldset className="contract-module-catalog" disabled={isBusy}>
+              <legend>Modules</legend>
+              {activeProductModules.map((module) => {
+                const isIncluded = module.commercialMode === "IncludedForAll";
+                const billingDefaults = formatProductModuleBillingDefaults(module);
+
+                return (
+                  <label className="contract-module-option" key={module.moduleCode}>
+                    <input
+                      type="checkbox"
+                      checked={isIncluded || selectedModuleCodes.includes(module.moduleCode)}
+                      disabled={isIncluded}
+                      onChange={(event) => handleModuleToggle(module.moduleCode, event.target.checked)}
+                    />
+                    <span>
+                      <strong>{module.displayName}</strong>
+                      <small>
+                        {module.moduleCode} - {formatProductModuleCommercialMode(module.commercialMode)}
+                      </small>
+                      {billingDefaults !== null && <small>{billingDefaults}</small>}
+                    </span>
+                  </label>
+                );
+              })}
+            </fieldset>
+          )}
         </div>
       </form>
       )}
@@ -354,7 +429,7 @@ export function ClientContractsPanel({
                 </div>
                 <div>
                   <dt>Modules</dt>
-                  <dd>{enabledModules(contract)}</dd>
+                  <dd>{enabledModules(contract, productModules)}</dd>
                 </div>
               </dl>
               <div className="contract-actions">
@@ -376,6 +451,348 @@ export function ClientContractsPanel({
       )}
     </div>
   );
+}
+
+type ReadinessTone = "neutral" | "ready" | "warning";
+
+type ModulePlanReadinessPanelProps = {
+  contract: ClientContract;
+  productModules: ProductModule[];
+  chargeRules: ClientChargeRule[];
+  latestSnapshot: EntitlementSnapshot | null;
+  latestSnapshotMissing: boolean;
+  canIssueEntitlementSnapshot: boolean;
+  isBusy: boolean;
+  onPrepareModuleBilling: (moduleCode: string) => void;
+  onResolveEntitlementReadiness: () => Promise<void>;
+};
+
+type ModuleReadinessItem = {
+  label: string;
+  summary: string;
+  tone: ReadinessTone;
+  Icon: LucideIcon;
+};
+
+type PaidAddOnReadiness = {
+  moduleCode: string;
+  displayName: string;
+  meta: string;
+  billingDefaults: string | null;
+  hasChargeRule: boolean;
+};
+
+type EntitlementReadiness = {
+  label: string;
+  summary: string;
+  tone: ReadinessTone;
+  missingModuleCodes: string[];
+  extraModuleCodes: string[];
+  hasLimitMismatch: boolean;
+  hasContractMismatch: boolean;
+};
+
+function ModulePlanReadinessPanel({
+  contract,
+  productModules,
+  chargeRules,
+  latestSnapshot,
+  latestSnapshotMissing,
+  canIssueEntitlementSnapshot,
+  isBusy,
+  onPrepareModuleBilling,
+  onResolveEntitlementReadiness
+}: ModulePlanReadinessPanelProps) {
+  const enabledModuleCodes = getEnabledModuleCodes(contract.modules);
+  const includedModuleCount = enabledModuleCodes.filter((moduleCode) =>
+    findProductModule(productModules, moduleCode)?.commercialMode === "IncludedForAll"
+  ).length;
+  const paidAddOns = getPaidAddOnReadiness(contract, productModules, chargeRules);
+  const unmatchedPaidAddOns = paidAddOns.filter((module) => !module.hasChargeRule);
+  const entitlementReadiness = getEntitlementReadiness(
+    contract,
+    productModules,
+    latestSnapshot,
+    latestSnapshotMissing
+  );
+  const readinessItems: ModuleReadinessItem[] = [
+    {
+      label: "Contract modules",
+      summary: enabledModuleCodes.length === 0
+        ? "No modules enabled"
+        : `${enabledModuleCodes.length} enabled, ${includedModuleCount} included`,
+      tone: enabledModuleCodes.length === 0 ? "warning" : "ready",
+      Icon: ListChecks
+    },
+    {
+      label: "Billing rules",
+      summary: paidAddOns.length === 0
+        ? "No add-ons enabled"
+        : unmatchedPaidAddOns.length === 0
+          ? `${paidAddOns.length} add-ons covered`
+          : `${unmatchedPaidAddOns.length} add-ons missing`,
+      tone: paidAddOns.length === 0
+        ? "neutral"
+        : unmatchedPaidAddOns.length === 0
+          ? "ready"
+          : "warning",
+      Icon: WalletCards
+    },
+    {
+      label: entitlementReadiness.label,
+      summary: entitlementReadiness.summary,
+      tone: entitlementReadiness.tone,
+      Icon: entitlementReadiness.tone === "ready" ? CheckCircle2 : AlertTriangle
+    }
+  ];
+  const hasEntitlementDetails =
+    entitlementReadiness.hasContractMismatch
+    || entitlementReadiness.hasLimitMismatch
+    || entitlementReadiness.missingModuleCodes.length > 0
+    || entitlementReadiness.extraModuleCodes.length > 0;
+  const needsEntitlementAction = entitlementReadiness.tone === "warning";
+
+  return (
+    <section className="module-readiness-panel">
+      <div className="module-readiness-header">
+        <span>Module control</span>
+        <strong>Plan readiness</strong>
+      </div>
+
+      <div className="module-readiness-grid">
+        {readinessItems.map((item) => (
+          <article className={`module-readiness-card ${item.tone}`} key={item.label}>
+            <item.Icon size={17} />
+            <span>
+              <strong>{item.label}</strong>
+              <small>{item.summary}</small>
+            </span>
+          </article>
+        ))}
+      </div>
+
+      {paidAddOns.length > 0 && (
+        <div className="module-readiness-module-list">
+          {paidAddOns.map((module) => (
+            <article
+              className={`module-readiness-module ${module.hasChargeRule ? "ready" : "warning"}`}
+              key={module.moduleCode}
+            >
+              <span>
+                <strong>{module.displayName}</strong>
+                <small>{module.meta}</small>
+                {module.billingDefaults !== null && <small>{module.billingDefaults}</small>}
+              </span>
+              <div className="module-readiness-module-actions">
+                <em>{module.hasChargeRule ? "Billed" : "Missing"}</em>
+                {!module.hasChargeRule && (
+                  <button
+                    className="mini-button module-readiness-action"
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onPrepareModuleBilling(module.moduleCode)}
+                    title="Prepare billing rule"
+                  >
+                    <FilePlus2 size={13} />
+                    Set up
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {(needsEntitlementAction || hasEntitlementDetails) && (
+        <div className="module-readiness-details">
+          {needsEntitlementAction && (
+            <div className="module-readiness-detail-action">
+              <span>
+                <strong>Entitlement snapshot</strong>
+                <small>{canIssueEntitlementSnapshot ? "Paid invoice ready" : "Paid invoice required"}</small>
+              </span>
+              <button
+                className="mini-button module-readiness-action"
+                type="button"
+                disabled={isBusy}
+                onClick={onResolveEntitlementReadiness}
+                title={canIssueEntitlementSnapshot
+                  ? "Issue entitlement snapshot"
+                  : "Open entitlement workflow"}
+              >
+                <KeyRound size={13} />
+                {canIssueEntitlementSnapshot ? "Issue" : "Open"}
+              </button>
+            </div>
+          )}
+          {entitlementReadiness.hasContractMismatch && <small>Contract changed since latest snapshot</small>}
+          {entitlementReadiness.hasLimitMismatch && <small>Device or branch limits differ</small>}
+          {entitlementReadiness.missingModuleCodes.length > 0 && (
+            <small>
+              Missing in snapshot: {formatModuleNames(
+                entitlementReadiness.missingModuleCodes,
+                productModules
+              )}
+            </small>
+          )}
+          {entitlementReadiness.extraModuleCodes.length > 0 && (
+            <small>
+              Extra in snapshot: {formatModuleNames(
+                entitlementReadiness.extraModuleCodes,
+                productModules
+              )}
+            </small>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ModulePlanList({
+  modules,
+  productModules
+}: {
+  modules: ClientContractModule[];
+  productModules: ProductModule[];
+}) {
+  if (modules.length === 0) {
+    return (
+      <div className="module-control-list">
+        <span className="contract-module-pill disabled">No modules</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="module-control-list">
+      {modules.map((module) => {
+        const productModule = findProductModule(productModules, module.moduleCode);
+        const billingDefaults = formatProductModuleBillingDefaults(productModule);
+
+        return (
+          <article
+            className={`module-control-item${module.isEnabled ? "" : " disabled"}`}
+            key={module.moduleCode}
+          >
+            <header>
+              <span>
+                <strong>{getProductModuleDisplayName(productModules, module.moduleCode)}</strong>
+                <small>{getProductModuleMeta(productModules, module.moduleCode)}</small>
+              </span>
+              <em>{module.isEnabled ? "Enabled" : "Disabled"}</em>
+            </header>
+            {billingDefaults !== null && <p>{billingDefaults}</p>}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function getPaidAddOnReadiness(
+  contract: ClientContract,
+  productModules: ProductModule[],
+  chargeRules: ClientChargeRule[]
+): PaidAddOnReadiness[] {
+  const billedModuleCodes = getBilledModuleCodes(chargeRules, contract);
+
+  return getEnabledModuleCodes(contract.modules)
+    .filter((moduleCode) =>
+      findProductModule(productModules, moduleCode)?.commercialMode === "PaidAddOn"
+    )
+    .map((moduleCode) => {
+      const productModule = findProductModule(productModules, moduleCode);
+
+      return {
+        moduleCode,
+        displayName: getProductModuleDisplayName(productModules, moduleCode),
+        meta: getProductModuleMeta(productModules, moduleCode),
+        billingDefaults: formatProductModuleBillingDefaults(productModule),
+        hasChargeRule: billedModuleCodes.has(moduleCode)
+      };
+    });
+}
+
+function getBilledModuleCodes(
+  chargeRules: ClientChargeRule[],
+  contract: ClientContract
+): Set<string> {
+  return new Set(
+    chargeRules
+      .filter((rule) => rule.status.toLowerCase() === "active")
+      .filter((rule) => rule.contractId === undefined
+        || rule.contractId === null
+        || rule.contractId === contract.contractId)
+      .map((rule) => normalizeOptionalModuleCode(rule.productModuleCode))
+      .filter((moduleCode): moduleCode is string => moduleCode !== null)
+  );
+}
+
+function getEntitlementReadiness(
+  contract: ClientContract,
+  productModules: ProductModule[],
+  latestSnapshot: EntitlementSnapshot | null,
+  latestSnapshotMissing: boolean
+): EntitlementReadiness {
+  if (latestSnapshot === null) {
+    return {
+      label: "Entitlement",
+      summary: latestSnapshotMissing ? "No snapshot issued" : "Not loaded",
+      tone: "warning",
+      missingModuleCodes: [],
+      extraModuleCodes: [],
+      hasLimitMismatch: false,
+      hasContractMismatch: false
+    };
+  }
+
+  const contractModuleCodes = getEnabledModuleCodes(contract.modules);
+  const snapshotModuleCodes = getEnabledModuleCodes(latestSnapshot.modules);
+  const missingModuleCodes = contractModuleCodes.filter(
+    (moduleCode) => !snapshotModuleCodes.includes(moduleCode)
+  );
+  const extraModuleCodes = snapshotModuleCodes.filter(
+    (moduleCode) => !contractModuleCodes.includes(moduleCode)
+  );
+  const hasContractMismatch = latestSnapshot.contractId !== contract.contractId;
+  const hasLimitMismatch =
+    latestSnapshot.allowedDevices !== contract.allowedDevices
+    || latestSnapshot.allowedBranches !== contract.allowedBranches;
+
+  if (
+    !hasContractMismatch
+    && !hasLimitMismatch
+    && missingModuleCodes.length === 0
+    && extraModuleCodes.length === 0
+  ) {
+    return {
+      label: "Entitlement",
+      summary: `${snapshotModuleCodes.length} modules aligned`,
+      tone: "ready",
+      missingModuleCodes,
+      extraModuleCodes,
+      hasLimitMismatch,
+      hasContractMismatch
+    };
+  }
+
+  const differences = [
+    hasContractMismatch ? "contract changed" : null,
+    hasLimitMismatch ? "limits differ" : null,
+    missingModuleCodes.length > 0 ? `${missingModuleCodes.length} missing` : null,
+    extraModuleCodes.length > 0 ? `${extraModuleCodes.length} extra` : null
+  ].filter((item): item is string => item !== null);
+
+  return {
+    label: "Entitlement",
+    summary: differences.join(", "),
+    tone: "warning",
+    missingModuleCodes,
+    extraModuleCodes,
+    hasLimitMismatch,
+    hasContractMismatch
+  };
 }
 
 function getActiveContract(contracts: ClientContract[]): ClientContract | null {
@@ -413,12 +830,79 @@ function getContractWorkspaceItems(
   ];
 }
 
-function enabledModules(contract: ClientContract): string {
+function enabledModules(contract: ClientContract, productModules: ProductModule[]): string {
   const modules = contract.modules
     .filter((module) => module.isEnabled)
-    .map((module) => module.moduleCode);
+    .map((module) => getProductModuleDisplayName(productModules, module.moduleCode));
 
   return modules.length === 0 ? "-" : modules.join(", ");
+}
+
+function getEnabledModuleCodes(modules: Array<{ moduleCode: string; isEnabled: boolean }>): string[] {
+  const seen = new Set<string>();
+
+  return modules
+    .filter((module) => module.isEnabled)
+    .map((module) => normalizeProductModuleCode(module.moduleCode))
+    .filter((moduleCode) => {
+      if (moduleCode === "" || seen.has(moduleCode)) {
+        return false;
+      }
+
+      seen.add(moduleCode);
+      return true;
+    });
+}
+
+function formatModuleNames(moduleCodes: string[], productModules: ProductModule[]): string {
+  return moduleCodes
+    .map((moduleCode) => getProductModuleDisplayName(productModules, moduleCode))
+    .join(", ");
+}
+
+function moduleCodesFromText(value: string): string[] {
+  const seen = new Set<string>();
+
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim().toUpperCase())
+    .filter((item) => {
+      if (item === "" || seen.has(item)) {
+        return false;
+      }
+
+      seen.add(item);
+      return true;
+    });
+}
+
+function toggleModuleCode(value: string, moduleCode: string, isSelected: boolean): string {
+  const normalizedModuleCode = moduleCode.trim().toUpperCase();
+  const moduleCodes = moduleCodesFromText(value);
+  const nextModuleCodes = isSelected
+    ? [...moduleCodes, normalizedModuleCode]
+    : moduleCodes.filter((item) => item !== normalizedModuleCode);
+
+  return [...new Set(nextModuleCodes)].join(", ");
+}
+
+function isIncludedForAll(moduleCode: string, productModules: ProductModule[]): boolean {
+  const normalizedModuleCode = moduleCode.trim().toUpperCase();
+
+  return productModules.some(
+    (module) =>
+      module.moduleCode === normalizedModuleCode && module.commercialMode === "IncludedForAll"
+  );
+}
+
+function normalizeOptionalModuleCode(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalizedModuleCode = normalizeProductModuleCode(value);
+
+  return normalizedModuleCode === "" ? null : normalizedModuleCode;
 }
 
 function formatMoney(amount: number, currencyCode: string): string {
