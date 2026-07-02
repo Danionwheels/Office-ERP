@@ -1,10 +1,11 @@
-import { CheckCircle2, MessageSquarePlus, PauseCircle, Save, UserPlus } from "lucide-react";
+import { CheckCircle2, MessageSquarePlus, PauseCircle, Save, Send, UserPlus } from "lucide-react";
 import type { FormEvent } from "react";
 import type {
   AddClientContactInput,
   AddClientSupportNoteInput,
   ClientAccountingProfile,
   ClientDetails,
+  ClientPortalInvitation,
   UpdateClientInput
 } from "../types/clientTypes";
 
@@ -15,6 +16,7 @@ type ClientDetailPanelProps = {
   editValue: UpdateClientInput;
   contactValue: AddClientContactInput;
   noteValue: AddClientSupportNoteInput;
+  latestPortalInvitation: ClientPortalInvitation | null;
   isBusy: boolean;
   onEditChange: (value: UpdateClientInput) => void;
   onContactChange: (value: AddClientContactInput) => void;
@@ -23,6 +25,7 @@ type ClientDetailPanelProps = {
   onActivate: () => Promise<void>;
   onSuspend: () => Promise<void>;
   onAddContact: () => Promise<void>;
+  onInvitePortalContact: (clientContactId: string) => Promise<void>;
   onAddNote: () => Promise<void>;
 };
 
@@ -33,6 +36,7 @@ export function ClientDetailPanel({
   editValue,
   contactValue,
   noteValue,
+  latestPortalInvitation,
   isBusy,
   onEditChange,
   onContactChange,
@@ -41,6 +45,7 @@ export function ClientDetailPanel({
   onActivate,
   onSuspend,
   onAddContact,
+  onInvitePortalContact,
   onAddNote
 }: ClientDetailPanelProps) {
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -152,6 +157,19 @@ export function ClientDetailPanel({
             </div>
           </div>
 
+          {latestPortalInvitation !== null && (
+            <div className="portal-invite-result">
+              <div>
+                <span>Portal invite</span>
+                <strong>{latestPortalInvitation.email}</strong>
+              </div>
+              <input
+                readOnly
+                value={latestPortalInvitation.invitationUrl ?? latestPortalInvitation.invitationToken ?? ""}
+              />
+            </div>
+          )}
+
           <form className="client-contact-form profile-inline-form" onSubmit={handleAddContact}>
             <div className="contact-form-grid">
               <label className="form-field">
@@ -224,8 +242,20 @@ export function ClientDetailPanel({
             {client.contacts.map((contact) => (
               <article className="contact-item" key={contact.clientContactId}>
                 <header>
-                  <strong>{contact.fullName}</strong>
-                  <span>{contact.isPrimary ? `${contact.role} primary` : contact.role}</span>
+                  <div className="contact-card-title">
+                    <strong>{contact.fullName}</strong>
+                    <span>{contact.isPrimary ? `${contact.role} primary` : contact.role}</span>
+                  </div>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => onInvitePortalContact(contact.clientContactId)}
+                    disabled={isBusy || contact.email === null || contact.email === undefined || contact.email.trim() === ""}
+                    title="Invite to portal"
+                  >
+                    <Send size={14} />
+                    Invite
+                  </button>
                 </header>
                 <dl>
                   <div>

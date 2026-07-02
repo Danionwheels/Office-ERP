@@ -115,17 +115,39 @@ A client can reject cloud data sync and still be managed by the Control Cloud fo
 
 Offline clients still have records, invoices, payments, allowed modules, device limits, and renewals.
 
+The local server should try heartbeat whenever internet is available, but heartbeat health is not the same as license validity.
+
+For a paid monthly offline-capable client:
+
+```text
+paid_until
+  controls how long the signed entitlement remains valid
+
+heartbeat
+  refreshes entitlement state, pulls commands, sends diagnostics, and proves communication
+```
+
+A client paid through the month should not be interrupted during that month only because the local server could not reach the internet. Warnings begin near expiry, then grace, then restricted/read-only mode after grace if renewal does not happen.
+
 If the client system has periodic internet:
 
 ```text
-SafarSuite local server -> checks Control Cloud -> downloads signed entitlement
+SafarSuite local server
+  -> checks Control Cloud
+  -> downloads newer signed entitlement bundle and pending commands
+  -> acknowledges applied versions
 ```
 
-If the client system has no internet:
+If the client system has no internet near expiry:
 
 ```text
-SafarSuite Control Desk -> generates/saves signed license file -> client imports it manually
+Client pays or office approves renewal
+  -> Control Cloud or Control Desk creates signed renewal file
+  -> client imports the file into the local server
+  -> local server verifies signature/version/installation and extends access
 ```
+
+Revocation while a paid local server is offline is enforced on next heartbeat, next renewal-file import, or the next license boundary unless that client is assigned a shorter high-risk lease.
 
 ### Cloud Sync Client
 

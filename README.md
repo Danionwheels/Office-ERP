@@ -33,6 +33,7 @@ SafarSuite Client Systems
 
 - `docs/architecture/product-naming.md`
 - `docs/architecture/layered-architecture.md`
+- `docs/architecture/cloud-local-communication-map.md`
 - `docs/architecture/why-and-cloud-portal-link.md`
 - `docs/architecture/current-cloud-server-reuse-assessment.md`
 - `docs/legacy/source-reference.md`
@@ -40,6 +41,8 @@ SafarSuite Client Systems
 - `docs/planning/survey-clone-and-modernization-tracker.md`
 - `docs/planning/survey-object-clone-register.md`
 - `docs/planning/control-desk-new-requirements.md`
+- `docs/planning/offline-entitlement-control-rules.md`
+- `docs/planning/control-cloud-deployment-tracker.md`
 - `docs/planning/project-tracker.md`
 - `docs/planning/milestone-01-control-spine.md`
 - `docs/planning/control-spine-domain-model.md`

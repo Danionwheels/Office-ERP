@@ -6,6 +6,7 @@ import type {
   ClientContact,
   ClientDetails,
   ClientLookup,
+  ClientPortalInvitation,
   ClientSupportNote,
   ConfigureClientAccountingProfileInput,
   CreateClientInput,
@@ -35,6 +36,8 @@ type ListClientSupportNotesResponse = {
   clientId: string;
   supportNotes: ClientSupportNote[];
 };
+
+type InviteClientPortalContactResponse = ClientPortalInvitation;
 
 export async function listClients(): Promise<ClientLookup[]> {
   const response = await apiRequest<ListClientsResponse>("/api/v1/clients");
@@ -112,6 +115,22 @@ export async function listClientContacts(clientId: string): Promise<ClientContac
   );
 
   return response.contacts;
+}
+
+export async function inviteClientPortalContact(
+  clientId: string,
+  clientContactId: string
+): Promise<ClientPortalInvitation> {
+  return apiRequest<InviteClientPortalContactResponse>(
+    `/api/v1/clients/${clientId}/contacts/${clientContactId}/portal-invitation`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        expiresInDays: 7,
+        createdBy: "SafarSuite Control Desk"
+      })
+    }
+  );
 }
 
 export async function addClientSupportNote(

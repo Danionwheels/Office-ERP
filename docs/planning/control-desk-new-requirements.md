@@ -16,7 +16,8 @@ These requirements are not simply old Survey/FAS clone work. They are the reason
 | Plan/module selection | Track which SafarSuite modules are allowed | High | Open |
 | Branch allowance | Track allowed branches/HQ/cloud sync limits | High | Open |
 | Device/user allowance | Track allowed devices and/or users by contract | High | Open |
-| Renewal rules | Paid-until, grace, read-only, suspended, blocked | High | Open |
+| Renewal rules | Paid-until, warning window, grace, read-only, suspended, blocked | High | Designed in `offline-entitlement-control-rules.md` |
+| Offline entitlement lease | Keep paid offline clients working through paid period without heartbeat disturbance | High | Designed |
 | Support notes | Internal notes for client support/admin history | Medium | Basic done |
 
 ## Billing And Payments
@@ -39,6 +40,8 @@ These requirements are not simply old Survey/FAS clone work. They are the reason
 | Receive payment status | Cloud sends payment result back to ERP | High | Open |
 | Issue entitlement | Cloud signs renewed entitlement after payment | High | Concept exists |
 | Issue product command | Cloud signs module/status/device changes | High | Concept exists |
+| Heartbeat and command acknowledgement | Client local server pulls entitlement/product commands and acknowledges applied versions | High | Designed |
+| Offline renewal file | Allow paid clients to renew by importing a signed file when the local server has no internet | High | Designed |
 | Audit every change | Record who changed pricing/license/payment status | High | Partial in CloudServer |
 | Key rotation | Signing keys must support production rotation | High | Partial concept |
 
@@ -62,7 +65,7 @@ Survey/FAS clone work is removed from the active API surface because it does not
 
 | Mode | Description | Control Approach | Status |
 | --- | --- | --- | --- |
-| Offline local | Client uses local SafarSuite only | Signed entitlement file or periodic check | Open |
+| Offline local | Client uses local SafarSuite only | Signed entitlement valid through paid period, heartbeat when available, offline renewal file fallback | Designed |
 | HQ sync | Branches sync to one client HQ server | Entitlement controls branch/device limits | Open |
 | Cloud sync | Branches/HQ sync to SafarSuite cloud data plane | Entitlement controls cloud-sync module | Open |
 | Hosted SaaS | Client uses hosted SafarSuite | Subscription renews hosted tenant access | Open |
@@ -95,6 +98,25 @@ SafarSuite applies renewed access
 ERP shows client as active/paid
 ```
 
+## Offline Entitlement Rules
+
+The accepted rule set is documented in:
+
+```text
+docs/planning/offline-entitlement-control-rules.md
+```
+
+Summary:
+
+- Heartbeat status and license validity are separate.
+- A paid one-month offline-capable client must keep working for the paid month even if the local server never reaches the internet during that month.
+- Warnings start close to expiry, not at the first missed heartbeat.
+- After expiry, the system enters grace and then restricted/read-only mode by policy.
+- Normal renewals refresh the signed entitlement on heartbeat.
+- Offline renewal files are required for clients whose local server cannot connect near expiry.
+- Revocation during an offline paid period is enforced on next heartbeat or renewal boundary unless the client is assigned a shorter high-risk lease.
+- Every entitlement, command, heartbeat, renewal file, and support override must be audited.
+
 ## Questions To Decide Soon
 
 | Question | Why It Matters | Status |
@@ -102,5 +124,5 @@ ERP shows client as active/paid
 | Which payment gateway first? | Determines callback and settlement design | Open |
 | Is branch allowance billed separately? | Affects pricing model | Open |
 | Is device count or named-user count the main limit? | Affects entitlement/device policy | Open |
-| Do we allow overuse during grace? | Affects support experience | Open |
-| Should cloud sign all entitlement files, or can Provider ERP sign offline files directly? | Affects key custody/security | Open |
+| Do we allow overuse during grace? | Affects support experience | Open; default should be read-only/no-new-transactions after grace |
+| Should cloud sign all entitlement files, or can Control Desk sign emergency offline files directly? | Affects key custody/security | Open; default preference is Control Cloud signing with audited emergency fallback |

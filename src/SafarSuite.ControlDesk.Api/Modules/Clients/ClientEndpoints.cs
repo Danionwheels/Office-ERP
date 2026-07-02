@@ -8,6 +8,7 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.CreateClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientAccountingProfile;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
+using SafarSuite.ControlDesk.Application.Modules.Clients.InviteClientPortalContact;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientContacts;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientSupportNotes;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClients;
@@ -33,6 +34,9 @@ public static class ClientEndpoints
         group.MapPost("/{clientId:guid}/suspend", SuspendAsync);
         group.MapPost("/{clientId:guid}/contacts", AddContactAsync);
         group.MapGet("/{clientId:guid}/contacts", ListContactsAsync);
+        group.MapPost(
+            "/{clientId:guid}/contacts/{clientContactId:guid}/portal-invitation",
+            InvitePortalContactAsync);
         group.MapPost("/{clientId:guid}/support-notes", AddSupportNoteAsync);
         group.MapGet("/{clientId:guid}/support-notes", ListSupportNotesAsync);
         group.MapPut("/{clientId:guid}/accounting-profile", ConfigureAccountingProfileAsync);
@@ -150,6 +154,41 @@ public static class ClientEndpoints
         return Results.Ok(new ListClientContactsResponse(
             result.Value.ClientId,
             result.Value.Contacts.Select(ToClientContactResponse).ToArray()));
+    }
+
+    private static async Task<IResult> InvitePortalContactAsync(
+        Guid clientId,
+        Guid clientContactId,
+        InviteClientPortalContactRequest request,
+        InviteClientPortalContactHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new InviteClientPortalContactCommand(
+                clientId,
+                clientContactId,
+                request.PortalRole,
+                request.ExpiresInDays,
+                request.CreatedBy),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new InviteClientPortalContactResponse(
+            result.Value.InvitationId,
+            result.Value.ClientId,
+            result.Value.ClientContactId,
+            result.Value.Email,
+            result.Value.FullName,
+            result.Value.Role,
+            result.Value.Status,
+            result.Value.InvitedAtUtc,
+            result.Value.ExpiresAtUtc,
+            result.Value.InvitationToken,
+            result.Value.InvitationUrl));
     }
 
     private static async Task<IResult> AddSupportNoteAsync(
@@ -312,6 +351,7 @@ public static class ClientEndpoints
                 summary.CurrencyCode,
                 summary.TotalInvoiced,
                 summary.TotalPaid,
+                summary.AvailableCredit,
                 summary.BalanceDue,
                 summary.InvoiceCount,
                 summary.OpenInvoiceCount)).ToArray(),
@@ -343,6 +383,8 @@ public static class ClientEndpoints
                 line.Reference,
                 line.InvoiceId,
                 line.PaymentId,
+                line.RefundId,
+                line.CreditApplicationId,
                 line.Description,
                 line.Debit,
                 line.Credit,

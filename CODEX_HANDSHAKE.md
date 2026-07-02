@@ -173,6 +173,8 @@ docs/legacy/survey-software-sweep.md
 docs/planning/survey-clone-and-modernization-tracker.md
 docs/planning/survey-object-clone-register.md
 docs/planning/control-desk-new-requirements.md
+docs/planning/offline-entitlement-control-rules.md
+docs/planning/control-cloud-deployment-tracker.md
 docs/planning/project-tracker.md
 docs/planning/milestone-01-control-spine.md
 docs/planning/control-spine-domain-model.md
@@ -277,6 +279,12 @@ This proves the new business value before pulling in every legacy Survey/FAS scr
 - Control Cloud for billing/licensing/portal is still needed.
 - Dynamic pricing is per client and owned by SafarSuite Control Desk.
 - SafarSuite should consume signed entitlements, not hard-code pricing.
+- Heartbeat status and license validity are separate; a paid offline-capable client must keep working through the paid period even if heartbeat is unavailable.
+- Offline renewal files are required for local servers that cannot reach the internet near expiry.
+- Revocation for offline paid clients is enforced on next heartbeat, next renewal-file import, or license boundary unless a shorter high-risk lease is assigned.
+- Every entitlement, heartbeat, product command, renewal file, emergency unlock, and support override must be audited.
+- There is one production SafarSuite Control Cloud; the older SafarSuite workspace CloudServer is reference/prototype material, not a second production cloud.
+- Client Linux deployment is portal-controlled but local-server-pulled: V1 uses signed bootstrap bundles and Docker Compose, with `.deb` packaging deferred until the service layout is stable.
 
 ## Do Not Do Yet
 

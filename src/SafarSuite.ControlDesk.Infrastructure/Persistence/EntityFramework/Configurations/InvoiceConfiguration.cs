@@ -110,6 +110,13 @@ internal sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
                 .HasMaxLength(512)
                 .IsRequired();
 
+            line.Property(invoiceLine => invoiceLine.LineType)
+                .HasColumnName("line_type")
+                .HasMaxLength(32)
+                .HasConversion<string>()
+                .HasDefaultValue(InvoiceLineType.Charge)
+                .IsRequired();
+
             line.OwnsOne(invoiceLine => invoiceLine.Amount, money =>
             {
                 MoneyConfiguration.Configure(money, "amount", "currency_code");

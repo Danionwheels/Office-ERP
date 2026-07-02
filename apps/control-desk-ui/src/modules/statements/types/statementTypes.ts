@@ -13,6 +13,7 @@ export type ClientStatementCurrencySummary = {
   currencyCode: string;
   totalInvoiced: number;
   totalPaid: number;
+  availableCredit: number;
   balanceDue: number;
   invoiceCount: number;
   openInvoiceCount: number;
@@ -50,6 +51,8 @@ export type ClientStatementLine = {
   reference: string;
   invoiceId?: string | null;
   paymentId?: string | null;
+  refundId?: string | null;
+  creditApplicationId?: string | null;
   description: string;
   debit: number;
   credit: number;

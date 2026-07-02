@@ -8,13 +8,19 @@ public sealed class InvoiceLine : ValueObject
     {
         Description = string.Empty;
         Amount = null!;
+        LineType = InvoiceLineType.Charge;
     }
 
-    private InvoiceLine(string description, Money amount, ChargeCodeId? chargeCodeId)
+    private InvoiceLine(
+        string description,
+        Money amount,
+        ChargeCodeId? chargeCodeId,
+        InvoiceLineType lineType)
     {
         Description = description;
         Amount = amount;
         ChargeCodeId = chargeCodeId;
+        LineType = lineType;
     }
 
     public string Description { get; private set; }
@@ -23,12 +29,28 @@ public sealed class InvoiceLine : ValueObject
 
     public ChargeCodeId? ChargeCodeId { get; private set; }
 
+    public InvoiceLineType LineType { get; private set; }
+
     public static InvoiceLine Create(string description, Money amount)
     {
         return Create(description, amount, null);
     }
 
     public static InvoiceLine Create(string description, Money amount, ChargeCodeId? chargeCodeId)
+    {
+        return Create(description, amount, chargeCodeId, InvoiceLineType.Charge);
+    }
+
+    public static InvoiceLine CreateTax(string description, Money amount, ChargeCodeId chargeCodeId)
+    {
+        return Create(description, amount, chargeCodeId, InvoiceLineType.Tax);
+    }
+
+    private static InvoiceLine Create(
+        string description,
+        Money amount,
+        ChargeCodeId? chargeCodeId,
+        InvoiceLineType lineType)
     {
         if (string.IsNullOrWhiteSpace(description))
         {
@@ -40,7 +62,7 @@ public sealed class InvoiceLine : ValueObject
             throw new ArgumentException("Invoice line amount cannot be negative.", nameof(amount));
         }
 
-        return new InvoiceLine(description.Trim(), amount, chargeCodeId);
+        return new InvoiceLine(description.Trim(), amount, chargeCodeId, lineType);
     }
 
     protected override IEnumerable<object?> GetEqualityComponents()
@@ -48,5 +70,6 @@ public sealed class InvoiceLine : ValueObject
         yield return Description;
         yield return Amount;
         yield return ChargeCodeId;
+        yield return LineType;
     }
 }

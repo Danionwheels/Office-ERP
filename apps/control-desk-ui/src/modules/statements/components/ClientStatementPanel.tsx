@@ -58,6 +58,10 @@ export function ClientStatementPanel({
                       <dd>{formatMoney(summary.totalPaid, summary.currencyCode)}</dd>
                     </div>
                     <div>
+                      <dt>Credit</dt>
+                      <dd>{formatMoney(summary.availableCredit, summary.currencyCode)}</dd>
+                    </div>
+                    <div>
                       <dt>Open</dt>
                       <dd>{summary.openInvoiceCount} / {summary.invoiceCount}</dd>
                     </div>

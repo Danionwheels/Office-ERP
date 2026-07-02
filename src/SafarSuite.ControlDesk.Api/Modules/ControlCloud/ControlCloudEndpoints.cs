@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.ControlCloud;
@@ -14,10 +15,28 @@ public static class ControlCloudEndpoints
             .WithTags("Control Cloud");
 
         group.MapGet("/outbox-messages", ListOutboxMessagesAsync);
+        group.MapGet(
+            "/clients/{clientId:guid}/installations/{installationId}/status",
+            GetInstallationStatusAsync);
         group.MapPost("/outbox-messages/publish", PublishOutboxMessagesAsync);
         group.MapPost("/outbox-messages/publish-local", PublishOutboxMessagesAsync);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> GetInstallationStatusAsync(
+        Guid clientId,
+        string installationId,
+        GetCloudInstallationStatusHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetCloudInstallationStatusQuery(clientId, installationId),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
     }
 
     private static async Task<IResult> ListOutboxMessagesAsync(

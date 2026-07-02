@@ -40,6 +40,7 @@ public sealed record CreateClientChargeRuleRequest(
     decimal UnitPriceAmount,
     string CurrencyCode,
     decimal Quantity,
+    decimal TaxPercent,
     string BillingCycle,
     int BillingDayOfMonth,
     DateOnly EffectiveStartsOn,
@@ -53,7 +54,10 @@ public sealed record CreateClientChargeRuleResponse(
     decimal UnitPriceAmount,
     string CurrencyCode,
     decimal Quantity,
+    decimal TaxPercent,
+    decimal TaxAmount,
     decimal LineAmount,
+    decimal TotalLineAmount,
     string BillingCycle,
     int BillingDayOfMonth,
     DateOnly EffectiveStartsOn,
@@ -85,6 +89,7 @@ public sealed record GenerateInvoiceDraftResponse(
 
 public sealed record GenerateInvoiceDraftLineResponse(
     Guid? ChargeCodeId,
+    string LineType,
     string Description,
     decimal Amount,
     string CurrencyCode);
@@ -106,6 +111,55 @@ public sealed record IssueInvoiceResponse(
     IReadOnlyCollection<IssueInvoiceJournalLineResponse> JournalLines);
 
 public sealed record IssueInvoiceJournalLineResponse(
+    Guid LedgerAccountId,
+    decimal Debit,
+    decimal Credit,
+    string? Description);
+
+public sealed record VoidInvoiceRequest(
+    DateOnly VoidDate,
+    string Reason);
+
+public sealed record VoidInvoiceResponse(
+    Guid InvoiceId,
+    string InvoiceNumber,
+    string InvoiceStatus,
+    Guid OriginalJournalEntryId,
+    Guid ReversalJournalEntryId,
+    string ReversalJournalEntryStatus,
+    DateOnly VoidDate,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    string CurrencyCode,
+    IReadOnlyCollection<VoidInvoiceJournalLineResponse> JournalLines);
+
+public sealed record VoidInvoiceJournalLineResponse(
+    Guid LedgerAccountId,
+    decimal Debit,
+    decimal Credit,
+    string? Description);
+
+public sealed record IssueCreditNoteRequest(
+    string CreditNoteNumber,
+    DateOnly CreditDate,
+    string Reason);
+
+public sealed record IssueCreditNoteResponse(
+    Guid CreditNoteId,
+    Guid InvoiceId,
+    string CreditNoteNumber,
+    string InvoiceNumber,
+    string CreditNoteStatus,
+    DateOnly CreditDate,
+    decimal Amount,
+    string CurrencyCode,
+    Guid JournalEntryId,
+    string JournalEntryStatus,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    IReadOnlyCollection<IssueCreditNoteJournalLineResponse> JournalLines);
+
+public sealed record IssueCreditNoteJournalLineResponse(
     Guid LedgerAccountId,
     decimal Debit,
     decimal Credit,

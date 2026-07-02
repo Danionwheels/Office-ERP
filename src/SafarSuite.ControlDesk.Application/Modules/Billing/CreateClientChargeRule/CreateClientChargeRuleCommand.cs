@@ -8,6 +8,7 @@ public sealed record CreateClientChargeRuleCommand(
     decimal UnitPriceAmount,
     string CurrencyCode,
     decimal Quantity,
+    decimal TaxPercent,
     string BillingCycle,
     int BillingDayOfMonth,
     DateOnly EffectiveStartsOn,

@@ -3,13 +3,15 @@ import {
   CircleDollarSign,
   FileCheck2,
   FilePlus2,
+  FileX2,
+  Landmark,
   PlusCircle,
   ReceiptText,
   RefreshCw,
   Save,
   type LucideIcon
 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import type { ClientContract } from "../../contracts/types/contractTypes";
 import type {
   ClientAccountingProfile,
@@ -21,11 +23,15 @@ import type {
   ChargeCodeLookup,
   ClientChargeRule,
   ClientChargeRuleFormInput,
+  IssueCreditNoteInput,
+  IssuedCreditNote,
   InvoiceDraft,
   InvoiceDraftFormInput,
   IssueInvoiceFormInput,
   IssuedInvoice,
-  LedgerAccountFormInput
+  LedgerAccountFormInput,
+  VoidedInvoice,
+  VoidInvoiceInput
 } from "../types/billingTypes";
 
 type ClientBillingSetupPanelProps = {
@@ -44,6 +50,8 @@ type ClientBillingSetupPanelProps = {
   latestChargeRule: ClientChargeRule | null;
   invoiceDraft: InvoiceDraft | null;
   issuedInvoice: IssuedInvoice | null;
+  voidedInvoice: VoidedInvoice | null;
+  issuedCreditNote: IssuedCreditNote | null;
   isBusy: boolean;
   onReceivableAccountChange: (value: LedgerAccountFormInput) => void;
   onRevenueAccountChange: (value: LedgerAccountFormInput) => void;
@@ -60,6 +68,8 @@ type ClientBillingSetupPanelProps = {
   onCreateChargeRule: () => Promise<void>;
   onGenerateInvoiceDraft: () => Promise<void>;
   onIssueInvoice: () => Promise<void>;
+  onVoidInvoice: (input: VoidInvoiceInput) => Promise<void>;
+  onIssueCreditNote: (input: IssueCreditNoteInput) => Promise<void>;
 };
 
 type BillingStep = "accounting" | "rules" | "draft" | "issue";
@@ -88,6 +98,8 @@ export function ClientBillingSetupPanel({
   latestChargeRule,
   invoiceDraft,
   issuedInvoice,
+  voidedInvoice,
+  issuedCreditNote,
   isBusy,
   onReceivableAccountChange,
   onRevenueAccountChange,
@@ -103,9 +115,22 @@ export function ClientBillingSetupPanel({
   onRefreshChargeCodes,
   onCreateChargeRule,
   onGenerateInvoiceDraft,
-  onIssueInvoice
+  onIssueInvoice,
+  onVoidInvoice,
+  onIssueCreditNote
 }: ClientBillingSetupPanelProps) {
   const [activeBillingStep, setActiveBillingStep] = useState<BillingStep>("accounting");
+  const [voidDate, setVoidDate] = useState(toDateInputValue(new Date()));
+  const [voidReason, setVoidReason] = useState("");
+  const [creditNoteNumber, setCreditNoteNumber] = useState("");
+  const [creditDate, setCreditDate] = useState(toDateInputValue(new Date()));
+  const [creditReason, setCreditReason] = useState("");
+
+  useEffect(() => {
+    if (invoiceDraft !== null) {
+      setCreditNoteNumber(`CN-${invoiceDraft.invoiceNumber}`);
+    }
+  }, [invoiceDraft?.invoiceNumber]);
 
   async function handleCreateReceivableAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -142,6 +167,23 @@ export function ClientBillingSetupPanel({
     await onIssueInvoice();
   }
 
+  async function handleVoidInvoice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onVoidInvoice({
+      voidDate,
+      reason: voidReason
+    });
+  }
+
+  async function handleIssueCreditNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onIssueCreditNote({
+      creditNoteNumber,
+      creditDate,
+      reason: creditReason
+    });
+  }
+
   const billingSteps = getBillingStepItems({
     accountingProfile,
     accountingProfileMissing,
@@ -152,6 +194,54 @@ export function ClientBillingSetupPanel({
   });
   const activeBillingStepItem =
     billingSteps.find((step) => step.step === activeBillingStep) ?? billingSteps[0];
+  const canCreateChargeCode =
+    chargeCodeValue.code.trim() !== ""
+    && chargeCodeValue.name.trim() !== ""
+    && Number(chargeCodeValue.defaultUnitPriceAmount) >= 0
+    && chargeCodeValue.currencyCode.trim().length === 3
+    && chargeCodeValue.revenueAccountId.trim() !== "";
+  const canCreateChargeRule =
+    chargeRuleValue.contractId.trim() !== ""
+    && chargeRuleValue.chargeCodeId.trim() !== ""
+    && Number(chargeRuleValue.unitPriceAmount) >= 0
+    && Number(chargeRuleValue.quantity) > 0
+    && Number(chargeRuleValue.taxPercent) >= 0
+    && Number(chargeRuleValue.taxPercent) <= 100
+    && chargeRuleValue.currencyCode.trim().length === 3
+    && chargeRuleValue.effectiveStartsOn !== ""
+    && chargeRuleValue.effectiveEndsOn >= chargeRuleValue.effectiveStartsOn;
+  const canGenerateInvoiceDraft =
+    invoiceDraftValue.contractId.trim() !== ""
+    && invoiceDraftValue.invoiceNumber.trim() !== ""
+    && invoiceDraftValue.issueDate !== ""
+    && invoiceDraftValue.dueDate >= invoiceDraftValue.issueDate
+    && invoiceDraftValue.billingDate !== ""
+    && invoiceDraftValue.currencyCode.trim().length === 3;
+  const hasInvoiceIssueAccount =
+    accountingProfile !== null || issueInvoiceValue.accountsReceivableAccountId.trim() !== "";
+  const canIssueInvoice =
+    invoiceDraft?.status === "Draft"
+    && issuedInvoice === null
+    && issueInvoiceValue.postingDate !== ""
+    && hasInvoiceIssueAccount;
+  const canVoidInvoice =
+    issuedInvoice?.invoiceStatus === "Issued"
+    && invoiceDraft?.status === "Issued"
+    && invoiceDraft.balanceDue === invoiceDraft.totalAmount
+    && voidedInvoice === null;
+  const canSubmitVoidInvoice =
+    canVoidInvoice
+    && voidDate !== ""
+    && voidReason.trim() !== "";
+  const canIssueCreditNote =
+    invoiceDraft?.status !== undefined
+    && ["Paid", "PartiallyPaid"].includes(invoiceDraft.status)
+    && issuedCreditNote === null;
+  const canSubmitCreditNote =
+    canIssueCreditNote
+    && creditNoteNumber.trim() !== ""
+    && creditDate !== ""
+    && creditReason.trim() !== "";
 
   if (client === null) {
     return (
@@ -447,6 +537,19 @@ export function ClientBillingSetupPanel({
               />
             </label>
             <label className="form-field wide">
+              <span>Tax account ID</span>
+              <input
+                value={chargeCodeValue.taxAccountId}
+                onChange={(event) =>
+                  onChargeCodeChange({
+                    ...chargeCodeValue,
+                    taxAccountId: event.target.value
+                  })
+                }
+                disabled={isBusy}
+              />
+            </label>
+            <label className="form-field wide">
               <span>Description</span>
               <input
                 value={chargeCodeValue.description}
@@ -461,7 +564,12 @@ export function ClientBillingSetupPanel({
             </label>
           </div>
           <div className="billing-action-row">
-            <button className="icon-button primary" type="submit" disabled={isBusy} title="Create charge code">
+            <button
+              className="icon-button primary"
+              type="submit"
+              disabled={isBusy || !canCreateChargeCode}
+              title="Create charge code"
+            >
               <FilePlus2 size={16} />
               Create
             </button>
@@ -481,7 +589,12 @@ export function ClientBillingSetupPanel({
             <span>Billing setup</span>
             <strong>Charge rule</strong>
           </div>
-          <button className="icon-button primary" type="submit" disabled={isBusy} title="Add charge rule">
+          <button
+            className="icon-button primary"
+            type="submit"
+            disabled={isBusy || !canCreateChargeRule}
+            title="Add charge rule"
+          >
             <PlusCircle size={16} />
             Add
           </button>
@@ -556,6 +669,23 @@ export function ClientBillingSetupPanel({
                 onChargeRuleChange({
                   ...chargeRuleValue,
                   quantity: event.target.value
+                })
+              }
+              disabled={isBusy}
+            />
+          </label>
+          <label className="form-field">
+            <span>Tax %</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              value={chargeRuleValue.taxPercent}
+              onChange={(event) =>
+                onChargeRuleChange({
+                  ...chargeRuleValue,
+                  taxPercent: event.target.value
                 })
               }
               disabled={isBusy}
@@ -661,6 +791,14 @@ export function ClientBillingSetupPanel({
             <div>
               <dt>Line amount</dt>
               <dd>{formatMoney(latestChargeRule.lineAmount, latestChargeRule.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Tax</dt>
+              <dd>{formatMoney(latestChargeRule.taxAmount, latestChargeRule.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Total</dt>
+              <dd>{formatMoney(latestChargeRule.totalLineAmount, latestChargeRule.currencyCode)}</dd>
             </div>
           </dl>
         )}
@@ -784,10 +922,18 @@ export function ClientBillingSetupPanel({
             </label>
           </div>
           <div className="billing-action-row">
-            <button className="icon-button primary" type="submit" disabled={isBusy} title="Generate invoice draft">
+            <button
+              className="icon-button primary"
+              type="submit"
+              disabled={isBusy || !canGenerateInvoiceDraft}
+              title="Generate invoice draft"
+            >
               <FilePlus2 size={16} />
               Draft
             </button>
+            <span className="billing-small-fact">
+              {canGenerateInvoiceDraft ? "Ready" : "Contract, dates, and currency required"}
+            </span>
           </div>
         </form>
 
@@ -813,6 +959,7 @@ export function ClientBillingSetupPanel({
             <table className="billing-lines-table">
               <thead>
                 <tr>
+                  <th>Type</th>
                   <th>Description</th>
                   <th className="numeric">Amount</th>
                 </tr>
@@ -820,6 +967,7 @@ export function ClientBillingSetupPanel({
               <tbody>
                 {invoiceDraft.lines.map((line, index) => (
                   <tr key={`${line.description}-${index}`}>
+                    <td>{line.lineType}</td>
                     <td>{line.description}</td>
                     <td className="numeric">{formatMoney(line.amount, line.currencyCode)}</td>
                   </tr>
@@ -845,7 +993,7 @@ export function ClientBillingSetupPanel({
                         postingDate: event.target.value
                       })
                     }
-                    disabled={isBusy || issuedInvoice !== null}
+                    disabled={isBusy || issuedInvoice !== null || invoiceDraft.status !== "Draft"}
                   />
                 </label>
                 <label className="form-field wide">
@@ -858,7 +1006,7 @@ export function ClientBillingSetupPanel({
                         accountsReceivableAccountId: event.target.value
                       })
                     }
-                    disabled={isBusy || issuedInvoice !== null}
+                    disabled={isBusy || issuedInvoice !== null || invoiceDraft.status !== "Draft"}
                   />
                 </label>
               </div>
@@ -866,12 +1014,19 @@ export function ClientBillingSetupPanel({
                 <button
                   className="icon-button primary"
                   type="submit"
-                  disabled={isBusy || issuedInvoice !== null}
+                  disabled={!canIssueInvoice}
                   title="Issue invoice"
                 >
                   <FileCheck2 size={16} />
                   Issue
                 </button>
+                <span className="billing-small-fact">
+                  {invoiceDraft.status !== "Draft"
+                    ? "Already issued"
+                    : !hasInvoiceIssueAccount
+                      ? "AR account required"
+                      : "Posts AR, revenue, tax, and outbox"}
+                </span>
               </div>
             </form>
           </div>
@@ -898,6 +1053,153 @@ export function ClientBillingSetupPanel({
             <div>
               <dt>Credit</dt>
               <dd>{formatMoney(issuedInvoice.totalCredit, issuedInvoice.currencyCode)}</dd>
+            </div>
+          </dl>
+        )}
+
+        {canVoidInvoice && (
+          <form
+            className={`billing-subform billing-void-form${
+              activeBillingStep === "issue" ? "" : " billing-step-hidden"
+            }`}
+            onSubmit={handleVoidInvoice}
+          >
+            <div className="billing-form-grid issue">
+              <label className="form-field">
+                <span>Void date</span>
+                <input
+                  type="date"
+                  value={voidDate}
+                  onChange={(event) => setVoidDate(event.target.value)}
+                  disabled={isBusy}
+                />
+              </label>
+              <label className="form-field wide">
+                <span>Reason</span>
+                <input
+                  value={voidReason}
+                  onChange={(event) => setVoidReason(event.target.value)}
+                  disabled={isBusy}
+                  maxLength={512}
+                />
+              </label>
+            </div>
+            <div className="billing-action-row">
+              <button
+                className="icon-button danger"
+                type="submit"
+                disabled={!canSubmitVoidInvoice}
+                title="Void invoice"
+              >
+                <FileX2 size={16} />
+                Void
+              </button>
+              <span className="billing-small-fact">
+                {voidReason.trim() === "" ? "Reason required" : "Posts reversal journal"}
+              </span>
+            </div>
+          </form>
+        )}
+
+        {voidedInvoice !== null && (
+          <dl
+            className={`billing-result-facts issued${
+              activeBillingStep === "issue" ? "" : " billing-step-hidden"
+            }`}
+          >
+            <div>
+              <dt>Voided</dt>
+              <dd>{voidedInvoice.invoiceStatus}</dd>
+            </div>
+            <div>
+              <dt>Reversal</dt>
+              <dd>{voidedInvoice.reversalJournalEntryStatus}</dd>
+            </div>
+            <div>
+              <dt>Debit</dt>
+              <dd>{formatMoney(voidedInvoice.totalDebit, voidedInvoice.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Credit</dt>
+              <dd>{formatMoney(voidedInvoice.totalCredit, voidedInvoice.currencyCode)}</dd>
+            </div>
+          </dl>
+        )}
+
+        {canIssueCreditNote && (
+          <form
+            className={`billing-subform billing-credit-form${
+              activeBillingStep === "issue" ? "" : " billing-step-hidden"
+            }`}
+            onSubmit={handleIssueCreditNote}
+          >
+            <div className="billing-form-grid issue">
+              <label className="form-field">
+                <span>Credit #</span>
+                <input
+                  value={creditNoteNumber}
+                  onChange={(event) => setCreditNoteNumber(event.target.value.toUpperCase())}
+                  disabled={isBusy}
+                  maxLength={40}
+                />
+              </label>
+              <label className="form-field">
+                <span>Credit date</span>
+                <input
+                  type="date"
+                  value={creditDate}
+                  onChange={(event) => setCreditDate(event.target.value)}
+                  disabled={isBusy}
+                />
+              </label>
+              <label className="form-field wide">
+                <span>Reason</span>
+                <input
+                  value={creditReason}
+                  onChange={(event) => setCreditReason(event.target.value)}
+                  disabled={isBusy}
+                  maxLength={512}
+                />
+              </label>
+            </div>
+            <div className="billing-action-row">
+              <button
+                className="icon-button"
+                type="submit"
+                disabled={!canSubmitCreditNote}
+                title="Issue credit note"
+              >
+                <Landmark size={16} />
+                Credit
+              </button>
+              <span className="billing-small-fact">
+                {creditReason.trim() === "" ? "Reason required" : "Posts credit-note journal"}
+              </span>
+            </div>
+          </form>
+        )}
+
+        {issuedCreditNote !== null && (
+          <dl
+            className={`billing-result-facts issued${
+              activeBillingStep === "issue" ? "" : " billing-step-hidden"
+            }`}
+          >
+            <div>
+              <dt>Credit note</dt>
+              <dd>{issuedCreditNote.creditNoteStatus}</dd>
+            </div>
+            <div>
+              <dt>Amount</dt>
+              <dd>{formatMoney(issuedCreditNote.amount, issuedCreditNote.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Debit</dt>
+              <dd>{formatMoney(issuedCreditNote.totalDebit, issuedCreditNote.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Credit</dt>
+              <dd>{formatMoney(issuedCreditNote.totalCredit, issuedCreditNote.currencyCode)}</dd>
             </div>
           </dl>
         )}
@@ -939,7 +1241,7 @@ function getBillingStepItems({
       summary: latestChargeRule === null
         ? `${chargeCodes.length} charge codes`
         : `${latestChargeRule.status} ${formatMoney(
-            latestChargeRule.lineAmount,
+            latestChargeRule.totalLineAmount,
             latestChargeRule.currencyCode
           )}`,
       tone: latestChargeRule === null ? "neutral" : "ready",
@@ -983,6 +1285,10 @@ function chargeRulePatchForChargeCode(
 
 function formatMoney(amount: number, currencyCode: string): string {
   return `${amount.toFixed(2)} ${currencyCode}`;
+}
+
+function toDateInputValue(value: Date): string {
+  return value.toISOString().slice(0, 10);
 }
 
 function formatDate(value: string): string {

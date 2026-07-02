@@ -54,6 +54,24 @@ public sealed record ListClientContactsResponse(
     Guid ClientId,
     IReadOnlyCollection<ClientContactResponse> Contacts);
 
+public sealed record InviteClientPortalContactRequest(
+    string? PortalRole = null,
+    int ExpiresInDays = 7,
+    string CreatedBy = "SafarSuite Control Desk");
+
+public sealed record InviteClientPortalContactResponse(
+    Guid InvitationId,
+    Guid ClientId,
+    Guid ClientContactId,
+    string Email,
+    string FullName,
+    string Role,
+    string Status,
+    DateTimeOffset InvitedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    string? InvitationToken,
+    string? InvitationUrl);
+
 public sealed record ClientContactResponse(
     Guid ClientContactId,
     string Role,
@@ -108,6 +126,7 @@ public sealed record ClientStatementCurrencySummaryResponse(
     string CurrencyCode,
     decimal TotalInvoiced,
     decimal TotalPaid,
+    decimal AvailableCredit,
     decimal BalanceDue,
     int InvoiceCount,
     int OpenInvoiceCount);
@@ -142,6 +161,8 @@ public sealed record ClientStatementLineResponse(
     string Reference,
     Guid? InvoiceId,
     Guid? PaymentId,
+    Guid? RefundId,
+    Guid? CreditApplicationId,
     string Description,
     decimal Debit,
     decimal Credit,

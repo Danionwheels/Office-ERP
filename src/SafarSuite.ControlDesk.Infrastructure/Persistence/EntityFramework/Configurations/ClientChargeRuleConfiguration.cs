@@ -68,6 +68,11 @@ internal sealed class ClientChargeRuleConfiguration : IEntityTypeConfiguration<C
             .HasPrecision(18, 4)
             .IsRequired();
 
+        builder.Property(rule => rule.TaxPercent)
+            .HasColumnName("tax_percent")
+            .HasPrecision(9, 4)
+            .IsRequired();
+
         builder.Property(rule => rule.BillingCycle)
             .HasColumnName("billing_cycle")
             .HasMaxLength(32)
@@ -103,6 +108,8 @@ internal sealed class ClientChargeRuleConfiguration : IEntityTypeConfiguration<C
             .IsRequired();
 
         builder.Ignore(rule => rule.LineAmount);
+        builder.Ignore(rule => rule.TaxAmount);
+        builder.Ignore(rule => rule.TotalLineAmount);
 
         builder.HasIndex(rule => rule.ClientId)
             .HasDatabaseName("ix_client_charge_rules_client_id");

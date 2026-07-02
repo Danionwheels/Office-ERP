@@ -109,17 +109,17 @@ public sealed class IssueInvoiceHandler
                 return Result<IssueInvoiceResult>.Failure(receivableValidation);
             }
 
-            var revenueLines = await BuildRevenueLinesAsync(invoice, cancellationToken);
+            var postingLines = await BuildPostingLinesAsync(invoice, cancellationToken);
 
-            if (revenueLines.IsFailure)
+            if (postingLines.IsFailure)
             {
-                return Result<IssueInvoiceResult>.Failure(revenueLines.Errors);
+                return Result<IssueInvoiceResult>.Failure(postingLines.Errors);
             }
 
             var result = await _unitOfWork.ExecuteInTransactionAsync(
                 async token =>
                 {
-                    var journalEntry = CreateJournalEntry(invoice, receivableAccountId, revenueLines.Value, command.PostingDate);
+                    var journalEntry = CreateJournalEntry(invoice, receivableAccountId, postingLines.Value, command.PostingDate);
 
                     invoice.Issue();
                     journalEntry.Post(_clock.UtcNow);
@@ -208,17 +208,18 @@ public sealed class IssueInvoiceHandler
         return errors;
     }
 
-    private async Task<Result<IReadOnlyCollection<RevenuePostingLine>>> BuildRevenueLinesAsync(
+    private async Task<Result<InvoicePostingLines>> BuildPostingLinesAsync(
         Invoice invoice,
         CancellationToken cancellationToken)
     {
-        var revenueLines = new List<RevenuePostingLine>();
+        var revenueLines = new List<AccountPostingLine>();
+        var taxLines = new List<AccountPostingLine>();
 
         foreach (var invoiceLine in invoice.Lines)
         {
             if (!invoiceLine.ChargeCodeId.HasValue)
             {
-                return Result<IReadOnlyCollection<RevenuePostingLine>>.Failure(ApplicationError.Validation(
+                return Result<InvoicePostingLines>.Failure(ApplicationError.Validation(
                     nameof(invoiceLine.ChargeCodeId),
                     "Every invoice line must reference a charge code before posting."));
             }
@@ -227,24 +228,58 @@ public sealed class IssueInvoiceHandler
 
             if (chargeCode is null)
             {
-                return Result<IReadOnlyCollection<RevenuePostingLine>>.Failure(ApplicationError.NotFound(
+                return Result<InvoicePostingLines>.Failure(ApplicationError.NotFound(
                     nameof(invoiceLine.ChargeCodeId),
                     "Charge code for an invoice line was not found."));
             }
 
-            revenueLines.Add(new RevenuePostingLine(
+            if (invoiceLine.LineType == InvoiceLineType.Tax)
+            {
+                if (!chargeCode.TaxAccountId.HasValue)
+                {
+                    return Result<InvoicePostingLines>.Failure(ApplicationError.Validation(
+                        nameof(chargeCode.TaxAccountId),
+                        $"Charge code {chargeCode.Code.Value} needs a tax account before posting tax."));
+                }
+
+                taxLines.Add(new AccountPostingLine(
+                    chargeCode.TaxAccountId.Value,
+                    invoiceLine.Amount,
+                    invoiceLine.Description));
+
+                continue;
+            }
+
+            revenueLines.Add(new AccountPostingLine(
                 chargeCode.RevenueAccountId,
                 invoiceLine.Amount,
                 invoiceLine.Description));
         }
 
-        return Result<IReadOnlyCollection<RevenuePostingLine>>.Success(revenueLines);
+        var accountValidationErrors = new List<ApplicationError>();
+        accountValidationErrors.AddRange(await ValidatePostingAccountsAsync(
+            revenueLines.Select(line => line.LedgerAccountId),
+            LedgerAccountType.Revenue,
+            "Revenue ledger account",
+            cancellationToken));
+        accountValidationErrors.AddRange(await ValidatePostingAccountsAsync(
+            taxLines.Select(line => line.LedgerAccountId),
+            LedgerAccountType.Liability,
+            "Tax ledger account",
+            cancellationToken));
+
+        if (accountValidationErrors.Count > 0)
+        {
+            return Result<InvoicePostingLines>.Failure(accountValidationErrors);
+        }
+
+        return Result<InvoicePostingLines>.Success(new InvoicePostingLines(revenueLines, taxLines));
     }
 
     private JournalEntry CreateJournalEntry(
         Invoice invoice,
         LedgerAccountId receivableAccountId,
-        IReadOnlyCollection<RevenuePostingLine> revenueLines,
+        InvoicePostingLines postingLines,
         DateOnly postingDate)
     {
         var journalEntry = JournalEntry.Create(
@@ -261,7 +296,7 @@ public sealed class IssueInvoiceHandler
             invoice.TotalAmount,
             $"Accounts receivable for invoice {invoice.Number.Value}"));
 
-        foreach (var group in revenueLines.GroupBy(line => line.RevenueAccountId))
+        foreach (var group in postingLines.RevenueLines.GroupBy(line => line.LedgerAccountId))
         {
             var amount = group
                 .Select(line => line.Amount)
@@ -274,7 +309,65 @@ public sealed class IssueInvoiceHandler
             journalEntry.AddLine(JournalLine.CreditLine(group.Key, amount, description));
         }
 
+        foreach (var group in postingLines.TaxLines.GroupBy(line => line.LedgerAccountId))
+        {
+            var amount = group
+                .Select(line => line.Amount)
+                .Aggregate((total, amount) => total.Add(amount));
+
+            var description = group.Count() == 1
+                ? group.First().Description
+                : $"Tax payable for invoice {invoice.Number.Value}";
+
+            journalEntry.AddLine(JournalLine.CreditLine(group.Key, amount, description));
+        }
+
         return journalEntry;
+    }
+
+    private async Task<IReadOnlyCollection<ApplicationError>> ValidatePostingAccountsAsync(
+        IEnumerable<LedgerAccountId> ledgerAccountIds,
+        LedgerAccountType expectedType,
+        string accountRole,
+        CancellationToken cancellationToken)
+    {
+        var errors = new List<ApplicationError>();
+
+        foreach (var ledgerAccountId in ledgerAccountIds.Distinct())
+        {
+            var ledgerAccount = await _ledgerAccounts.GetByIdAsync(ledgerAccountId, cancellationToken);
+
+            if (ledgerAccount is null)
+            {
+                errors.Add(ApplicationError.NotFound(
+                    nameof(ledgerAccountId),
+                    $"{accountRole} was not found."));
+                continue;
+            }
+
+            if (ledgerAccount.Type != expectedType)
+            {
+                errors.Add(ApplicationError.Validation(
+                    nameof(ledgerAccountId),
+                    $"{accountRole} must be a {expectedType.ToString().ToLowerInvariant()} account."));
+            }
+
+            if (!ledgerAccount.IsPostingAccount)
+            {
+                errors.Add(ApplicationError.Validation(
+                    nameof(ledgerAccountId),
+                    $"{accountRole} must be a posting account."));
+            }
+
+            if (ledgerAccount.Status != LedgerAccountStatus.Active)
+            {
+                errors.Add(ApplicationError.Validation(
+                    nameof(ledgerAccountId),
+                    $"{accountRole} must be active."));
+            }
+        }
+
+        return errors;
     }
 
     private CloudOutboxMessage CreateInvoiceIssuedOutboxMessage(
@@ -300,6 +393,7 @@ public sealed class IssueInvoiceHandler
             journalEntry.Status.ToString(),
             invoice.Lines.Select(line => new InvoiceIssuedCloudPayloadLine(
                 line.ChargeCodeId?.Value,
+                line.LineType.ToString(),
                 line.Description,
                 line.Amount.Amount,
                 line.Amount.CurrencyCode)).ToArray());
@@ -332,8 +426,12 @@ public sealed class IssueInvoiceHandler
                 line.Description)).ToArray());
     }
 
-    private sealed record RevenuePostingLine(
-        LedgerAccountId RevenueAccountId,
+    private sealed record InvoicePostingLines(
+        IReadOnlyCollection<AccountPostingLine> RevenueLines,
+        IReadOnlyCollection<AccountPostingLine> TaxLines);
+
+    private sealed record AccountPostingLine(
+        LedgerAccountId LedgerAccountId,
         Money Amount,
         string Description);
 
@@ -357,6 +455,7 @@ public sealed class IssueInvoiceHandler
 
     private sealed record InvoiceIssuedCloudPayloadLine(
         Guid? ChargeCodeId,
+        string LineType,
         string Description,
         decimal Amount,
         string CurrencyCode);

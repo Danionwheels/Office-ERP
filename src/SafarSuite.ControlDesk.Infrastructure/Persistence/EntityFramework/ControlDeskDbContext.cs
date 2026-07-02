@@ -31,9 +31,15 @@ public sealed class ControlDeskDbContext : DbContext
 
     public DbSet<Invoice> Invoices => Set<Invoice>();
 
+    public DbSet<CreditNote> CreditNotes => Set<CreditNote>();
+
     public DbSet<CloudOutboxMessage> CloudOutboxMessages => Set<CloudOutboxMessage>();
 
     public DbSet<Payment> Payments => Set<Payment>();
+
+    public DbSet<ClientRefund> ClientRefunds => Set<ClientRefund>();
+
+    public DbSet<ClientCreditApplication> ClientCreditApplications => Set<ClientCreditApplication>();
 
     public DbSet<EntitlementSnapshot> EntitlementSnapshots => Set<EntitlementSnapshot>();
 
@@ -49,8 +55,11 @@ public sealed class ControlDeskDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ChargeCodeConfiguration());
         modelBuilder.ApplyConfiguration(new ClientChargeRuleConfiguration());
         modelBuilder.ApplyConfiguration(new InvoiceConfiguration());
+        modelBuilder.ApplyConfiguration(new CreditNoteConfiguration());
         modelBuilder.ApplyConfiguration(new CloudOutboxMessageConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentConfiguration());
+        modelBuilder.ApplyConfiguration(new ClientRefundConfiguration());
+        modelBuilder.ApplyConfiguration(new ClientCreditApplicationConfiguration());
         modelBuilder.ApplyConfiguration(new EntitlementSnapshotConfiguration());
         modelBuilder.ApplyConfiguration(new ClientContractConfiguration());
     }

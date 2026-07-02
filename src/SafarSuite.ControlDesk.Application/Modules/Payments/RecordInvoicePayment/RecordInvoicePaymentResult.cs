@@ -9,9 +9,9 @@ public sealed record RecordInvoicePaymentResult(
     decimal Amount,
     decimal BalanceDue,
     string CurrencyCode,
-    Guid JournalEntryId,
-    string JournalEntryStatus,
-    DateOnly PostingDate,
+    Guid? JournalEntryId,
+    string? JournalEntryStatus,
+    DateOnly? PostingDate,
     decimal TotalDebit,
     decimal TotalCredit,
     IReadOnlyCollection<RecordInvoicePaymentJournalLineResult> JournalLines);

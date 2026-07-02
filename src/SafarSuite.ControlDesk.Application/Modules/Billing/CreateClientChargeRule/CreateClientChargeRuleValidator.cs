@@ -39,6 +39,11 @@ public sealed class CreateClientChargeRuleValidator : IValidator<CreateClientCha
             errors.Add(ApplicationError.Validation(nameof(value.Quantity), "Quantity must be positive."));
         }
 
+        if (value.TaxPercent is < 0 or > 100)
+        {
+            errors.Add(ApplicationError.Validation(nameof(value.TaxPercent), "Tax percent must be between 0 and 100."));
+        }
+
         if (string.IsNullOrWhiteSpace(value.BillingCycle))
         {
             errors.Add(ApplicationError.Validation(nameof(value.BillingCycle), "Billing cycle is required."));

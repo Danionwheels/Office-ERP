@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SafarSuite Client Portal</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="portal-shell">
+      <section class="portal-header" aria-labelledby="portal-title">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">S</div>
+          <div>
+            <span>SafarSuite</span>
+            <h1 id="portal-title">Client Portal</h1>
+          </div>
+        </div>
+        <div class="portal-status" id="connectionStatus">Ready</div>
+      </section>
+
+      <section class="lookup-panel" aria-label="Client lookup">
+        <label>
+          <span>Client ID</span>
+          <input
+            id="clientIdInput"
+            type="text"
+            autocomplete="off"
+            placeholder="00000000-0000-0000-0000-000000000000"
+          />
+        </label>
+        <label>
+          <span>Installation ID</span>
+          <input
+            id="installationIdInput"
+            type="text"
+            autocomplete="off"
+            placeholder="office-main"
+          />
+        </label>
+        <label>
+          <span>Email</span>
+          <input
+            id="emailInput"
+            type="email"
+            autocomplete="email"
+            placeholder="accounts@example.com"
+          />
+        </label>
+        <label>
+          <span>Password</span>
+          <input
+            id="passwordInput"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Password"
+          />
+        </label>
+        <button id="loadButton" type="button">Load</button>
+      </section>
+
+      <section class="lookup-panel invitation-panel" aria-label="Accept portal invitation">
+        <label>
+          <span>Invitation token</span>
+          <input
+            id="inviteTokenInput"
+            type="text"
+            autocomplete="off"
+            placeholder="Paste invitation token"
+          />
+        </label>
+        <label>
+          <span>Full name</span>
+          <input
+            id="inviteFullNameInput"
+            type="text"
+            autocomplete="name"
+            placeholder="Client contact"
+          />
+        </label>
+        <label>
+          <span>New password</span>
+          <input
+            id="invitePasswordInput"
+            type="password"
+            autocomplete="new-password"
+            placeholder="At least 8 characters"
+          />
+        </label>
+        <button id="acceptInviteButton" type="button">Accept</button>
+      </section>
+
+      <section class="portal-grid">
+        <article class="portal-card balance-card">
+          <header>
+            <span>Account</span>
+            <strong id="accountState">Not loaded</strong>
+          </header>
+          <dl>
+            <div>
+              <dt>Balance due</dt>
+              <dd id="balanceDue">-</dd>
+            </div>
+            <div>
+              <dt>Available credit</dt>
+              <dd id="availableCredit">-</dd>
+            </div>
+            <div>
+              <dt>Last update</dt>
+              <dd id="commercialUpdated">-</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="portal-card license-card">
+          <header>
+            <span>License</span>
+            <strong id="licenseState">Not loaded</strong>
+          </header>
+          <dl>
+            <div>
+              <dt>Paid until</dt>
+              <dd id="paidUntil">-</dd>
+            </div>
+            <div>
+              <dt>Grace until</dt>
+              <dd id="graceUntil">-</dd>
+            </div>
+            <div>
+              <dt>Offline valid</dt>
+              <dd id="offlineValidUntil">-</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="portal-card deployment-card">
+          <header>
+            <span>Deployment</span>
+            <strong id="installationState">Not loaded</strong>
+          </header>
+          <dl>
+            <div>
+              <dt>Last heartbeat</dt>
+              <dd id="lastHeartbeat">-</dd>
+            </div>
+            <div>
+              <dt>Version</dt>
+              <dd id="localServerVersion">-</dd>
+            </div>
+            <div>
+              <dt>Commands</dt>
+              <dd id="commandState">-</dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="detail-zone">
+        <article class="portal-card">
+          <header>
+            <span>Recent invoices</span>
+            <strong id="invoiceCount">0</strong>
+          </header>
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice</th>
+                  <th>Status</th>
+                  <th>Due</th>
+                  <th>Balance</th>
+                </tr>
+              </thead>
+              <tbody id="invoiceRows">
+                <tr>
+                  <td colspan="4">No invoices loaded</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="portal-card">
+          <header>
+            <span>Entitlement modules</span>
+            <strong id="moduleCount">0</strong>
+          </header>
+          <div class="module-list" id="moduleList">
+            <span>No modules loaded</span>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

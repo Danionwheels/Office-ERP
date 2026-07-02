@@ -1,7 +1,9 @@
 import {
   AlertCircle,
+  ArrowRightLeft,
   Banknote,
   CheckCircle2,
+  Landmark,
   PlusCircle,
   Receipt,
   type LucideIcon
@@ -13,7 +15,12 @@ import type {
   LedgerAccountFormInput
 } from "../../billing/types/billingTypes";
 import type { ClientAccountingProfile } from "../../clients/types/clientTypes";
+import type { ClientStatement } from "../../statements/types/statementTypes";
 import type {
+  AppliedClientCredit,
+  ApplyClientCreditInput,
+  IssueClientRefundInput,
+  IssuedClientRefund,
   RecordedInvoicePayment,
   RecordInvoicePaymentInput
 } from "../types/paymentTypes";
@@ -24,15 +31,27 @@ type PaymentReceiptPanelProps = {
   accountingProfile: ClientAccountingProfile | null;
   cashAccountValue: LedgerAccountFormInput;
   paymentValue: RecordInvoicePaymentInput;
+  refundValue: IssueClientRefundInput;
+  creditApplicationValue: ApplyClientCreditInput;
   recordedPayment: RecordedInvoicePayment | null;
+  issuedRefund: IssuedClientRefund | null;
+  appliedCredit: AppliedClientCredit | null;
+  clientStatement: ClientStatement | null;
   isBusy: boolean;
   onCashAccountChange: (value: LedgerAccountFormInput) => void;
   onPaymentChange: (value: RecordInvoicePaymentInput) => void;
+  onRefundChange: (value: IssueClientRefundInput) => void;
+  onCreditApplicationChange: (value: ApplyClientCreditInput) => void;
   onCreateCashAccount: () => Promise<void>;
   onRecordPayment: () => Promise<void>;
+  onIssueRefund: () => Promise<void>;
+  onApplyCredit: () => Promise<void>;
+  onApprovePayment: (decisionNote: string) => Promise<void>;
+  onRejectPayment: (decisionNote: string) => Promise<void>;
+  onReversePayment: (decisionNote: string, reversalDate: string) => Promise<void>;
 };
 
-type PaymentStep = "readiness" | "cash" | "receipt" | "result";
+type PaymentStep = "readiness" | "cash" | "receipt" | "settlement" | "refund" | "result";
 
 type PaymentStepItem = {
   step: PaymentStep;
@@ -48,14 +67,28 @@ export function PaymentReceiptPanel({
   accountingProfile,
   cashAccountValue,
   paymentValue,
+  refundValue,
+  creditApplicationValue,
   recordedPayment,
+  issuedRefund,
+  appliedCredit,
+  clientStatement,
   isBusy,
   onCashAccountChange,
   onPaymentChange,
+  onRefundChange,
+  onCreditApplicationChange,
   onCreateCashAccount,
-  onRecordPayment
+  onRecordPayment,
+  onIssueRefund,
+  onApplyCredit,
+  onApprovePayment,
+  onRejectPayment,
+  onReversePayment
 }: PaymentReceiptPanelProps) {
   const [activePaymentStep, setActivePaymentStep] = useState<PaymentStep>("readiness");
+  const [decisionNote, setDecisionNote] = useState("");
+  const [reversalDate, setReversalDate] = useState(() => toDateInputValue(new Date()));
 
   async function handleCreateCashAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -67,17 +100,102 @@ export function PaymentReceiptPanel({
     await onRecordPayment();
   }
 
+  async function handleIssueRefund(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onIssueRefund();
+  }
+
+  async function handleApplyCredit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onApplyCredit();
+  }
+
+  async function handleApprovePayment() {
+    await onApprovePayment(decisionNote);
+  }
+
+  async function handleRejectPayment() {
+    await onRejectPayment(decisionNote);
+  }
+
+  async function handleReversePayment() {
+    await onReversePayment(decisionNote, reversalDate);
+  }
+
   const hasCashAccount = paymentValue.cashOrBankAccountId.trim() !== "";
   const hasReceivableAccount = paymentValue.accountsReceivableAccountId.trim() !== "";
+  const hasRefundCashAccount = refundValue.cashOrBankAccountId.trim() !== "";
+  const hasRefundReceivableAccount = refundValue.accountsReceivableAccountId.trim() !== "";
+  const canCreateCashAccount =
+    cashAccountValue.code.trim() !== ""
+    && cashAccountValue.name.trim() !== "";
+  const refundCredit = getRefundCredit(clientStatement, refundValue.currencyCode);
+  const settlementCredit = getSettlementCredit(clientStatement, creditApplicationValue.currencyCode);
+  const paymentAmount = Number(paymentValue.amount);
+  const refundAmount = Number(refundValue.amount);
+  const creditApplicationAmount = Number(creditApplicationValue.amount);
+  const invoiceBalance = invoiceDraft?.balanceDue ?? 0;
+  const hasPendingReviewPayment = recordedPayment?.paymentStatus === "PendingReview";
+  const hasApprovedPayment = recordedPayment?.paymentStatus === "Approved";
   const canEditReceipt =
     issuedInvoice !== null
     && invoiceDraft !== null
     && invoiceDraft.balanceDue > 0
-    && !isBusy;
+    && !isBusy
+    && !hasPendingReviewPayment;
   const canRecordPayment =
     canEditReceipt
     && hasCashAccount
-    && hasReceivableAccount;
+    && hasReceivableAccount
+    && paymentValue.invoiceId.trim() !== ""
+    && paymentValue.method.trim() !== ""
+    && paymentValue.reference.trim() !== ""
+    && paymentAmount > 0
+    && paymentAmount <= invoiceBalance
+    && paymentValue.currencyCode.trim().length === 3
+    && paymentValue.receivedOn !== ""
+    && paymentValue.postingDate !== "";
+  const canIssueRefund =
+    refundCredit.availableCredit > 0
+    && refundValue.clientId.trim() !== ""
+    && refundValue.method.trim() !== ""
+    && refundValue.reference.trim() !== ""
+    && refundAmount > 0
+    && refundAmount <= refundCredit.availableCredit
+    && refundValue.currencyCode.trim().length === 3
+    && refundValue.refundedOn !== ""
+    && refundValue.postingDate !== ""
+    && hasRefundCashAccount
+    && hasRefundReceivableAccount
+    && !isBusy;
+  const canApplyCredit =
+    invoiceDraft !== null
+    && ["Issued", "PartiallyPaid"].includes(invoiceDraft.status)
+    && creditApplicationValue.clientId.trim() !== ""
+    && creditApplicationValue.invoiceId.trim() !== ""
+    && creditApplicationValue.reference.trim() !== ""
+    && invoiceBalance > 0
+    && settlementCredit.availableCredit > 0
+    && creditApplicationAmount > 0
+    && creditApplicationAmount <= Math.min(settlementCredit.availableCredit, invoiceBalance)
+    && creditApplicationValue.currencyCode.trim().length === 3
+    && creditApplicationValue.appliedOn !== ""
+    && !isBusy;
+  const canApprovePayment =
+    hasPendingReviewPayment
+    && hasCashAccount
+    && hasReceivableAccount
+    && paymentValue.postingDate !== ""
+    && !isBusy;
+  const canRejectPayment =
+    hasPendingReviewPayment
+    && decisionNote.trim() !== ""
+    && !isBusy;
+  const canReversePayment =
+    hasApprovedPayment
+    && decisionNote.trim() !== ""
+    && reversalDate !== ""
+    && !isBusy;
   const paymentSteps = getPaymentStepItems({
     invoiceDraft,
     issuedInvoice,
@@ -85,6 +203,10 @@ export function PaymentReceiptPanel({
     hasCashAccount,
     hasReceivableAccount,
     recordedPayment,
+    issuedRefund,
+    appliedCredit,
+    refundCredit,
+    settlementCredit,
     canRecordPayment
   });
   const activePaymentStepItem =
@@ -161,6 +283,10 @@ export function PaymentReceiptPanel({
             <dt>Receipt</dt>
             <dd>{recordedPayment === null ? "Pending" : recordedPayment.paymentStatus}</dd>
           </div>
+          <div>
+            <dt>Unapplied</dt>
+            <dd>{formatMoney(settlementCredit.availableCredit, settlementCredit.currencyCode)}</dd>
+          </div>
         </dl>
 
         <div className="payment-readiness-actions">
@@ -182,6 +308,26 @@ export function PaymentReceiptPanel({
           >
             <Receipt size={16} />
             Receipt
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setActivePaymentStep("settlement")}
+            disabled={settlementCredit.availableCredit <= 0 || invoiceDraft === null}
+            title="Open credit settlement"
+          >
+            <ArrowRightLeft size={16} />
+            Settle
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setActivePaymentStep("refund")}
+            disabled={refundCredit.availableCredit <= 0}
+            title="Open client refund"
+          >
+            <Landmark size={16} />
+            Refund
           </button>
         </div>
       </section>
@@ -235,7 +381,12 @@ export function PaymentReceiptPanel({
           </label>
         </div>
         <div className="billing-action-row">
-          <button className="icon-button" type="submit" disabled={isBusy} title="Create cash or bank account">
+          <button
+            className="icon-button"
+            type="submit"
+            disabled={isBusy || !canCreateCashAccount}
+            title="Create cash or bank account"
+          >
             <PlusCircle size={16} />
             Create
           </button>
@@ -243,6 +394,412 @@ export function PaymentReceiptPanel({
             <span className="billing-small-fact">{paymentValue.cashOrBankAccountId}</span>
           )}
         </div>
+      </form>
+
+      <form
+        className={`client-panel billing-light-panel payment-settlement-panel${
+          activePaymentStep === "settlement" ? "" : " billing-step-hidden"
+        }`}
+        onSubmit={handleApplyCredit}
+      >
+        <div className="client-panel-heading">
+          <div>
+            <span>Payments</span>
+            <strong>Credit settlement</strong>
+          </div>
+          <span className={`status-pill ${canApplyCredit ? "active" : "draft"}`}>
+            {canApplyCredit ? "Ready" : "Pending"}
+          </span>
+        </div>
+
+        <dl className="payment-result-facts payment-invoice-facts">
+          <div>
+            <dt>Invoice</dt>
+            <dd>{invoiceDraft?.invoiceNumber ?? "No invoice"}</dd>
+          </div>
+          <div>
+            <dt>Balance</dt>
+            <dd>
+              {invoiceDraft === null
+                ? formatMoney(0, settlementCredit.currencyCode)
+                : formatMoney(invoiceDraft.balanceDue, invoiceDraft.currencyCode)}
+            </dd>
+          </div>
+          <div>
+            <dt>Unapplied</dt>
+            <dd>{formatMoney(settlementCredit.availableCredit, settlementCredit.currencyCode)}</dd>
+          </div>
+          <div>
+            <dt>After</dt>
+            <dd>
+              {invoiceDraft === null
+                ? formatMoney(0, settlementCredit.currencyCode)
+                : formatMoney(
+                    Math.max(invoiceDraft.balanceDue - Math.max(creditApplicationAmount, 0), 0),
+                    invoiceDraft.currencyCode
+                  )}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="billing-subform-heading payment-receipt-heading">
+          <ArrowRightLeft size={16} />
+          <strong>Apply credit</strong>
+        </div>
+        <div className="payment-form-grid receipt">
+          <label className="form-field wide">
+            <span>Invoice ID</span>
+            <input
+              value={creditApplicationValue.invoiceId}
+              onChange={(event) =>
+                onCreditApplicationChange({
+                  ...creditApplicationValue,
+                  invoiceId: event.target.value
+                })
+              }
+              disabled={isBusy || settlementCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field">
+            <span>Reference</span>
+            <input
+              value={creditApplicationValue.reference}
+              onChange={(event) =>
+                onCreditApplicationChange({
+                  ...creditApplicationValue,
+                  reference: event.target.value.toUpperCase()
+                })
+              }
+              disabled={isBusy || settlementCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field">
+            <span>Amount</span>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={creditApplicationValue.amount}
+              onChange={(event) =>
+                onCreditApplicationChange({
+                  ...creditApplicationValue,
+                  amount: event.target.value
+                })
+              }
+              disabled={isBusy || settlementCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field">
+            <span>Currency</span>
+            <input
+              value={creditApplicationValue.currencyCode}
+              onChange={(event) =>
+                onCreditApplicationChange({
+                  ...creditApplicationValue,
+                  currencyCode: event.target.value.toUpperCase()
+                })
+              }
+              disabled={isBusy || settlementCredit.availableCredit <= 0}
+              maxLength={3}
+            />
+          </label>
+          <label className="form-field">
+            <span>Applied</span>
+            <input
+              type="date"
+              value={creditApplicationValue.appliedOn}
+              onChange={(event) =>
+                onCreditApplicationChange({
+                  ...creditApplicationValue,
+                  appliedOn: event.target.value
+                })
+              }
+              disabled={isBusy || settlementCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field wide">
+            <span>Note</span>
+            <input
+              value={creditApplicationValue.note}
+              onChange={(event) =>
+                onCreditApplicationChange({
+                  ...creditApplicationValue,
+                  note: event.target.value
+                })
+              }
+              disabled={isBusy || settlementCredit.availableCredit <= 0}
+            />
+          </label>
+        </div>
+
+        <div className="billing-action-row">
+          <button
+            className="icon-button primary"
+            type="submit"
+            disabled={!canApplyCredit}
+            title="Apply client credit"
+          >
+            <ArrowRightLeft size={16} />
+            Apply
+          </button>
+          <span className="billing-small-fact">
+            {settlementCredit.availableCredit <= 0
+              ? "No unapplied credit"
+              : invoiceDraft === null
+                ? "Select invoice"
+                : invoiceDraft.balanceDue <= 0
+                  ? "Invoice paid"
+                  : `Can apply ${formatMoney(
+                      Math.min(settlementCredit.availableCredit, invoiceDraft.balanceDue),
+                      invoiceDraft.currencyCode
+                    )}`}
+          </span>
+        </div>
+
+        {appliedCredit !== null && (
+          <dl className="payment-result-facts">
+            <div>
+              <dt>Applied</dt>
+              <dd>{appliedCredit.creditApplicationStatus}</dd>
+            </div>
+            <div>
+              <dt>Amount</dt>
+              <dd>{formatMoney(appliedCredit.amount, appliedCredit.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Invoice</dt>
+              <dd>{appliedCredit.invoiceStatus}</dd>
+            </div>
+            <div>
+              <dt>Balance</dt>
+              <dd>{formatMoney(appliedCredit.invoiceBalanceAfter, appliedCredit.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Credit left</dt>
+              <dd>{formatMoney(appliedCredit.availableCreditAfter, appliedCredit.currencyCode)}</dd>
+            </div>
+          </dl>
+        )}
+      </form>
+
+      <form
+        className={`client-panel billing-light-panel payment-refund-panel${
+          activePaymentStep === "refund" ? "" : " billing-step-hidden"
+        }`}
+        onSubmit={handleIssueRefund}
+      >
+        <div className="client-panel-heading">
+          <div>
+            <span>Payments</span>
+            <strong>Client refund</strong>
+          </div>
+          <span className={`status-pill ${refundCredit.availableCredit > 0 ? "active" : "draft"}`}>
+            {refundCredit.availableCredit > 0 ? "Credit" : "No credit"}
+          </span>
+        </div>
+
+        <dl className="payment-result-facts payment-invoice-facts">
+          <div>
+            <dt>Available</dt>
+            <dd>{formatMoney(refundCredit.availableCredit, refundCredit.currencyCode)}</dd>
+          </div>
+          <div>
+            <dt>Balance</dt>
+            <dd>{formatMoney(refundCredit.balanceDue, refundCredit.currencyCode)}</dd>
+          </div>
+          <div>
+            <dt>AR account</dt>
+            <dd>{hasRefundReceivableAccount ? "Linked" : "Missing"}</dd>
+          </div>
+          <div>
+            <dt>Cash/bank</dt>
+            <dd>{hasRefundCashAccount ? "Linked" : "Missing"}</dd>
+          </div>
+        </dl>
+
+        <div className="billing-subform-heading payment-receipt-heading">
+          <Landmark size={16} />
+          <strong>Refund</strong>
+        </div>
+        <div className="payment-form-grid receipt">
+          <label className="form-field">
+            <span>Method</span>
+            <select
+              value={refundValue.method}
+              onChange={(event) =>
+                onRefundChange({
+                  ...refundValue,
+                  method: event.target.value
+                })
+              }
+              disabled={isBusy || refundCredit.availableCredit <= 0}
+            >
+              <option value="BankTransfer">Bank transfer</option>
+              <option value="ManualCash">Manual cash</option>
+              <option value="ManualAdjustment">Manual adjustment</option>
+            </select>
+          </label>
+          <label className="form-field">
+            <span>Reference</span>
+            <input
+              value={refundValue.reference}
+              onChange={(event) =>
+                onRefundChange({
+                  ...refundValue,
+                  reference: event.target.value.toUpperCase()
+                })
+              }
+              disabled={isBusy || refundCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field">
+            <span>Amount</span>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={refundValue.amount}
+              onChange={(event) =>
+                onRefundChange({
+                  ...refundValue,
+                  amount: event.target.value
+                })
+              }
+              disabled={isBusy || refundCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field">
+            <span>Currency</span>
+            <input
+              value={refundValue.currencyCode}
+              onChange={(event) =>
+                onRefundChange({
+                  ...refundValue,
+                  currencyCode: event.target.value.toUpperCase()
+                })
+              }
+              disabled={isBusy || refundCredit.availableCredit <= 0}
+              maxLength={3}
+            />
+          </label>
+          <label className="form-field">
+            <span>Refunded</span>
+            <input
+              type="date"
+              value={refundValue.refundedOn}
+              onChange={(event) =>
+                onRefundChange({
+                  ...refundValue,
+                  refundedOn: event.target.value
+                })
+              }
+              disabled={isBusy || refundCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field">
+            <span>Posting</span>
+            <input
+              type="date"
+              value={refundValue.postingDate}
+              onChange={(event) =>
+                onRefundChange({
+                  ...refundValue,
+                  postingDate: event.target.value
+                })
+              }
+              disabled={isBusy || refundCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field wide">
+            <span>Cash/bank account ID</span>
+            <input
+              value={refundValue.cashOrBankAccountId}
+              onChange={(event) =>
+                onRefundChange({
+                  ...refundValue,
+                  cashOrBankAccountId: event.target.value
+                })
+              }
+              disabled={isBusy || refundCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field wide">
+            <span>AR account ID</span>
+            <input
+              value={refundValue.accountsReceivableAccountId}
+              onChange={(event) =>
+                onRefundChange({
+                  ...refundValue,
+                  accountsReceivableAccountId: event.target.value
+                })
+              }
+              disabled={isBusy || refundCredit.availableCredit <= 0}
+            />
+          </label>
+          <label className="form-field wide">
+            <span>Note</span>
+            <input
+              value={refundValue.note}
+              onChange={(event) =>
+                onRefundChange({
+                  ...refundValue,
+                  note: event.target.value
+                })
+              }
+              disabled={isBusy || refundCredit.availableCredit <= 0}
+            />
+          </label>
+        </div>
+
+        <div className="billing-action-row">
+          <button
+            className="icon-button primary"
+            type="submit"
+            disabled={!canIssueRefund}
+            title="Issue refund"
+          >
+            <Landmark size={16} />
+            Refund
+          </button>
+          <span className="billing-small-fact">
+            {refundCredit.availableCredit <= 0
+              ? "No client credit"
+              : !hasRefundReceivableAccount
+                ? "AR account required"
+                : !hasRefundCashAccount
+                  ? "Cash account required"
+                  : `Available ${formatMoney(refundCredit.availableCredit, refundCredit.currencyCode)}`}
+          </span>
+        </div>
+
+        {issuedRefund !== null && (
+          <dl className="payment-result-facts">
+            <div>
+              <dt>Refund</dt>
+              <dd>{issuedRefund.refundStatus}</dd>
+            </div>
+            <div>
+              <dt>Amount</dt>
+              <dd>{formatMoney(issuedRefund.amount, issuedRefund.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Balance</dt>
+              <dd>{formatMoney(issuedRefund.clientBalanceAfter, issuedRefund.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Journal</dt>
+              <dd>{issuedRefund.journalEntryStatus}</dd>
+            </div>
+            <div>
+              <dt>Debit</dt>
+              <dd>{formatMoney(issuedRefund.totalDebit, issuedRefund.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Credit</dt>
+              <dd>{formatMoney(issuedRefund.totalCredit, issuedRefund.currencyCode)}</dd>
+            </div>
+          </dl>
+        )}
       </form>
 
       <form
@@ -308,6 +865,7 @@ export function PaymentReceiptPanel({
               disabled={!canEditReceipt}
             >
               <option value="Card">Card</option>
+              <option value="BankTransfer">Bank transfer</option>
               <option value="ManualCash">Manual cash</option>
               <option value="ManualAdjustment">Manual adjustment</option>
             </select>
@@ -426,11 +984,17 @@ export function PaymentReceiptPanel({
               ? "No invoice draft"
               : issuedInvoice === null
                 ? "Issue invoice first"
-                : !hasReceivableAccount
-                  ? "AR account required"
-                  : !hasCashAccount
-                    ? "Cash account required"
-                    : `Balance ${formatMoney(invoiceDraft.balanceDue, invoiceDraft.currencyCode)}`}
+                : hasPendingReviewPayment
+                  ? "Review pending"
+                  : paymentAmount <= 0
+                    ? "Amount required"
+                    : paymentAmount > invoiceDraft.balanceDue
+                      ? "Amount exceeds balance"
+                      : !hasReceivableAccount
+                    ? "AR account required"
+                    : !hasCashAccount
+                      ? "Cash account required"
+                      : `Balance ${formatMoney(invoiceDraft.balanceDue, invoiceDraft.currencyCode)}`}
           </span>
         </div>
       </form>
@@ -471,7 +1035,7 @@ export function PaymentReceiptPanel({
               </div>
               <div>
                 <dt>Journal</dt>
-                <dd>{recordedPayment.journalEntryStatus}</dd>
+                <dd>{recordedPayment.journalEntryStatus ?? "Not posted"}</dd>
               </div>
               <div>
                 <dt>Debit</dt>
@@ -483,24 +1047,90 @@ export function PaymentReceiptPanel({
               </div>
             </dl>
 
-            <table className="billing-lines-table payment-journal-table">
-              <thead>
-                <tr>
-                  <th>Description</th>
-                  <th className="numeric">Debit</th>
-                  <th className="numeric">Credit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recordedPayment.journalLines.map((line) => (
-                  <tr key={line.ledgerAccountId}>
-                    <td>{line.description ?? line.ledgerAccountId}</td>
-                    <td className="numeric">{formatMoney(line.debit, recordedPayment.currencyCode)}</td>
-                    <td className="numeric">{formatMoney(line.credit, recordedPayment.currencyCode)}</td>
+            {recordedPayment.journalLines.length === 0 ? (
+              <div className="client-empty-state">Payment is waiting for review before GL posting</div>
+            ) : (
+              <table className="billing-lines-table payment-journal-table">
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th className="numeric">Debit</th>
+                    <th className="numeric">Credit</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {recordedPayment.journalLines.map((line) => (
+                    <tr key={`${line.ledgerAccountId}-${line.debit}-${line.credit}`}>
+                      <td>{line.description ?? line.ledgerAccountId}</td>
+                      <td className="numeric">{formatMoney(line.debit, recordedPayment.currencyCode)}</td>
+                      <td className="numeric">{formatMoney(line.credit, recordedPayment.currencyCode)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {(recordedPayment.paymentStatus === "PendingReview" || recordedPayment.paymentStatus === "Approved") && (
+              <div className="payment-review-actions">
+                <label className="form-field wide">
+                  <span>Decision note</span>
+                  <input
+                    value={decisionNote}
+                    onChange={(event) => setDecisionNote(event.target.value)}
+                    disabled={isBusy}
+                  />
+                </label>
+                {recordedPayment.paymentStatus === "Approved" && (
+                  <label className="form-field">
+                    <span>Reversal date</span>
+                    <input
+                      type="date"
+                      value={reversalDate}
+                      onChange={(event) => setReversalDate(event.target.value)}
+                      disabled={isBusy}
+                    />
+                  </label>
+                )}
+                <div className="billing-action-row">
+                  {recordedPayment.paymentStatus === "PendingReview" && (
+                    <>
+                      <button
+                        className="icon-button primary"
+                        type="button"
+                        onClick={handleApprovePayment}
+                        disabled={!canApprovePayment}
+                        title="Approve payment"
+                      >
+                        <CheckCircle2 size={16} />
+                        Approve
+                      </button>
+                      <button
+                        className="icon-button"
+                        type="button"
+                        onClick={handleRejectPayment}
+                        disabled={!canRejectPayment}
+                        title="Reject payment"
+                      >
+                        <AlertCircle size={16} />
+                        Reject
+                      </button>
+                    </>
+                  )}
+                  {recordedPayment.paymentStatus === "Approved" && (
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={handleReversePayment}
+                      disabled={!canReversePayment}
+                      title="Reverse payment"
+                    >
+                      <AlertCircle size={16} />
+                      Reverse
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </>
         )}
       </section>
@@ -516,6 +1146,10 @@ function formatMoney(amount: number, currencyCode: string): string {
   return `${amount.toFixed(2)} ${currencyCode}`;
 }
 
+function toDateInputValue(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 type PaymentStepInput = {
   invoiceDraft: InvoiceDraft | null;
   issuedInvoice: IssuedInvoice | null;
@@ -523,6 +1157,10 @@ type PaymentStepInput = {
   hasCashAccount: boolean;
   hasReceivableAccount: boolean;
   recordedPayment: RecordedInvoicePayment | null;
+  issuedRefund: IssuedClientRefund | null;
+  appliedCredit: AppliedClientCredit | null;
+  refundCredit: RefundCreditSummary;
+  settlementCredit: SettlementCreditSummary;
   canRecordPayment: boolean;
 };
 
@@ -533,11 +1171,16 @@ function getPaymentStepItems({
   hasCashAccount,
   hasReceivableAccount,
   recordedPayment,
+  issuedRefund,
+  appliedCredit,
+  refundCredit,
+  settlementCredit,
   canRecordPayment
 }: PaymentStepInput): PaymentStepItem[] {
   const balanceSummary = invoiceDraft === null
     ? "No invoice"
     : formatMoney(invoiceDraft.balanceDue, invoiceDraft.currencyCode);
+  const resultSummary = getPostingResultSummary(recordedPayment, issuedRefund, appliedCredit);
 
   return [
     {
@@ -568,18 +1211,60 @@ function getPaymentStepItems({
       Icon: Receipt
     },
     {
+      step: "settlement",
+      label: "Settlement",
+      summary: settlementCredit.availableCredit > 0
+        ? formatMoney(settlementCredit.availableCredit, settlementCredit.currencyCode)
+        : "No credit",
+      tone: settlementCredit.availableCredit > 0 ? "ready" : "neutral",
+      Icon: ArrowRightLeft
+    },
+    {
+      step: "refund",
+      label: "Refund",
+      summary: refundCredit.availableCredit > 0
+        ? formatMoney(refundCredit.availableCredit, refundCredit.currencyCode)
+        : "No credit",
+      tone: refundCredit.availableCredit > 0 ? "ready" : "neutral",
+      Icon: Landmark
+    },
+    {
       step: "result",
       label: "Posting result",
-      summary: recordedPayment === null
-        ? "Pending"
-        : `${recordedPayment.invoiceStatus} ${formatMoney(
-            recordedPayment.balanceDue,
-            recordedPayment.currencyCode
-          )}`,
-      tone: recordedPayment === null ? "neutral" : "ready",
+      summary: resultSummary,
+      tone: recordedPayment === null && issuedRefund === null && appliedCredit === null ? "neutral" : "ready",
       Icon: CheckCircle2
     }
   ];
+}
+
+function getPostingResultSummary(
+  recordedPayment: RecordedInvoicePayment | null,
+  issuedRefund: IssuedClientRefund | null,
+  appliedCredit: AppliedClientCredit | null
+): string {
+  if (appliedCredit !== null) {
+    return `${appliedCredit.creditApplicationStatus} ${formatMoney(
+      appliedCredit.invoiceBalanceAfter,
+      appliedCredit.currencyCode
+    )}`;
+  }
+
+  if (issuedRefund !== null) {
+    return `${issuedRefund.refundStatus} ${formatMoney(
+      issuedRefund.clientBalanceAfter,
+      issuedRefund.currencyCode
+    )}`;
+  }
+
+  if (recordedPayment !== null) {
+    return `${recordedPayment.invoiceStatus} ${formatMoney(
+      recordedPayment.balanceDue,
+      recordedPayment.currencyCode
+    )}`;
+  }
+
+  return "Pending";
 }
 
 function getReadinessSummary({
@@ -613,6 +1298,61 @@ function getReadinessSummary({
   }
 
   return "Review";
+}
+
+type RefundCreditSummary = {
+  currencyCode: string;
+  balanceDue: number;
+  availableCredit: number;
+};
+
+type SettlementCreditSummary = {
+  currencyCode: string;
+  availableCredit: number;
+};
+
+function getRefundCredit(
+  statement: ClientStatement | null,
+  preferredCurrencyCode: string
+): RefundCreditSummary {
+  const summaries = statement?.currencySummaries ?? [];
+  const preferredSummary = summaries.find((summary) =>
+    summary.currencyCode.toLowerCase() === preferredCurrencyCode.toLowerCase()
+  );
+  const creditSummary =
+    preferredSummary !== undefined && preferredSummary.balanceDue < 0
+      ? preferredSummary
+      : summaries.find((summary) => summary.balanceDue < 0);
+  const preferredCurrency = preferredCurrencyCode.trim().toUpperCase();
+  const currencyCode = creditSummary?.currencyCode ?? (preferredCurrency === "" ? "PKR" : preferredCurrency);
+  const balanceDue = creditSummary?.balanceDue ?? preferredSummary?.balanceDue ?? 0;
+
+  return {
+    currencyCode,
+    balanceDue,
+    availableCredit: balanceDue < 0 ? Math.abs(balanceDue) : 0
+  };
+}
+
+function getSettlementCredit(
+  statement: ClientStatement | null,
+  preferredCurrencyCode: string
+): SettlementCreditSummary {
+  const summaries = statement?.currencySummaries ?? [];
+  const preferredSummary = summaries.find((summary) =>
+    summary.currencyCode.toLowerCase() === preferredCurrencyCode.toLowerCase()
+  );
+  const creditSummary =
+    preferredSummary !== undefined && preferredSummary.availableCredit > 0
+      ? preferredSummary
+      : summaries.find((summary) => summary.availableCredit > 0);
+  const preferredCurrency = preferredCurrencyCode.trim().toUpperCase();
+  const currencyCode = creditSummary?.currencyCode ?? (preferredCurrency === "" ? "PKR" : preferredCurrency);
+
+  return {
+    currencyCode,
+    availableCredit: creditSummary?.availableCredit ?? preferredSummary?.availableCredit ?? 0
+  };
 }
 
 function statusClass(value: string): string {

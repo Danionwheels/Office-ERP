@@ -46,7 +46,10 @@ export type ClientChargeRule = {
   unitPriceAmount: number;
   currencyCode: string;
   quantity: number;
+  taxPercent: number;
+  taxAmount: number;
   lineAmount: number;
+  totalLineAmount: number;
   billingCycle: string;
   billingDayOfMonth: number;
   effectiveStartsOn: string;
@@ -61,6 +64,7 @@ export type ClientChargeRuleFormInput = {
   unitPriceAmount: string;
   currencyCode: string;
   quantity: string;
+  taxPercent: string;
   billingCycle: string;
   billingDayOfMonth: string;
   effectiveStartsOn: string;
@@ -84,6 +88,7 @@ export type InvoiceDraft = {
 
 export type InvoiceDraftLine = {
   chargeCodeId?: string | null;
+  lineType: string;
   description: string;
   amount: number;
   currencyCode: string;
@@ -117,6 +122,61 @@ export type IssuedInvoice = {
 };
 
 export type IssuedInvoiceJournalLine = {
+  ledgerAccountId: string;
+  debit: number;
+  credit: number;
+  description?: string | null;
+};
+
+export type VoidInvoiceInput = {
+  voidDate: string;
+  reason: string;
+};
+
+export type VoidedInvoice = {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceStatus: string;
+  originalJournalEntryId: string;
+  reversalJournalEntryId: string;
+  reversalJournalEntryStatus: string;
+  voidDate: string;
+  totalDebit: number;
+  totalCredit: number;
+  currencyCode: string;
+  journalLines: VoidedInvoiceJournalLine[];
+};
+
+export type VoidedInvoiceJournalLine = {
+  ledgerAccountId: string;
+  debit: number;
+  credit: number;
+  description?: string | null;
+};
+
+export type IssueCreditNoteInput = {
+  creditNoteNumber: string;
+  creditDate: string;
+  reason: string;
+};
+
+export type IssuedCreditNote = {
+  creditNoteId: string;
+  invoiceId: string;
+  creditNoteNumber: string;
+  invoiceNumber: string;
+  creditNoteStatus: string;
+  creditDate: string;
+  amount: number;
+  currencyCode: string;
+  journalEntryId: string;
+  journalEntryStatus: string;
+  totalDebit: number;
+  totalCredit: number;
+  journalLines: IssuedCreditNoteJournalLine[];
+};
+
+export type IssuedCreditNoteJournalLine = {
   ledgerAccountId: string;
   debit: number;
   credit: number;

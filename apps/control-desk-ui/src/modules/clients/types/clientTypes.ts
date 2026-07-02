@@ -23,6 +23,20 @@ export type ClientContact = {
   createdAtUtc: string;
 };
 
+export type ClientPortalInvitation = {
+  invitationId: string;
+  clientId: string;
+  clientContactId: string;
+  email: string;
+  fullName: string;
+  role: string;
+  status: string;
+  invitedAtUtc: string;
+  expiresAtUtc: string;
+  invitationToken?: string | null;
+  invitationUrl?: string | null;
+};
+
 export type ClientDetails = ClientLookup & {
   createdAtUtc: string;
   activatedAtUtc?: string | null;

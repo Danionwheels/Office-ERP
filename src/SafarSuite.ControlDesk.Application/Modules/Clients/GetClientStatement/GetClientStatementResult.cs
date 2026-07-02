@@ -14,6 +14,7 @@ public sealed record ClientStatementCurrencySummaryResult(
     string CurrencyCode,
     decimal TotalInvoiced,
     decimal TotalPaid,
+    decimal AvailableCredit,
     decimal BalanceDue,
     int InvoiceCount,
     int OpenInvoiceCount);
@@ -48,6 +49,8 @@ public sealed record ClientStatementLineResult(
     string Reference,
     Guid? InvoiceId,
     Guid? PaymentId,
+    Guid? RefundId,
+    Guid? CreditApplicationId,
     string Description,
     decimal Debit,
     decimal Credit,

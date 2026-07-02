@@ -142,6 +142,12 @@ textarea:focus {
   background: #247a4b;
 }
 
+.icon-button.danger {
+  border-color: #a43d3d;
+  color: #ffffff;
+  background: #b94747;
+}
+
 .mini-button {
   display: inline-flex;
   align-items: center;
@@ -1902,6 +1908,25 @@ td {
   margin-bottom: 12px;
 }
 
+.payment-review-actions {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 150px;
+  gap: 10px;
+  align-items: end;
+  border-top: 1px solid #e3e7eb;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.payment-review-actions .billing-action-row {
+  grid-column: 1 / -1;
+  padding-top: 0;
+}
+
+.payment-review-actions .wide {
+  grid-column: auto;
+}
+
 .payment-result-facts {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1995,6 +2020,41 @@ td {
   border-color: #a9afb6;
   color: #59606a;
   background: #f7f8f9;
+}
+
+.cloud-installation-field {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 260px;
+  min-width: min(260px, 100%);
+}
+
+.cloud-installation-field span {
+  color: #39414c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cloud-status-notes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.cloud-status-notes span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  border: 1px solid #c2c7cd;
+  border-radius: 4px;
+  padding: 3px 7px;
+  color: #39414c;
+  background: #f8f9fa;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .statement-workspace {
@@ -2149,6 +2209,46 @@ td {
   overflow: auto;
 }
 
+.portal-invite-result {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #7c8fa4;
+  border-radius: 5px;
+  padding: 8px;
+  background: #f3f7fb;
+}
+
+.portal-invite-result div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.portal-invite-result span {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.portal-invite-result strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-size: 13px;
+}
+
+.portal-invite-result input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #a9afb6;
+  border-radius: 4px;
+  padding: 7px 8px;
+  color: #20252b;
+  background: #ffffff;
+  font: inherit;
+}
+
 .contact-item {
   border: 1px solid #a9afb6;
   border-radius: 5px;
@@ -2220,6 +2320,12 @@ td {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 7px;
+}
+
+.contact-card-title {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
 }
 
 .contact-item header strong {
@@ -2332,6 +2438,7 @@ td {
 
   .billing-form-grid.three,
   .billing-form-grid.charge-code,
+  .payment-review-actions,
   .payment-result-facts,
   .entitlement-facts,
   .statement-summary-card dl {
@@ -2435,6 +2542,7 @@ td {
   .billing-result-facts.issued,
   .payment-form-grid.account,
   .payment-form-grid.receipt,
+  .payment-review-actions,
   .payment-result-facts,
   .entitlement-facts,
   .statement-summary-card dl,

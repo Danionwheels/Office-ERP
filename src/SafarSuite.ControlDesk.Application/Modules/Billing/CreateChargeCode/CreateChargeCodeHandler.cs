@@ -56,24 +56,51 @@ public sealed class CreateChargeCodeHandler
             }
 
             var revenueAccountId = LedgerAccountId.Create(command.RevenueAccountId);
+            var revenueAccount = await _ledgerAccounts.GetByIdAsync(revenueAccountId, cancellationToken);
 
-            if (await _ledgerAccounts.GetByIdAsync(revenueAccountId, cancellationToken) is null)
+            if (revenueAccount is null)
             {
                 return Result<CreateChargeCodeResult>.Failure(ApplicationError.NotFound(
                     nameof(command.RevenueAccountId),
                     "Revenue ledger account was not found."));
             }
 
+            var revenueAccountErrors = ValidatePostingAccount(
+                nameof(command.RevenueAccountId),
+                revenueAccount,
+                LedgerAccountType.Revenue,
+                "Revenue ledger account");
+
+            if (revenueAccountErrors.Count > 0)
+            {
+                return Result<CreateChargeCodeResult>.Failure(revenueAccountErrors);
+            }
+
             var taxAccountId = command.TaxAccountId.HasValue
                 ? LedgerAccountId.Create(command.TaxAccountId.Value)
                 : (LedgerAccountId?)null;
 
-            if (taxAccountId.HasValue
-                && await _ledgerAccounts.GetByIdAsync(taxAccountId.Value, cancellationToken) is null)
+            if (taxAccountId.HasValue)
             {
-                return Result<CreateChargeCodeResult>.Failure(ApplicationError.NotFound(
+                var taxAccount = await _ledgerAccounts.GetByIdAsync(taxAccountId.Value, cancellationToken);
+
+                if (taxAccount is null)
+                {
+                    return Result<CreateChargeCodeResult>.Failure(ApplicationError.NotFound(
+                        nameof(command.TaxAccountId),
+                        "Tax ledger account was not found."));
+                }
+
+                var taxAccountErrors = ValidatePostingAccount(
                     nameof(command.TaxAccountId),
-                    "Tax ledger account was not found."));
+                    taxAccount,
+                    LedgerAccountType.Liability,
+                    "Tax ledger account");
+
+                if (taxAccountErrors.Count > 0)
+                {
+                    return Result<CreateChargeCodeResult>.Failure(taxAccountErrors);
+                }
             }
 
             var chargeCode = ChargeCode.Create(
@@ -105,5 +132,37 @@ public sealed class CreateChargeCodeHandler
                 exception.ParamName ?? nameof(command),
                 exception.Message));
         }
+    }
+
+    private static IReadOnlyCollection<ApplicationError> ValidatePostingAccount(
+        string fieldName,
+        LedgerAccount ledgerAccount,
+        LedgerAccountType expectedType,
+        string accountRole)
+    {
+        var errors = new List<ApplicationError>();
+
+        if (ledgerAccount.Type != expectedType)
+        {
+            errors.Add(ApplicationError.Validation(
+                fieldName,
+                $"{accountRole} must be a {expectedType.ToString().ToLowerInvariant()} account."));
+        }
+
+        if (!ledgerAccount.IsPostingAccount)
+        {
+            errors.Add(ApplicationError.Validation(
+                fieldName,
+                $"{accountRole} must be a posting account."));
+        }
+
+        if (ledgerAccount.Status != LedgerAccountStatus.Active)
+        {
+            errors.Add(ApplicationError.Validation(
+                fieldName,
+                $"{accountRole} must be active."));
+        }
+
+        return errors;
     }
 }

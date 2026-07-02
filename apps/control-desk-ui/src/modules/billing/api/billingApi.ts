@@ -6,10 +6,14 @@ import type {
   ClientChargeRuleFormInput,
   InvoiceDraft,
   InvoiceDraftFormInput,
+  IssueCreditNoteInput,
+  IssuedCreditNote,
   IssueInvoiceFormInput,
   IssuedInvoice,
   LedgerAccount,
-  LedgerAccountFormInput
+  LedgerAccountFormInput,
+  VoidedInvoice,
+  VoidInvoiceInput
 } from "../types/billingTypes";
 
 type ListChargeCodesResponse = {
@@ -69,6 +73,7 @@ export async function createClientChargeRule(
       unitPriceAmount: Number(input.unitPriceAmount),
       currencyCode: input.currencyCode,
       quantity: Number(input.quantity),
+      taxPercent: Number(input.taxPercent),
       billingCycle: input.billingCycle,
       billingDayOfMonth: Number(input.billingDayOfMonth),
       effectiveStartsOn: input.effectiveStartsOn,
@@ -104,6 +109,33 @@ export async function issueInvoice(
     body: JSON.stringify({
       accountsReceivableAccountId: optionalText(input.accountsReceivableAccountId),
       postingDate: input.postingDate
+    })
+  });
+}
+
+export async function voidInvoice(
+  invoiceId: string,
+  input: VoidInvoiceInput
+): Promise<VoidedInvoice> {
+  return apiRequest<VoidedInvoice>(`/api/v1/billing/invoices/${invoiceId}/void`, {
+    method: "POST",
+    body: JSON.stringify({
+      voidDate: input.voidDate,
+      reason: input.reason
+    })
+  });
+}
+
+export async function issueCreditNote(
+  invoiceId: string,
+  input: IssueCreditNoteInput
+): Promise<IssuedCreditNote> {
+  return apiRequest<IssuedCreditNote>(`/api/v1/billing/invoices/${invoiceId}/credit-notes`, {
+    method: "POST",
+    body: JSON.stringify({
+      creditNoteNumber: input.creditNoteNumber,
+      creditDate: input.creditDate,
+      reason: input.reason
     })
   });
 }

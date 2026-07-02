@@ -76,6 +76,11 @@ public sealed class Payment : Entity<PaymentId>
             throw new InvalidOperationException("Reversed payments cannot be approved.");
         }
 
+        if (Status == PaymentStatus.Rejected)
+        {
+            throw new InvalidOperationException("Rejected payments cannot be approved.");
+        }
+
         Status = PaymentStatus.Approved;
         DecisionNote = CleanNote(decisionNote);
     }
@@ -85,6 +90,11 @@ public sealed class Payment : Entity<PaymentId>
         if (string.IsNullOrWhiteSpace(decisionNote))
         {
             throw new ArgumentException("Rejection note is required.", nameof(decisionNote));
+        }
+
+        if (Status != PaymentStatus.PendingReview)
+        {
+            throw new InvalidOperationException("Only pending review payments can be rejected.");
         }
 
         Status = PaymentStatus.Rejected;

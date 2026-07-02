@@ -6,5 +6,9 @@ public enum JournalSourceType
     BillingInvoice = 2,
     PaymentReceipt = 3,
     OpeningBalance = 4,
-    Adjustment = 5
+    Adjustment = 5,
+    PaymentReversal = 6,
+    BillingInvoiceVoid = 7,
+    BillingCreditNote = 8,
+    ClientRefund = 9
 }

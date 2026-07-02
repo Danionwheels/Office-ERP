@@ -245,6 +245,11 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasColumnType("character varying(32)")
                         .HasColumnName("status");
 
+                    b.Property<decimal>("TaxPercent")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("numeric(9,4)")
+                        .HasColumnName("tax_percent");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ChargeCodeId")
@@ -254,6 +259,72 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasDatabaseName("ix_client_charge_rules_client_id");
 
                     b.ToTable("client_charge_rules", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Billing.CreditNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("credit_note_id");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("contract_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateOnly>("CreditDate")
+                        .HasColumnType("date")
+                        .HasColumnName("credit_date");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("number");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .HasDatabaseName("ix_credit_notes_client_id");
+
+                    b.HasIndex("InvoiceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_credit_notes_invoice_id");
+
+                    b.HasIndex("Number")
+                        .IsUnique()
+                        .HasDatabaseName("ux_credit_notes_number");
+
+                    b.ToTable("credit_notes", "control");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Billing.Invoice", b =>
@@ -468,15 +539,15 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasColumnType("character varying(2000)")
                         .HasColumnName("failure_reason");
 
+                    b.Property<DateTimeOffset?>("LastAttemptedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_attempted_at_utc");
+
                     b.Property<string>("MessageType")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("message_type");
-
-                    b.Property<DateTimeOffset?>("LastAttemptedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_attempted_at_utc");
 
                     b.Property<DateTimeOffset?>("NextAttemptAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -574,6 +645,125 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasDatabaseName("ix_entitlement_snapshots_client_issued");
 
                     b.ToTable("entitlement_snapshots", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.ClientCreditApplication", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_credit_application_id");
+
+                    b.Property<DateOnly>("AppliedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("applied_on");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("reference");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .HasDatabaseName("ix_client_credit_applications_client_id");
+
+                    b.HasIndex("InvoiceId")
+                        .HasDatabaseName("ix_client_credit_applications_invoice_id");
+
+                    b.HasIndex("Reference")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_credit_applications_reference");
+
+                    b.ToTable("client_credit_applications", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.ClientRefund", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_refund_id");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("method");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("reference");
+
+                    b.Property<DateOnly>("RefundedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("refunded_on");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .HasDatabaseName("ix_client_refunds_client_id");
+
+                    b.HasIndex("Reference")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_refunds_reference");
+
+                    b.ToTable("client_refunds", "control");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.Payment", b =>
@@ -849,6 +1039,48 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Billing.CreditNote", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Billing.Invoice", null)
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.OwnsOne("SafarSuite.ControlDesk.Domain.SharedKernel.Money", "TotalAmount", b1 =>
+                        {
+                            b1.Property<Guid>("CreditNoteId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("total_amount");
+
+                            b1.Property<string>("CurrencyCode")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("total_amount_currency_code");
+
+                            b1.HasKey("CreditNoteId");
+
+                            b1.ToTable("credit_notes", "control");
+
+                            b1.WithOwner()
+                                .HasForeignKey("CreditNoteId");
+                        });
+
+                    b.Navigation("TotalAmount")
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Billing.Invoice", b =>
                 {
                     b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
@@ -899,6 +1131,14 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                                 .HasMaxLength(512)
                                 .HasColumnType("character varying(512)")
                                 .HasColumnName("description");
+
+                            b1.Property<string>("LineType")
+                                .IsRequired()
+                                .ValueGeneratedOnAdd()
+                                .HasMaxLength(32)
+                                .HasColumnType("character varying(32)")
+                                .HasDefaultValue("Charge")
+                                .HasColumnName("line_type");
 
                             b1.Property<Guid>("invoice_id")
                                 .HasColumnType("uuid");
@@ -1276,6 +1516,84 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         });
 
                     b.Navigation("Modules");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.ClientCreditApplication", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Billing.Invoice", null)
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.OwnsOne("SafarSuite.ControlDesk.Domain.SharedKernel.Money", "Amount", b1 =>
+                        {
+                            b1.Property<Guid>("ClientCreditApplicationId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("amount");
+
+                            b1.Property<string>("CurrencyCode")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("amount_currency_code");
+
+                            b1.HasKey("ClientCreditApplicationId");
+
+                            b1.ToTable("client_credit_applications", "control");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ClientCreditApplicationId");
+                        });
+
+                    b.Navigation("Amount")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.ClientRefund", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.OwnsOne("SafarSuite.ControlDesk.Domain.SharedKernel.Money", "Amount", b1 =>
+                        {
+                            b1.Property<Guid>("ClientRefundId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("amount");
+
+                            b1.Property<string>("CurrencyCode")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("amount_currency_code");
+
+                            b1.HasKey("ClientRefundId");
+
+                            b1.ToTable("client_refunds", "control");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ClientRefundId");
+                        });
+
+                    b.Navigation("Amount")
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.Payment", b =>

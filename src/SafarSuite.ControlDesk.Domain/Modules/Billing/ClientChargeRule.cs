@@ -20,6 +20,7 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
         string? descriptionOverride,
         Money unitPrice,
         decimal quantity,
+        decimal taxPercent,
         BillingCycle billingCycle,
         int billingDayOfMonth,
         DateRange effectivePeriod,
@@ -32,6 +33,7 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
         DescriptionOverride = descriptionOverride;
         UnitPrice = unitPrice;
         Quantity = quantity;
+        TaxPercent = taxPercent;
         BillingCycle = billingCycle;
         BillingDayOfMonth = billingDayOfMonth;
         EffectivePeriod = effectivePeriod;
@@ -51,6 +53,8 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
 
     public decimal Quantity { get; private set; }
 
+    public decimal TaxPercent { get; private set; }
+
     public BillingCycle BillingCycle { get; private set; }
 
     public int BillingDayOfMonth { get; private set; }
@@ -63,6 +67,10 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
 
     public Money LineAmount => Money.Of(UnitPrice.Amount * Quantity, UnitPrice.CurrencyCode);
 
+    public Money TaxAmount => Money.Of(LineAmount.Amount * TaxPercent / 100m, UnitPrice.CurrencyCode);
+
+    public Money TotalLineAmount => LineAmount.Add(TaxAmount);
+
     public static ClientChargeRule Create(
         ClientChargeRuleId id,
         ClientId clientId,
@@ -71,12 +79,14 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
         string? descriptionOverride,
         Money unitPrice,
         decimal quantity,
+        decimal taxPercent,
         BillingCycle billingCycle,
         int billingDayOfMonth,
         DateRange effectivePeriod,
         DateTimeOffset createdAtUtc)
     {
         ValidatePriceAndQuantity(unitPrice, quantity);
+        ValidateTaxPercent(taxPercent);
         ValidateBillingDay(billingDayOfMonth);
 
         return new ClientChargeRule(
@@ -87,6 +97,7 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
             CleanText(descriptionOverride),
             unitPrice,
             decimal.Round(quantity, 4),
+            decimal.Round(taxPercent, 4),
             billingCycle,
             billingDayOfMonth,
             effectivePeriod,
@@ -99,6 +110,13 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
 
         UnitPrice = unitPrice;
         Quantity = decimal.Round(quantity, 4);
+    }
+
+    public void UpdateTaxPercent(decimal taxPercent)
+    {
+        ValidateTaxPercent(taxPercent);
+
+        TaxPercent = decimal.Round(taxPercent, 4);
     }
 
     public void UpdateBillingSchedule(BillingCycle billingCycle, int billingDayOfMonth)
@@ -152,6 +170,19 @@ public sealed class ClientChargeRule : Entity<ClientChargeRuleId>
         if (billingDayOfMonth is < 1 or > 28)
         {
             throw new ArgumentException("Billing day must be between 1 and 28.", nameof(billingDayOfMonth));
+        }
+    }
+
+    private static void ValidateTaxPercent(decimal taxPercent)
+    {
+        if (taxPercent < 0)
+        {
+            throw new ArgumentException("Client charge tax percent cannot be negative.", nameof(taxPercent));
+        }
+
+        if (taxPercent > 100)
+        {
+            throw new ArgumentException("Client charge tax percent cannot exceed 100.", nameof(taxPercent));
         }
     }
 

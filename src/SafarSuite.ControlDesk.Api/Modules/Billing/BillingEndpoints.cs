@@ -2,8 +2,10 @@ using SafarSuite.ControlDesk.Api.Common;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
+using SafarSuite.ControlDesk.Application.Modules.Billing.IssueCreditNote;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Billing.ListChargeCodes;
+using SafarSuite.ControlDesk.Application.Modules.Billing.VoidInvoice;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Billing;
 
 namespace SafarSuite.ControlDesk.Api.Modules.Billing;
@@ -21,6 +23,8 @@ public static class BillingEndpoints
         group.MapPost("/client-charge-rules", CreateClientChargeRuleAsync);
         group.MapPost("/invoice-drafts", GenerateInvoiceDraftAsync);
         group.MapPost("/invoices/{invoiceId:guid}/issue", IssueInvoiceAsync);
+        group.MapPost("/invoices/{invoiceId:guid}/void", VoidInvoiceAsync);
+        group.MapPost("/invoices/{invoiceId:guid}/credit-notes", IssueCreditNoteAsync);
 
         return endpoints;
     }
@@ -97,6 +101,7 @@ public static class BillingEndpoints
             request.UnitPriceAmount,
             request.CurrencyCode,
             request.Quantity,
+            request.TaxPercent,
             request.BillingCycle,
             request.BillingDayOfMonth,
             request.EffectiveStartsOn,
@@ -117,7 +122,10 @@ public static class BillingEndpoints
             result.Value.UnitPriceAmount,
             result.Value.CurrencyCode,
             result.Value.Quantity,
+            result.Value.TaxPercent,
+            result.Value.TaxAmount,
             result.Value.LineAmount,
+            result.Value.TotalLineAmount,
             result.Value.BillingCycle,
             result.Value.BillingDayOfMonth,
             result.Value.EffectiveStartsOn,
@@ -162,6 +170,7 @@ public static class BillingEndpoints
             result.Value.Status,
             result.Value.Lines.Select(line => new GenerateInvoiceDraftLineResponse(
                 line.ChargeCodeId,
+                line.LineType,
                 line.Description,
                 line.Amount,
                 line.CurrencyCode)).ToArray());
@@ -204,5 +213,84 @@ public static class BillingEndpoints
                 line.Description)).ToArray());
 
         return Results.Ok(response);
+    }
+
+    private static async Task<IResult> VoidInvoiceAsync(
+        Guid invoiceId,
+        VoidInvoiceRequest request,
+        VoidInvoiceHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var command = new VoidInvoiceCommand(
+            invoiceId,
+            request.VoidDate,
+            request.Reason);
+
+        var result = await handler.HandleAsync(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = new VoidInvoiceResponse(
+            result.Value.InvoiceId,
+            result.Value.InvoiceNumber,
+            result.Value.InvoiceStatus,
+            result.Value.OriginalJournalEntryId,
+            result.Value.ReversalJournalEntryId,
+            result.Value.ReversalJournalEntryStatus,
+            result.Value.VoidDate,
+            result.Value.TotalDebit,
+            result.Value.TotalCredit,
+            result.Value.CurrencyCode,
+            result.Value.JournalLines.Select(line => new VoidInvoiceJournalLineResponse(
+                line.LedgerAccountId,
+                line.Debit,
+                line.Credit,
+                line.Description)).ToArray());
+
+        return Results.Ok(response);
+    }
+
+    private static async Task<IResult> IssueCreditNoteAsync(
+        Guid invoiceId,
+        IssueCreditNoteRequest request,
+        IssueCreditNoteHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var command = new IssueCreditNoteCommand(
+            invoiceId,
+            request.CreditNoteNumber,
+            request.CreditDate,
+            request.Reason);
+
+        var result = await handler.HandleAsync(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = new IssueCreditNoteResponse(
+            result.Value.CreditNoteId,
+            result.Value.InvoiceId,
+            result.Value.CreditNoteNumber,
+            result.Value.InvoiceNumber,
+            result.Value.CreditNoteStatus,
+            result.Value.CreditDate,
+            result.Value.Amount,
+            result.Value.CurrencyCode,
+            result.Value.JournalEntryId,
+            result.Value.JournalEntryStatus,
+            result.Value.TotalDebit,
+            result.Value.TotalCredit,
+            result.Value.JournalLines.Select(line => new IssueCreditNoteJournalLineResponse(
+                line.LedgerAccountId,
+                line.Debit,
+                line.Credit,
+                line.Description)).ToArray());
+
+        return Results.Created($"/api/v1/billing/credit-notes/{response.CreditNoteId}", response);
     }
 }

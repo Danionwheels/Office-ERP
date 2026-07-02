@@ -107,9 +107,25 @@ client contract and dynamic charges
        credit revenue
        credit tax payable if tax exists
   -> payment receipt
+  -> payment review if the method needs approval
   -> payment posting
        debit cash/bank
        credit accounts receivable
+  -> payment reversal when a posted receipt must be undone
+       debit accounts receivable
+       credit cash/bank
+  -> unpaid invoice void when an issued invoice must be cancelled before payment
+       debit revenue/tax payable
+       credit accounts receivable
+  -> credit note when a paid invoice must be corrected
+       debit revenue/tax payable
+       credit accounts receivable
+  -> credit application when client credit should settle a future invoice
+       no new GL journal
+       allocate existing credit to the open invoice in the client subledger
+  -> client refund when credit should be paid back
+       debit accounts receivable
+       credit cash/bank
   -> receivable balance and ledger reports
 ```
 
@@ -138,10 +154,16 @@ Build the accounting and billing foundation in this order:
 3. Add application use cases for creating charge codes and client charge rules. Done.
 4. Add invoice draft generation from client charge rules. Done.
 5. Add invoice finalization that creates a balanced journal entry. Done for the basic debit receivable / credit revenue path.
-6. Add receipt/payment allocation that updates invoice balance and posts a receipt journal entry. Done for immediately approved payment methods.
+6. Add receipt/payment allocation that updates invoice balance and posts a receipt journal entry. Done for immediately approved methods and bank-transfer approval.
 7. Add client accounting profile and cloud outbox so invoices can post to GL and publish to SafarSuite Control Cloud reliably. Done.
 8. Add PostgreSQL persistence for payment records so receipt posting is durable end to end.
 9. Add a client statement/receivables read model so client invoices, approved payments, open balance, and related journal postings can be reviewed from one screen. Done for the basic local view.
+10. Add payment review and reversal so bank transfers can be held before GL posting and approved receipts can be reversed with their own balanced journal. Done for the local client desk loop.
+11. Add tax percent on client charge rules, materialize tax invoice lines, and credit tax payable during invoice issue. Done for the local taxable invoice loop.
+12. Add unpaid issued-invoice voiding with a reversing journal, statement visibility, and `InvoiceVoided` outbox message. Done for the local correction loop.
+13. Add full credit notes for paid/partially paid invoice correction with a reversing sale journal, statement credit visibility, and `CreditNoteIssued` outbox message. Done for the local correction loop.
+14. Add client refunds for credit balances created by credit notes with a balanced refund journal, statement visibility, and `ClientRefundIssued` outbox message. Done for the local correction loop.
+15. Add settlement controls to apply client credit balances to future invoices. Done for the local correction loop.
 
 ## Implementation Progress
 
@@ -150,27 +172,33 @@ Build the accounting and billing foundation in this order:
 | Accounting domain primitives | Done | `LedgerAccount`, `LedgerAccountCode`, account type/status/normal balance enums |
 | Journal domain primitives | Done | `JournalEntry`, `JournalLine`, source/status enums; posting requires balanced debit/credit totals |
 | Billing charge catalog primitives | Done | `ChargeCode`, `ChargeCodeKey`, default price, revenue/tax account links |
-| Dynamic client charge rules | Done | `ClientChargeRule` supports client/contract, charge code, price, quantity, billing cycle, billing day, and effective period |
-| Invoice line charge link | Done | `InvoiceLine` can now optionally reference a `ChargeCodeId` |
-| Application use cases | In Progress | Create use cases added for clients, ledger accounts, charge codes, client charge rules, invoice draft generation, invoice issue posting, invoice payment posting, journal listing, and ledger account activity |
-| API endpoints | In Progress | Minimal create endpoints plus invoice draft, invoice issue, invoice payment, journal listing, and ledger account activity endpoints are wired |
-| Temporary in-memory repositories | Replaced for active control spine | Clients, contacts, support notes, client accounting profiles, client contracts, contract module allowances, ledger accounts, journal entries, charge codes, client charge rules, invoices, invoice lines, payments, entitlement snapshots, entitlement modules, and cloud outbox messages now have PostgreSQL repositories |
+| Dynamic client charge rules | Done | `ClientChargeRule` supports client/contract, charge code, price, quantity, tax percent, billing cycle, billing day, and effective period |
+| Invoice line charge link | Done | `InvoiceLine` can now reference a `ChargeCodeId` and declare whether the line is a charge or tax line |
+| Application use cases | In Progress | Create use cases added for clients, ledger accounts, charge codes, client charge rules, invoice draft generation, invoice issue/void/credit-note posting, invoice payment record/approve/reject/reverse, client refund issue, client credit application, journal listing, and ledger account activity |
+| API endpoints | In Progress | Minimal create endpoints plus invoice draft, invoice issue/void/credit-note, invoice payment record/approve/reject/reverse, client refund issue, client credit application, journal listing, and ledger account activity endpoints are wired |
+| Temporary in-memory repositories | Replaced for active control spine | Clients, contacts, support notes, client accounting profiles, client contracts, contract module allowances, ledger accounts, journal entries, charge codes, client charge rules, invoices, invoice lines, credit notes, payments, client refunds, client credit applications, entitlement snapshots, entitlement modules, and cloud outbox messages now have PostgreSQL repositories |
 | Invoice draft generation | Done | `GenerateInvoiceDraft` creates draft invoices from effective client charge rules |
-| GL posting use cases | In Progress | Invoice issue and immediately approved invoice payment posting create posted balanced journal entries; tax, review, reversal, and reports remain pending |
+| GL posting use cases | In Progress | Invoice issue, taxable invoice posting, unpaid invoice voiding, full credit notes, client refunds, immediately approved invoice payment posting, bank-transfer approval posting, and payment reversal posting create posted balanced journal entries; credit application is handled as client subledger allocation without a new GL journal; reports remain pending |
 | Accounting read models | Done | Journal entry listing and ledger account activity read models expose the accounting trail created by invoice and receipt posting |
 | Survey invoice preparation bridge | Parked | Work exists, but SurveyValuation is no longer part of the active product path |
 | Client accounting profile | Done | Link client to receivable/default currency/cloud identity and stop passing AR account manually |
 | Cloud invoice outbox | Done for local durability | Enqueue persisted `InvoiceIssued` publish message when invoice is issued |
-| Payment outbox events | Done for local durability | Enqueue persisted `PaymentRecorded` and `ClientPaidStatusChanged` messages when an approved receipt is posted |
+| Payment outbox events | Done for local durability | Enqueue persisted `PaymentRecorded` and `ClientPaidStatusChanged` messages when an approved receipt is posted; enqueue `PaymentReversed` and paid-status updates when a receipt is reversed |
 | Local outbox publisher | Done for development | Manual dev endpoint builds signed envelopes and marks ready outbox messages sent/failed without calling the real cloud |
 | Control Cloud publish readiness | Basic done | Signed v1 envelope, HTTP publisher adapter, publish mode config, retry attempt timestamps, and migration are wired |
 | Local entitlement snapshots | Done for local durability | Issue persisted entitlement snapshots from paid invoices and enqueue `EntitlementSnapshotIssued` |
 | Contract-driven entitlement defaults | Done for local durability | Entitlement issue can derive paid-until, grace/offline validity, device/branch limits, and modules from the paid invoice contract |
 | Contract maintenance API | Done for backend | Create/read/list/suspend/replace active contract flows are wired against PostgreSQL |
 | Client contract UI | Basic done | Client desk lists contracts and exposes create, replace-active, and suspend actions |
-| Client billing setup UI | Basic done | Client desk exposes accounting profile, charge setup, invoice draft, and invoice issue workflows |
-| Client payment and entitlement UI | Basic done | Client desk exposes approved payment receipt plus local entitlement issue/refresh workflows |
-| Client statement/receivables view | Basic done | Client desk exposes invoices, approved payments, currency summaries, running balance, and journal postings for the selected client |
+| Client billing setup UI | Basic done | Client desk exposes accounting profile, charge/tax setup, invoice draft, invoice issue, and unpaid invoice void workflows |
+| Client payment and entitlement UI | Basic done | Client desk exposes payment receipt, bank-transfer approval/rejection, payment reversal, credit settlement, client refund, and local entitlement issue/refresh workflows |
+| Client statement/receivables view | Basic done | Client desk exposes invoices, approved/reversed payments, credit notes, applied credit, client refunds, available credit summaries, running balance, and journal postings for the selected client |
+| Payment review and reversal foundation | Basic done | Bank transfer receipts can wait in pending review without GL posting; approval posts the receipt journal, rejection closes the pending item, and reversal posts a dedicated reversal journal |
+| Billing tax foundation | Basic done | Client charge rules carry tax percent, invoice drafts create tax lines, invoice issue credits tax payable, and EF migration persists `tax_percent` plus invoice `line_type` |
+| Unpaid invoice void foundation | Basic done | Unpaid issued invoices can be voided with a reversing journal, pending `InvoiceVoided` outbox message, and statement lines that net the invoice to zero |
+| Full credit note foundation | Basic done | Paid and partially paid invoices can receive one full credit note with a reversing sale journal, pending `CreditNoteIssued` outbox message, EF persistence, and statement credit lines |
+| Client refund foundation | Basic done | Client credit balances can be refunded with a balanced AR/cash-bank journal, pending `ClientRefundIssued` outbox message, EF persistence, and statement debit lines |
+| Client credit settlement foundation | Basic done | Unapplied client credit can be allocated to issued/partially paid invoices without a new GL journal, with pending `ClientCreditApplied` outbox message, EF persistence, invoice balance update, available-credit summaries, and zero-net statement allocation lines |
 
 Current control-spine endpoints:
 
@@ -183,11 +211,18 @@ Current control-spine endpoints:
 | `POST` | `/api/v1/contracts/client-contracts/{contractId}/suspend` | Suspend a local client contract |
 | `POST` | `/api/v1/contracts/client-contracts/replace-active` | Suspend the current active client contract and create the replacement |
 | `POST` | `/api/v1/accounting/ledger-accounts` | Create a ledger account |
-| `POST` | `/api/v1/billing/charge-codes` | Create a billable charge code linked to revenue/tax accounts |
-| `POST` | `/api/v1/billing/client-charge-rules` | Create a dynamic charge rule for a client |
-| `POST` | `/api/v1/billing/invoice-drafts` | Generate a draft invoice from active client charge rules |
-| `POST` | `/api/v1/billing/invoices/{invoiceId}/issue` | Issue a draft invoice and post the balanced GL journal entry |
-| `POST` | `/api/v1/payments/invoice-payments` | Record an approved invoice payment, update invoice balance, and post the receipt journal |
+| `POST` | `/api/v1/billing/charge-codes` | Create a billable charge code linked to validated revenue/tax posting accounts |
+| `POST` | `/api/v1/billing/client-charge-rules` | Create a dynamic charge/tax rule for a client |
+| `POST` | `/api/v1/billing/invoice-drafts` | Generate a draft invoice from active client charge rules, including tax lines |
+| `POST` | `/api/v1/billing/invoices/{invoiceId}/issue` | Issue a draft invoice and post the balanced AR/revenue/tax GL journal entry |
+| `POST` | `/api/v1/billing/invoices/{invoiceId}/void` | Void an unpaid issued invoice, post the reversing GL journal entry, and enqueue `InvoiceVoided` |
+| `POST` | `/api/v1/billing/invoices/{invoiceId}/credit-notes` | Issue one full credit note for a paid/partially paid invoice, post the reversing sale journal, and enqueue `CreditNoteIssued` |
+| `POST` | `/api/v1/payments/client-refunds` | Refund a client credit balance, post the AR/cash-bank refund journal, and enqueue `ClientRefundIssued` |
+| `POST` | `/api/v1/payments/client-credit-applications` | Apply unapplied client credit to an issued/partially paid invoice and enqueue `ClientCreditApplied` |
+| `POST` | `/api/v1/payments/invoice-payments` | Record an invoice payment; immediately approved methods post the receipt journal, while bank transfers wait for review |
+| `POST` | `/api/v1/payments/invoice-payments/{paymentId}/approve` | Approve a pending payment, update invoice balance, post the receipt journal, and enqueue payment events |
+| `POST` | `/api/v1/payments/invoice-payments/{paymentId}/reject` | Reject a pending-review payment without GL posting |
+| `POST` | `/api/v1/payments/invoice-payments/{paymentId}/reverse` | Reverse an approved payment, reopen invoice balance, post a reversal journal, and enqueue reversal events |
 | `POST` | `/api/v1/entitlements/snapshots/from-paid-invoice` | Issue a local entitlement snapshot from a paid invoice |
 | `POST` | `/api/v1/entitlements/snapshots/from-paid-invoice/defaults` | Issue a local entitlement snapshot using paid invoice contract defaults |
 | `GET` | `/api/v1/entitlements/clients/{clientId}/latest-snapshot` | Read the latest local entitlement snapshot for a client |
@@ -216,6 +251,7 @@ create revenue ledger account
   -> create posted balanced journal entry
        debit accounts receivable
        credit revenue
+       credit tax payable when configured
   -> record invoice payment
   -> create posted balanced journal entry
        debit cash/bank
@@ -249,6 +285,36 @@ The client statement smoke test verified both an invoice-only client and a fully
 
 The cloud-readiness smoke test applied migration `20260701090000_AddCloudOutboxPublishReadiness`, then published three ready outbox messages through `POST /api/v1/control-cloud/outbox-messages/publish?batchSize=3`. The response returned three sent messages, attempt count `1`, sent timestamps, cloud references based on the idempotency key, and HMAC envelope signatures.
 
+The payment review/reversal smoke test ran against the local API with in-memory persistence. It verified that a bank-transfer payment starts as `PendingReview` with no journal, approval changes it to `Approved`, posts the receipt journal, and changes the invoice to `Paid`. It then verified reversal changes the payment to `Reversed`, returns the invoice to `Issued`, restores balance due to `125.00`, shows three statement lines, shows three related journal postings, and creates one `PaymentReversal` journal for the payment reference.
+
+The taxable invoice smoke test ran against the local API with in-memory persistence. It verified a `10%` taxable client charge rule with base amount `100.00`, tax amount `10.00`, invoice draft total `110.00`, two draft lines (`Charge` and `Tax`), issued invoice status `Issued`, balanced journal debit/credit totals of `110.00`, AR debit `110.00`, revenue credit `100.00`, tax payable credit `10.00`, and statement balance `110.00`.
+
+The unpaid invoice void smoke test ran against the local API with in-memory persistence. It verified an issued taxable invoice at `110.00`, then voided it before payment. The void result set invoice status to `Void`, created one posted `BillingInvoiceVoid` journal with debit/credit totals of `110.00`, showed two invoice-related journal postings, showed two statement lines including one `Invoice void` credit line, returned statement balance `0.00`, and enqueued one pending `InvoiceVoided` outbox message.
+
+The full credit-note smoke test ran against the local API with in-memory persistence. It verified a taxable invoice at `110.00`, posted an approved payment so the invoice became `Paid`, then issued a full credit note. The credit note created one posted `BillingCreditNote` journal with debit/credit totals of `110.00`, left the invoice as `Paid`, showed one `Credit note` statement line, returned statement balance `-110.00` as client credit, showed three related journal postings, and enqueued one pending `CreditNoteIssued` outbox message.
+
+The client refund smoke test ran against the local API with in-memory persistence. It verified the taxable paid invoice plus full credit-note path, then issued a partial `60.00 PKR` client refund from the `-110.00 PKR` credit balance. The refund created one posted `ClientRefund` journal with debit/credit totals of `60.00`, returned client balance before refund `-110.00`, returned balance after refund `-50.00`, showed one `Client refund` statement debit line, showed one client refund journal through source filtering, and enqueued one pending `ClientRefundIssued` outbox message.
+
+The client credit settlement smoke test ran against the local API with in-memory persistence. It verified a taxable paid invoice plus full credit-note path, then issued a second taxable invoice and applied `60.00 PKR` of the existing `110.00 PKR` unapplied credit. Before settlement, the client statement balance was `0.00` while available credit was `110.00`; after settlement, the second invoice became `PartiallyPaid` with balance `50.00`, available credit became `50.00`, client statement balance stayed `0.00`, the statement showed one zero-net `Applied credit` line with debit and credit both `60.00`, and one pending `ClientCreditApplied` outbox message was enqueued.
+
+The repeatable accounting smoke runner now lives at `tools/SafarSuite.ControlDesk.AccountingSmoke`. It runs the core local chain through application handlers: ledger setup, client/profile/contract setup, taxable invoice draft, invoice issue, approved receipt, full credit note, partial client refund, second invoice, and client credit settlement. The smoke asserts balanced GL journals for invoice issue, receipt, credit note, refund, and the second invoice; it also asserts that client credit application remains a subledger allocation with no GL journal, updates available credit, appears as a zero-net statement line, and enqueues `ClientCreditApplied`.
+
+Run the fast in-memory mode after building the solution:
+
+```powershell
+dotnet run --project tools\SafarSuite.ControlDesk.AccountingSmoke\SafarSuite.ControlDesk.AccountingSmoke.csproj --no-build
+```
+
+Run the PostgreSQL/EF mode after the local Docker Postgres service is running:
+
+```powershell
+dotnet run --project tools\SafarSuite.ControlDesk.AccountingSmoke\SafarSuite.ControlDesk.AccountingSmoke.csproj --no-build -- --provider postgres
+```
+
+The PostgreSQL mode applies EF migrations first and uses unique smoke document numbers, so old dev rows should not pollute the assertions. It has now passed locally against the Docker/PostgreSQL database on `localhost:54329`, confirming the same invoice/payment/credit/refund/settlement chain through EF mappings, migrations, and real transaction handling.
+
+The client desk UI guardrail pass is basic done. Invoice issue, invoice void, credit note, receipt posting, payment approval/rejection/reversal, credit settlement, and client refund actions now require their minimum accounting inputs in the screen and ask for confirmation before the page handler calls the backend action.
+
 ## Transaction Policy
 
 Accounting-sensitive actions must be atomic.
@@ -263,25 +329,29 @@ The application layer now exposes two unit-of-work shapes:
 Use `ExecuteInTransactionAsync` for:
 
 - invoice issue/finalize plus journal entry creation
+- unpaid invoice void plus reversing journal entry creation
+- full credit note plus reversing sale journal entry creation
+- client credit application plus invoice balance update and outbox message creation
+- client refund plus refund journal entry and outbox message creation
 - receipt/payment approval plus invoice allocation plus journal entry creation
 - payment reversal plus ledger reversal
 - opening balance import across accounts and invoices
 
-The PostgreSQL/EF implementation now uses a real database transaction for persisted slices. This covers invoice issue end to end: invoice status update, posted journal entry, journal lines, and `InvoiceIssued` outbox message are saved in one transaction. Payment posting is also durable end to end: payment record, invoice balance/status update, posted receipt journal entry, journal lines, and payment/client-status outbox messages are saved in one transaction.
+The PostgreSQL/EF implementation now uses a real database transaction for persisted slices. This covers invoice issue end to end: invoice status update, posted journal entry, journal lines, and `InvoiceIssued` outbox message are saved in one transaction. Payment posting is also durable end to end: payment record, invoice balance/status update, posted receipt journal entry, journal lines, and payment/client-status outbox messages are saved in one transaction. Client refunds are also transactional: refund record, posted refund journal entry, journal lines, and `ClientRefundIssued` outbox message are saved together. Client credit applications are transactional as subledger allocations: application record, invoice balance/status update, and `ClientCreditApplied` outbox message are saved together.
 
 Next accounting slice:
 
 ```text
-pre-cloud boundary decision
-  -> confirm whether to scaffold SafarSuite Control Cloud next
-  -> if yes, add a receiver skeleton with signature validation and idempotency
-  -> if no, stay local and add payment review/reversal plus tax posting
-  -> keep real cloud publication out of accounting transactions
+local accounting hardening
+  -> done: add a repeatable in-memory accounting smoke runner for correction flows
+  -> done: run the same smoke runner against PostgreSQL migrations
+  -> done: review UI wording and guardrails for invoice/payment/credit actions
+  -> done: confirm and scaffold the Control Cloud receiver boundary
+  -> done: wire the desk HTTP publisher to the local cloud receiver and publish real outbox rows
+  -> next: build cloud-side projections for portal-readable invoice/payment/entitlement state
 ```
 
 SurveyValuation bridge work exists but is parked. Do not extend it while the active goal is SafarSuite client billing/control/cloud.
-
-Payment review, reversals, and bank-transfer approval are still separate workflows.
 
 ## Guardrail
 

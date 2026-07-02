@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Banknote,
   CheckCircle2,
+  Cloud,
   FileText,
   KeyRound,
   LayoutDashboard,
@@ -19,8 +20,10 @@ import {
   createClientChargeRule,
   createLedgerAccount,
   generateInvoiceDraft,
+  issueCreditNote,
   issueInvoice,
-  listChargeCodes
+  listChargeCodes,
+  voidInvoice
 } from "../../billing/api/billingApi";
 import { ClientBillingSetupPanel } from "../../billing/components/ClientBillingSetupPanel";
 import type {
@@ -28,11 +31,15 @@ import type {
   ChargeCodeLookup,
   ClientChargeRule,
   ClientChargeRuleFormInput,
+  IssueCreditNoteInput,
+  IssuedCreditNote,
   InvoiceDraft,
   InvoiceDraftFormInput,
   IssueInvoiceFormInput,
   IssuedInvoice,
-  LedgerAccountFormInput
+  LedgerAccountFormInput,
+  VoidedInvoice,
+  VoidInvoiceInput
 } from "../../billing/types/billingTypes";
 import {
   createClientContract,
@@ -45,6 +52,9 @@ import type {
   ClientContract,
   ClientContractFormInput
 } from "../../contracts/types/contractTypes";
+import { getCloudInstallationStatus } from "../../control-cloud/api/controlCloudApi";
+import { CloudInstallationStatusPanel } from "../../control-cloud/components/CloudInstallationStatusPanel";
+import type { ControlCloudInstallationStatus } from "../../control-cloud/types/controlCloudTypes";
 import {
   getLatestEntitlementSnapshot,
   issueEntitlementFromPaidInvoiceDefaults
@@ -54,11 +64,23 @@ import type {
   EntitlementSnapshot,
   IssuedEntitlementSnapshot
 } from "../../entitlements/types/entitlementTypes";
-import { recordInvoicePayment } from "../../payments/api/paymentApi";
+import {
+  applyClientCredit,
+  approveInvoicePayment,
+  issueClientRefund,
+  recordInvoicePayment,
+  rejectInvoicePayment,
+  reverseInvoicePayment
+} from "../../payments/api/paymentApi";
 import { PaymentReceiptPanel } from "../../payments/components/PaymentReceiptPanel";
 import type {
+  AppliedClientCredit,
+  ApplyClientCreditInput,
+  IssueClientRefundInput,
+  IssuedClientRefund,
   RecordedInvoicePayment,
-  RecordInvoicePaymentInput
+  RecordInvoicePaymentInput,
+  ReversedInvoicePayment
 } from "../../payments/types/paymentTypes";
 import { getClientStatement } from "../../statements/api/statementApi";
 import { ClientStatementPanel } from "../../statements/components/ClientStatementPanel";
@@ -71,6 +93,7 @@ import {
   createClient,
   getClient,
   getClientAccountingProfile,
+  inviteClientPortalContact,
   listClients,
   suspendClient,
   updateClient
@@ -84,6 +107,7 @@ import type {
   ClientAccountingProfile,
   ClientDetails,
   ClientLookup,
+  ClientPortalInvitation,
   ConfigureClientAccountingProfileInput,
   CreateClientInput,
   UpdateClientInput
@@ -122,6 +146,7 @@ type DashboardModule =
   | "billing"
   | "payments"
   | "entitlements"
+  | "cloud"
   | "statement";
 
 export function ClientDeskPage() {
@@ -165,15 +190,30 @@ export function ClientDeskPage() {
   const [latestChargeRule, setLatestChargeRule] = useState<ClientChargeRule | null>(null);
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceDraft | null>(null);
   const [issuedInvoice, setIssuedInvoice] = useState<IssuedInvoice | null>(null);
+  const [voidedInvoice, setVoidedInvoice] = useState<VoidedInvoice | null>(null);
+  const [issuedCreditNote, setIssuedCreditNote] = useState<IssuedCreditNote | null>(null);
   const [paymentForm, setPaymentForm] = useState<RecordInvoicePaymentInput>(
     createDefaultPaymentForm()
   );
+  const [refundForm, setRefundForm] = useState<IssueClientRefundInput>(
+    createDefaultRefundForm()
+  );
+  const [creditApplicationForm, setCreditApplicationForm] = useState<ApplyClientCreditInput>(
+    createDefaultCreditApplicationForm()
+  );
   const [recordedPayment, setRecordedPayment] = useState<RecordedInvoicePayment | null>(null);
+  const [issuedRefund, setIssuedRefund] = useState<IssuedClientRefund | null>(null);
+  const [appliedCredit, setAppliedCredit] = useState<AppliedClientCredit | null>(null);
   const [latestEntitlementSnapshot, setLatestEntitlementSnapshot] =
     useState<EntitlementSnapshot | null>(null);
   const [latestEntitlementSnapshotMissing, setLatestEntitlementSnapshotMissing] = useState(false);
   const [issuedEntitlementSnapshot, setIssuedEntitlementSnapshot] =
     useState<IssuedEntitlementSnapshot | null>(null);
+  const [cloudInstallationId, setCloudInstallationId] = useState("");
+  const [cloudInstallationStatus, setCloudInstallationStatus] =
+    useState<ControlCloudInstallationStatus | null>(null);
+  const [latestPortalInvitation, setLatestPortalInvitation] =
+    useState<ClientPortalInvitation | null>(null);
   const [clientStatement, setClientStatement] = useState<ClientStatement | null>(null);
   const [activeDashboardModule, setActiveDashboardModule] =
     useState<DashboardModule>("dashboard");
@@ -213,6 +253,9 @@ export function ClientDeskPage() {
       setAccountingProfile(null);
       setAccountingProfileMissing(false);
       setContracts([]);
+      setCloudInstallationId("");
+      setCloudInstallationStatus(null);
+      setLatestPortalInvitation(null);
       setClientStatement(null);
       resetBillingForms();
       return;
@@ -231,6 +274,8 @@ export function ClientDeskPage() {
       ]);
 
       applyLoadedClient(client);
+      setCloudInstallationId(createDefaultInstallationId(client.code));
+      setCloudInstallationStatus(null);
       setContracts(clientContracts);
       setClientStatement(statement);
       setContractForm(createDefaultContractForm(client.code));
@@ -242,11 +287,13 @@ export function ClientDeskPage() {
 
   async function refreshClientStatement(clientId = selectedClient?.clientId) {
     if (clientId === undefined) {
-      return;
+      return null;
     }
 
     const statement = await getClientStatement(clientId);
     setClientStatement(statement);
+
+    return statement;
   }
 
   async function loadAccountingProfile(clientId: string) {
@@ -259,6 +306,17 @@ export function ClientDeskPage() {
         ...current,
         accountsReceivableAccountId: profile.accountsReceivableAccountId
       }));
+      setRefundForm((current) => ({
+        ...current,
+        clientId,
+        accountsReceivableAccountId: profile.accountsReceivableAccountId,
+        currencyCode: profile.defaultCurrencyCode
+      }));
+      setCreditApplicationForm((current) => ({
+        ...current,
+        clientId,
+        currencyCode: profile.defaultCurrencyCode
+      }));
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
         setAccountingProfile(null);
@@ -266,6 +324,15 @@ export function ClientDeskPage() {
         setAccountingProfileForm((current) => ({
           ...current,
           accountsReceivableAccountId: ""
+        }));
+        setRefundForm((current) => ({
+          ...current,
+          clientId,
+          accountsReceivableAccountId: ""
+        }));
+        setCreditApplicationForm((current) => ({
+          ...current,
+          clientId
         }));
         return;
       }
@@ -284,6 +351,34 @@ export function ClientDeskPage() {
         setLatestEntitlementSnapshot(null);
         setLatestEntitlementSnapshotMissing(true);
         return;
+      }
+
+      throw caughtError;
+    }
+  }
+
+  async function loadCloudInstallationStatus(
+    clientId = selectedClient?.clientId,
+    installationId = cloudInstallationId
+  ): Promise<boolean> {
+    const normalizedInstallationId = installationId.trim();
+
+    if (clientId === undefined || normalizedInstallationId === "") {
+      setCloudInstallationStatus(null);
+
+      return false;
+    }
+
+    try {
+      const status = await getCloudInstallationStatus(clientId, normalizedInstallationId);
+      setCloudInstallationStatus(status);
+
+      return true;
+    } catch (caughtError) {
+      if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
+        setCloudInstallationStatus(null);
+
+        return false;
       }
 
       throw caughtError;
@@ -356,6 +451,21 @@ export function ClientDeskPage() {
         role: contactForm.role
       });
       setMessage("Contact added.");
+    });
+  }
+
+  async function handleInvitePortalContact(clientContactId: string) {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const invitation = await inviteClientPortalContact(
+        selectedClient.clientId,
+        clientContactId
+      );
+      setLatestPortalInvitation(invitation);
+      setMessage(`Portal invite created for ${invitation.email}.`);
     });
   }
 
@@ -449,6 +559,10 @@ export function ClientDeskPage() {
         ...current,
         cashOrBankAccountId: account.ledgerAccountId
       }));
+      setRefundForm((current) => ({
+        ...current,
+        cashOrBankAccountId: account.ledgerAccountId
+      }));
       setMessage("Cash or bank account created.");
     });
   }
@@ -468,6 +582,17 @@ export function ClientDeskPage() {
       setPaymentForm((current) => ({
         ...current,
         accountsReceivableAccountId: profile.accountsReceivableAccountId
+      }));
+      setRefundForm((current) => ({
+        ...current,
+        clientId: selectedClient.clientId,
+        accountsReceivableAccountId: profile.accountsReceivableAccountId,
+        currencyCode: profile.defaultCurrencyCode
+      }));
+      setCreditApplicationForm((current) => ({
+        ...current,
+        clientId: selectedClient.clientId,
+        currencyCode: profile.defaultCurrencyCode
       }));
       setMessage("Accounting profile saved.");
     });
@@ -509,6 +634,8 @@ export function ClientDeskPage() {
       const draft = await generateInvoiceDraft(selectedClient.clientId, invoiceDraftForm);
       setInvoiceDraft(draft);
       setIssuedInvoice(null);
+      setVoidedInvoice(null);
+      setIssuedCreditNote(null);
       setIssueInvoiceForm({
         postingDate: draft.issueDate,
         accountsReceivableAccountId: ""
@@ -518,6 +645,11 @@ export function ClientDeskPage() {
         draft,
         accountingProfile,
         issueInvoiceForm.accountsReceivableAccountId
+      ));
+      setCreditApplicationForm(createDefaultCreditApplicationForm(
+        selectedClient,
+        draft,
+        clientStatement
       ));
       setRecordedPayment(null);
       await refreshClientStatement(selectedClient.clientId);
@@ -530,26 +662,216 @@ export function ClientDeskPage() {
       return;
     }
 
+    if (!confirmAccountingAction(
+      `Issue invoice ${invoiceDraft.invoiceNumber} for ${formatAccountingAmount(
+        invoiceDraft.totalAmount,
+        invoiceDraft.currencyCode
+      )}? This will post GL entries and queue cloud sync.`
+    )) {
+      return;
+    }
+
     await runClientAction(async () => {
       const issued = await issueInvoice(invoiceDraft.invoiceId, issueInvoiceForm);
       setIssuedInvoice(issued);
-      setInvoiceDraft({
+      setVoidedInvoice(null);
+      setIssuedCreditNote(null);
+      const nextInvoiceDraft = {
         ...invoiceDraft,
         status: issued.invoiceStatus
-      });
+      };
+      setInvoiceDraft(nextInvoiceDraft);
       setPaymentForm(createDefaultPaymentForm(
         selectedClient,
-        { ...invoiceDraft, status: issued.invoiceStatus },
+        nextInvoiceDraft,
         accountingProfile,
         issueInvoiceForm.accountsReceivableAccountId
       ));
       setRecordedPayment(null);
-      await refreshClientStatement(selectedClient?.clientId);
+      const statement = await refreshClientStatement(selectedClient?.clientId);
+      setCreditApplicationForm(createDefaultCreditApplicationForm(
+        selectedClient,
+        nextInvoiceDraft,
+        statement ?? clientStatement
+      ));
       setMessage("Invoice issued.");
     });
   }
 
+  async function handleVoidInvoice(input: VoidInvoiceInput) {
+    if (invoiceDraft === null) {
+      return;
+    }
+
+    if (!confirmAccountingAction(
+      `Void invoice ${invoiceDraft.invoiceNumber}? This will post a reversal journal.`
+    )) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const voided = await voidInvoice(invoiceDraft.invoiceId, input);
+      setVoidedInvoice(voided);
+      setIssuedCreditNote(null);
+      setIssuedInvoice((current) =>
+        current === null
+          ? current
+          : {
+              ...current,
+              invoiceStatus: voided.invoiceStatus
+            }
+      );
+      setInvoiceDraft({
+        ...invoiceDraft,
+        status: voided.invoiceStatus,
+        balanceDue: 0
+      });
+      setRecordedPayment(null);
+      setAppliedCredit(null);
+      await refreshClientStatement(selectedClient?.clientId);
+      setMessage("Invoice voided.");
+    });
+  }
+
+  async function handleIssueCreditNote(input: IssueCreditNoteInput) {
+    if (invoiceDraft === null) {
+      return;
+    }
+
+    if (!confirmAccountingAction(
+      `Issue credit note ${input.creditNoteNumber} for invoice ${invoiceDraft.invoiceNumber}? This will reverse the posted invoice journal.`
+    )) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const creditNote = await issueCreditNote(invoiceDraft.invoiceId, input);
+      setIssuedCreditNote(creditNote);
+      setIssuedRefund(null);
+      setAppliedCredit(null);
+      setRefundForm((current) => ({
+        ...current,
+        clientId: selectedClient?.clientId ?? current.clientId,
+        reference: defaultRefundReference(selectedClient?.code, new Date()),
+        amount: creditNote.amount.toFixed(2),
+        currencyCode: creditNote.currencyCode,
+        accountsReceivableAccountId:
+          current.accountsReceivableAccountId.trim() === ""
+            ? accountingProfile?.accountsReceivableAccountId ?? ""
+            : current.accountsReceivableAccountId
+      }));
+      const statement = await refreshClientStatement(selectedClient?.clientId);
+      setCreditApplicationForm(createDefaultCreditApplicationForm(
+        selectedClient,
+        invoiceDraft,
+        statement ?? clientStatement
+      ));
+      setMessage("Credit note issued.");
+    });
+  }
+
+  async function handleApplyClientCredit() {
+    if (selectedClient === null || invoiceDraft === null) {
+      return;
+    }
+
+    if (!confirmAccountingAction(
+      `Apply ${formatAccountingAmount(
+        Number(creditApplicationForm.amount),
+        creditApplicationForm.currencyCode
+      )} client credit to invoice ${invoiceDraft.invoiceNumber}?`
+    )) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const application = await applyClientCredit(creditApplicationForm);
+      const refreshedStatement = await getClientStatement(selectedClient.clientId);
+      const remainingCredit = getUnappliedStatementCredit(
+        refreshedStatement,
+        application.currencyCode
+      );
+      const nextInvoiceDraft = {
+        ...invoiceDraft,
+        status: application.invoiceStatus,
+        balanceDue: application.invoiceBalanceAfter
+      };
+
+      setAppliedCredit(application);
+      setIssuedRefund(null);
+      setInvoiceDraft(nextInvoiceDraft);
+      setClientStatement(refreshedStatement);
+      setCreditApplicationForm((current) => ({
+        ...current,
+        reference: defaultCreditApplicationReference(selectedClient.code, new Date()),
+        amount: Math.min(remainingCredit.availableCredit, application.invoiceBalanceAfter) > 0
+          ? Math.min(remainingCredit.availableCredit, application.invoiceBalanceAfter).toFixed(2)
+          : "0.00",
+        currencyCode: remainingCredit.currencyCode,
+        appliedOn: toDateInputValue(new Date())
+      }));
+      setRefundForm((current) => ({
+        ...current,
+        amount: getStatementCredit(refreshedStatement, application.currencyCode).availableCredit.toFixed(2)
+      }));
+      setMessage("Client credit applied.");
+    });
+  }
+
+  async function handleIssueClientRefund() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    if (!confirmAccountingAction(
+      `Issue refund ${formatAccountingAmount(
+        Number(refundForm.amount),
+        refundForm.currencyCode
+      )}? This will post cash/bank and AR entries.`
+    )) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const refund = await issueClientRefund(refundForm);
+      const refreshedStatement = await getClientStatement(selectedClient.clientId);
+      const remainingCredit = getStatementCredit(refreshedStatement, refund.currencyCode);
+
+      setIssuedRefund(refund);
+      setClientStatement(refreshedStatement);
+      setRefundForm((current) => ({
+        ...current,
+        reference: defaultRefundReference(selectedClient.code, new Date()),
+        amount: remainingCredit.availableCredit > 0
+          ? remainingCredit.availableCredit.toFixed(2)
+          : "0.00",
+        currencyCode: remainingCredit.currencyCode,
+        refundedOn: toDateInputValue(new Date()),
+        postingDate: toDateInputValue(new Date())
+      }));
+      setCreditApplicationForm(createDefaultCreditApplicationForm(
+        selectedClient,
+        invoiceDraft,
+        refreshedStatement
+      ));
+      setMessage("Client refund issued.");
+    });
+  }
+
   async function handleRecordInvoicePayment() {
+    const paymentAction =
+      paymentForm.method === "BankTransfer" ? "record for review" : "post to GL";
+    const invoiceReference = invoiceDraft?.invoiceNumber ?? paymentForm.invoiceId;
+
+    if (!confirmAccountingAction(
+      `Record ${formatAccountingAmount(
+        Number(paymentForm.amount),
+        paymentForm.currencyCode
+      )} payment for invoice ${invoiceReference}? This will ${paymentAction}.`
+    )) {
+      return;
+    }
+
     await runClientAction(async () => {
       const payment = await recordInvoicePayment(paymentForm);
       setRecordedPayment(payment);
@@ -568,8 +890,127 @@ export function ClientDeskPage() {
         reference: defaultReceiptReference(selectedClient?.code, new Date())
       }));
       setIssuedEntitlementSnapshot(null);
+      setIssuedCreditNote(null);
+      setAppliedCredit(null);
       await refreshClientStatement(selectedClient?.clientId);
-      setMessage("Payment recorded.");
+      setMessage(payment.paymentStatus === "PendingReview" ? "Payment recorded for review." : "Payment recorded.");
+    });
+  }
+
+  async function handleApproveInvoicePayment(decisionNote: string) {
+    if (recordedPayment === null) {
+      return;
+    }
+
+    if (!confirmAccountingAction(
+      `Approve payment ${formatAccountingAmount(
+        recordedPayment.amount,
+        recordedPayment.currencyCode
+      )} for invoice ${recordedPayment.invoiceNumber}? This will post GL entries.`
+    )) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const payment = await approveInvoicePayment(recordedPayment.paymentId, {
+        cashOrBankAccountId: paymentForm.cashOrBankAccountId,
+        accountsReceivableAccountId: paymentForm.accountsReceivableAccountId,
+        postingDate: paymentForm.postingDate,
+        decisionNote
+      });
+
+      setRecordedPayment(payment);
+      setInvoiceDraft((current) =>
+        current === null
+          ? current
+          : {
+              ...current,
+              status: payment.invoiceStatus,
+              balanceDue: payment.balanceDue
+            }
+      );
+      setPaymentForm((current) => ({
+        ...current,
+        amount: payment.balanceDue > 0 ? payment.balanceDue.toFixed(2) : "0.00",
+        reference: defaultReceiptReference(selectedClient?.code, new Date())
+      }));
+      setIssuedEntitlementSnapshot(null);
+      setAppliedCredit(null);
+      await refreshClientStatement(selectedClient?.clientId);
+      setMessage("Payment approved and posted.");
+    });
+  }
+
+  async function handleRejectInvoicePayment(decisionNote: string) {
+    if (recordedPayment === null) {
+      return;
+    }
+
+    if (!confirmAccountingAction(
+      `Reject payment ${formatAccountingAmount(
+        recordedPayment.amount,
+        recordedPayment.currencyCode
+      )} for invoice ${recordedPayment.invoiceNumber}?`
+    )) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const rejected = await rejectInvoicePayment(recordedPayment.paymentId, decisionNote);
+      setRecordedPayment((current) =>
+        current === null
+          ? current
+          : {
+              ...current,
+              paymentStatus: rejected.paymentStatus,
+              decisionNote: rejected.decisionNote
+            }
+      );
+      await refreshClientStatement(selectedClient?.clientId);
+      setMessage("Payment rejected.");
+    });
+  }
+
+  async function handleReverseInvoicePayment(decisionNote: string, reversalDate: string) {
+    if (recordedPayment === null) {
+      return;
+    }
+
+    if (!confirmAccountingAction(
+      `Reverse payment ${formatAccountingAmount(
+        recordedPayment.amount,
+        recordedPayment.currencyCode
+      )} for invoice ${recordedPayment.invoiceNumber}? This will post a reversal journal.`
+    )) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const reversal = await reverseInvoicePayment(recordedPayment.paymentId, {
+        decisionNote,
+        reversalDate
+      });
+      const payment = mapReversedPaymentToRecordedPayment(reversal);
+
+      setRecordedPayment(payment);
+      setInvoiceDraft((current) =>
+        current === null
+          ? current
+          : {
+              ...current,
+              status: payment.invoiceStatus,
+              balanceDue: payment.balanceDue
+            }
+      );
+      setPaymentForm((current) => ({
+        ...current,
+        amount: payment.balanceDue > 0 ? payment.balanceDue.toFixed(2) : "0.00",
+        reference: defaultReceiptReference(selectedClient?.code, new Date())
+      }));
+      setIssuedEntitlementSnapshot(null);
+      setAppliedCredit(null);
+      await refreshClientStatement(selectedClient?.clientId);
+      setMessage("Payment reversed.");
     });
   }
 
@@ -592,6 +1033,19 @@ export function ClientDeskPage() {
     await runClientAction(async () => {
       await loadLatestEntitlementSnapshot(selectedClient.clientId);
       setMessage("Latest entitlement refreshed.");
+    });
+  }
+
+  async function handleRefreshCloudInstallationStatus() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const found = await loadCloudInstallationStatus();
+      setMessage(found
+        ? "Cloud installation status refreshed."
+        : "No cloud installation status found.");
     });
   }
 
@@ -625,6 +1079,7 @@ export function ClientDeskPage() {
 
   function applyLoadedClient(client: ClientDetails) {
     setSelectedClient(client);
+    setLatestPortalInvitation(null);
     setEditForm({
       legalName: client.legalName,
       displayName: client.displayName
@@ -647,13 +1102,20 @@ export function ClientDeskPage() {
     setInvoiceDraftForm(createDefaultInvoiceDraftForm());
     setIssueInvoiceForm(createDefaultIssueInvoiceForm());
     setPaymentForm(createDefaultPaymentForm());
+    setRefundForm(createDefaultRefundForm());
+    setCreditApplicationForm(createDefaultCreditApplicationForm());
     setLatestChargeRule(null);
     setInvoiceDraft(null);
     setIssuedInvoice(null);
+    setVoidedInvoice(null);
+    setIssuedCreditNote(null);
     setRecordedPayment(null);
+    setIssuedRefund(null);
+    setAppliedCredit(null);
     setLatestEntitlementSnapshot(null);
     setLatestEntitlementSnapshotMissing(false);
     setIssuedEntitlementSnapshot(null);
+    setCloudInstallationStatus(null);
   }
 
   function applyBillingDefaults(client: ClientDetails, contract: ClientContract | null) {
@@ -666,13 +1128,20 @@ export function ClientDeskPage() {
     setInvoiceDraftForm(createDefaultInvoiceDraftForm(client, contract));
     setIssueInvoiceForm(createDefaultIssueInvoiceForm());
     setPaymentForm(createDefaultPaymentForm(client));
+    setRefundForm(createDefaultRefundForm(client));
+    setCreditApplicationForm(createDefaultCreditApplicationForm(client));
     setLatestChargeRule(null);
     setInvoiceDraft(null);
     setIssuedInvoice(null);
+    setVoidedInvoice(null);
+    setIssuedCreditNote(null);
     setRecordedPayment(null);
+    setIssuedRefund(null);
+    setAppliedCredit(null);
     setLatestEntitlementSnapshot(null);
     setLatestEntitlementSnapshotMissing(false);
     setIssuedEntitlementSnapshot(null);
+    setCloudInstallationStatus(null);
     setClientStatement(null);
   }
 
@@ -697,9 +1166,15 @@ export function ClientDeskPage() {
     setInvoiceDraftForm(createDefaultInvoiceDraftForm(client, contract));
     setIssueInvoiceForm(createDefaultIssueInvoiceForm());
     setPaymentForm(createDefaultPaymentForm(client));
+    setRefundForm(createDefaultRefundForm(client));
+    setCreditApplicationForm(createDefaultCreditApplicationForm(client));
     setInvoiceDraft(null);
     setIssuedInvoice(null);
+    setVoidedInvoice(null);
+    setIssuedCreditNote(null);
     setRecordedPayment(null);
+    setIssuedRefund(null);
+    setAppliedCredit(null);
     setIssuedEntitlementSnapshot(null);
   }
 
@@ -711,6 +1186,7 @@ export function ClientDeskPage() {
     recordedPayment,
     issuedEntitlementSnapshot,
     latestEntitlementSnapshot,
+    cloudInstallationStatus,
     clientStatement
   });
   const dashboardNavigation = getDashboardNavigation(dashboardMetrics, clients.length, selectedClient);
@@ -856,6 +1332,7 @@ export function ClientDeskPage() {
                 editValue={editForm}
                 contactValue={contactForm}
                 noteValue={noteForm}
+                latestPortalInvitation={latestPortalInvitation}
                 isBusy={isBusy}
                 onEditChange={setEditForm}
                 onContactChange={setContactForm}
@@ -864,6 +1341,7 @@ export function ClientDeskPage() {
                 onActivate={handleActivateClient}
                 onSuspend={handleSuspendClient}
                 onAddContact={handleAddContact}
+                onInvitePortalContact={handleInvitePortalContact}
                 onAddNote={handleAddNote}
               />
             )}
@@ -897,6 +1375,8 @@ export function ClientDeskPage() {
                 latestChargeRule={latestChargeRule}
                 invoiceDraft={invoiceDraft}
                 issuedInvoice={issuedInvoice}
+                voidedInvoice={voidedInvoice}
+                issuedCreditNote={issuedCreditNote}
                 isBusy={isBusy || selectedClient === null}
                 onReceivableAccountChange={setReceivableAccountForm}
                 onRevenueAccountChange={setRevenueAccountForm}
@@ -913,6 +1393,8 @@ export function ClientDeskPage() {
                 onCreateChargeRule={handleCreateChargeRule}
                 onGenerateInvoiceDraft={handleGenerateInvoiceDraft}
                 onIssueInvoice={handleIssueInvoice}
+                onVoidInvoice={handleVoidInvoice}
+                onIssueCreditNote={handleIssueCreditNote}
               />
             )}
 
@@ -923,12 +1405,24 @@ export function ClientDeskPage() {
                 accountingProfile={accountingProfile}
                 cashAccountValue={cashAccountForm}
                 paymentValue={paymentForm}
+                refundValue={refundForm}
+                creditApplicationValue={creditApplicationForm}
                 recordedPayment={recordedPayment}
+                issuedRefund={issuedRefund}
+                appliedCredit={appliedCredit}
+                clientStatement={clientStatement}
                 isBusy={isBusy || selectedClient === null}
                 onCashAccountChange={setCashAccountForm}
                 onPaymentChange={setPaymentForm}
+                onRefundChange={setRefundForm}
+                onCreditApplicationChange={setCreditApplicationForm}
                 onCreateCashAccount={handleCreateCashAccount}
                 onRecordPayment={handleRecordInvoicePayment}
+                onIssueRefund={handleIssueClientRefund}
+                onApplyCredit={handleApplyClientCredit}
+                onApprovePayment={handleApproveInvoicePayment}
+                onRejectPayment={handleRejectInvoicePayment}
+                onReversePayment={handleReverseInvoicePayment}
               />
             )}
 
@@ -942,6 +1436,17 @@ export function ClientDeskPage() {
                 isBusy={isBusy || selectedClient === null}
                 onIssueFromPaidInvoice={handleIssueEntitlementSnapshot}
                 onRefreshLatest={handleRefreshLatestEntitlementSnapshot}
+              />
+            )}
+
+            {activeDashboardModule === "cloud" && (
+              <CloudInstallationStatusPanel
+                client={selectedClient}
+                installationId={cloudInstallationId}
+                status={cloudInstallationStatus}
+                isBusy={isBusy || selectedClient === null}
+                onInstallationIdChange={setCloudInstallationId}
+                onRefresh={handleRefreshCloudInstallationStatus}
               />
             )}
 
@@ -985,6 +1490,7 @@ type DashboardMetricInput = {
   recordedPayment: RecordedInvoicePayment | null;
   issuedEntitlementSnapshot: IssuedEntitlementSnapshot | null;
   latestEntitlementSnapshot: EntitlementSnapshot | null;
+  cloudInstallationStatus: ControlCloudInstallationStatus | null;
   clientStatement: ClientStatement | null;
 };
 
@@ -995,9 +1501,15 @@ function getDashboardMetrics({
   recordedPayment,
   issuedEntitlementSnapshot,
   latestEntitlementSnapshot,
+  cloudInstallationStatus,
   clientStatement
 }: DashboardMetricInput): DashboardMetric[] {
   const entitlementSnapshot = issuedEntitlementSnapshot ?? latestEntitlementSnapshot;
+  const cloudHeartbeat = cloudInstallationStatus?.latestHeartbeat ?? null;
+  const cloudStatus = cloudHeartbeat?.licenseStatus
+    ?? cloudInstallationStatus?.installationStatus
+    ?? "Not loaded";
+  const normalizedCloudStatus = cloudStatus.toLowerCase();
   const primaryStatementSummary = clientStatement?.currencySummaries[0] ?? null;
 
   return [
@@ -1044,6 +1556,23 @@ function getDashboardMetrics({
       module: "entitlements"
     },
     {
+      label: "Cloud",
+      value: cloudStatus,
+      summary: cloudHeartbeat === null
+        ? "Heartbeat, license, and commands"
+        : `Last seen ${formatDashboardDateTime(cloudHeartbeat.receivedAtUtc)}`,
+      tone:
+        normalizedCloudStatus === "active"
+          || normalizedCloudStatus === "healthy"
+          || normalizedCloudStatus === "registered"
+          ? "ready"
+          : cloudInstallationStatus === null
+            ? "neutral"
+            : "warning",
+      Icon: Cloud,
+      module: "cloud"
+    },
+    {
       label: "Statement",
       value: primaryStatementSummary === null
         ? "No balance"
@@ -1066,6 +1595,7 @@ function getDashboardNavigation(
   const invoiceMetric = findDashboardMetric(metrics, "Invoice");
   const paymentMetric = findDashboardMetric(metrics, "Payment");
   const entitlementMetric = findDashboardMetric(metrics, "Entitlement");
+  const cloudMetric = findDashboardMetric(metrics, "Cloud");
   const statementMetric = findDashboardMetric(metrics, "Statement");
   const selectedClientStatus = selectedClient?.status ?? "No client";
 
@@ -1125,6 +1655,14 @@ function getDashboardNavigation(
       description: "Issue and refresh the latest cloud entitlement snapshot.",
       tone: entitlementMetric.tone,
       Icon: KeyRound
+    },
+    {
+      module: "cloud",
+      label: "Cloud",
+      summary: cloudMetric.value,
+      description: "Control Cloud heartbeat, license, entitlement, and command status.",
+      tone: cloudMetric.tone,
+      Icon: Cloud
     },
     {
       module: "statement",
@@ -1235,6 +1773,7 @@ function createDefaultChargeRuleForm(
     unitPriceAmount: contract?.recurringAmount.toFixed(2) ?? "0.00",
     currencyCode: contract?.currencyCode ?? "PKR",
     quantity: "1",
+    taxPercent: "0",
     billingCycle: contract?.billingCycle ?? "Monthly",
     billingDayOfMonth: contract?.billingDayOfMonth.toString() ?? "1",
     effectiveStartsOn: contract?.startsOn ?? toDateInputValue(today),
@@ -1289,6 +1828,74 @@ function createDefaultPaymentForm(
         ? accountingProfile?.accountsReceivableAccountId ?? ""
         : receivableOverride.trim(),
     postingDate: toDateInputValue(today)
+  };
+}
+
+function createDefaultRefundForm(
+  client?: ClientDetails | null,
+  accountingProfile?: ClientAccountingProfile | null,
+  cashOrBankAccountId = "",
+  creditAmount = 0,
+  currencyCode?: string
+): IssueClientRefundInput {
+  const today = new Date();
+  const refundCurrency = currencyCode ?? accountingProfile?.defaultCurrencyCode ?? "PKR";
+
+  return {
+    clientId: client?.clientId ?? "",
+    method: "BankTransfer",
+    reference: defaultRefundReference(client?.code, today),
+    amount: creditAmount > 0 ? creditAmount.toFixed(2) : "0.00",
+    currencyCode: refundCurrency,
+    refundedOn: toDateInputValue(today),
+    cashOrBankAccountId,
+    accountsReceivableAccountId: accountingProfile?.accountsReceivableAccountId ?? "",
+    postingDate: toDateInputValue(today),
+    note: ""
+  };
+}
+
+function createDefaultCreditApplicationForm(
+  client?: ClientDetails | null,
+  invoice?: InvoiceDraft | null,
+  statement?: ClientStatement | null
+): ApplyClientCreditInput {
+  const today = new Date();
+  const invoiceCurrency = invoice?.currencyCode ?? statement?.currencySummaries[0]?.currencyCode ?? "PKR";
+  const unappliedCredit = statement === null || statement === undefined
+    ? { currencyCode: invoiceCurrency, availableCredit: 0 }
+    : getUnappliedStatementCredit(statement, invoiceCurrency);
+  const applyAmount = Math.min(unappliedCredit.availableCredit, invoice?.balanceDue ?? 0);
+
+  return {
+    clientId: client?.clientId ?? "",
+    invoiceId: invoice?.invoiceId ?? "",
+    reference: defaultCreditApplicationReference(client?.code, today),
+    amount: applyAmount > 0 ? applyAmount.toFixed(2) : "0.00",
+    currencyCode: unappliedCredit.currencyCode,
+    appliedOn: toDateInputValue(today),
+    note: ""
+  };
+}
+
+function mapReversedPaymentToRecordedPayment(
+  payment: ReversedInvoicePayment
+): RecordedInvoicePayment {
+  return {
+    paymentId: payment.paymentId,
+    invoiceId: payment.invoiceId,
+    invoiceNumber: payment.invoiceNumber,
+    invoiceStatus: payment.invoiceStatus,
+    paymentStatus: payment.paymentStatus,
+    amount: payment.amount,
+    balanceDue: payment.balanceDue,
+    currencyCode: payment.currencyCode,
+    journalEntryId: payment.reversalJournalEntryId,
+    journalEntryStatus: payment.reversalJournalEntryStatus,
+    postingDate: payment.reversalDate,
+    totalDebit: payment.totalDebit,
+    totalCredit: payment.totalCredit,
+    journalLines: payment.journalLines
   };
 }
 
@@ -1355,12 +1962,112 @@ function defaultReceiptReference(clientCode: string | undefined, value: Date): s
   return `${prefix}-${datePart}-${timePart}`.slice(0, 40);
 }
 
+function defaultRefundReference(clientCode: string | undefined, value: Date): string {
+  const datePart = toDateInputValue(value).replaceAll("-", "");
+  const timePart = [value.getHours(), value.getMinutes(), value.getSeconds()]
+    .map((item) => item.toString().padStart(2, "0"))
+    .join("");
+  const prefix = clientCode?.trim() === "" || clientCode === undefined
+    ? "RFND"
+    : `RFND-${clientCode.trim().toUpperCase()}`;
+
+  return `${prefix}-${datePart}-${timePart}`.slice(0, 40);
+}
+
+function defaultCreditApplicationReference(clientCode: string | undefined, value: Date): string {
+  const datePart = toDateInputValue(value).replaceAll("-", "");
+  const timePart = [value.getHours(), value.getMinutes(), value.getSeconds()]
+    .map((item) => item.toString().padStart(2, "0"))
+    .join("");
+  const prefix = clientCode?.trim() === "" || clientCode === undefined
+    ? "SETT"
+    : `SETT-${clientCode.trim().toUpperCase()}`;
+
+  return `${prefix}-${datePart}-${timePart}`.slice(0, 40);
+}
+
+function getStatementCredit(
+  statement: ClientStatement,
+  preferredCurrencyCode: string
+): { currencyCode: string; availableCredit: number } {
+  const preferredCurrency = preferredCurrencyCode.trim().toUpperCase();
+  const preferredSummary = statement.currencySummaries.find((summary) =>
+    summary.currencyCode.toUpperCase() === preferredCurrency
+  );
+  const creditSummary =
+    preferredSummary !== undefined && preferredSummary.balanceDue < 0
+      ? preferredSummary
+      : statement.currencySummaries.find((summary) => summary.balanceDue < 0);
+  const currencyCode =
+    creditSummary?.currencyCode
+      ?? preferredSummary?.currencyCode
+      ?? (preferredCurrency === "" ? "PKR" : preferredCurrency);
+  const balanceDue = creditSummary?.balanceDue ?? preferredSummary?.balanceDue ?? 0;
+
+  return {
+    currencyCode,
+    availableCredit: balanceDue < 0 ? Math.abs(balanceDue) : 0
+  };
+}
+
+function getUnappliedStatementCredit(
+  statement: ClientStatement,
+  preferredCurrencyCode: string
+): { currencyCode: string; availableCredit: number } {
+  const preferredCurrency = preferredCurrencyCode.trim().toUpperCase();
+  const preferredSummary = statement.currencySummaries.find((summary) =>
+    summary.currencyCode.toUpperCase() === preferredCurrency
+  );
+  const creditSummary =
+    preferredSummary !== undefined && preferredSummary.availableCredit > 0
+      ? preferredSummary
+      : statement.currencySummaries.find((summary) => summary.availableCredit > 0);
+  const currencyCode =
+    creditSummary?.currencyCode
+      ?? preferredSummary?.currencyCode
+      ?? (preferredCurrency === "" ? "PKR" : preferredCurrency);
+
+  return {
+    currencyCode,
+    availableCredit: creditSummary?.availableCredit ?? preferredSummary?.availableCredit ?? 0
+  };
+}
+
+function confirmAccountingAction(message: string): boolean {
+  return typeof window === "undefined" || window.confirm(message);
+}
+
+function formatAccountingAmount(amount: number, currencyCode: string): string {
+  const safeAmount = Number.isFinite(amount) ? amount : 0;
+  const normalizedCurrency = currencyCode.trim().toUpperCase() === ""
+    ? "PKR"
+    : currencyCode.trim().toUpperCase();
+
+  return `${safeAmount.toFixed(2)} ${normalizedCurrency}`;
+}
+
+function formatDashboardDateTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
+}
+
 function defaultCode(prefix: string, clientCode: string | undefined): string {
   const suffix = clientCode?.trim() === "" || clientCode === undefined
     ? "NEW"
     : clientCode.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
 
   return `${prefix}-${suffix}`.slice(0, 32);
+}
+
+function createDefaultInstallationId(clientCode: string | undefined): string {
+  const suffix = clientCode?.trim().toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return `${suffix === "" || suffix === undefined ? "office" : suffix}-main`.slice(0, 160);
 }
 
 function addDays(value: Date, days: number): Date {

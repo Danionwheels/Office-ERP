@@ -1,0 +1,3 @@
+namespace SafarSuite.ControlCloud.Application.Modules.LocalServer.GetPendingInstallationCommands;
+
+public sealed record GetPendingInstallationCommandsQuery(string InstallationId);

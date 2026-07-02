@@ -1,9 +1,9 @@
-using System.Text.Json;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Payments.Common;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
 using SafarSuite.ControlDesk.Domain.Modules.Billing;
@@ -15,13 +15,12 @@ namespace SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayme
 
 public sealed class RecordInvoicePaymentHandler
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     private readonly IInvoiceRepository _invoices;
     private readonly IPaymentRepository _payments;
-    private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly IJournalEntryRepository _journalEntries;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
+    private readonly PaymentPostingService _postingService;
+    private readonly PaymentCloudOutboxMessageFactory _outboxMessageFactory;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
     private readonly IClock _clock;
@@ -30,9 +29,10 @@ public sealed class RecordInvoicePaymentHandler
     public RecordInvoicePaymentHandler(
         IInvoiceRepository invoices,
         IPaymentRepository payments,
-        ILedgerAccountRepository ledgerAccounts,
         IJournalEntryRepository journalEntries,
         ICloudOutboxMessageRepository cloudOutboxMessages,
+        PaymentPostingService postingService,
+        PaymentCloudOutboxMessageFactory outboxMessageFactory,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
         IClock clock,
@@ -40,9 +40,10 @@ public sealed class RecordInvoicePaymentHandler
     {
         _invoices = invoices;
         _payments = payments;
-        _ledgerAccounts = ledgerAccounts;
         _journalEntries = journalEntries;
         _cloudOutboxMessages = cloudOutboxMessages;
+        _postingService = postingService;
+        _outboxMessageFactory = outboxMessageFactory;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
         _clock = clock;
@@ -66,13 +67,6 @@ public sealed class RecordInvoicePaymentHandler
             return Result<RecordInvoicePaymentResult>.Failure(ApplicationError.Validation(
                 nameof(command.Method),
                 "Payment method is not valid."));
-        }
-
-        if (method == PaymentMethod.BankTransfer)
-        {
-            return Result<RecordInvoicePaymentResult>.Failure(ApplicationError.Validation(
-                nameof(command.Method),
-                "Bank transfer payments require review before posting."));
         }
 
         try
@@ -113,7 +107,7 @@ public sealed class RecordInvoicePaymentHandler
             var cashOrBankAccountId = LedgerAccountId.Create(command.CashOrBankAccountId);
             var accountsReceivableAccountId = LedgerAccountId.Create(command.AccountsReceivableAccountId);
 
-            var cashOrBankAccountCheck = await ValidateAssetPostingAccountAsync(
+            var cashOrBankAccountCheck = await _postingService.ValidateAssetPostingAccountAsync(
                 cashOrBankAccountId,
                 nameof(command.CashOrBankAccountId),
                 "Cash or bank ledger account",
@@ -124,7 +118,7 @@ public sealed class RecordInvoicePaymentHandler
                 return Result<RecordInvoicePaymentResult>.Failure(cashOrBankAccountCheck.Errors);
             }
 
-            var receivableAccountCheck = await ValidateAssetPostingAccountAsync(
+            var receivableAccountCheck = await _postingService.ValidateAssetPostingAccountAsync(
                 accountsReceivableAccountId,
                 nameof(command.AccountsReceivableAccountId),
                 "Accounts receivable ledger account",
@@ -145,17 +139,25 @@ public sealed class RecordInvoicePaymentHandler
                 command.ReceivedOn,
                 _clock.UtcNow);
 
+            if (payment.Status == PaymentStatus.PendingReview)
+            {
+                await _payments.AddAsync(payment, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                return Result<RecordInvoicePaymentResult>.Success(ToPendingReviewResult(payment, invoice));
+            }
+
             if (payment.Status != PaymentStatus.Approved)
             {
                 return Result<RecordInvoicePaymentResult>.Failure(ApplicationError.Validation(
                     nameof(command.Method),
-                    "Only approved payments can be posted."));
+                    "Only approved or reviewable payments can be recorded."));
             }
 
             var result = await _unitOfWork.ExecuteInTransactionAsync(
                 async token =>
                 {
-                    var journalEntry = CreateJournalEntry(
+                    var journalEntry = _postingService.CreateReceiptJournalEntry(
                         invoice,
                         payment,
                         cashOrBankAccountId,
@@ -168,13 +170,13 @@ public sealed class RecordInvoicePaymentHandler
                     await _payments.AddAsync(payment, token);
                     await _journalEntries.AddAsync(journalEntry, token);
                     await _cloudOutboxMessages.AddAsync(
-                        CreatePaymentRecordedOutboxMessage(payment, invoice, journalEntry),
+                        _outboxMessageFactory.CreatePaymentRecorded(payment, invoice, journalEntry),
                         token);
 
                     if (invoice.Status == InvoiceStatus.Paid)
                     {
                         await _cloudOutboxMessages.AddAsync(
-                            CreateClientPaidStatusChangedOutboxMessage(payment, invoice, journalEntry),
+                            _outboxMessageFactory.CreateClientPaidStatusChanged(payment, invoice, journalEntry, isPaid: true),
                             token);
                     }
 
@@ -196,125 +198,6 @@ public sealed class RecordInvoicePaymentHandler
                 nameof(command),
                 exception.Message));
         }
-    }
-
-    private async Task<Result<LedgerAccount>> ValidateAssetPostingAccountAsync(
-        LedgerAccountId accountId,
-        string target,
-        string label,
-        CancellationToken cancellationToken)
-    {
-        var account = await _ledgerAccounts.GetByIdAsync(accountId, cancellationToken);
-
-        if (account is null)
-        {
-            return Result<LedgerAccount>.Failure(ApplicationError.NotFound(
-                target,
-                $"{label} was not found."));
-        }
-
-        if (!account.IsPostingAccount)
-        {
-            return Result<LedgerAccount>.Failure(ApplicationError.Validation(
-                target,
-                $"{label} must be a posting account."));
-        }
-
-        if (account.Type != LedgerAccountType.Asset)
-        {
-            return Result<LedgerAccount>.Failure(ApplicationError.Validation(
-                target,
-                $"{label} must be an asset account."));
-        }
-
-        return Result<LedgerAccount>.Success(account);
-    }
-
-    private JournalEntry CreateJournalEntry(
-        Invoice invoice,
-        Payment payment,
-        LedgerAccountId cashOrBankAccountId,
-        LedgerAccountId accountsReceivableAccountId,
-        DateOnly postingDate)
-    {
-        var journalEntry = JournalEntry.Create(
-            JournalEntryId.Create(_idGenerator.NewGuid()),
-            postingDate,
-            payment.Amount.CurrencyCode,
-            JournalSourceType.PaymentReceipt,
-            payment.Reference.Value,
-            $"Payment {payment.Reference.Value} for invoice {invoice.Number.Value}",
-            _clock.UtcNow);
-
-        journalEntry.AddLine(JournalLine.DebitLine(
-            cashOrBankAccountId,
-            payment.Amount,
-            $"Receipt for invoice {invoice.Number.Value}"));
-
-        journalEntry.AddLine(JournalLine.CreditLine(
-            accountsReceivableAccountId,
-            payment.Amount,
-            $"Accounts receivable settlement for invoice {invoice.Number.Value}"));
-
-        return journalEntry;
-    }
-
-    private CloudOutboxMessage CreatePaymentRecordedOutboxMessage(
-        Payment payment,
-        Invoice invoice,
-        JournalEntry journalEntry)
-    {
-        var payload = new PaymentRecordedCloudPayload(
-            "1",
-            payment.Id.Value,
-            invoice.Id.Value,
-            invoice.Number.Value,
-            invoice.ClientId.Value,
-            payment.Status.ToString(),
-            payment.Method.ToString(),
-            payment.Reference.Value,
-            payment.Amount.Amount,
-            invoice.BalanceDue.Amount,
-            payment.Amount.CurrencyCode,
-            payment.ReceivedOn,
-            journalEntry.Id.Value,
-            journalEntry.EntryDate,
-            journalEntry.Status.ToString());
-
-        return CloudOutboxMessage.Create(
-            CloudOutboxMessageId.Create(_idGenerator.NewGuid()),
-            "PaymentRecorded",
-            "Payment",
-            payment.Id.Value.ToString(),
-            JsonSerializer.Serialize(payload, JsonOptions),
-            _clock.UtcNow);
-    }
-
-    private CloudOutboxMessage CreateClientPaidStatusChangedOutboxMessage(
-        Payment payment,
-        Invoice invoice,
-        JournalEntry journalEntry)
-    {
-        var payload = new ClientPaidStatusChangedCloudPayload(
-            "1",
-            invoice.ClientId.Value,
-            invoice.Id.Value,
-            invoice.Number.Value,
-            payment.Id.Value,
-            invoice.Status.ToString(),
-            true,
-            invoice.BalanceDue.Amount,
-            invoice.CurrencyCode,
-            journalEntry.Id.Value,
-            journalEntry.EntryDate);
-
-        return CloudOutboxMessage.Create(
-            CloudOutboxMessageId.Create(_idGenerator.NewGuid()),
-            "ClientPaidStatusChanged",
-            "Client",
-            invoice.ClientId.Value.ToString(),
-            JsonSerializer.Serialize(payload, JsonOptions),
-            _clock.UtcNow);
     }
 
     private static RecordInvoicePaymentResult ToResult(
@@ -343,33 +226,22 @@ public sealed class RecordInvoicePaymentHandler
                 line.Description)).ToArray());
     }
 
-    private sealed record PaymentRecordedCloudPayload(
-        string EventVersion,
-        Guid PaymentId,
-        Guid InvoiceId,
-        string InvoiceNumber,
-        Guid ClientId,
-        string PaymentStatus,
-        string PaymentMethod,
-        string PaymentReference,
-        decimal Amount,
-        decimal InvoiceBalanceDue,
-        string CurrencyCode,
-        DateOnly ReceivedOn,
-        Guid JournalEntryId,
-        DateOnly PostingDate,
-        string JournalEntryStatus);
-
-    private sealed record ClientPaidStatusChangedCloudPayload(
-        string EventVersion,
-        Guid ClientId,
-        Guid InvoiceId,
-        string InvoiceNumber,
-        Guid PaymentId,
-        string InvoiceStatus,
-        bool IsPaid,
-        decimal BalanceDue,
-        string CurrencyCode,
-        Guid JournalEntryId,
-        DateOnly PostingDate);
+    private static RecordInvoicePaymentResult ToPendingReviewResult(Payment payment, Invoice invoice)
+    {
+        return new RecordInvoicePaymentResult(
+            payment.Id.Value,
+            invoice.Id.Value,
+            invoice.Number.Value,
+            invoice.Status.ToString(),
+            payment.Status.ToString(),
+            payment.Amount.Amount,
+            invoice.BalanceDue.Amount,
+            payment.Amount.CurrencyCode,
+            null,
+            null,
+            null,
+            0m,
+            0m,
+            Array.Empty<RecordInvoicePaymentJournalLineResult>());
+    }
 }
