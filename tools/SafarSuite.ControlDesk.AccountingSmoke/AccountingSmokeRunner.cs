@@ -1,4 +1,6 @@
+using System.Numerics;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
@@ -135,32 +137,95 @@ internal sealed class AccountingSmokeRunner
 
     private async Task<LedgerAccounts> CreateLedgerAccountsAsync(CancellationToken cancellationToken)
     {
+        var accountsReceivableControlSuggestion = await SuggestLedgerAccountCodeAsync("ReceivableControl", cancellationToken);
+        var accountsReceivableSuggestion = await SuggestLedgerAccountCodeAsync("ClientReceivable", cancellationToken);
+        SmokeAssertions.Equal(9, accountsReceivableSuggestion.SuggestedCode.Length, "receivable setup suggestion length");
+        var cashOrBankSuggestion = await SuggestLedgerAccountCodeAsync("CashBank", cancellationToken);
+        var revenueSuggestion = await SuggestLedgerAccountCodeAsync("SubscriptionRevenue", cancellationToken);
+        var taxSuggestion = await SuggestLedgerAccountCodeAsync("TaxPayable", cancellationToken);
+
+        var accountsReceivableControl = SmokeAssertions.RequireSuccess(
+            await _harness.CreateLedgerAccount.HandleAsync(
+                new CreateLedgerAccountCommand(
+                    accountsReceivableControlSuggestion.SuggestedCode,
+                    "Accounts receivable control",
+                    accountsReceivableControlSuggestion.Type,
+                    accountsReceivableControlSuggestion.NormalBalance,
+                    null,
+                    accountsReceivableControlSuggestion.IsPostingAccount),
+                cancellationToken),
+            "create accounts receivable control account");
         var accountsReceivable = SmokeAssertions.RequireSuccess(
             await _harness.CreateLedgerAccount.HandleAsync(
-                new CreateLedgerAccountCommand(Code("AR"), "Accounts receivable", "Asset", "Debit", null, true),
+                new CreateLedgerAccountCommand(
+                    accountsReceivableSuggestion.SuggestedCode,
+                    "Accounts receivable",
+                    accountsReceivableSuggestion.Type,
+                    accountsReceivableSuggestion.NormalBalance,
+                    null,
+                    accountsReceivableSuggestion.IsPostingAccount),
                 cancellationToken),
             "create accounts receivable account");
+        SmokeAssertions.Equal(
+            accountsReceivableControl.LedgerAccountId,
+            accountsReceivable.ParentAccountId ?? Guid.Empty,
+            "receivable parent account");
         var cashOrBank = SmokeAssertions.RequireSuccess(
             await _harness.CreateLedgerAccount.HandleAsync(
-                new CreateLedgerAccountCommand(Code("CB"), "Cash and bank", "Asset", "Debit", null, true),
+                new CreateLedgerAccountCommand(
+                    cashOrBankSuggestion.SuggestedCode,
+                    "Cash and bank",
+                    cashOrBankSuggestion.Type,
+                    cashOrBankSuggestion.NormalBalance,
+                    null,
+                    cashOrBankSuggestion.IsPostingAccount),
                 cancellationToken),
             "create cash or bank account");
         var revenue = SmokeAssertions.RequireSuccess(
             await _harness.CreateLedgerAccount.HandleAsync(
-                new CreateLedgerAccountCommand(Code("RV"), "Subscription revenue", "Revenue", "Credit", null, true),
+                new CreateLedgerAccountCommand(
+                    revenueSuggestion.SuggestedCode,
+                    "Subscription revenue",
+                    revenueSuggestion.Type,
+                    revenueSuggestion.NormalBalance,
+                    null,
+                    revenueSuggestion.IsPostingAccount),
                 cancellationToken),
             "create revenue account");
         var tax = SmokeAssertions.RequireSuccess(
             await _harness.CreateLedgerAccount.HandleAsync(
-                new CreateLedgerAccountCommand(Code("TX"), "Tax payable", "Liability", "Credit", null, true),
+                new CreateLedgerAccountCommand(
+                    taxSuggestion.SuggestedCode,
+                    "Tax payable",
+                    taxSuggestion.Type,
+                    taxSuggestion.NormalBalance,
+                    null,
+                    taxSuggestion.IsPostingAccount),
                 cancellationToken),
             "create tax account");
+
+        var nextAccountsReceivableSuggestion = await SuggestLedgerAccountCodeAsync("ClientReceivable", cancellationToken);
+        SmokeAssertions.Equal(
+            BigInteger.Parse(accountsReceivableSuggestion.SuggestedCode) + BigInteger.One,
+            BigInteger.Parse(nextAccountsReceivableSuggestion.SuggestedCode),
+            "next receivable setup suggestion");
 
         return new LedgerAccounts(
             accountsReceivable.LedgerAccountId,
             cashOrBank.LedgerAccountId,
             revenue.LedgerAccountId,
             tax.LedgerAccountId);
+    }
+
+    private async Task<SuggestLedgerAccountCodeResult> SuggestLedgerAccountCodeAsync(
+        string role,
+        CancellationToken cancellationToken)
+    {
+        return SmokeAssertions.RequireSuccess(
+            await _harness.SuggestLedgerAccountCode.HandleAsync(
+                new SuggestLedgerAccountCodeQuery(role),
+                cancellationToken),
+            $"suggest ledger account code for {role}");
     }
 
     private async Task<CreateClientResult> CreateClientAsync(CancellationToken cancellationToken)

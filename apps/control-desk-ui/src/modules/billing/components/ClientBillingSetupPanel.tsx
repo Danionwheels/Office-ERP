@@ -291,6 +291,21 @@ export function ClientBillingSetupPanel({
     productModules,
     chargeCodes
   );
+  const hasLinkedReceivableAccount =
+    accountingProfileValue.accountsReceivableAccountId.trim() !== "";
+  const hasLinkedRevenueAccount = chargeCodeValue.revenueAccountId.trim() !== "";
+  const canCreateReceivableAccount =
+    receivableAccountValue.code.trim() !== ""
+    && receivableAccountValue.name.trim() !== ""
+    && !hasLinkedReceivableAccount;
+  const canCreateRevenueAccount =
+    revenueAccountValue.code.trim() !== ""
+    && revenueAccountValue.name.trim() !== ""
+    && !hasLinkedRevenueAccount;
+  const canSaveAccountingProfile =
+    hasLinkedReceivableAccount
+    && accountingProfileValue.defaultCurrencyCode.trim().length === 3
+    && accountingProfileValue.cloudCustomerId.trim() !== "";
 
   if (client === null) {
     return (
@@ -347,19 +362,15 @@ export function ClientBillingSetupPanel({
             <Banknote size={16} />
             <strong>AR account</strong>
           </div>
+          <AccountDefaults account={receivableAccountValue} />
           <div className="billing-form-grid two">
             <label className="form-field">
-              <span>Code</span>
+              <span>Controlled code</span>
               <input
                 value={receivableAccountValue.code}
-                onChange={(event) =>
-                  onReceivableAccountChange({
-                    ...receivableAccountValue,
-                    code: event.target.value.toUpperCase()
-                  })
-                }
                 disabled={isBusy}
                 maxLength={32}
+                readOnly
               />
             </label>
             <label className="form-field">
@@ -377,10 +388,18 @@ export function ClientBillingSetupPanel({
             </label>
           </div>
           <div className="billing-action-row">
-            <button className="icon-button" type="submit" disabled={isBusy} title="Create AR account">
+            <button
+              className="icon-button"
+              type="submit"
+              disabled={isBusy || !canCreateReceivableAccount}
+              title="Create and link AR account"
+            >
               <PlusCircle size={16} />
-              Create
+              Create and link
             </button>
+            {hasLinkedReceivableAccount && (
+              <span className="billing-small-fact">AR account linked</span>
+            )}
           </div>
         </form>
 
@@ -391,16 +410,11 @@ export function ClientBillingSetupPanel({
           </div>
           <div className="billing-form-grid three">
             <label className="form-field wide">
-              <span>AR account ID</span>
+              <span>Linked AR account ID</span>
               <input
                 value={accountingProfileValue.accountsReceivableAccountId}
-                onChange={(event) =>
-                  onAccountingProfileChange({
-                    ...accountingProfileValue,
-                    accountsReceivableAccountId: event.target.value
-                  })
-                }
                 disabled={isBusy}
+                readOnly
               />
             </label>
             <label className="form-field">
@@ -432,7 +446,12 @@ export function ClientBillingSetupPanel({
             </label>
           </div>
           <div className="billing-action-row">
-            <button className="icon-button primary" type="submit" disabled={isBusy} title="Save accounting profile">
+            <button
+              className="icon-button primary"
+              type="submit"
+              disabled={isBusy || !canSaveAccountingProfile}
+              title="Save accounting profile"
+            >
               <Save size={16} />
               Save
             </button>
@@ -472,19 +491,15 @@ export function ClientBillingSetupPanel({
             <CircleDollarSign size={16} />
             <strong>Revenue account</strong>
           </div>
+          <AccountDefaults account={revenueAccountValue} />
           <div className="billing-form-grid two">
             <label className="form-field">
-              <span>Code</span>
+              <span>Controlled code</span>
               <input
                 value={revenueAccountValue.code}
-                onChange={(event) =>
-                  onRevenueAccountChange({
-                    ...revenueAccountValue,
-                    code: event.target.value.toUpperCase()
-                  })
-                }
                 disabled={isBusy}
                 maxLength={32}
+                readOnly
               />
             </label>
             <label className="form-field">
@@ -502,10 +517,18 @@ export function ClientBillingSetupPanel({
             </label>
           </div>
           <div className="billing-action-row">
-            <button className="icon-button" type="submit" disabled={isBusy} title="Create revenue account">
+            <button
+              className="icon-button"
+              type="submit"
+              disabled={isBusy || !canCreateRevenueAccount}
+              title="Create revenue account"
+            >
               <PlusCircle size={16} />
               Create
             </button>
+            {hasLinkedRevenueAccount && (
+              <span className="billing-small-fact">Revenue account selected</span>
+            )}
           </div>
         </form>
 
@@ -1300,6 +1323,23 @@ export function ClientBillingSetupPanel({
       </div>
     </section>
   );
+}
+
+function AccountDefaults({ account }: { account: LedgerAccountFormInput }) {
+  return (
+    <div className="billing-account-defaults">
+      <span>{formatLedgerAccountCode(account.code)}</span>
+      <span>{account.type}</span>
+      <span>{account.normalBalance}</span>
+      <span>{account.isPostingAccount ? "Posting account" : "Header account"}</span>
+    </div>
+  );
+}
+
+function formatLedgerAccountCode(code: string): string {
+  return /^\d{9}$/.test(code)
+    ? `${code.slice(0, 5)}-${code.slice(5)}`
+    : code;
 }
 
 type BillingStepInput = {

@@ -83,6 +83,10 @@ var cache = new FileLocalServerEntitlementCache(trustOptions);
 var trustStateStore = new FileLocalServerEntitlementTrustStateStore(trustOptions);
 var importAuditStore = new FileLocalServerEntitlementImportAuditStore(trustOptions);
 var bootstrapConfigurationStore = new FileLocalServerBootstrapConfigurationStore(bootstrapTrustOptions);
+var runtimeCommandRunner = new StaticRuntimeCommandRunner();
+var runtimeDiagnosticsCollector = new ManifestLocalServerRuntimeDiagnosticsCollector(
+    bootstrapConfigurationStore,
+    runtimeCommandRunner);
 var verifier = new HmacLocalServerEntitlementBundleVerifier(trustOptions);
 var bootstrapVerifier = new HmacLocalServerBootstrapBundleVerifier(bootstrapTrustOptions);
 var importHandler = new ImportSignedEntitlementBundleHandler(
@@ -105,7 +109,8 @@ var diagnosticsBundleHandler = new CreateLocalServerDiagnosticsBundleHandler(
     trustStateStore,
     new LocalServerEntitlementPolicy(),
     clock,
-    importAuditStore);
+    importAuditStore,
+    runtimeDiagnosticsCollector);
 
 var signedBundle = CreateSignedBundle(
     clientId,
@@ -476,20 +481,22 @@ var commandSigner = new HmacControlCloudInstallationCommandSigner(
             }
         ]
     });
+var diagnosticCommandPayload = CreateSupportCommandPayload(
+    clientId,
+    installationId,
+    LocalServerInstallationCommandTypes.RequestDiagnostics,
+    "Smoke",
+    "Command diagnostics smoke",
+    clock.UtcNow);
 var diagnosticCommand = CreateCommandResponse(
     commandSigner,
     clientId,
     installationId,
     commandVersion: 1,
     LocalServerInstallationCommandTypes.RequestDiagnostics,
-    CreateSupportCommandPayload(
-        clientId,
-        installationId,
-        LocalServerInstallationCommandTypes.RequestDiagnostics,
-        "Smoke",
-        "Command diagnostics smoke",
-        clock.UtcNow),
-    clock.UtcNow);
+    diagnosticCommandPayload,
+    clock.UtcNow.AddTicks(7),
+    ReorderSupportCommandPayload(diagnosticCommandPayload));
 var refreshCommandBundle = CreateSignedBundle(
     clientId,
     installationId,
@@ -545,6 +552,26 @@ Require(commandProcessingResult.PendingCommandCount == 2, "Command processor sho
 Require(commandProcessingResult.AppliedCount == 2, "Diagnostics and refresh commands should be applied.");
 Require(commandProcessingResult.Commands.All(command => command.Acknowledged), "Processed commands should be acknowledged to Control Cloud.");
 Require(commandDiagnosticsHttpHandler.LastRequest?.Reason == "Command diagnostics smoke", "Diagnostics command should upload with the command reason.");
+Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Runtime?.RuntimeMode == "DockerCompose", "Command diagnostics should collect runtime mode from the bootstrap manifest.");
+Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Runtime?.DockerAvailable == true, "Command diagnostics should probe Docker availability.");
+Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Runtime?.DockerComposeAvailable == true, "Command diagnostics should probe Docker Compose availability.");
+Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Bootstrap?.ComposeFileSha256 is not null, "Command diagnostics should collect compose artifact checksum from the signed bootstrap payload.");
+Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Any(service =>
+    service.ServiceName == "local-api"
+    && service.ExpectedState == "Running"
+    && service.CurrentState == "Running") == true, "Command diagnostics should include live Compose state for the local API service.");
+Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Any(service =>
+    service.ServiceName == "safarsuite-app"
+    && service.ExpectedState == "ProfileDisabled"
+    && service.CurrentState == "ProfileDisabled") == true, "Command diagnostics should include the optional SafarSuite app runtime service slot.");
+Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Any(error =>
+    error.Source == "local-api"
+    && error.Severity == "Error"
+    && error.Message.Contains("module gateway retry failed", StringComparison.OrdinalIgnoreCase)) == true, "Command diagnostics should include recent runtime log errors.");
+Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Any(error =>
+    error.Source == "local-worker"
+    && error.Severity == "Warning"
+    && error.Message.Contains("heartbeat delayed", StringComparison.OrdinalIgnoreCase)) == true, "Command diagnostics should include recent runtime log warnings.");
 Require(commandClient.Acknowledgements.Count == 2, "Command client should record both acknowledgements.");
 Require(commandClient.Acknowledgements.Any(ack => ack.Value.ResultStatus == LocalServerInstallationCommandAcknowledgementStatuses.Applied), "At least one command acknowledgement should be applied.");
 
@@ -593,6 +620,8 @@ Console.WriteLine(JsonSerializer.Serialize(
         diagnosticsUploadStatus = diagnosticsUploadResult.Upload!.Status,
         commandProcessingApplied = commandProcessingResult.AppliedCount,
         commandProcessingAcknowledgements = commandClient.Acknowledgements.Count,
+        commandDiagnosticsRuntimeServices = commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Count,
+        commandDiagnosticsRuntimeErrors = commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Count,
         moduleGatewayAccountingAllowed = moduleGatewayAllowedResult.Access.IsAllowed,
         moduleGatewayReportsState = moduleGatewayDisabledResult.Access.AccessState,
         moduleGatewayExpiredState = moduleGatewayExpiredResult.Access.AccessState,
@@ -718,10 +747,13 @@ static InstallationCommandResponse CreateCommandResponse(
     long commandVersion,
     string commandType,
     string payloadJson,
-    DateTimeOffset queuedAtUtc)
+    DateTimeOffset queuedAtUtc,
+    string? transportPayloadJson = null)
 {
     var commandId = Guid.NewGuid();
     var expiresAtUtc = queuedAtUtc.AddHours(2);
+    var transportQueuedAtUtc = TruncateToMicrosecond(queuedAtUtc);
+    var transportExpiresAtUtc = TruncateToMicrosecond(expiresAtUtc);
     var signature = signer.Sign(
         new ControlCloudInstallationCommandSigningPayload(
             commandId,
@@ -734,7 +766,7 @@ static InstallationCommandResponse CreateCommandResponse(
             NotBeforeUtc: null,
             expiresAtUtc));
 
-    using var payloadDocument = JsonDocument.Parse(payloadJson);
+    using var payloadDocument = JsonDocument.Parse(transportPayloadJson ?? payloadJson);
 
     return new InstallationCommandResponse(
         commandId,
@@ -750,12 +782,37 @@ static InstallationCommandResponse CreateCommandResponse(
             signature.KeyId,
             signature.PayloadSha256,
             signature.Value),
-        queuedAtUtc,
+        transportQueuedAtUtc,
         NotBeforeUtc: null,
-        expiresAtUtc,
+        transportExpiresAtUtc,
         AcknowledgedAtUtc: null,
         AcknowledgementStatus: null,
         AcknowledgementDetail: null);
+}
+
+static DateTimeOffset TruncateToMicrosecond(DateTimeOffset value)
+{
+    var utc = value.ToUniversalTime();
+    var ticks = utc.Ticks - (utc.Ticks % 10);
+
+    return new DateTimeOffset(ticks, TimeSpan.Zero);
+}
+
+static string ReorderSupportCommandPayload(string payloadJson)
+{
+    using var document = JsonDocument.Parse(payloadJson);
+    var payload = document.RootElement;
+
+    return string.Concat(
+        "{",
+        "\"reason\":", payload.GetProperty("reason").GetRawText(), ",",
+        "\"clientId\":", payload.GetProperty("clientId").GetRawText(), ",",
+        "\"commandType\":", payload.GetProperty("commandType").GetRawText(), ",",
+        "\"requestedBy\":", payload.GetProperty("requestedBy").GetRawText(), ",",
+        "\"formatVersion\":", payload.GetProperty("formatVersion").GetRawText(), ",",
+        "\"installationId\":", payload.GetProperty("installationId").GetRawText(), ",",
+        "\"requestedAtUtc\":", payload.GetProperty("requestedAtUtc").GetRawText(),
+        "}");
 }
 
 static ClientPortalSignedEntitlementBundleResponse CreateSignedBundle(
@@ -1075,6 +1132,94 @@ internal sealed class StaticDiagnosticsHttpMessageHandler : HttpMessageHandler
         {
             Content = JsonContent.Create(response)
         };
+    }
+}
+
+internal sealed class StaticRuntimeCommandRunner : ILocalServerRuntimeCommandRunner
+{
+    public Task<LocalServerRuntimeCommandResult> RunAsync(
+        string fileName,
+        IReadOnlyCollection<string> arguments,
+        string? workingDirectory,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+    {
+        var joinedArguments = string.Join(" ", arguments);
+
+        if (fileName == "docker"
+            && joinedArguments.Equals("--version", StringComparison.Ordinal))
+        {
+            return Task.FromResult(Success("Docker version 27.0.0-smoke, build local"));
+        }
+
+        if (fileName == "docker"
+            && joinedArguments.Equals("compose version", StringComparison.Ordinal))
+        {
+            return Task.FromResult(Success("Docker Compose version v2.27.0-smoke"));
+        }
+
+        if (fileName == "docker"
+            && arguments.Contains("ps", StringComparer.Ordinal)
+            && arguments.Contains("json", StringComparer.Ordinal))
+        {
+            return Task.FromResult(Success(
+                """
+                [
+                  {
+                    "Name": "safarsuite-local-server-local-api-1",
+                    "Service": "local-api",
+                    "State": "running",
+                    "Health": "healthy",
+                    "Status": "Up 2 minutes",
+                    "CreatedAt": "2026-08-01T10:01:00+00:00"
+                  },
+                  {
+                    "Name": "safarsuite-local-server-local-worker-1",
+                    "Service": "local-worker",
+                    "State": "running",
+                    "Health": "healthy",
+                    "Status": "Up 2 minutes",
+                    "CreatedAt": "2026-08-01T10:01:00+00:00"
+                  },
+                  {
+                    "Name": "safarsuite-local-server-local-agent-1",
+                    "Service": "local-agent",
+                    "State": "running",
+                    "Health": "healthy",
+                    "Status": "Up 2 minutes",
+                    "CreatedAt": "2026-08-01T10:01:00+00:00"
+                  }
+                ]
+                """));
+        }
+
+        if (fileName == "docker"
+            && arguments.Contains("logs", StringComparer.Ordinal)
+            && arguments.Contains("--tail", StringComparer.Ordinal))
+        {
+            return Task.FromResult(Success(
+                """
+                safarsuite-local-server-local-api-1     | 2026-08-01T10:03:00+00:00 info: module gateway checked Accounting.
+                safarsuite-local-server-local-api-1     | 2026-08-01T10:03:01+00:00 error: module gateway retry failed for Reports.
+                safarsuite-local-server-local-worker-1  | 2026-08-01T10:03:02+00:00 warn: heartbeat delayed by transient cloud timeout.
+                safarsuite-local-server-local-agent-1   | 2026-08-01T10:03:03+00:00 info: diagnostics completed.
+                """));
+        }
+
+        return Task.FromResult(new LocalServerRuntimeCommandResult(
+            ExitCode: 1,
+            StandardOutput: "",
+            StandardError: $"Unexpected smoke command: {fileName} {joinedArguments}",
+            TimedOut: false));
+    }
+
+    private static LocalServerRuntimeCommandResult Success(string output)
+    {
+        return new LocalServerRuntimeCommandResult(
+            ExitCode: 0,
+            output,
+            StandardError: "",
+            TimedOut: false);
     }
 }
 

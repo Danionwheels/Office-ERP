@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
@@ -36,6 +38,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         IClientRepository clients,
         IClientAccountingProfileRepository clientAccountingProfiles,
         IContractRepository contracts,
+        IAccountCodeRangeRepository accountCodeRanges,
         ILedgerAccountRepository ledgerAccounts,
         IJournalEntryRepository journalEntries,
         IChargeCodeRepository chargeCodes,
@@ -52,6 +55,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         Clients = clients;
         ClientAccountingProfiles = clientAccountingProfiles;
         Contracts = contracts;
+        AccountCodeRanges = accountCodeRanges;
         LedgerAccounts = ledgerAccounts;
         JournalEntries = journalEntries;
         ChargeCodes = chargeCodes;
@@ -75,9 +79,21 @@ internal sealed class SmokeHarness : IAsyncDisposable
             CreditNotes,
             ClientRefunds,
             ClientCreditApplications);
+        var accountingSetupDefaults = new AccountingSetupDefaults(
+            AccountCodeRanges,
+            UnitOfWork,
+            IdGenerator,
+            Clock);
+
+        SuggestLedgerAccountCode = new SuggestLedgerAccountCodeHandler(
+            LedgerAccounts,
+            AccountCodeRanges,
+            accountingSetupDefaults);
 
         CreateLedgerAccount = new CreateLedgerAccountHandler(
             LedgerAccounts,
+            AccountCodeRanges,
+            accountingSetupDefaults,
             UnitOfWork,
             IdGenerator,
             Clock,
@@ -225,6 +241,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new InMemoryClientRepository(),
             new InMemoryClientAccountingProfileRepository(),
             new InMemoryContractRepository(),
+            new InMemoryAccountCodeRangeRepository(),
             new InMemoryLedgerAccountRepository(),
             new InMemoryJournalEntryRepository(),
             new InMemoryChargeCodeRepository(),
@@ -255,6 +272,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new EfClientRepository(dbContext),
             new EfClientAccountingProfileRepository(dbContext),
             new EfContractRepository(dbContext),
+            new EfAccountCodeRangeRepository(dbContext),
             new EfLedgerAccountRepository(dbContext),
             new EfJournalEntryRepository(dbContext),
             new EfChargeCodeRepository(dbContext),
@@ -274,6 +292,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public IClientAccountingProfileRepository ClientAccountingProfiles { get; }
 
     public IContractRepository Contracts { get; }
+
+    public IAccountCodeRangeRepository AccountCodeRanges { get; }
 
     public ILedgerAccountRepository LedgerAccounts { get; }
 
@@ -302,6 +322,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public IClock Clock { get; }
 
     public CreateLedgerAccountHandler CreateLedgerAccount { get; }
+
+    public SuggestLedgerAccountCodeHandler SuggestLedgerAccountCode { get; }
 
     public CreateClientHandler CreateClient { get; }
 

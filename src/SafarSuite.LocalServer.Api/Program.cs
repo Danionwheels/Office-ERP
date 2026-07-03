@@ -54,6 +54,8 @@ builder.Services.AddSingleton<ILocalServerEntitlementBundleVerifier, HmacLocalSe
 builder.Services.AddSingleton<ILocalServerInstallationCommandVerifier, HmacLocalServerInstallationCommandVerifier>();
 builder.Services.AddSingleton<ILocalServerBootstrapBundleVerifier, HmacLocalServerBootstrapBundleVerifier>();
 builder.Services.AddSingleton<ILocalServerBootstrapConfigurationStore, FileLocalServerBootstrapConfigurationStore>();
+builder.Services.AddSingleton<ILocalServerRuntimeCommandRunner, SystemLocalServerRuntimeCommandRunner>();
+builder.Services.AddSingleton<ILocalServerRuntimeDiagnosticsCollector, ManifestLocalServerRuntimeDiagnosticsCollector>();
 builder.Services.AddHttpClient<IControlCloudInstallationRegistrationClient, HttpControlCloudInstallationRegistrationClient>(
     client => client.BaseAddress = controlCloudOptions.BaseUrl);
 builder.Services.AddHttpClient<IControlCloudHeartbeatClient, HttpControlCloudHeartbeatClient>(

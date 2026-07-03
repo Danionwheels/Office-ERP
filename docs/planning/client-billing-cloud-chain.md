@@ -30,7 +30,7 @@ client setup
 | PostgreSQL accounting persistence | Done | Ledger accounts, journal entries, and journal lines are persisted in PostgreSQL |
 | PostgreSQL billing/profile/outbox persistence | Done | Client accounting profiles, charge codes, client charge rules, invoices, invoice lines, and cloud outbox messages are persisted in PostgreSQL |
 | PostgreSQL payment persistence | Done | Invoice payment records are persisted for pending review, approval, rejection, and reversal; approved/reversed GL effects stay transactional |
-| Client accounting profile | Basic done | Client can be linked to AR ledger account, default currency, and cloud customer identity |
+| Client accounting profile | Basic done | Client can be linked to AR ledger account, default currency, and cloud customer identity; normal setup auto-generates the AR ledger account code and links the created account to the profile |
 | Ledger accounts | Partial | Create endpoint and activity view exist; accounts are persisted in PostgreSQL |
 | Charge codes | Partial | Create/list endpoints exist and validate revenue/tax posting account mappings |
 | Client charge rules | Partial | Client-specific dynamic charge rules exist with optional tax percent |
@@ -63,7 +63,7 @@ client setup
 | Client deployment/data-sync boundary | Basic done | `docs/architecture/client-deployment-and-data-sync-boundary.md` defines bootstrap mode versus client deployment mode, the four supported runtime modes, branch/site identity room, and the separation between commercial control and future operational business-data sync |
 | Installation/deployment profile | Basic done | Setup tokens and registered installations persist bootstrap mode, client deployment mode, site id, site role, optional parent site, branch code, and sync topology id; bootstrap/status/registration/heartbeat/diagnostics contracts can surface the profile without implementing operational business-data sync |
 | Payment posting | Done for local review loop | Records persisted payment, supports pending bank-transfer review, posts balanced cash/AR journal on approval, and posts balanced reversal journals |
-| Client billing setup UI | Basic done | Client desk includes accounting profile, charge/tax rules, invoice draft, invoice issue, unpaid invoice void, and full credit-note workflow |
+| Client billing setup UI | Basic done | Client desk includes accounting profile, charge/tax rules, invoice draft, invoice issue, unpaid invoice void, and full credit-note workflow; GL account setup shows enforced type/balance/posting defaults and uses `GL_Working.xlsx`-aligned controlled numeric account-code suggestions instead of manual ledger codes |
 | Client payment and entitlement UI | Basic done | Client desk includes payment receipt, bank-transfer approval/rejection, approved-payment reversal, credit settlement, client refund, and local entitlement issue/refresh workflow |
 | Accounting visibility | Partial | Journal list, ledger activity, and client statement endpoints exist and read PostgreSQL-backed invoices, payments, and journal entries |
 | Client statement/receivables view | Basic done | Client desk can reconcile invoices, voided invoices, credit notes, applied credit, client refunds, approved/reversed payments, available credit, running balance, and related journal postings for the selected client |
@@ -196,6 +196,11 @@ The implementation must support:
 56. Done: add low-risk command queue support actions from the client desk. Control Desk now exposes a support-command proxy that only allows `request_diagnostics` and `refresh_entitlement`, signs them through Control Cloud's registered-installation command queue, and the Cloud tab can queue a command with reason/actor/expiry while refreshing pending-command status.
 57. Done: wire local-agent handling for the low-risk commands so `request_diagnostics` verifies the signed command, exports/uploads diagnostics, and acknowledges the command, while `refresh_entitlement` verifies the signed command, pulls/imports the latest entitlement bundle, and acknowledges the command. The local-server API also exposes a manual command-processing endpoint, and the disabled-by-default runtime worker can poll commands on an interval.
 58. Next: prepare real SafarSuite image publication/runtime log collection, then move into the SafarSuite app workspace for actual module-gateway enforcement inside the deployed app.
+59. Done: replace the temporary ledger-code suggestion bridge with persisted Accounting Setup ranges. Control Desk now stores active company-scoped account-code ranges under `control.account_code_ranges`, seeds legacy-aligned defaults for `MAIN`, drives suggestions from those ranges, and rejects ledger account creation outside configured ranges or with wrong type/balance/posting flags.
+60. Done: build the first visible Accounting Setup / COA Setup UI. The Control Desk Accounting module now shows the ledger register, range filters, and editable company account-code range rules that feed controlled account suggestions and ledger-account validation.
+61. Done: add the first controlled COA open/create workflow. The Accounting module can prepare the next account code from the selected range, create/edit/reactivate/deactivate ledger accounts, and show parent-code context; backend creation auto-links to an existing configured parent account by code.
+62. Done: add the first legacy hierarchy read-model polish. The Accounting module now shows derived `H/T/M/D/C/S` badges, clickable level filters, Default/All/Header+Total views, and a read-only posting flag in account maintenance so posting behavior stays controlled by setup ranges.
+63. Next accounting dependency: persist explicit COA hierarchy levels, enforce stricter parent/account-level rules, and add reconciliation guidance for old loose accounts.
 
 ## Guardrails
 

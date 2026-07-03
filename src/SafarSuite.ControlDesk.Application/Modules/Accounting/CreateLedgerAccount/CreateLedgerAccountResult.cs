@@ -6,5 +6,6 @@ public sealed record CreateLedgerAccountResult(
     string Name,
     string Type,
     string NormalBalance,
+    Guid? ParentAccountId,
     bool IsPostingAccount,
     string Status);

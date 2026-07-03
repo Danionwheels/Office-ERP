@@ -8,6 +8,29 @@ export type LedgerAccount = {
   status: string;
 };
 
+export type LedgerAccountCodeRole =
+  | "ReceivableControl"
+  | "ClientReceivable"
+  | "CashBankControl"
+  | "SubscriptionRevenue"
+  | "CashBank"
+  | "TaxPayable"
+  | "Discount"
+  | "Refund";
+
+export type LedgerAccountCodeSuggestion = {
+  companyCode: string;
+  role: LedgerAccountCodeRole;
+  suggestedCode: string;
+  displayCode: string;
+  type: string;
+  normalBalance: string;
+  isPostingAccount: boolean;
+  rangeStart: string;
+  rangeEnd: string;
+  parentCode?: string | null;
+};
+
 export type LedgerAccountFormInput = {
   code: string;
   name: string;

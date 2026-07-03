@@ -11,6 +11,8 @@ import type {
   IssueInvoiceFormInput,
   IssuedInvoice,
   LedgerAccount,
+  LedgerAccountCodeRole,
+  LedgerAccountCodeSuggestion,
   LedgerAccountFormInput,
   VoidedInvoice,
   VoidInvoiceInput
@@ -38,6 +40,21 @@ export async function createLedgerAccount(
       isPostingAccount: input.isPostingAccount
     })
   });
+}
+
+export async function suggestLedgerAccountCode(
+  role: LedgerAccountCodeRole,
+  companyCode?: string
+): Promise<LedgerAccountCodeSuggestion> {
+  const query = new URLSearchParams({ role });
+
+  if (companyCode !== undefined && companyCode.trim() !== "") {
+    query.set("companyCode", companyCode);
+  }
+
+  return apiRequest<LedgerAccountCodeSuggestion>(
+    `/api/v1/accounting/ledger-accounts/suggest-code?${query.toString()}`
+  );
 }
 
 export async function listChargeCodes(): Promise<ChargeCodeLookup[]> {

@@ -1,5 +1,6 @@
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 using SafarSuite.LocalServer.Application.Common;
+using SafarSuite.LocalServer.Application.Diagnostics.Ports;
 using SafarSuite.LocalServer.Application.Entitlements.Ports;
 using SafarSuite.LocalServer.Domain.Entitlements;
 using System.Runtime.InteropServices;
@@ -13,19 +14,22 @@ public sealed class CreateLocalServerDiagnosticsBundleHandler
     private readonly LocalServerEntitlementPolicy _policy;
     private readonly ILocalServerClock _clock;
     private readonly ILocalServerEntitlementImportAuditStore? _importAuditStore;
+    private readonly ILocalServerRuntimeDiagnosticsCollector? _runtimeDiagnosticsCollector;
 
     public CreateLocalServerDiagnosticsBundleHandler(
         ILocalServerEntitlementCache cache,
         ILocalServerEntitlementTrustStateStore trustStateStore,
         LocalServerEntitlementPolicy policy,
         ILocalServerClock clock,
-        ILocalServerEntitlementImportAuditStore? importAuditStore = null)
+        ILocalServerEntitlementImportAuditStore? importAuditStore = null,
+        ILocalServerRuntimeDiagnosticsCollector? runtimeDiagnosticsCollector = null)
     {
         _cache = cache;
         _trustStateStore = trustStateStore;
         _policy = policy;
         _clock = clock;
         _importAuditStore = importAuditStore;
+        _runtimeDiagnosticsCollector = runtimeDiagnosticsCollector;
     }
 
     public async Task<CreateLocalServerDiagnosticsBundleResult> HandleAsync(
@@ -60,14 +64,20 @@ public sealed class CreateLocalServerDiagnosticsBundleHandler
         var localServerVersion = NormalizeOptionalText(command.LocalServerVersion, 80) ?? "Unknown";
         var machineName = NormalizeOptionalText(command.MachineName, 160) ?? "Unknown";
         var operatingSystem = NormalizeOptionalText(command.OperatingSystem, 200) ?? "Unknown";
+        var collectedRuntime = await CollectRuntimeDiagnosticsAsync(
+            command,
+            localServerVersion,
+            machineName,
+            operatingSystem,
+            cancellationToken);
         var runtime = NormalizeRuntime(
-            command.Runtime,
+            command.Runtime ?? collectedRuntime.Runtime,
             localServerVersion,
             machineName,
             operatingSystem);
-        var bootstrap = NormalizeBootstrap(command.Bootstrap);
-        var services = NormalizeServices(command.Services);
-        var recentErrors = NormalizeRecentErrors(command.RecentErrors);
+        var bootstrap = NormalizeBootstrap(command.Bootstrap ?? collectedRuntime.Bootstrap);
+        var services = NormalizeServices(command.Services ?? collectedRuntime.Services);
+        var recentErrors = NormalizeRecentErrors(command.RecentErrors ?? collectedRuntime.RecentErrors);
         var importAudit = command.ImportAudit is not null
             ? NormalizeImportAudit(command.ImportAudit)
             : await LoadRecentImportAuditAsync(installationId, cancellationToken);
@@ -103,6 +113,44 @@ public sealed class CreateLocalServerDiagnosticsBundleHandler
             command.DeploymentProfile);
 
         return CreateLocalServerDiagnosticsBundleResult.Success(diagnostics);
+    }
+
+    private async Task<LocalServerRuntimeDiagnosticsSnapshot> CollectRuntimeDiagnosticsAsync(
+        CreateLocalServerDiagnosticsBundleCommand command,
+        string localServerVersion,
+        string machineName,
+        string operatingSystem,
+        CancellationToken cancellationToken)
+    {
+        if (_runtimeDiagnosticsCollector is null
+            || (command.Runtime is not null
+                && command.Bootstrap is not null
+                && command.Services is not null
+                && command.RecentErrors is not null))
+        {
+            return LocalServerRuntimeDiagnosticsSnapshot.Empty;
+        }
+
+        try
+        {
+            return await _runtimeDiagnosticsCollector.CollectAsync(
+                new LocalServerRuntimeDiagnosticsContext(
+                    command.ClientId,
+                    command.InstallationId,
+                    localServerVersion,
+                    machineName,
+                    operatingSystem,
+                    command.DeploymentProfile),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return LocalServerRuntimeDiagnosticsSnapshot.Empty;
+        }
     }
 
     private static LocalServerDiagnosticEntitlementResponse ToEntitlementResponse(

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Domain.Modules.LocalServer;
 using SafarSuite.ControlCloud.Infrastructure.ClientPortal;
@@ -12,6 +13,7 @@ public sealed class HmacControlCloudInstallationCommandSigner
 {
     private const string SignatureAlgorithm = "HMAC-SHA256";
     private const string CommandSignatureVersion = "1";
+    private const long TicksPerMicrosecond = 10;
 
     private readonly string _activeKeyId;
     private readonly IReadOnlyDictionary<string, string> _secretsByKeyId;
@@ -44,7 +46,8 @@ public sealed class HmacControlCloudInstallationCommandSigner
     public ControlCloudInstallationCommandSignature Sign(
         ControlCloudInstallationCommandSigningPayload payload)
     {
-        var payloadSha256 = ComputeSha256(payload.PayloadJson);
+        var canonicalPayloadJson = CanonicalizeJson(payload.PayloadJson);
+        var payloadSha256 = ComputeSha256(canonicalPayloadJson);
         var signatureValue = Sign(
             _secretsByKeyId[_activeKeyId],
             BuildSignatureInput(payload, payloadSha256));
@@ -60,6 +63,12 @@ public sealed class HmacControlCloudInstallationCommandSigner
         ControlCloudInstallationCommandSigningPayload payload,
         string payloadSha256)
     {
+        var queuedAtUtc = NormalizeTimestamp(payload.QueuedAtUtc);
+        DateTimeOffset? notBeforeUtc = payload.NotBeforeUtc is null
+            ? null
+            : NormalizeTimestamp(payload.NotBeforeUtc.Value);
+        var expiresAtUtc = NormalizeTimestamp(payload.ExpiresAtUtc);
+
         return string.Join(
             "\n",
             CommandSignatureVersion,
@@ -68,10 +77,63 @@ public sealed class HmacControlCloudInstallationCommandSigner
             payload.InstallationId,
             payload.CommandVersion.ToString(CultureInfo.InvariantCulture),
             payload.CommandType,
-            payload.QueuedAtUtc.ToString("O", CultureInfo.InvariantCulture),
-            payload.NotBeforeUtc?.ToString("O", CultureInfo.InvariantCulture) ?? "",
-            payload.ExpiresAtUtc.ToString("O", CultureInfo.InvariantCulture),
+            queuedAtUtc.ToString("O", CultureInfo.InvariantCulture),
+            notBeforeUtc?.ToString("O", CultureInfo.InvariantCulture) ?? "",
+            expiresAtUtc.ToString("O", CultureInfo.InvariantCulture),
             payloadSha256);
+    }
+
+    private static DateTimeOffset NormalizeTimestamp(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        var ticks = utc.Ticks - (utc.Ticks % TicksPerMicrosecond);
+
+        return new DateTimeOffset(ticks, TimeSpan.Zero);
+    }
+
+    private static string CanonicalizeJson(string value)
+    {
+        using var document = JsonDocument.Parse(
+            string.IsNullOrWhiteSpace(value) ? "{}" : value);
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+
+        WriteCanonicalJson(writer, document.RootElement);
+        writer.Flush();
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteCanonicalJson(
+        Utf8JsonWriter writer,
+        JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject()
+                             .OrderBy(property => property.Name, StringComparer.Ordinal))
+                {
+                    writer.WritePropertyName(property.Name);
+                    WriteCanonicalJson(writer, property.Value);
+                }
+                writer.WriteEndObject();
+                break;
+
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteCanonicalJson(writer, item);
+                }
+                writer.WriteEndArray();
+                break;
+
+            default:
+                element.WriteTo(writer);
+                break;
+        }
     }
 
     private static string ComputeSha256(string value)

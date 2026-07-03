@@ -23,6 +23,26 @@ E:/travel tour/survey
 | `SP.rar` | Archive containing `ACTDATA7.mdb`, `MYKDATA7.mdb`, `SCRDATA7.mdb`, `VALDATA7.mdb` | 602,985 bytes | 2026-06-30 20:32:40 |
 | `ANI_backup_2025_11_19_120002_1863486.rar` | Archive copy of the SQL backup | 1,892,519 bytes | 2026-06-30 13:20:16 |
 
+Additional GL setup reference:
+
+| File | Purpose | Last reviewed |
+| --- | --- | --- |
+| `C:/Users/Daniyal/Downloads/GL_Working.xlsx` | Workbook mapping GL setup, account opening, account type legend, controlled account ranges, opening balances, voucher/journal setup, and voucher UX rules | 2026-07-03 |
+
+Additional Travel and accounting reference:
+
+| File | Purpose | Size | Last reviewed |
+| --- | --- | ---: | --- |
+| `E:/travel tour/travel/TRV.mdb` | Access travel/accounting reference for airline, PNR, ticketing, visa, client, supplier, invoice, voucher, and report workflows | 53,907,456 bytes | 2026-07-03 |
+| `E:/travel tour/travel/TRV.mde` | Compiled Access travel app reference; binary scan exposes forms, reports, PNR readers, ticket/visa workflows, and accounting surfaces that guide Control Desk accounting UX | 55,074,816 bytes | 2026-07-03 |
+| `C:/Users/Daniyal/Downloads/Data.sql` | SQL Server accounting/back-office schema reference for Control Desk customer/supplier/COA/voucher/invoice/tax/security implementation patterns | 791,120 bytes | 2026-07-03 |
+
+The Travel sweep is documented in:
+
+```text
+docs/planning/travel-legacy-sweep.md
+```
+
 `Survey.sql` currently contains 96 `CREATE TABLE` declarations. `Actappl7.mdb` was previously exported and inventoried in the old SafarSuite workspace; those tracker docs have been copied into this project under `docs/planning`.
 
 ## Clone Rule

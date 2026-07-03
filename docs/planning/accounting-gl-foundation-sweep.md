@@ -79,6 +79,117 @@ Direct DAO inspection is not available in this environment. `Access.Application`
 
 `VAL_INV_M` and `VAL_INV_D` prove that valuation invoice generation is a separate workflow from `Docket_A`.
 
+## GL Working Workbook Evidence
+
+Reference file:
+
+```text
+C:/Users/Daniyal/Downloads/GL_Working.xlsx
+```
+
+The workbook confirms that the modern GL setup must behave as a controlled setup surface, not as free-form billing fields.
+
+Relevant sheets:
+
+| Sheet | Meaning for Control Desk |
+| --- | --- |
+| `List` | Setup menu sequence: company, branch, GL setup, account opening, currency, exchange rate, voucher type, opening balances, invoice opening |
+| `COA` | Account setup screen, account type legend, filters, code ranges, parent/link behavior, and sample chart rows |
+| `Opening` | Opening balance master/detail field map |
+| `V-Journal` | Voucher/journal type setup |
+| `Voucher`, `Voucher-2`, `V-Single` | Voucher list, multi-voucher, and single-entry voucher UX/field rules |
+| `Tables` | Supporting setup table field maps |
+
+Key COA rules from `COA`:
+
+- Account type codes are `H` Header, `T` Total, `M` Master, `D` Detail, `C` Control, and `S` Subsidiary.
+- Header and Total accounts are for Balance Sheet, Profit and Loss, and Trial Balance grouping.
+- A Header starts a group and a Total closes/group-sums it.
+- Master accounts sum into Total accounts.
+- Detail accounts are entry-level accounts linked to a Master.
+- Control accounts own Subsidiary accounts and sum into a Master.
+- Subsidiary accounts are entry-level accounts linked to a Control.
+- Non-subsidiary accounts use 5-digit codes.
+- Subsidiary accounts are a 5-digit control prefix plus a 4-digit child number; raw stored code should be 9 digits, for example `151000001`, while the UI may display `15100-0001`.
+- The default account screen should show only Masters that sum into Totals, with options to show all accounts or only Header/Total accounts.
+- Account opening should be parent-aware: when a user selects a header/master/control context, the next account code must be inside that selected range or suggested as the next available code.
+
+Confirmed range examples:
+
+| Range | Meaning |
+| --- | --- |
+| `10000-19999` | Assets |
+| `20000-39999` | Equity/capital/liabilities envelope |
+| `20000-29999` | Capital |
+| `30000-39999` | Liabilities |
+| `40000-99999` | Profit and loss envelope |
+| `40000-59999` | Revenue |
+| `60000-99999` | Expenses |
+| `15100` | Accounts Receivable control example |
+| `151000001` | Accounts Receivable subsidiary/customer example |
+
+Control Desk implication:
+
+Client billing setup should not ask the operator to invent ledger codes. It should use account-role mappings and controlled code suggestions:
+
+| Role | Controlled account behavior |
+| --- | --- |
+| `ClientReceivable` | Create/select a 9-digit subsidiary under the receivable control, initially `15100-0001` style |
+| `SubscriptionRevenue` | Create/select a 5-digit revenue detail account inside the revenue range |
+| `CashBank` | Create/select a cash/bank posting account inside the cash/bank range |
+| `TaxPayable` | Create/select a liability/tax payable posting account inside the liability range |
+
+## Travel/Champion Accounting Evidence
+
+Reference files:
+
+```text
+E:/travel tour/travel/TRV.mdb
+E:/travel tour/travel/TRV.mde
+C:/Users/Daniyal/Downloads/Data.sql
+```
+
+These files were provided to guide Control Desk accounting direction. Travel/Tour operational screens remain future SafarSuite app module work, but the accounting spine behind them is Control Desk evidence now.
+
+Confirmed accounting direction:
+
+- `ACT_SD_COA_LEVEL3` reinforces a controlled ledger-account model with 9-digit account codes, 5-digit summary/control codes, account nature/type/flag, company context, and currency.
+- `ACT_SO_CUSTOMER` and `ACT_SO_SUPPLIER` reinforce that parties are also ledger identities, not detached contact records. Customer/supplier records carry a 9-digit account code and a 5-digit summary/control code.
+- `ACT_TM_VOUCHER` and `ACT_TD_VOUCHER` confirm the master/detail voucher pattern: header owns document number/date/type/status/bank/reference/audit fields; lines own account code, debit/credit, base/foreign amounts, currency/rate, tax, file/reference, and remarks.
+- `ACT_TM_SI` / `ACT_TD_SI` and related receipt/refund/debit-note families confirm that invoice/payment documents should not mutate balances casually. They should post through balanced journal/voucher actions inside backend transactions.
+- `VUActBalance` and `spActBalance` confirm that ledger balances are derived from opening balances plus posted voucher lines, with branch-aware and adjusted-date reporting behavior.
+
+Control Desk implication:
+
+- Client billing/accounting setup should become role-driven and controlled: receivable, revenue, cash/bank, tax payable, discount, refund, and later payable roles should resolve to configured account ranges/accounts.
+- The UI should feel like a guided accounting setup/register, not a form where users invent codes or paste IDs.
+- Every accounting-impacting action that touches more than one table must remain transactional: invoice issue, receipt approval, payment reversal, credit note, refund, credit settlement, and future debit-note/adjustment flows.
+
+## Controlled COA Implementation Backlog
+
+This is the tracker for moving from the current billing setup bridge to a full SafarSuite-style controlled GL setup. The current UI/backend behavior is intentionally a first slice: it gives controlled suggestions so operators stop typing arbitrary ledger codes, but the final design must be driven by persisted accounting setup, not hard-coded front-end rules.
+
+| Slice | Status | Implementation note |
+| --- | --- | --- |
+| Persisted account code ranges | First slice done | Control Desk now has `control.account_code_ranges` as the company-scoped Accounting Setup source for range code, start/end, length, account type, normal balance, posting default, role, and parent code. Defaults seed for `MAIN` when setup is empty. |
+| Account role mappings | First slice done | Roles such as `ClientReceivable`, `SubscriptionRevenue`, `CashBank`, `TaxPayable`, `Discount`, `Refund`, plus receivable/cash-bank control roles, now resolve through configured account ranges instead of hard-coded suggestion rules. |
+| Next-code service | Setup-backed done | `SuggestLedgerAccountCodeHandler` now reads active Accounting Setup ranges and existing ledger accounts to suggest the next available code; it no longer owns hard-coded ranges. |
+| Accounting setup API | First slice done | `GET/PUT /api/v1/accounting/accounting-setup/account-code-ranges` exposes the setup backend that the Accounting Setup / COA Setup UI edits. |
+| COA setup UI | Legacy filter slice done | Control Desk now has an Accounting module with ledger-register filters, editable company range rules, account create/edit/status actions, automatic next-code preparation from the selected range, parent-code context instead of raw parent GUID entry, and derived `H/T/M/D/C/S` legend/filter support with Default, All, and Header+Total views. Ledger creation now auto-links to a configured parent account when that parent code already exists. Add persisted hierarchy levels, stricter parent/account-level rules, and reconciliation tooling next. |
+| Billing setup integration | Bridge done | Billing setup consumes controlled suggestions and shows type/balance/posting facts; next pass should create/select accounts through role mappings and hide raw IDs from normal users |
+| Validation hardening | First slice done | Ledger account creation now rejects non-numeric codes and codes outside active Accounting Setup ranges, and enforces matching account type, normal balance, and posting flag. Broader H/T/M/D/C/S hierarchy validation remains pending. |
+| Migration/import path | Pending | Decide whether `GL_Working.xlsx` stays reference-only or becomes an import source; if imported, build dry-run validation before writing any setup rows |
+| Existing loose-account cleanup | Pending | Provide an admin reconciliation workflow for clients/accounts created before controlled ranges; do not auto-relink old accounts silently |
+| Smoke/tests | Partial | Accounting smoke now proves seeded company ranges, range-backed suggestions, parent-code auto-linking for receivables, receivable next-code incrementing, balanced journals, statement credit behavior, and outbox events. Add focused invalid-range and posting-blocked tests later. |
+
+Guardrails:
+
+- Do not return to arbitrary operator-entered client ledger codes as the normal flow.
+- Do not expose GUID ledger account IDs as daily accounting setup fields.
+- Do not allow posting to Header, Total, Master, or Control accounts.
+- Do not make front-end range logic the final source of truth; the backend accounting setup must own it.
+- Do not treat the current hard-coded suggestions as the final architecture.
+
 ## Corrected Modern Model Direction
 
 Keep the module boundaries clear:
