@@ -4,11 +4,12 @@ import {
   Banknote,
   CheckCircle2,
   Landmark,
+  ListTree,
   PlusCircle,
   Receipt,
   type LucideIcon
 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import type {
   InvoiceDraft,
   IssuedInvoice,
@@ -25,9 +26,12 @@ import type {
   RecordInvoicePaymentInput
 } from "../types/paymentTypes";
 
+type PaymentStep = "readiness" | "cash" | "receipt" | "settlement" | "refund" | "result";
+
 type PaymentReceiptPanelProps = {
   invoiceDraft: InvoiceDraft | null;
   issuedInvoice: IssuedInvoice | null;
+  initialStep?: PaymentStep;
   accountingProfile: ClientAccountingProfile | null;
   cashAccountValue: LedgerAccountFormInput;
   paymentValue: RecordInvoicePaymentInput;
@@ -49,9 +53,8 @@ type PaymentReceiptPanelProps = {
   onApprovePayment: (decisionNote: string) => Promise<void>;
   onRejectPayment: (decisionNote: string) => Promise<void>;
   onReversePayment: (decisionNote: string, reversalDate: string) => Promise<void>;
+  onViewJournalEntry: (journalEntryId: string) => Promise<void>;
 };
-
-type PaymentStep = "readiness" | "cash" | "receipt" | "settlement" | "refund" | "result";
 
 type PaymentStepItem = {
   step: PaymentStep;
@@ -64,6 +67,7 @@ type PaymentStepItem = {
 export function PaymentReceiptPanel({
   invoiceDraft,
   issuedInvoice,
+  initialStep = "readiness",
   accountingProfile,
   cashAccountValue,
   paymentValue,
@@ -84,11 +88,16 @@ export function PaymentReceiptPanel({
   onApplyCredit,
   onApprovePayment,
   onRejectPayment,
-  onReversePayment
+  onReversePayment,
+  onViewJournalEntry
 }: PaymentReceiptPanelProps) {
-  const [activePaymentStep, setActivePaymentStep] = useState<PaymentStep>("readiness");
+  const [activePaymentStep, setActivePaymentStep] = useState<PaymentStep>(initialStep);
   const [decisionNote, setDecisionNote] = useState("");
   const [reversalDate, setReversalDate] = useState(() => toDateInputValue(new Date()));
+
+  useEffect(() => {
+    setActivePaymentStep(initialStep);
+  }, [initialStep]);
 
   async function handleCreateCashAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -788,7 +797,18 @@ export function PaymentReceiptPanel({
             </div>
             <div>
               <dt>Journal</dt>
-              <dd>{issuedRefund.journalEntryStatus}</dd>
+              <dd className="fact-action-value">
+                <span>{issuedRefund.journalEntryStatus}</span>
+                <button
+                  className="table-icon-button"
+                  type="button"
+                  onClick={() => void onViewJournalEntry(issuedRefund.journalEntryId)}
+                  disabled={isBusy}
+                  title="Open related journal"
+                >
+                  <ListTree size={14} />
+                </button>
+              </dd>
             </div>
             <div>
               <dt>Debit</dt>
@@ -1035,7 +1055,20 @@ export function PaymentReceiptPanel({
               </div>
               <div>
                 <dt>Journal</dt>
-                <dd>{recordedPayment.journalEntryStatus ?? "Not posted"}</dd>
+                <dd className="fact-action-value">
+                  <span>{recordedPayment.journalEntryStatus ?? "Not posted"}</span>
+                  {recordedPayment.journalEntryId !== null && recordedPayment.journalEntryId !== undefined && (
+                    <button
+                      className="table-icon-button"
+                      type="button"
+                      onClick={() => void onViewJournalEntry(recordedPayment.journalEntryId ?? "")}
+                      disabled={isBusy}
+                      title="Open related journal"
+                    >
+                      <ListTree size={14} />
+                    </button>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>Debit</dt>

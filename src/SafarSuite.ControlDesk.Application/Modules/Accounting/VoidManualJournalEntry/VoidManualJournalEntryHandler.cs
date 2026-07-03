@@ -1,5 +1,6 @@
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
 
@@ -8,6 +9,7 @@ namespace SafarSuite.ControlDesk.Application.Modules.Accounting.VoidManualJourna
 public sealed class VoidManualJournalEntryHandler
 {
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
     private readonly IClock _clock;
@@ -15,12 +17,14 @@ public sealed class VoidManualJournalEntryHandler
 
     public VoidManualJournalEntryHandler(
         IJournalEntryRepository journalEntries,
+        AccountingPeriodPostingGuard periodGuard,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
         IClock clock,
         VoidManualJournalEntryValidator validator)
     {
         _journalEntries = journalEntries;
+        _periodGuard = periodGuard;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
         _clock = clock;
@@ -40,6 +44,16 @@ public sealed class VoidManualJournalEntryHandler
 
         try
         {
+            var periodError = await _periodGuard.ValidateOpenPeriodAsync(
+                command.VoidDate,
+                nameof(command.VoidDate),
+                cancellationToken: cancellationToken);
+
+            if (periodError is not null)
+            {
+                return Result<VoidManualJournalEntryResult>.Failure(periodError);
+            }
+
             var originalJournal = await _journalEntries.GetByIdAsync(
                 JournalEntryId.Create(command.JournalEntryId),
                 cancellationToken);

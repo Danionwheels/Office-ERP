@@ -6,6 +6,7 @@ public sealed record UpdateLedgerAccountResult(
     string Name,
     string Type,
     string NormalBalance,
+    string Level,
     Guid? ParentAccountId,
     bool IsPostingAccount,
     string Status,

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
@@ -16,6 +17,7 @@ public sealed class VoidInvoiceHandler
 
     private readonly IInvoiceRepository _invoices;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
@@ -25,6 +27,7 @@ public sealed class VoidInvoiceHandler
     public VoidInvoiceHandler(
         IInvoiceRepository invoices,
         IJournalEntryRepository journalEntries,
+        AccountingPeriodPostingGuard periodGuard,
         ICloudOutboxMessageRepository cloudOutboxMessages,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
@@ -33,6 +36,7 @@ public sealed class VoidInvoiceHandler
     {
         _invoices = invoices;
         _journalEntries = journalEntries;
+        _periodGuard = periodGuard;
         _cloudOutboxMessages = cloudOutboxMessages;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
@@ -83,6 +87,16 @@ public sealed class VoidInvoiceHandler
                 return Result<VoidInvoiceResult>.Failure(ApplicationError.Conflict(
                     nameof(command.InvoiceId),
                     "Invoice already has a void journal entry."));
+            }
+
+            var periodError = await _periodGuard.ValidateOpenPeriodAsync(
+                command.VoidDate,
+                nameof(command.VoidDate),
+                cancellationToken: cancellationToken);
+
+            if (periodError is not null)
+            {
+                return Result<VoidInvoiceResult>.Failure(periodError);
             }
 
             var result = await _unitOfWork.ExecuteInTransactionAsync(

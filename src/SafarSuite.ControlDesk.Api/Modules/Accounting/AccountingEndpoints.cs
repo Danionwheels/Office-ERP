@@ -1,11 +1,24 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountCodeRange;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntry;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseReadiness;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountCodeRanges;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountingPeriods;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListLedgerAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostManualJournalEntry;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ReopenAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.UpdateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.VoidManualJournalEntry;
@@ -22,12 +35,25 @@ public static class AccountingEndpoints
             .WithTags("Accounting");
 
         group.MapGet("/ledger-accounts", ListLedgerAccountsAsync);
+        group.MapGet("/ledger-accounts/reconciliation", GetLedgerAccountReconciliationAsync);
+        group.MapGet("/ledger-accounts/repair-plan", GetLedgerAccountRepairPlanAsync);
         group.MapPost("/ledger-accounts", CreateLedgerAccountAsync);
         group.MapPut("/ledger-accounts/{ledgerAccountId:guid}", UpdateLedgerAccountAsync);
         group.MapGet("/ledger-accounts/suggest-code", SuggestLedgerAccountCodeAsync);
         group.MapGet("/accounting-setup/account-code-ranges", ListAccountCodeRangesAsync);
         group.MapPut("/accounting-setup/account-code-ranges/{role}", ConfigureAccountCodeRangeAsync);
+        group.MapGet("/accounting-controls", GetAccountingControlSettingsAsync);
+        group.MapPut("/accounting-controls", ConfigureAccountingControlSettingsAsync);
+        group.MapGet("/accounting-periods", ListAccountingPeriodsAsync);
+        group.MapPost("/accounting-periods", CreateAccountingPeriodAsync);
+        group.MapGet("/accounting-periods/{accountingPeriodId:guid}/close-readiness", GetAccountingPeriodCloseReadinessAsync);
+        group.MapGet("/accounting-periods/{accountingPeriodId:guid}/close-journal-preview", GetAccountingPeriodCloseJournalPreviewAsync);
+        group.MapPost("/accounting-periods/{accountingPeriodId:guid}/close", CloseAccountingPeriodAsync);
+        group.MapPost("/accounting-periods/{accountingPeriodId:guid}/reopen", ReopenAccountingPeriodAsync);
         group.MapGet("/journal-entries", ListJournalEntriesAsync);
+        group.MapGet("/journal-entries/{journalEntryId:guid}", GetJournalEntryAsync);
+        group.MapGet("/journal-entries/{journalEntryId:guid}/source-document", GetJournalEntrySourceDocumentAsync);
+        group.MapGet("/trial-balance", GetTrialBalanceAsync);
         group.MapPost("/journal-entries/manual", PostManualJournalEntryAsync);
         group.MapPost("/journal-entries/{journalEntryId:guid}/void", VoidManualJournalEntryAsync);
         group.MapGet("/ledger-accounts/{ledgerAccountId:guid}/activity", GetLedgerAccountActivityAsync);
@@ -69,6 +95,7 @@ public static class AccountingEndpoints
                 account.Name,
                 account.Type,
                 account.NormalBalance,
+                account.Level,
                 account.ParentAccountId,
                 account.IsPostingAccount,
                 account.Status,
@@ -88,7 +115,8 @@ public static class AccountingEndpoints
             request.Type,
             request.NormalBalance,
             request.ParentAccountId,
-            request.IsPostingAccount);
+            request.IsPostingAccount,
+            request.Level);
 
         var result = await handler.HandleAsync(command, cancellationToken);
 
@@ -103,11 +131,94 @@ public static class AccountingEndpoints
             result.Value.Name,
             result.Value.Type,
             result.Value.NormalBalance,
+            result.Value.Level,
             result.Value.ParentAccountId,
             result.Value.IsPostingAccount,
             result.Value.Status);
 
         return Results.Created($"/api/v1/accounting/ledger-accounts/{response.LedgerAccountId}", response);
+    }
+
+    private static async Task<IResult> GetLedgerAccountReconciliationAsync(
+        string? companyCode,
+        GetLedgerAccountReconciliationHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetLedgerAccountReconciliationQuery(companyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new LedgerAccountReconciliationResponse(
+            result.Value.CompanyCode,
+            result.Value.AccountCount,
+            result.Value.IssueCount,
+            result.Value.Items.Select(item => new LedgerAccountReconciliationItemResponse(
+                item.LedgerAccountId,
+                item.Code,
+                item.DisplayCode,
+                item.Name,
+                item.Type,
+                item.NormalBalance,
+                item.Level,
+                item.ParentAccountId,
+                item.IsPostingAccount,
+                item.Status,
+                item.RangeRole,
+                item.RangeDisplayName,
+                item.Issues.Select(issue => new LedgerAccountReconciliationIssueResponse(
+                    issue.Severity,
+                    issue.Code,
+                    issue.Message)).ToArray())).ToArray()));
+    }
+
+    private static async Task<IResult> GetLedgerAccountRepairPlanAsync(
+        string? companyCode,
+        GetLedgerAccountRepairPlanHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetLedgerAccountRepairPlanQuery(companyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new LedgerAccountRepairPlanResponse(
+            result.Value.CompanyCode,
+            result.Value.AccountCount,
+            result.Value.IssueCount,
+            result.Value.ActionCount,
+            result.Value.Items.Select(item => new LedgerAccountRepairPlanItemResponse(
+                item.LedgerAccountId,
+                item.Code,
+                item.DisplayCode,
+                item.Name,
+                item.Type,
+                item.NormalBalance,
+                item.Level,
+                item.ParentAccountId,
+                item.IsPostingAccount,
+                item.Status,
+                item.RangeRole,
+                item.RangeDisplayName,
+                item.Actions.Select(action => new LedgerAccountRepairActionResponse(
+                    action.IssueCode,
+                    action.Severity,
+                    action.ActionCode,
+                    action.Title,
+                    action.Description,
+                    action.RepairMode,
+                    action.IsAutomatable,
+                    action.CurrentValue,
+                    action.SuggestedValue,
+                    action.Notes)).ToArray())).ToArray()));
     }
 
     private static async Task<IResult> UpdateLedgerAccountAsync(
@@ -135,6 +246,7 @@ public static class AccountingEndpoints
             result.Value.Name,
             result.Value.Type,
             result.Value.NormalBalance,
+            result.Value.Level,
             result.Value.ParentAccountId,
             result.Value.IsPostingAccount,
             result.Value.Status,
@@ -219,6 +331,194 @@ public static class AccountingEndpoints
         return Results.Ok(ToResponse(result.Value));
     }
 
+    private static async Task<IResult> GetAccountingControlSettingsAsync(
+        string? companyCode,
+        GetAccountingControlSettingsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetAccountingControlSettingsQuery(companyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
+    private static async Task<IResult> ConfigureAccountingControlSettingsAsync(
+        ConfigureAccountingControlSettingsRequest request,
+        ConfigureAccountingControlSettingsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ConfigureAccountingControlSettingsCommand(
+                request.CompanyCode,
+                request.BaseCurrencyCode,
+                request.RetainedEarningsAccountId,
+                request.IncomeSummaryAccountId,
+                request.RoundingAccountId),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
+    private static async Task<IResult> ListAccountingPeriodsAsync(
+        string? companyCode,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        ListAccountingPeriodsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListAccountingPeriodsQuery(companyCode, fromDate, toDate),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ListAccountingPeriodsResponse(
+            result.Value.CompanyCode,
+            result.Value.Periods.Select(ToResponse).ToArray()));
+    }
+
+    private static async Task<IResult> CreateAccountingPeriodAsync(
+        CreateAccountingPeriodRequest request,
+        CreateAccountingPeriodHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new CreateAccountingPeriodCommand(
+                request.CompanyCode,
+                request.Name,
+                request.StartsOn,
+                request.EndsOn),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = ToResponse(result.Value);
+
+        return Results.Created($"/api/v1/accounting/accounting-periods/{response.AccountingPeriodId}", response);
+    }
+
+    private static async Task<IResult> GetAccountingPeriodCloseReadinessAsync(
+        Guid accountingPeriodId,
+        GetAccountingPeriodCloseReadinessHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetAccountingPeriodCloseReadinessQuery(accountingPeriodId),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new AccountingPeriodCloseReadinessResponse(
+            ToResponse(result.Value.Period),
+            result.Value.CanClose,
+            result.Value.Checks.Select(check => new AccountingPeriodCloseReadinessCheckResponse(
+                check.Code,
+                check.Status,
+                check.Message,
+                check.Target)).ToArray(),
+            result.Value.Currencies.Select(currency => new AccountingPeriodCloseCurrencyResponse(
+                currency.CurrencyCode,
+                currency.TotalDebit,
+                currency.TotalCredit,
+                currency.Difference,
+                currency.PostedJournalCount,
+                currency.DraftJournalCount)).ToArray()));
+    }
+
+    private static async Task<IResult> CloseAccountingPeriodAsync(
+        Guid accountingPeriodId,
+        HttpContext httpContext,
+        CloseAccountingPeriodHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new CloseAccountingPeriodCommand(accountingPeriodId, ResolveActor(httpContext)),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
+    private static async Task<IResult> GetAccountingPeriodCloseJournalPreviewAsync(
+        Guid accountingPeriodId,
+        GetAccountingPeriodCloseJournalPreviewHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetAccountingPeriodCloseJournalPreviewQuery(accountingPeriodId),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new AccountingPeriodCloseJournalPreviewResponse(
+            ToResponse(result.Value.Period),
+            result.Value.BaseCurrencyCode,
+            result.Value.CanGenerate,
+            result.Value.NetIncome,
+            result.Value.TotalDebit,
+            result.Value.TotalCredit,
+            result.Value.Blockers,
+            result.Value.Entries.Select(entry => new AccountingCloseJournalPreviewEntryResponse(
+                entry.SourceReference,
+                entry.Memo,
+                entry.EntryDate,
+                entry.CurrencyCode,
+                entry.TotalDebit,
+                entry.TotalCredit,
+                entry.Lines.Select(line => new AccountingCloseJournalPreviewLineResponse(
+                    line.LedgerAccountId,
+                    line.Code,
+                    line.Name,
+                    line.Type,
+                    line.Debit,
+                    line.Credit,
+                    line.Description)).ToArray())).ToArray()));
+    }
+
+    private static async Task<IResult> ReopenAccountingPeriodAsync(
+        Guid accountingPeriodId,
+        ReopenAccountingPeriodHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ReopenAccountingPeriodCommand(accountingPeriodId),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
     private static async Task<IResult> ListJournalEntriesAsync(
         DateOnly? fromDate,
         DateOnly? toDate,
@@ -253,6 +553,73 @@ public static class AccountingEndpoints
                     line.Description)).ToArray())).ToArray());
 
         return Results.Ok(response);
+    }
+
+    private static async Task<IResult> GetJournalEntryAsync(
+        Guid journalEntryId,
+        GetJournalEntryHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetJournalEntryQuery(journalEntryId),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
+    private static async Task<IResult> GetJournalEntrySourceDocumentAsync(
+        Guid journalEntryId,
+        GetJournalEntrySourceDocumentHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetJournalEntrySourceDocumentQuery(journalEntryId),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
+    private static async Task<IResult> GetTrialBalanceAsync(
+        DateOnly? asOfDate,
+        string? currencyCode,
+        GetTrialBalanceHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetTrialBalanceQuery(asOfDate, currencyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new TrialBalanceResponse(
+            result.Value.AsOfDate,
+            result.Value.CurrencyCode,
+            result.Value.TotalDebit,
+            result.Value.TotalCredit,
+            result.Value.Difference,
+            result.Value.Lines.Select(line => new TrialBalanceLineResponse(
+                line.LedgerAccountId,
+                line.Code,
+                line.Name,
+                line.Type,
+                line.NormalBalance,
+                line.DebitBalance,
+                line.CreditBalance,
+                line.NetBalance,
+                line.ActivityCount)).ToArray()));
     }
 
     private static async Task<IResult> PostManualJournalEntryAsync(
@@ -378,6 +745,47 @@ public static class AccountingEndpoints
                 line.Description)).ToArray());
     }
 
+    private static JournalEntrySummaryResponse ToResponse(JournalEntrySummaryResult entry)
+    {
+        return new JournalEntrySummaryResponse(
+            entry.JournalEntryId,
+            entry.EntryDate,
+            entry.CurrencyCode,
+            entry.SourceType,
+            entry.SourceReference,
+            entry.Memo,
+            entry.Status,
+            entry.TotalDebit,
+            entry.TotalCredit,
+            entry.Lines.Select(line => new JournalEntryLineResponse(
+                line.LedgerAccountId,
+                line.Debit,
+                line.Credit,
+                line.Description)).ToArray());
+    }
+
+    private static JournalEntrySourceDocumentResponse ToResponse(JournalEntrySourceDocumentResult sourceDocument)
+    {
+        return new JournalEntrySourceDocumentResponse(
+            sourceDocument.JournalEntryId,
+            sourceDocument.SourceType,
+            sourceDocument.SourceReference,
+            sourceDocument.IsResolved,
+            sourceDocument.DocumentKind,
+            sourceDocument.DocumentId,
+            sourceDocument.ClientId,
+            sourceDocument.RelatedInvoiceId,
+            sourceDocument.Reference,
+            sourceDocument.Status,
+            sourceDocument.DocumentDate,
+            sourceDocument.CurrencyCode,
+            sourceDocument.Amount,
+            sourceDocument.Label,
+            sourceDocument.DashboardModule,
+            sourceDocument.DashboardStep,
+            sourceDocument.Message);
+    }
+
     private static AccountCodeRangeResponse ToResponse(AccountCodeRangeResult range)
     {
         return new AccountCodeRangeResponse(
@@ -394,5 +802,92 @@ public static class AccountingEndpoints
             range.IsPostingAccount,
             range.ParentCode,
             range.IsActive);
+    }
+
+    private static AccountingControlSettingsResponse ToResponse(GetAccountingControlSettingsResult settings)
+    {
+        return new AccountingControlSettingsResponse(
+            settings.CompanyCode,
+            settings.BaseCurrencyCode,
+            settings.RetainedEarningsAccountId,
+            ToResponse(settings.RetainedEarningsAccount),
+            settings.IncomeSummaryAccountId,
+            ToResponse(settings.IncomeSummaryAccount),
+            settings.RoundingAccountId,
+            ToResponse(settings.RoundingAccount),
+            settings.IsConfigured,
+            settings.CreatedAtUtc,
+            settings.UpdatedAtUtc);
+    }
+
+    private static AccountingControlAccountResponse? ToResponse(AccountingControlAccountResult? account)
+    {
+        return account is null
+            ? null
+            : new AccountingControlAccountResponse(
+                account.LedgerAccountId,
+                account.Code,
+                account.Name,
+                account.Type,
+                account.NormalBalance,
+                account.Status);
+    }
+
+    private static AccountingPeriodResponse ToResponse(AccountingPeriodResult period)
+    {
+        return new AccountingPeriodResponse(
+            period.AccountingPeriodId,
+            period.CompanyCode,
+            period.Name,
+            period.StartsOn,
+            period.EndsOn,
+            period.Status,
+            period.CreatedAtUtc,
+            period.UpdatedAtUtc,
+            period.ClosedAtUtc,
+            period.ReopenedAtUtc,
+            period.CloseArtifact is null
+                ? null
+                : new AccountingPeriodCloseArtifactResponse(
+                    period.CloseArtifact.GeneratedAtUtc,
+                    period.CloseArtifact.GeneratedBy,
+                    period.CloseArtifact.CheckCount,
+                    period.CloseArtifact.BlockedCheckCount,
+                    period.CloseArtifact.CurrencyCount,
+                    period.CloseArtifact.PostedJournalCount,
+                    period.CloseArtifact.DraftJournalCount,
+                    period.CloseArtifact.Checks.Select(check => new AccountingPeriodCloseReadinessCheckResponse(
+                        check.Code,
+                        check.Status,
+                        check.Message,
+                        check.Target)).ToArray(),
+                    period.CloseArtifact.Currencies.Select(currency => new AccountingPeriodCloseCurrencyResponse(
+                        currency.CurrencyCode,
+                        currency.TotalDebit,
+                        currency.TotalCredit,
+                        currency.Difference,
+                        currency.PostedJournalCount,
+                        currency.DraftJournalCount)).ToArray(),
+                    period.CloseArtifact.CloseJournalEntries.Select(entry =>
+                        new AccountingPeriodCloseJournalArtifactResponse(
+                            entry.JournalEntryId,
+                            entry.SourceReference,
+                            entry.Memo,
+                            entry.EntryDate,
+                            entry.CurrencyCode,
+                            entry.TotalDebit,
+                            entry.TotalCredit)).ToArray()));
+    }
+
+    private static string? ResolveActor(HttpContext httpContext)
+    {
+        if (httpContext.User.Identity?.IsAuthenticated == true)
+        {
+            return httpContext.User.Identity.Name;
+        }
+
+        return httpContext.Request.Headers.TryGetValue("X-Safar-Actor", out var actor)
+            ? actor.FirstOrDefault()
+            : null;
     }
 }

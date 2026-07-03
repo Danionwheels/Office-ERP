@@ -5,12 +5,79 @@ export type LedgerAccountSummary = {
   name: string;
   type: string;
   normalBalance: string;
+  level?: string | null;
   parentAccountId?: string | null;
   isPostingAccount: boolean;
   status: string;
   createdAtUtc: string;
   rangeRole?: string | null;
   rangeDisplayName?: string | null;
+};
+
+export type LedgerAccountReconciliation = {
+  companyCode: string;
+  accountCount: number;
+  issueCount: number;
+  items: LedgerAccountReconciliationItem[];
+};
+
+export type LedgerAccountReconciliationItem = {
+  ledgerAccountId: string;
+  code: string;
+  displayCode: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  level: string;
+  parentAccountId?: string | null;
+  isPostingAccount: boolean;
+  status: string;
+  rangeRole?: string | null;
+  rangeDisplayName?: string | null;
+  issues: LedgerAccountReconciliationIssue[];
+};
+
+export type LedgerAccountReconciliationIssue = {
+  severity: string;
+  code: string;
+  message: string;
+};
+
+export type LedgerAccountRepairPlan = {
+  companyCode: string;
+  accountCount: number;
+  issueCount: number;
+  actionCount: number;
+  items: LedgerAccountRepairPlanItem[];
+};
+
+export type LedgerAccountRepairPlanItem = {
+  ledgerAccountId: string;
+  code: string;
+  displayCode: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  level: string;
+  parentAccountId?: string | null;
+  isPostingAccount: boolean;
+  status: string;
+  rangeRole?: string | null;
+  rangeDisplayName?: string | null;
+  actions: LedgerAccountRepairAction[];
+};
+
+export type LedgerAccountRepairAction = {
+  issueCode: string;
+  severity: string;
+  actionCode: string;
+  title: string;
+  description: string;
+  repairMode: string;
+  isAutomatable: boolean;
+  currentValue?: string | null;
+  suggestedValue?: string | null;
+  notes: string[];
 };
 
 export type LedgerAccountCodeSuggestion = {
@@ -31,6 +98,7 @@ export type LedgerAccountEditorInput = {
   name: string;
   type: string;
   normalBalance: string;
+  level: string;
   parentAccountId: string;
   isPostingAccount: boolean;
   status: string;
@@ -65,6 +133,135 @@ export type AccountCodeRangeFormInput = {
   isActive: boolean;
 };
 
+export type AccountingControlSettings = {
+  companyCode: string;
+  baseCurrencyCode: string;
+  retainedEarningsAccountId?: string | null;
+  retainedEarningsAccount?: AccountingControlAccount | null;
+  incomeSummaryAccountId?: string | null;
+  incomeSummaryAccount?: AccountingControlAccount | null;
+  roundingAccountId?: string | null;
+  roundingAccount?: AccountingControlAccount | null;
+  isConfigured: boolean;
+  createdAtUtc?: string | null;
+  updatedAtUtc?: string | null;
+};
+
+export type AccountingControlAccount = {
+  ledgerAccountId: string;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  status: string;
+};
+
+export type AccountingControlSettingsInput = {
+  companyCode: string;
+  baseCurrencyCode: string;
+  retainedEarningsAccountId: string;
+  incomeSummaryAccountId: string;
+  roundingAccountId: string;
+};
+
+export type AccountingPeriod = {
+  accountingPeriodId: string;
+  companyCode: string;
+  name: string;
+  startsOn: string;
+  endsOn: string;
+  status: string;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  closedAtUtc?: string | null;
+  reopenedAtUtc?: string | null;
+  closeArtifact?: AccountingPeriodCloseArtifact | null;
+};
+
+export type AccountingPeriodFormInput = {
+  companyCode: string;
+  name: string;
+  startsOn: string;
+  endsOn: string;
+};
+
+export type AccountingPeriodCloseReadiness = {
+  period: AccountingPeriod;
+  canClose: boolean;
+  checks: AccountingPeriodCloseReadinessCheck[];
+  currencies: AccountingPeriodCloseCurrency[];
+};
+
+export type AccountingPeriodCloseJournalPreview = {
+  period: AccountingPeriod;
+  baseCurrencyCode: string;
+  canGenerate: boolean;
+  netIncome: number;
+  totalDebit: number;
+  totalCredit: number;
+  blockers: string[];
+  entries: AccountingCloseJournalPreviewEntry[];
+};
+
+export type AccountingCloseJournalPreviewEntry = {
+  sourceReference: string;
+  memo: string;
+  entryDate: string;
+  currencyCode: string;
+  totalDebit: number;
+  totalCredit: number;
+  lines: AccountingCloseJournalPreviewLine[];
+};
+
+export type AccountingCloseJournalPreviewLine = {
+  ledgerAccountId: string;
+  code: string;
+  name: string;
+  type: string;
+  debit: number;
+  credit: number;
+  description: string;
+};
+
+export type AccountingPeriodCloseReadinessCheck = {
+  code: string;
+  status: string;
+  message: string;
+  target?: string | null;
+};
+
+export type AccountingPeriodCloseCurrency = {
+  currencyCode: string;
+  totalDebit: number;
+  totalCredit: number;
+  difference: number;
+  postedJournalCount: number;
+  draftJournalCount: number;
+};
+
+export type AccountingPeriodCloseArtifact = {
+  generatedAtUtc: string;
+  generatedBy: string;
+  checkCount: number;
+  blockedCheckCount: number;
+  currencyCount: number;
+  postedJournalCount: number;
+  draftJournalCount: number;
+  checks: AccountingPeriodCloseReadinessCheck[];
+  currencies: AccountingPeriodCloseCurrency[];
+  closeJournalEntries: AccountingPeriodCloseJournalArtifact[];
+};
+
+export type AccountingPeriodCloseJournalArtifact = {
+  journalEntryId: string;
+  sourceReference: string;
+  memo: string;
+  entryDate: string;
+  currencyCode: string;
+  totalDebit: number;
+  totalCredit: number;
+};
+
 export type LedgerAccountFilters = {
   companyCode: string;
   search: string;
@@ -94,6 +291,26 @@ export type JournalEntrySummary = {
   totalDebit: number;
   totalCredit: number;
   lines: JournalEntryLine[];
+};
+
+export type JournalEntrySourceDocument = {
+  journalEntryId: string;
+  sourceType: string;
+  sourceReference?: string | null;
+  isResolved: boolean;
+  documentKind?: string | null;
+  documentId?: string | null;
+  clientId?: string | null;
+  relatedInvoiceId?: string | null;
+  reference?: string | null;
+  status?: string | null;
+  documentDate?: string | null;
+  currencyCode?: string | null;
+  amount?: number | null;
+  label?: string | null;
+  dashboardModule?: string | null;
+  dashboardStep?: string | null;
+  message?: string | null;
 };
 
 export type VoidManualJournalEntryInput = {
@@ -159,4 +376,30 @@ export type LedgerAccountActivityLine = {
   runningBalance: number;
   currencyCode: string;
   description?: string | null;
+};
+
+export type TrialBalance = {
+  asOfDate: string;
+  currencyCode: string;
+  totalDebit: number;
+  totalCredit: number;
+  difference: number;
+  lines: TrialBalanceLine[];
+};
+
+export type TrialBalanceLine = {
+  ledgerAccountId: string;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  debitBalance: number;
+  creditBalance: number;
+  netBalance: number;
+  activityCount: number;
+};
+
+export type TrialBalanceFilters = {
+  asOfDate: string;
+  currencyCode: string;
 };

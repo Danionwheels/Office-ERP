@@ -25,6 +25,17 @@ public sealed class EfPaymentRepository : IPaymentRepository
             .SingleOrDefaultAsync(payment => payment.Id == id, cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<Payment>> ListByReferenceAsync(
+        PaymentReference reference,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Payments
+            .Where(payment => payment.Reference == reference)
+            .OrderByDescending(payment => payment.RecordedAtUtc)
+            .ThenByDescending(payment => payment.Id)
+            .ToArrayAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<Payment>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

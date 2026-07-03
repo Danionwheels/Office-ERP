@@ -9,6 +9,10 @@ public interface ICreditNoteRepository
 
     Task<CreditNote?> GetByIdAsync(CreditNoteId id, CancellationToken cancellationToken = default);
 
+    Task<CreditNote?> GetByNumberAsync(CreditNoteNumber number, CancellationToken cancellationToken = default);
+
+    Task<CreditNote?> GetForInvoiceAsync(InvoiceId invoiceId, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<CreditNote>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

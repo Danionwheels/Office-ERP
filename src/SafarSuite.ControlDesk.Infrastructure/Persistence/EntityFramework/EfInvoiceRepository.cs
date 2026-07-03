@@ -26,6 +26,15 @@ public sealed class EfInvoiceRepository : IInvoiceRepository
             .SingleOrDefaultAsync(invoice => invoice.Id == id, cancellationToken);
     }
 
+    public async Task<Invoice?> GetByNumberAsync(
+        InvoiceNumber number,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Invoices
+            .Include(invoice => invoice.Lines)
+            .SingleOrDefaultAsync(invoice => invoice.Number == number, cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<Invoice>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

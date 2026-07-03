@@ -4,7 +4,9 @@ import type {
   ChargeCodeLookup,
   ClientChargeRule,
   ClientChargeRuleFormInput,
+  CreditNoteDocument,
   InvoiceDraft,
+  InvoiceDocument,
   InvoiceDraftFormInput,
   IssueCreditNoteInput,
   IssuedCreditNote,
@@ -146,6 +148,10 @@ export async function generateInvoiceDraft(
   });
 }
 
+export async function getInvoiceDocument(invoiceId: string): Promise<InvoiceDocument> {
+  return apiRequest<InvoiceDocument>(`/api/v1/billing/invoices/${invoiceId}`);
+}
+
 export async function issueInvoice(
   invoiceId: string,
   input: IssueInvoiceFormInput
@@ -184,6 +190,10 @@ export async function issueCreditNote(
       reason: input.reason
     })
   });
+}
+
+export async function getCreditNoteDocument(creditNoteId: string): Promise<CreditNoteDocument> {
+  return apiRequest<CreditNoteDocument>(`/api/v1/billing/credit-notes/${creditNoteId}`);
 }
 
 function optionalText(value: string): string | undefined {

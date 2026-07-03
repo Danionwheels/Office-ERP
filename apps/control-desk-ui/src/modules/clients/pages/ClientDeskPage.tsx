@@ -17,35 +17,67 @@ import {
 import { useEffect, useState } from "react";
 import { ApiError } from "../../../shared/api/apiError";
 import {
+  closeAccountingPeriod,
+  configureAccountingControlSettings,
   configureAccountCodeRange,
+  createAccountingPeriod,
   createLedgerAccount as createAccountingLedgerAccount,
+  getAccountingControlSettings,
+  getAccountingPeriodCloseJournalPreview,
+  getAccountingPeriodCloseReadiness,
+  getJournalEntry,
+  getJournalEntrySourceDocument,
   getLedgerAccountActivity,
+  getLedgerAccountReconciliation,
+  getLedgerAccountRepairPlan,
+  getTrialBalance,
   listAccountCodeRanges,
+  listAccountingPeriods,
   listJournalEntries,
   listLedgerAccounts,
   postManualJournalEntry,
+  reopenAccountingPeriod,
   suggestLedgerAccountCode as suggestAccountingLedgerAccountCode,
   updateLedgerAccount,
   voidManualJournalEntry
 } from "../../accounting/api/accountingApi";
+import { AccountingControlsPanel } from "../../accounting/components/AccountingControlsPanel";
+import { AccountingPeriodsPanel } from "../../accounting/components/AccountingPeriodsPanel";
 import { ChartOfAccountsPanel } from "../../accounting/components/ChartOfAccountsPanel";
 import { JournalWorkbenchPanel } from "../../accounting/components/JournalWorkbenchPanel";
+import { LedgerAccountReconciliationPanel } from "../../accounting/components/LedgerAccountReconciliationPanel";
+import { TrialBalancePanel } from "../../accounting/components/TrialBalancePanel";
 import type {
   AccountCodeRange,
   AccountCodeRangeFormInput,
+  AccountingControlSettings,
+  AccountingControlSettingsInput,
+  AccountingPeriod,
+  AccountingPeriodCloseJournalPreview,
+  AccountingPeriodCloseReadiness,
+  AccountingPeriodFormInput,
   JournalEntryFilters,
+  JournalEntrySourceDocument,
   JournalEntrySummary,
   LedgerAccountActivity,
+  LedgerAccountActivityLine,
   LedgerAccountEditorInput,
   LedgerAccountFilters,
+  LedgerAccountReconciliation,
+  LedgerAccountRepairPlan,
   LedgerAccountSummary,
-  ManualJournalEntryInput
+  ManualJournalEntryInput,
+  TrialBalance,
+  TrialBalanceFilters,
+  TrialBalanceLine
 } from "../../accounting/types/accountingTypes";
 import {
   createChargeCode,
   createClientChargeRule,
   createLedgerAccount,
   generateInvoiceDraft,
+  getCreditNoteDocument,
+  getInvoiceDocument,
   issueCreditNote,
   issueInvoice,
   listChargeCodes,
@@ -115,6 +147,8 @@ import type {
 import {
   applyClientCredit,
   approveInvoicePayment,
+  getClientRefundDocument,
+  getInvoicePaymentDocument,
   issueClientRefund,
   recordInvoicePayment,
   rejectInvoicePayment,
@@ -193,8 +227,10 @@ const emptyContactForm: AddClientContactInput = {
   isPrimary: true
 };
 
+const accountingCompanyCode = "MAIN";
+
 const defaultLedgerAccountFilters: LedgerAccountFilters = {
-  companyCode: "MAIN",
+  companyCode: accountingCompanyCode,
   search: "",
   type: "",
   status: "",
@@ -222,9 +258,18 @@ const emptyLedgerAccountEditorForm: LedgerAccountEditorInput = {
   name: "",
   type: "Asset",
   normalBalance: "Debit",
+  level: "Detail",
   parentAccountId: "",
   isPostingAccount: true,
   status: "Active"
+};
+
+const defaultAccountingControlSettingsForm: AccountingControlSettingsInput = {
+  companyCode: accountingCompanyCode,
+  baseCurrencyCode: "PKR",
+  retainedEarningsAccountId: "",
+  incomeSummaryAccountId: "",
+  roundingAccountId: ""
 };
 
 const defaultJournalEntryFilters: JournalEntryFilters = {
@@ -232,6 +277,13 @@ const defaultJournalEntryFilters: JournalEntryFilters = {
   toDate: "",
   sourceType: ""
 };
+
+function createDefaultTrialBalanceFilters(): TrialBalanceFilters {
+  return {
+    asOfDate: toDateInputValue(new Date()),
+    currencyCode: "PKR"
+  };
+}
 
 type DashboardModule =
   | "dashboard"
@@ -247,6 +299,12 @@ type DashboardModule =
 
 type BillingDashboardStep = "accounting" | "rules" | "draft" | "issue";
 
+type PaymentDashboardStep = "readiness" | "cash" | "receipt" | "settlement" | "refund" | "result";
+
+type JournalSourceDocumentTarget =
+  | { module: "billing"; step: BillingDashboardStep; label: string }
+  | { module: "payments"; step: PaymentDashboardStep; label: string };
+
 export function ClientDeskPage() {
   const [clients, setClients] = useState<ClientLookup[]>([]);
   const [selectedClientId, setSelectedClientId] = useState("");
@@ -257,10 +315,26 @@ export function ClientDeskPage() {
   const [productModules, setProductModules] = useState<ProductModule[]>([]);
   const [chargeCodes, setChargeCodes] = useState<ChargeCodeLookup[]>([]);
   const [ledgerAccounts, setLedgerAccounts] = useState<LedgerAccountSummary[]>([]);
+  const [ledgerAccountReconciliation, setLedgerAccountReconciliation] =
+    useState<LedgerAccountReconciliation | null>(null);
+  const [ledgerAccountRepairPlan, setLedgerAccountRepairPlan] =
+    useState<LedgerAccountRepairPlan | null>(null);
   const [accountCodeRanges, setAccountCodeRanges] = useState<AccountCodeRange[]>([]);
+  const [accountingControlSettings, setAccountingControlSettings] =
+    useState<AccountingControlSettings | null>(null);
+  const [accountingPeriods, setAccountingPeriods] = useState<AccountingPeriod[]>([]);
+  const [accountingPeriodReadiness, setAccountingPeriodReadiness] =
+    useState<AccountingPeriodCloseReadiness | null>(null);
+  const [accountingPeriodCloseJournalPreview, setAccountingPeriodCloseJournalPreview] =
+    useState<AccountingPeriodCloseJournalPreview | null>(null);
   const [journalEntries, setJournalEntries] = useState<JournalEntrySummary[]>([]);
+  const [focusedJournalEntryId, setFocusedJournalEntryId] = useState("");
+  const [focusedJournalEntry, setFocusedJournalEntry] = useState<JournalEntrySummary | null>(null);
+  const [journalSourceDocumentsById, setJournalSourceDocumentsById] =
+    useState<Record<string, JournalEntrySourceDocument>>({});
   const [ledgerAccountActivity, setLedgerAccountActivity] =
     useState<LedgerAccountActivity | null>(null);
+  const [trialBalance, setTrialBalance] = useState<TrialBalance | null>(null);
   const [selectedAccountCodeRangeRole, setSelectedAccountCodeRangeRole] = useState("");
   const [accountCodeRangeForm, setAccountCodeRangeForm] =
     useState<AccountCodeRangeFormInput>(emptyAccountCodeRangeForm);
@@ -272,6 +346,14 @@ export function ClientDeskPage() {
   );
   const [journalEntryFilters, setJournalEntryFilters] = useState<JournalEntryFilters>(
     defaultJournalEntryFilters
+  );
+  const [trialBalanceFilters, setTrialBalanceFilters] = useState<TrialBalanceFilters>(
+    createDefaultTrialBalanceFilters()
+  );
+  const [accountingControlSettingsForm, setAccountingControlSettingsForm] =
+    useState<AccountingControlSettingsInput>(createDefaultAccountingControlSettingsForm());
+  const [accountingPeriodForm, setAccountingPeriodForm] = useState<AccountingPeriodFormInput>(
+    createDefaultAccountingPeriodForm()
   );
   const [manualJournalEntryForm, setManualJournalEntryForm] =
     useState<ManualJournalEntryInput>(createDefaultManualJournalEntryForm());
@@ -354,6 +436,8 @@ export function ClientDeskPage() {
     useState<DashboardModule>("dashboard");
   const [preferredBillingStep, setPreferredBillingStep] =
     useState<BillingDashboardStep>("accounting");
+  const [preferredPaymentStep, setPreferredPaymentStep] =
+    useState<PaymentDashboardStep>("readiness");
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -369,8 +453,17 @@ export function ClientDeskPage() {
   }, [ledgerAccountFilters]);
 
   useEffect(() => {
+    void refreshAccountingPeriods();
+    void refreshAccountingControls();
+  }, []);
+
+  useEffect(() => {
     void refreshJournalEntries(journalEntryFilters);
   }, [journalEntryFilters]);
+
+  useEffect(() => {
+    void refreshTrialBalance(trialBalanceFilters);
+  }, [trialBalanceFilters]);
 
   useEffect(() => {
     if (selectedClientId !== "") {
@@ -406,11 +499,18 @@ export function ClientDeskPage() {
     });
   }
 
+  function handleLedgerAccountFiltersChange(filters: LedgerAccountFilters) {
+    setLedgerAccountFilters(withAccountingCompanyCode(filters));
+  }
+
   async function refreshAccountingSetup(filters = ledgerAccountFilters) {
     await runClientAction(async () => {
-      const [accounts, ranges] = await Promise.all([
-        listLedgerAccounts(filters),
-        listAccountCodeRanges(filters.companyCode)
+      const accountingFilters = withAccountingCompanyCode(filters);
+      const [accounts, ranges, reconciliation, repairPlan] = await Promise.all([
+        listLedgerAccounts(accountingFilters),
+        listAccountCodeRanges(accountingCompanyCode),
+        getLedgerAccountReconciliation(accountingCompanyCode),
+        getLedgerAccountRepairPlan(accountingCompanyCode)
       ]);
       const sortedRanges = sortAccountCodeRanges(ranges);
       const selectedRange =
@@ -419,6 +519,8 @@ export function ClientDeskPage() {
         ?? null;
 
       setLedgerAccounts(accounts);
+      setLedgerAccountReconciliation(reconciliation);
+      setLedgerAccountRepairPlan(repairPlan);
       setAccountCodeRanges(sortedRanges);
       setSelectedAccountCodeRangeRole(selectedRange?.role ?? "");
       setAccountCodeRangeForm(
@@ -431,6 +533,151 @@ export function ClientDeskPage() {
             ? current
             : createDefaultLedgerAccountEditorForm(selectedRange));
       }
+    });
+  }
+
+  async function refreshAccountingControls() {
+    await runClientAction(async () => {
+      const settings = await getAccountingControlSettings(accountingCompanyCode);
+
+      setAccountingControlSettings(settings);
+      setAccountingControlSettingsForm(toAccountingControlSettingsForm(settings));
+    });
+  }
+
+  async function handleSaveAccountingControls() {
+    await runClientAction(async () => {
+      const settings = await configureAccountingControlSettings({
+        ...accountingControlSettingsForm,
+        companyCode: accountingCompanyCode
+      });
+
+      setAccountingControlSettings(settings);
+      setAccountingControlSettingsForm(toAccountingControlSettingsForm(settings));
+      setMessage(settings.isConfigured
+        ? "GL controls configured."
+        : "GL controls saved as partial.");
+    });
+  }
+
+  async function refreshAccountingPeriods() {
+    await runClientAction(async () => {
+      const periods = await listAccountingPeriods(accountingCompanyCode);
+      setAccountingPeriods(periods);
+      setAccountingPeriodReadiness((current) =>
+        current !== null
+          && periods.some((period) => period.accountingPeriodId === current.period.accountingPeriodId)
+          ? current
+          : null);
+      setAccountingPeriodCloseJournalPreview((current) =>
+        current !== null
+          && periods.some((period) => period.accountingPeriodId === current.period.accountingPeriodId)
+          ? current
+          : null);
+      setAccountingPeriodForm((current) => {
+        if (
+          current.companyCode.trim().toUpperCase() === accountingCompanyCode
+          && current.startsOn.trim() !== ""
+          && current.endsOn.trim() !== ""
+        ) {
+          return current;
+        }
+
+        return createDefaultAccountingPeriodForm(periods, accountingCompanyCode);
+      });
+    });
+  }
+
+  async function refreshLedgerAccountReconciliation() {
+    await runClientAction(async () => {
+      const [reconciliation, repairPlan] = await Promise.all([
+        getLedgerAccountReconciliation(accountingCompanyCode),
+        getLedgerAccountRepairPlan(accountingCompanyCode)
+      ]);
+
+      setLedgerAccountReconciliation(reconciliation);
+      setLedgerAccountRepairPlan(repairPlan);
+      setMessage(
+        reconciliation.issueCount === 0
+          ? "COA reconciliation passed."
+          : `COA reconciliation found ${reconciliation.issueCount} issue(s) and ${repairPlan.actionCount} repair action(s).`
+      );
+    });
+  }
+
+  function handlePrepareNextAccountingPeriod() {
+    setAccountingPeriodForm(createDefaultAccountingPeriodForm(
+      accountingPeriods,
+      accountingCompanyCode
+    ));
+  }
+
+  async function handleCreateAccountingPeriod() {
+    await runClientAction(async () => {
+      const createdPeriod = await createAccountingPeriod({
+        ...accountingPeriodForm,
+        companyCode: accountingCompanyCode
+      });
+      const periods = await listAccountingPeriods(accountingCompanyCode);
+
+      setAccountingPeriods(periods);
+      setAccountingPeriodReadiness(null);
+      setAccountingPeriodCloseJournalPreview(null);
+      setAccountingPeriodForm(createDefaultAccountingPeriodForm(periods, accountingCompanyCode));
+      setMessage(`Accounting period ${createdPeriod.name} opened.`);
+    });
+  }
+
+  async function handleCheckAccountingPeriodReadiness(period: AccountingPeriod) {
+    await runClientAction(async () => {
+      const readiness = await getAccountingPeriodCloseReadiness(period.accountingPeriodId);
+      setAccountingPeriodReadiness(readiness);
+      setMessage(readiness.canClose
+        ? `${readiness.period.name} is ready to close.`
+        : `${readiness.period.name} has close blockers.`);
+    });
+  }
+
+  async function handlePreviewAccountingCloseJournal(period: AccountingPeriod) {
+    await runClientAction(async () => {
+      const preview = await getAccountingPeriodCloseJournalPreview(period.accountingPeriodId);
+      setAccountingPeriodCloseJournalPreview(preview);
+      setMessage(preview.canGenerate
+        ? `${preview.period.name} close journal preview is ready.`
+        : `${preview.period.name} close journal preview has blockers.`);
+    });
+  }
+
+  async function handleCloseAccountingPeriod(period: AccountingPeriod) {
+    await runClientAction(async () => {
+      const readiness = await getAccountingPeriodCloseReadiness(period.accountingPeriodId);
+
+      setAccountingPeriodReadiness(readiness);
+
+      if (!readiness.canClose) {
+        setMessage(`${readiness.period.name} has close blockers.`);
+        return;
+      }
+
+      const closedPeriod = await closeAccountingPeriod(period.accountingPeriodId);
+      const periods = await listAccountingPeriods(accountingCompanyCode);
+
+      setAccountingPeriods(periods);
+      setAccountingPeriodReadiness(null);
+      setAccountingPeriodCloseJournalPreview(null);
+      setMessage(`Accounting period ${closedPeriod.name} closed with close artifact.`);
+    });
+  }
+
+  async function handleReopenAccountingPeriod(period: AccountingPeriod) {
+    await runClientAction(async () => {
+      const reopenedPeriod = await reopenAccountingPeriod(period.accountingPeriodId);
+      const periods = await listAccountingPeriods(accountingCompanyCode);
+
+      setAccountingPeriods(periods);
+      setAccountingPeriodReadiness(await getAccountingPeriodCloseReadiness(reopenedPeriod.accountingPeriodId));
+      setAccountingPeriodCloseJournalPreview(null);
+      setMessage(`Accounting period ${reopenedPeriod.name} reopened.`);
     });
   }
 
@@ -450,26 +697,36 @@ export function ClientDeskPage() {
     });
   }
 
+  async function refreshTrialBalance(filters = trialBalanceFilters) {
+    await runClientAction(async () => {
+      const balance = await getTrialBalance(filters);
+      setTrialBalance(balance);
+    });
+  }
+
   async function handleSaveAccountCodeRange() {
     if (selectedAccountCodeRangeRole === "") {
       return;
     }
 
     await runClientAction(async () => {
+      const accountingFilters = withAccountingCompanyCode(ledgerAccountFilters);
       const savedRange = await configureAccountCodeRange(
-        ledgerAccountFilters.companyCode,
+        accountingCompanyCode,
         selectedAccountCodeRangeRole,
         accountCodeRangeForm
       );
-      const [accounts, ranges] = await Promise.all([
-        listLedgerAccounts(ledgerAccountFilters),
-        listAccountCodeRanges(ledgerAccountFilters.companyCode)
+      const [accounts, ranges, reconciliation] = await Promise.all([
+        listLedgerAccounts(accountingFilters),
+        listAccountCodeRanges(accountingCompanyCode),
+        getLedgerAccountReconciliation(accountingCompanyCode)
       ]);
       const sortedRanges = sortAccountCodeRanges(ranges);
       const selectedRange =
         sortedRanges.find((range) => range.role === savedRange.role) ?? savedRange;
 
       setLedgerAccounts(accounts);
+      setLedgerAccountReconciliation(reconciliation);
       setAccountCodeRanges(sortedRanges);
       setSelectedAccountCodeRangeRole(selectedRange.role);
       setAccountCodeRangeForm(toAccountCodeRangeForm(selectedRange));
@@ -491,7 +748,7 @@ export function ClientDeskPage() {
     await runClientAction(async () => {
       const suggestion = await suggestAccountingLedgerAccountCode(
         selectedRange.role,
-        ledgerAccountFilters.companyCode
+        accountingCompanyCode
       );
 
       setSelectedLedgerAccountId("");
@@ -500,6 +757,7 @@ export function ClientDeskPage() {
         code: suggestion.suggestedCode,
         type: suggestion.type,
         normalBalance: suggestion.normalBalance,
+        level: getDefaultLedgerAccountLevel(selectedRange, suggestion.isPostingAccount),
         isPostingAccount: suggestion.isPostingAccount,
         status: "Active"
       }));
@@ -518,9 +776,11 @@ export function ClientDeskPage() {
     }
 
     await runClientAction(async () => {
+      const selectedRange =
+        accountCodeRanges.find((range) => range.role === selectedAccountCodeRangeRole) ?? null;
       const suggestion = await suggestAccountingLedgerAccountCode(
         selectedAccountCodeRangeRole,
-        ledgerAccountFilters.companyCode
+        accountingCompanyCode
       );
 
       setLedgerAccountEditorForm((current) => ({
@@ -528,6 +788,7 @@ export function ClientDeskPage() {
         code: suggestion.suggestedCode,
         type: suggestion.type,
         normalBalance: suggestion.normalBalance,
+        level: getDefaultLedgerAccountLevel(selectedRange, suggestion.isPostingAccount),
         isPostingAccount: suggestion.isPostingAccount,
         status: "Active"
       }));
@@ -543,9 +804,11 @@ export function ClientDeskPage() {
         await updateLedgerAccount(selectedLedgerAccountId, ledgerAccountEditorForm);
       }
 
-      const [accounts, ranges] = await Promise.all([
-        listLedgerAccounts(ledgerAccountFilters),
-        listAccountCodeRanges(ledgerAccountFilters.companyCode)
+      const accountingFilters = withAccountingCompanyCode(ledgerAccountFilters);
+      const [accounts, ranges, reconciliation] = await Promise.all([
+        listLedgerAccounts(accountingFilters),
+        listAccountCodeRanges(accountingCompanyCode),
+        getLedgerAccountReconciliation(accountingCompanyCode)
       ]);
       const sortedRanges = sortAccountCodeRanges(ranges);
       const selectedRange =
@@ -554,6 +817,7 @@ export function ClientDeskPage() {
         ?? null;
 
       setLedgerAccounts(accounts);
+      setLedgerAccountReconciliation(reconciliation);
       setAccountCodeRanges(sortedRanges);
       setSelectedAccountCodeRangeRole(selectedRange?.role ?? "");
       setAccountCodeRangeForm(
@@ -586,8 +850,12 @@ export function ClientDeskPage() {
         status: nextStatus
       });
 
-      const accounts = await listLedgerAccounts(ledgerAccountFilters);
+      const [accounts, reconciliation] = await Promise.all([
+        listLedgerAccounts(withAccountingCompanyCode(ledgerAccountFilters)),
+        getLedgerAccountReconciliation(accountingCompanyCode)
+      ]);
       setLedgerAccounts(accounts);
+      setLedgerAccountReconciliation(reconciliation);
 
       if (selectedLedgerAccountId === account.ledgerAccountId) {
         const updatedAccount = accounts.find((item) => item.ledgerAccountId === account.ledgerAccountId);
@@ -612,13 +880,419 @@ export function ClientDeskPage() {
     });
   }
 
+  async function handleViewTrialBalanceAccountActivity(line: TrialBalanceLine) {
+    await runClientAction(async () => {
+      const activity = await getLedgerAccountActivity(line.ledgerAccountId);
+      setLedgerAccountActivity(activity);
+      setMessage(`Loaded ${line.code} activity from trial balance.`);
+    });
+  }
+
+  async function handleViewJournalEntryById(journalEntryId: string) {
+    const normalizedJournalEntryId = journalEntryId.trim();
+
+    if (normalizedJournalEntryId === "") {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const entry = await getJournalEntry(normalizedJournalEntryId);
+
+      setFocusedJournalEntryId(entry.journalEntryId);
+      setFocusedJournalEntry(entry);
+      await loadJournalSourceDocument(entry);
+      setJournalEntryFilters((current) => ({
+        ...current,
+        fromDate: entry.entryDate,
+        toDate: entry.entryDate,
+        sourceType: ""
+      }));
+      setActiveDashboardModule("accounting");
+      setMessage(`Opened journal ${entry.sourceReference ?? entry.journalEntryId}.`);
+    });
+  }
+
+  async function handleFocusJournalEntry(journalEntryId: string) {
+    if (journalEntryId === "" || focusedJournalEntryId === journalEntryId) {
+      setFocusedJournalEntryId("");
+      setFocusedJournalEntry(null);
+      return;
+    }
+
+    await runClientAction(async () => {
+      const entry = await getJournalEntry(journalEntryId);
+
+      setFocusedJournalEntryId(entry.journalEntryId);
+      setFocusedJournalEntry(entry);
+      await loadJournalSourceDocument(entry);
+      setMessage(`Focused journal ${entry.sourceReference ?? entry.journalEntryId}.`);
+    });
+  }
+
+  function getJournalSourceDocumentLabel(entry: JournalEntrySummary) {
+    return getJournalSourceDocumentTarget(entry)?.label ?? getJournalSourceDocumentFallbackLabel(entry);
+  }
+
+  async function handleOpenJournalSourceDocument(entry: JournalEntrySummary) {
+    const target = getJournalSourceDocumentTarget(entry);
+
+    if (target !== null) {
+      openJournalSourceDocumentTarget(target);
+      return;
+    }
+
+    await runClientAction(async () => {
+      const sourceDocument = await getJournalEntrySourceDocument(entry.journalEntryId);
+      const resolvedTarget = getJournalSourceDocumentTargetFromResolved(sourceDocument);
+      rememberJournalSourceDocument(sourceDocument);
+
+      if (resolvedTarget === null) {
+        setMessage(sourceDocument.message ?? "That journal source could not be resolved.");
+        return;
+      }
+
+      const isLoadedClientSource =
+        sourceDocument.clientId === null
+        || sourceDocument.clientId === undefined
+        || sourceDocument.clientId === selectedClientId;
+
+      if (!isLoadedClientSource && sourceDocument.clientId !== null && sourceDocument.clientId !== undefined) {
+        setSelectedClientId(sourceDocument.clientId);
+        openJournalSourceDocumentTarget(resolvedTarget, sourceDocument);
+        return;
+      }
+
+      await hydrateJournalSourceDocument(sourceDocument);
+      openJournalSourceDocumentTarget(resolvedTarget, sourceDocument);
+    });
+  }
+
+  function openJournalSourceDocumentTarget(
+    target: JournalSourceDocumentTarget,
+    sourceDocument?: JournalEntrySourceDocument
+  ) {
+    if (target.module === "billing") {
+      setPreferredBillingStep(target.step);
+    } else {
+      setPreferredPaymentStep(target.step);
+    }
+
+    setError("");
+    setActiveDashboardModule(target.module);
+    setMessage(sourceDocument?.status === null || sourceDocument?.status === undefined
+      ? `Opened ${target.label}.`
+      : `Opened ${target.label} (${sourceDocument.status}).`);
+  }
+
+  async function hydrateJournalSourceDocument(sourceDocument: JournalEntrySourceDocument) {
+    if (
+      !sourceDocument.isResolved
+      || sourceDocument.documentKind === null
+      || sourceDocument.documentKind === undefined
+      || sourceDocument.documentId === null
+      || sourceDocument.documentId === undefined
+    ) {
+      return;
+    }
+
+    if (sourceDocument.documentKind === "Invoice") {
+      const document = await getInvoiceDocument(sourceDocument.documentId);
+
+      applyHydratedInvoiceContext(document.invoice, {
+        issuedInvoice: document.issuedInvoice ?? null,
+        voidedInvoice: document.voidedInvoice ?? null,
+        creditNote: document.creditNote ?? null,
+        resetPaymentArtifacts: true
+      });
+      return;
+    }
+
+    if (sourceDocument.documentKind === "CreditNote") {
+      const document = await getCreditNoteDocument(sourceDocument.documentId);
+
+      applyHydratedInvoiceContext(document.invoice, {
+        creditNote: document.creditNote,
+        resetPaymentArtifacts: true
+      });
+      return;
+    }
+
+    if (sourceDocument.documentKind === "Payment") {
+      const document = await getInvoicePaymentDocument(sourceDocument.documentId);
+      const payment = sourceDocument.sourceType === "PaymentReversal" && document.reversal !== null && document.reversal !== undefined
+        ? mapReversedPaymentToRecordedPayment(document.reversal)
+        : document.payment;
+
+      applyHydratedInvoiceContext(document.invoice, { resetPaymentArtifacts: false });
+      setRecordedPayment(payment);
+      setIssuedRefund(null);
+      setAppliedCredit(null);
+      setIssuedEntitlementSnapshot(null);
+      return;
+    }
+
+    if (sourceDocument.documentKind === "ClientRefund") {
+      const document = await getClientRefundDocument(sourceDocument.documentId);
+
+      setIssuedRefund(document.refund);
+      setRecordedPayment(null);
+      setAppliedCredit(null);
+      setRefundForm((current) => ({
+        ...current,
+        clientId: document.refund.clientId,
+        method: document.refund.method,
+        reference: document.refund.reference,
+        amount: document.refund.amount.toFixed(2),
+        currencyCode: document.refund.currencyCode,
+        refundedOn: document.refund.refundedOn,
+        postingDate: document.refund.postingDate,
+        accountsReceivableAccountId:
+          current.accountsReceivableAccountId.trim() === ""
+            ? accountingProfile?.accountsReceivableAccountId ?? ""
+            : current.accountsReceivableAccountId
+      }));
+    }
+  }
+
+  function applyHydratedInvoiceContext(
+    invoice: InvoiceDraft,
+    options: {
+      issuedInvoice?: IssuedInvoice | null;
+      voidedInvoice?: VoidedInvoice | null;
+      creditNote?: IssuedCreditNote | null;
+      resetPaymentArtifacts: boolean;
+    }
+  ) {
+    const postingDate =
+      options.issuedInvoice?.postingDate
+      ?? options.voidedInvoice?.voidDate
+      ?? options.creditNote?.creditDate
+      ?? invoice.issueDate;
+
+    setInvoiceDraft(invoice);
+    setInvoiceDraftForm({
+      contractId: invoice.contractId,
+      invoiceNumber: invoice.invoiceNumber,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      billingDate: invoice.billingDate,
+      currencyCode: invoice.currencyCode
+    });
+    setIssuedInvoice(options.issuedInvoice ?? null);
+    setVoidedInvoice(options.voidedInvoice ?? null);
+    setIssuedCreditNote(options.creditNote ?? null);
+    setIssueInvoiceForm((current) => ({
+      ...current,
+      postingDate
+    }));
+    setPaymentForm(createDefaultPaymentForm(
+      selectedClient,
+      invoice,
+      accountingProfile,
+      issueInvoiceForm.accountsReceivableAccountId
+    ));
+    setCreditApplicationForm(createDefaultCreditApplicationForm(
+      selectedClient,
+      invoice,
+      clientStatement
+    ));
+
+    if (options.resetPaymentArtifacts) {
+      setRecordedPayment(null);
+      setIssuedRefund(null);
+      setAppliedCredit(null);
+      setIssuedEntitlementSnapshot(null);
+    }
+  }
+
+  function getJournalSourceDocumentTargetFromResolved(
+    sourceDocument: JournalEntrySourceDocument
+  ): JournalSourceDocumentTarget | null {
+    if (
+      !sourceDocument.isResolved
+      || sourceDocument.label === null
+      || sourceDocument.label === undefined
+    ) {
+      return null;
+    }
+
+    if (sourceDocument.dashboardModule === "billing") {
+      const step = toBillingDashboardStep(sourceDocument.dashboardStep);
+
+      return step === null
+        ? null
+        : {
+            module: "billing",
+            step,
+            label: sourceDocument.label
+          };
+    }
+
+    if (sourceDocument.dashboardModule === "payments") {
+      const step = toPaymentDashboardStep(sourceDocument.dashboardStep);
+
+      return step === null
+        ? null
+        : {
+            module: "payments",
+            step,
+            label: sourceDocument.label
+          };
+    }
+
+    return null;
+  }
+
+  function getJournalSourceDocumentTarget(entry: JournalEntrySummary): JournalSourceDocumentTarget | null {
+    if (
+      entry.sourceType === "BillingInvoice"
+      && (
+        journalEntryIdMatches(entry, issuedInvoice?.journalEntryId)
+        || referencesMatch(entry.sourceReference, issuedInvoice?.invoiceNumber)
+        || referencesMatch(entry.sourceReference, invoiceDraft?.invoiceNumber)
+      )
+    ) {
+      return {
+        module: "billing",
+        step: "issue",
+        label: `invoice ${sourceDocumentReference(entry, issuedInvoice?.invoiceNumber ?? invoiceDraft?.invoiceNumber)}`
+      };
+    }
+
+    if (
+      entry.sourceType === "BillingInvoiceVoid"
+      && (
+        journalEntryIdMatches(entry, voidedInvoice?.reversalJournalEntryId)
+        || referencesMatch(entry.sourceReference, voidedInvoice?.invoiceNumber)
+        || referencesMatch(entry.sourceReference, invoiceDraft?.invoiceNumber)
+      )
+    ) {
+      return {
+        module: "billing",
+        step: "issue",
+        label: `voided invoice ${sourceDocumentReference(entry, voidedInvoice?.invoiceNumber ?? invoiceDraft?.invoiceNumber)}`
+      };
+    }
+
+    if (
+      entry.sourceType === "BillingCreditNote"
+      && (
+        journalEntryIdMatches(entry, issuedCreditNote?.journalEntryId)
+        || referencesMatch(entry.sourceReference, issuedCreditNote?.creditNoteNumber)
+      )
+    ) {
+      return {
+        module: "billing",
+        step: "issue",
+        label: `credit note ${sourceDocumentReference(entry, issuedCreditNote?.creditNoteNumber)}`
+      };
+    }
+
+    if (
+      entry.sourceType === "PaymentReceipt"
+      && journalEntryIdMatches(entry, recordedPayment?.journalEntryId)
+    ) {
+      return {
+        module: "payments",
+        step: "result",
+        label: `payment ${sourceDocumentReference(entry, recordedPayment?.invoiceNumber)}`
+      };
+    }
+
+    if (
+      entry.sourceType === "PaymentReversal"
+      && journalEntryIdMatches(entry, recordedPayment?.journalEntryId)
+    ) {
+      return {
+        module: "payments",
+        step: "result",
+        label: `payment reversal ${sourceDocumentReference(entry, recordedPayment?.invoiceNumber)}`
+      };
+    }
+
+    if (
+      entry.sourceType === "ClientRefund"
+      && (
+        journalEntryIdMatches(entry, issuedRefund?.journalEntryId)
+        || referencesMatch(entry.sourceReference, issuedRefund?.reference)
+      )
+    ) {
+      return {
+        module: "payments",
+        step: "refund",
+        label: `refund ${sourceDocumentReference(entry, issuedRefund?.reference)}`
+      };
+    }
+
+    return null;
+  }
+
+  async function loadJournalSourceDocument(
+    entry: JournalEntrySummary
+  ): Promise<JournalEntrySourceDocument | null> {
+    if (getJournalSourceDocumentFallbackLabel(entry) === null) {
+      return null;
+    }
+
+    const sourceDocument = await getJournalEntrySourceDocument(entry.journalEntryId);
+    rememberJournalSourceDocument(sourceDocument);
+
+    return sourceDocument;
+  }
+
+  function rememberJournalSourceDocument(sourceDocument: JournalEntrySourceDocument) {
+    setJournalSourceDocumentsById((current) => ({
+      ...current,
+      [sourceDocument.journalEntryId]: sourceDocument
+    }));
+  }
+
+  function getJournalSourceDocumentClientLabel(sourceDocument: JournalEntrySourceDocument): string {
+    if (sourceDocument.clientId === null || sourceDocument.clientId === undefined) {
+      return "-";
+    }
+
+    if (selectedClient !== null && sourceDocument.clientId === selectedClient.clientId) {
+      return `${selectedClient.code} ${selectedClient.displayName}`;
+    }
+
+    const client = clients.find((candidate) => candidate.clientId === sourceDocument.clientId);
+
+    return client === undefined
+      ? sourceDocument.clientId
+      : `${client.code} ${client.displayName}`;
+  }
+
+  async function handleViewJournalEntryFromActivity(line: LedgerAccountActivityLine) {
+    await runClientAction(async () => {
+      const entry = await getJournalEntry(line.journalEntryId);
+
+      setFocusedJournalEntryId(entry.journalEntryId);
+      setFocusedJournalEntry(entry);
+      await loadJournalSourceDocument(entry);
+      setJournalEntryFilters((current) => ({
+        ...current,
+        fromDate: line.entryDate,
+        toDate: line.entryDate,
+        sourceType: ""
+      }));
+      setMessage(`Focused journal ${entry.sourceReference ?? entry.journalEntryId}.`);
+    });
+  }
+
   async function handlePostManualJournalEntry() {
     await runClientAction(async () => {
       const postedEntry = await postManualJournalEntry(manualJournalEntryForm);
-      const entries = await listJournalEntries(journalEntryFilters);
+      const [entries, balance] = await Promise.all([
+        listJournalEntries(journalEntryFilters),
+        getTrialBalance(trialBalanceFilters)
+      ]);
 
       setJournalEntries(entries);
+      setTrialBalance(balance);
       setManualJournalEntryForm(createDefaultManualJournalEntryForm());
+      setFocusedJournalEntryId(postedEntry.journalEntryId);
+      setFocusedJournalEntry(postedEntry);
       await refreshSelectedLedgerAccountActivity();
       setMessage(`Manual journal ${postedEntry.sourceReference ?? postedEntry.journalEntryId} posted.`);
     });
@@ -630,9 +1304,16 @@ export function ClientDeskPage() {
         voidDate: toDateInputValue(new Date()),
         reason: "Voided from GL workbench"
       });
-      const entries = await listJournalEntries(journalEntryFilters);
+      const [entries, balance, reversalEntry] = await Promise.all([
+        listJournalEntries(journalEntryFilters),
+        getTrialBalance(trialBalanceFilters),
+        getJournalEntry(result.reversalJournalEntryId)
+      ]);
 
       setJournalEntries(entries);
+      setTrialBalance(balance);
+      setFocusedJournalEntryId(result.reversalJournalEntryId);
+      setFocusedJournalEntry(reversalEntry);
       await refreshSelectedLedgerAccountActivity();
       setMessage(`Manual journal reversal ${result.reversalJournalEntryId} posted.`);
     });
@@ -2256,8 +2937,9 @@ export function ClientDeskPage() {
                   accountMode={selectedLedgerAccountId === "" ? "create" : "edit"}
                   accountValue={ledgerAccountEditorForm}
                   activity={ledgerAccountActivity}
+                  journalEntries={journalEntries}
                   isBusy={isBusy}
-                  onFiltersChange={setLedgerAccountFilters}
+                  onFiltersChange={handleLedgerAccountFiltersChange}
                   onRangeSelect={handleSelectAccountCodeRange}
                   onRangeChange={setAccountCodeRangeForm}
                   onSaveRange={handleSaveAccountCodeRange}
@@ -2267,20 +2949,67 @@ export function ClientDeskPage() {
                   onSaveAccount={handleSaveLedgerAccount}
                   onToggleAccountStatus={handleToggleLedgerAccountStatus}
                   onViewAccountActivity={handleViewLedgerAccountActivity}
+                  onViewJournalEntry={handleViewJournalEntryFromActivity}
                   onSuggestAccountCode={handleSuggestAccountingLedgerAccountCode}
                   onRefresh={() => refreshAccountingSetup()}
                 />
+                <AccountingControlsPanel
+                  settings={accountingControlSettings}
+                  value={accountingControlSettingsForm}
+                  accounts={ledgerAccounts}
+                  isBusy={isBusy}
+                  onValueChange={setAccountingControlSettingsForm}
+                  onSave={handleSaveAccountingControls}
+                  onRefresh={() => refreshAccountingControls()}
+                />
+                <AccountingPeriodsPanel
+                  periods={accountingPeriods}
+                  readiness={accountingPeriodReadiness}
+                  closeJournalPreview={accountingPeriodCloseJournalPreview}
+                  value={accountingPeriodForm}
+                  isBusy={isBusy}
+                  onValueChange={setAccountingPeriodForm}
+                  onPrepareNext={handlePrepareNextAccountingPeriod}
+                  onCreate={handleCreateAccountingPeriod}
+                  onCheckReadiness={handleCheckAccountingPeriodReadiness}
+                  onPreviewCloseJournal={handlePreviewAccountingCloseJournal}
+                  onClose={handleCloseAccountingPeriod}
+                  onReopen={handleReopenAccountingPeriod}
+                  onRefresh={() => refreshAccountingPeriods()}
+                />
+                <LedgerAccountReconciliationPanel
+                  reconciliation={ledgerAccountReconciliation}
+                  repairPlan={ledgerAccountRepairPlan}
+                  isBusy={isBusy}
+                  onRefresh={() => refreshLedgerAccountReconciliation()}
+                />
                 <JournalWorkbenchPanel
                   accounts={ledgerAccounts}
+                  periods={accountingPeriods}
                   entries={journalEntries}
                   filters={journalEntryFilters}
                   value={manualJournalEntryForm}
+                  focusedJournalEntryId={focusedJournalEntryId}
+                  focusedJournalEntry={focusedJournalEntry}
+                  sourceDocumentsByJournalEntryId={journalSourceDocumentsById}
                   isBusy={isBusy}
                   onFiltersChange={setJournalEntryFilters}
                   onValueChange={setManualJournalEntryForm}
+                  onFocusJournalEntry={handleFocusJournalEntry}
                   onPost={handlePostManualJournalEntry}
                   onVoidEntry={handleVoidManualJournalEntry}
+                  onOpenSourceDocument={handleOpenJournalSourceDocument}
+                  getSourceDocumentLabel={getJournalSourceDocumentLabel}
+                  getSourceDocumentClientLabel={getJournalSourceDocumentClientLabel}
                   onRefresh={() => refreshJournalEntries()}
+                />
+                <TrialBalancePanel
+                  balance={trialBalance}
+                  filters={trialBalanceFilters}
+                  isBusy={isBusy}
+                  onFiltersChange={setTrialBalanceFilters}
+                  onViewAccountActivity={handleViewTrialBalanceAccountActivity}
+                  onRefresh={() => refreshTrialBalance()}
                 />
               </>
             )}
@@ -2324,6 +3053,7 @@ export function ClientDeskPage() {
                 onIssueInvoice={handleIssueInvoice}
                 onVoidInvoice={handleVoidInvoice}
                 onIssueCreditNote={handleIssueCreditNote}
+                onViewJournalEntry={handleViewJournalEntryById}
               />
             )}
 
@@ -2331,6 +3061,7 @@ export function ClientDeskPage() {
               <PaymentReceiptPanel
                 invoiceDraft={invoiceDraft}
                 issuedInvoice={issuedInvoice}
+                initialStep={preferredPaymentStep}
                 accountingProfile={accountingProfile}
                 cashAccountValue={cashAccountForm}
                 paymentValue={paymentForm}
@@ -2352,6 +3083,7 @@ export function ClientDeskPage() {
                 onApprovePayment={handleApproveInvoicePayment}
                 onRejectPayment={handleRejectInvoicePayment}
                 onReversePayment={handleReverseInvoicePayment}
+                onViewJournalEntry={handleViewJournalEntryById}
               />
             )}
 
@@ -2981,10 +3713,47 @@ function createDefaultLedgerAccountEditorForm(
     name: "",
     type: range?.accountType ?? "Asset",
     normalBalance: range?.normalBalance ?? "Debit",
+    level: getDefaultLedgerAccountLevel(range),
     parentAccountId: "",
     isPostingAccount: range?.isPostingAccount ?? true,
     status: "Active"
   };
+}
+
+function getDefaultLedgerAccountLevel(
+  range?: AccountCodeRange | null,
+  isPostingAccount = range?.isPostingAccount ?? true
+): string {
+  if (range !== null && range !== undefined) {
+    if (hasLedgerRangeIntent(range, "Header")) {
+      return "Header";
+    }
+
+    if (hasLedgerRangeIntent(range, "Total")) {
+      return "Total";
+    }
+
+    if (hasLedgerRangeIntent(range, "Control")) {
+      return "Control";
+    }
+
+    if (hasLedgerRangeIntent(range, "Master")) {
+      return "Master";
+    }
+
+    if ((range.parentCode ?? "").trim() !== "") {
+      return "Subsidiary";
+    }
+  }
+
+  return isPostingAccount ? "Detail" : "Master";
+}
+
+function hasLedgerRangeIntent(range: AccountCodeRange, intent: string): boolean {
+  const normalizedIntent = intent.toLowerCase();
+
+  return range.role.toLowerCase().includes(normalizedIntent)
+    || range.displayName.toLowerCase().includes(normalizedIntent);
 }
 
 function createDefaultManualJournalEntryForm(value = new Date()): ManualJournalEntryInput {
@@ -3008,6 +3777,70 @@ function createDefaultManualJournalEntryForm(value = new Date()): ManualJournalE
       }
     ]
   };
+}
+
+function createDefaultAccountingPeriodForm(
+  periods: AccountingPeriod[] = [],
+  companyCode = accountingCompanyCode
+): AccountingPeriodFormInput {
+  const nextPeriod = getNextMonthlyPeriod(periods);
+
+  return {
+    companyCode: normalizeAccountingCompanyCode(companyCode),
+    name: formatAccountingPeriodName(nextPeriod.startsOn),
+    startsOn: nextPeriod.startsOn,
+    endsOn: nextPeriod.endsOn
+  };
+}
+
+function createDefaultAccountingControlSettingsForm(
+  companyCode = accountingCompanyCode
+): AccountingControlSettingsInput {
+  return {
+    ...defaultAccountingControlSettingsForm,
+    companyCode: normalizeAccountingCompanyCode(companyCode)
+  };
+}
+
+function toAccountingControlSettingsForm(
+  settings: AccountingControlSettings
+): AccountingControlSettingsInput {
+  return {
+    companyCode: normalizeAccountingCompanyCode(settings.companyCode),
+    baseCurrencyCode: settings.baseCurrencyCode,
+    retainedEarningsAccountId: settings.retainedEarningsAccountId ?? "",
+    incomeSummaryAccountId: settings.incomeSummaryAccountId ?? "",
+    roundingAccountId: settings.roundingAccountId ?? ""
+  };
+}
+
+function getNextMonthlyPeriod(periods: AccountingPeriod[]): { startsOn: string; endsOn: string } {
+  if (periods.length === 0) {
+    const today = new Date();
+    const startsOn = new Date(today.getFullYear(), today.getMonth(), 1);
+    const endsOn = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+    return {
+      startsOn: toDateInputValue(startsOn),
+      endsOn: toDateInputValue(endsOn)
+    };
+  }
+
+  const latestPeriod = [...periods].sort((left, right) => right.endsOn.localeCompare(left.endsOn))[0];
+  const startsOn = addDays(parseDateInput(latestPeriod.endsOn), 1);
+  const endsOn = new Date(startsOn.getFullYear(), startsOn.getMonth() + 1, 0);
+
+  return {
+    startsOn: toDateInputValue(startsOn),
+    endsOn: toDateInputValue(endsOn)
+  };
+}
+
+function formatAccountingPeriodName(startsOn: string): string {
+  return parseDateInput(startsOn).toLocaleString("en-US", {
+    month: "short",
+    year: "numeric"
+  });
 }
 
 function createDefaultAccountingProfileForm(
@@ -3205,6 +4038,82 @@ function mapReversedPaymentToRecordedPayment(
   };
 }
 
+function journalEntryIdMatches(
+  entry: JournalEntrySummary,
+  journalEntryId: string | null | undefined
+): boolean {
+  return journalEntryId !== null
+    && journalEntryId !== undefined
+    && journalEntryId.trim() !== ""
+    && entry.journalEntryId === journalEntryId;
+}
+
+function referencesMatch(
+  first: string | null | undefined,
+  second: string | null | undefined
+): boolean {
+  const normalizedFirst = normalizeReference(first);
+  const normalizedSecond = normalizeReference(second);
+
+  return normalizedFirst !== "" && normalizedFirst === normalizedSecond;
+}
+
+function getJournalSourceDocumentFallbackLabel(entry: JournalEntrySummary): string | null {
+  const reference = entry.sourceReference?.trim();
+
+  if (reference === undefined || reference === "") {
+    return null;
+  }
+
+  switch (entry.sourceType) {
+    case "BillingInvoice":
+      return `invoice ${reference}`;
+    case "BillingInvoiceVoid":
+      return `voided invoice ${reference}`;
+    case "BillingCreditNote":
+      return `credit note ${reference}`;
+    case "PaymentReceipt":
+      return `payment ${reference}`;
+    case "PaymentReversal":
+      return `payment reversal ${reference}`;
+    case "ClientRefund":
+      return `refund ${reference}`;
+    default:
+      return null;
+  }
+}
+
+function toBillingDashboardStep(value: string | null | undefined): BillingDashboardStep | null {
+  return value === "accounting"
+    || value === "rules"
+    || value === "draft"
+    || value === "issue"
+    ? value
+    : null;
+}
+
+function toPaymentDashboardStep(value: string | null | undefined): PaymentDashboardStep | null {
+  return value === "readiness"
+    || value === "cash"
+    || value === "receipt"
+    || value === "settlement"
+    || value === "refund"
+    || value === "result"
+    ? value
+    : null;
+}
+
+function sourceDocumentReference(
+  entry: JournalEntrySummary,
+  fallback: string | null | undefined
+): string {
+  return entry.sourceReference?.trim() || fallback?.trim() || "source";
+}
+
+function normalizeReference(value: string | null | undefined): string {
+  return value?.trim().toUpperCase() ?? "";
+}
+
 function toAccountingProfileForm(
   profile: ClientAccountingProfile
 ): ConfigureClientAccountingProfileInput {
@@ -3236,6 +4145,7 @@ function toLedgerAccountEditorForm(account: LedgerAccountSummary): LedgerAccount
     name: account.name,
     type: account.type,
     normalBalance: account.normalBalance,
+    level: account.level ?? getDefaultLedgerAccountLevel(null, account.isPostingAccount),
     parentAccountId: account.parentAccountId ?? "",
     isPostingAccount: account.isPostingAccount,
     status: account.status
@@ -3553,6 +4463,12 @@ function addDays(value: Date, days: number): Date {
   return next;
 }
 
+function parseDateInput(value: string): Date {
+  const [year, month, day] = value.split("-").map((part) => Number(part));
+
+  return new Date(year, month - 1, day);
+}
+
 function toDateInputValue(value: Date): string {
   const year = value.getFullYear();
   const month = (value.getMonth() + 1).toString().padStart(2, "0");
@@ -3577,6 +4493,21 @@ function sortAccountCodeRanges(ranges: AccountCodeRange[]): AccountCodeRange[] {
 
     return rangeOrder !== 0 ? rangeOrder : left.role.localeCompare(right.role);
   });
+}
+
+function withAccountingCompanyCode(filters: LedgerAccountFilters): LedgerAccountFilters {
+  return {
+    ...filters,
+    companyCode: accountingCompanyCode
+  };
+}
+
+function normalizeAccountingCompanyCode(companyCode?: string): string {
+  if (companyCode?.trim().toUpperCase() === accountingCompanyCode) {
+    return accountingCompanyCode;
+  }
+
+  return accountingCompanyCode;
 }
 
 function sortClientChargeRules(chargeRules: ClientChargeRule[]): ClientChargeRule[] {

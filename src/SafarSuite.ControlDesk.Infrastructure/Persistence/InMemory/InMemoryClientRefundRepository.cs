@@ -25,6 +25,19 @@ public sealed class InMemoryClientRefundRepository : IClientRefundRepository
         return Task.FromResult(refund);
     }
 
+    public Task<ClientRefund?> GetByReferenceAsync(
+        ClientRefundReference reference,
+        CancellationToken cancellationToken = default)
+    {
+        var refund = _refundsById.Values
+            .SingleOrDefault(candidate => string.Equals(
+                candidate.Reference.Value,
+                reference.Value,
+                StringComparison.OrdinalIgnoreCase));
+
+        return Task.FromResult(refund);
+    }
+
     public Task<IReadOnlyCollection<ClientRefund>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

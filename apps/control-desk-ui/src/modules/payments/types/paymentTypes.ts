@@ -1,3 +1,5 @@
+import type { InvoiceDraft } from "../../billing/types/billingTypes";
+
 export type RecordInvoicePaymentInput = {
   invoiceId: string;
   method: string;
@@ -26,6 +28,12 @@ export type RecordedInvoicePayment = {
   totalCredit: number;
   journalLines: RecordedInvoicePaymentJournalLine[];
   decisionNote?: string | null;
+};
+
+export type InvoicePaymentDocument = {
+  invoice: InvoiceDraft;
+  payment: RecordedInvoicePayment;
+  reversal?: ReversedInvoicePayment | null;
 };
 
 export type RecordedInvoicePaymentJournalLine = {
@@ -102,6 +110,10 @@ export type IssuedClientRefund = {
   totalDebit: number;
   totalCredit: number;
   journalLines: RecordedInvoicePaymentJournalLine[];
+};
+
+export type ClientRefundDocument = {
+  refund: IssuedClientRefund;
 };
 
 export type ApplyClientCreditInput = {

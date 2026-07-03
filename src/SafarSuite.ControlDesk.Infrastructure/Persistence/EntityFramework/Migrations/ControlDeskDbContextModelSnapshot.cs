@@ -111,6 +111,182 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.ToTable("account_code_ranges", "control");
                 });
 
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountingControlSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("accounting_control_settings_id");
+
+                    b.Property<string>("BaseCurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("base_currency_code");
+
+                    b.Property<string>("CompanyCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("company_code");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<Guid?>("IncomeSummaryAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("income_summary_account_id");
+
+                    b.Property<Guid?>("RetainedEarningsAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("retained_earnings_account_id");
+
+                    b.Property<Guid?>("RoundingAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rounding_account_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyCode")
+                        .IsUnique()
+                        .HasDatabaseName("ux_accounting_control_settings_company");
+
+                    b.HasIndex("IncomeSummaryAccountId")
+                        .HasDatabaseName("ix_accounting_control_settings_income_summary_account_id");
+
+                    b.HasIndex("RetainedEarningsAccountId")
+                        .HasDatabaseName("ix_accounting_control_settings_retained_earnings_account_id");
+
+                    b.HasIndex("RoundingAccountId")
+                        .HasDatabaseName("ix_accounting_control_settings_rounding_account_id");
+
+                    b.ToTable("accounting_control_settings", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountingPeriod", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("accounting_period_id");
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc");
+
+                    b.Property<string>("CompanyCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("company_code");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateOnly>("EndsOn")
+                        .HasColumnType("date")
+                        .HasColumnName("ends_on");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTimeOffset?>("ReopenedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reopened_at_utc");
+
+                    b.Property<DateOnly>("StartsOn")
+                        .HasColumnType("date")
+                        .HasColumnName("starts_on");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyCode", "Status")
+                        .HasDatabaseName("ix_accounting_periods_company_status");
+
+                    b.HasIndex("CompanyCode", "StartsOn")
+                        .IsUnique()
+                        .HasDatabaseName("ux_accounting_periods_company_start");
+
+                    b.ToTable("accounting_periods", "control");
+
+                    b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountingPeriodCloseArtifact", "CloseArtifacts", b1 =>
+                        {
+                            b1.Property<int>("accounting_period_close_artifact_row_id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("integer")
+                                .HasColumnName("accounting_period_close_artifact_row_id");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("accounting_period_close_artifact_row_id"));
+
+                            b1.Property<int>("BlockedCheckCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("blocked_check_count");
+
+                            b1.Property<int>("CheckCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("check_count");
+
+                            b1.Property<int>("CurrencyCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("currency_count");
+
+                            b1.Property<int>("DraftJournalCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("draft_journal_count");
+
+                            b1.Property<DateTimeOffset>("GeneratedAtUtc")
+                                .HasColumnType("timestamp with time zone")
+                                .HasColumnName("generated_at_utc");
+
+                            b1.Property<string>("GeneratedBy")
+                                .IsRequired()
+                                .HasMaxLength(128)
+                                .HasColumnType("character varying(128)")
+                                .HasColumnName("generated_by");
+
+                            b1.Property<int>("PostedJournalCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("posted_journal_count");
+
+                            b1.Property<string>("SnapshotJson")
+                                .IsRequired()
+                                .HasColumnType("text")
+                                .HasColumnName("snapshot_json");
+
+                            b1.Property<Guid>("accounting_period_id")
+                                .HasColumnType("uuid");
+
+                            b1.HasKey("accounting_period_close_artifact_row_id");
+
+                            b1.HasIndex("accounting_period_id", "GeneratedAtUtc")
+                                .HasDatabaseName("ix_accounting_period_close_artifacts_period_generated");
+
+                            b1.ToTable("accounting_period_close_artifacts", "control");
+
+                            b1.WithOwner()
+                                .HasForeignKey("accounting_period_id");
+                        });
+
+                    b.Navigation("CloseArtifacts");
+                });
+
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.JournalEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -203,6 +379,12 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("normal_balance");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("level");
 
                     b.Property<Guid?>("ParentAccountId")
                         .HasColumnType("uuid")
@@ -1122,6 +1304,24 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
                         .WithMany()
                         .HasForeignKey("ParentAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountingControlSettings", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
+                        .WithMany()
+                        .HasForeignKey("IncomeSummaryAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
+                        .WithMany()
+                        .HasForeignKey("RetainedEarningsAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
+                        .WithMany()
+                        .HasForeignKey("RoundingAccountId")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 

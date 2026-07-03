@@ -23,6 +23,26 @@ public sealed class InMemoryCreditNoteRepository : ICreditNoteRepository
         return Task.FromResult(creditNote);
     }
 
+    public Task<CreditNote?> GetByNumberAsync(
+        CreditNoteNumber number,
+        CancellationToken cancellationToken = default)
+    {
+        var creditNote = _creditNotesById.Values
+            .SingleOrDefault(candidate => candidate.Number.Equals(number));
+
+        return Task.FromResult(creditNote);
+    }
+
+    public Task<CreditNote?> GetForInvoiceAsync(
+        InvoiceId invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        var creditNote = _creditNotesById.Values
+            .SingleOrDefault(candidate => candidate.InvoiceId == invoiceId);
+
+        return Task.FromResult(creditNote);
+    }
+
     public Task<IReadOnlyCollection<CreditNote>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

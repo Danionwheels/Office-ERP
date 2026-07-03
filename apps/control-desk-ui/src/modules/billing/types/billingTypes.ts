@@ -111,6 +111,18 @@ export type InvoiceDraft = {
   lines: InvoiceDraftLine[];
 };
 
+export type InvoiceDocument = {
+  invoice: InvoiceDraft;
+  issuedInvoice?: IssuedInvoice | null;
+  voidedInvoice?: VoidedInvoice | null;
+  creditNote?: IssuedCreditNote | null;
+};
+
+export type CreditNoteDocument = {
+  invoice: InvoiceDraft;
+  creditNote: IssuedCreditNote;
+};
+
 export type InvoiceDraftLine = {
   chargeCodeId?: string | null;
   productModuleCode?: string | null;

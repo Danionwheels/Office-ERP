@@ -1,5 +1,6 @@
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
@@ -18,6 +19,7 @@ public sealed class IssueClientRefundHandler
     private readonly IClientRefundRepository _refunds;
     private readonly IJournalEntryRepository _journalEntries;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
+    private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly PaymentPostingService _postingService;
     private readonly ClientCreditBalanceService _creditBalanceService;
     private readonly PaymentCloudOutboxMessageFactory _outboxMessageFactory;
@@ -31,6 +33,7 @@ public sealed class IssueClientRefundHandler
         IClientRefundRepository refunds,
         IJournalEntryRepository journalEntries,
         ICloudOutboxMessageRepository cloudOutboxMessages,
+        AccountingPeriodPostingGuard periodGuard,
         PaymentPostingService postingService,
         ClientCreditBalanceService creditBalanceService,
         PaymentCloudOutboxMessageFactory outboxMessageFactory,
@@ -43,6 +46,7 @@ public sealed class IssueClientRefundHandler
         _refunds = refunds;
         _journalEntries = journalEntries;
         _cloudOutboxMessages = cloudOutboxMessages;
+        _periodGuard = periodGuard;
         _postingService = postingService;
         _creditBalanceService = creditBalanceService;
         _outboxMessageFactory = outboxMessageFactory;
@@ -116,6 +120,16 @@ public sealed class IssueClientRefundHandler
             }
 
             var refundAmount = Money.Of(command.Amount, command.CurrencyCode);
+
+            var periodError = await _periodGuard.ValidateOpenPeriodAsync(
+                command.PostingDate,
+                nameof(command.PostingDate),
+                cancellationToken: cancellationToken);
+
+            if (periodError is not null)
+            {
+                return Result<IssueClientRefundResult>.Failure(periodError);
+            }
 
             return await _unitOfWork.ExecuteInTransactionAsync(
                 async token =>

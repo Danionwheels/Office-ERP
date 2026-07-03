@@ -1214,7 +1214,8 @@ td {
   min-height: 30px;
 }
 
-.status-pill.active {
+.status-pill.active,
+.status-pill.open {
   border-color: #4b9465;
   color: #145f36;
   background: #edf8f0;
@@ -1232,7 +1233,8 @@ td {
   background: #fff1f1;
 }
 
-.status-pill.inactive {
+.status-pill.inactive,
+.status-pill.closed {
   border-color: #c5cbd1;
   color: #555f6a;
   background: #eef0f2;
@@ -2344,6 +2346,22 @@ td {
   font-weight: 650;
 }
 
+.fact-action-value {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.fact-action-value span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fact-action-value .table-icon-button {
+  flex: 0 0 auto;
+}
+
 .billing-draft-result {
   display: grid;
   gap: 10px;
@@ -3192,6 +3210,271 @@ td {
   font-size: 13px;
 }
 
+.coa-reconciliation-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.coa-reconciliation-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.coa-reconciliation-summary article {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  background: #f8f9fa;
+  color: #39414c;
+  padding: 8px 10px;
+}
+
+.coa-reconciliation-summary article.ok {
+  border-color: #77b58a;
+  background: #f2faf4;
+  color: #1c6b35;
+}
+
+.coa-reconciliation-summary article.attention {
+  border-color: #d6a84f;
+  background: #fff8ea;
+  color: #825b00;
+}
+
+.coa-reconciliation-summary span {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.coa-reconciliation-summary strong {
+  color: #20252b;
+  font-size: 18px;
+}
+
+.coa-reconciliation-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+}
+
+.coa-reconciliation-table th,
+.coa-reconciliation-table td {
+  border-bottom: 1px solid #e1e4e8;
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.coa-reconciliation-table th {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.coa-reconciliation-table td {
+  color: #2c333a;
+  font-size: 13px;
+}
+
+.coa-reconciliation-table td small,
+.coa-reconciliation-table td span {
+  display: block;
+}
+
+.coa-reconciliation-table td small {
+  margin-top: 3px;
+  color: #66717d;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.coa-reconciliation-issues {
+  display: grid;
+  gap: 5px;
+}
+
+.coa-reconciliation-issue {
+  border-left: 3px solid #c1c7cd;
+  padding-left: 7px;
+  color: #39414c;
+  overflow-wrap: anywhere;
+}
+
+.coa-reconciliation-issue.error {
+  border-left-color: #b42318;
+  color: #8a1f17;
+}
+
+.coa-reconciliation-issue.warning {
+  border-left-color: #b7791f;
+  color: #7a4f0b;
+}
+
+.coa-repair-actions {
+  display: grid;
+  gap: 7px;
+}
+
+.coa-repair-action {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  background: #f8f9fa;
+  padding: 8px;
+  color: #2c333a;
+}
+
+.coa-repair-action.review {
+  border-left: 3px solid #7c8fa4;
+}
+
+.coa-repair-action.guided {
+  border-left: 3px solid #4b9465;
+}
+
+.coa-repair-action.empty {
+  border-style: dashed;
+  color: #66717d;
+  font-weight: 700;
+}
+
+.coa-repair-action header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coa-repair-action header strong,
+.coa-repair-action p,
+.coa-repair-action small,
+.coa-repair-action dd {
+  overflow-wrap: anywhere;
+}
+
+.coa-repair-action header strong {
+  color: #20252b;
+  font-size: 12px;
+}
+
+.coa-repair-action header span {
+  border: 1px solid #cbd2d9;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: #fff;
+  color: #4e5964;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.coa-repair-action p {
+  margin: 0;
+  color: #39414c;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.coa-repair-action dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.coa-repair-action dl div {
+  min-width: 0;
+}
+
+.coa-repair-action dt {
+  color: #66717d;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.coa-repair-action dd {
+  margin: 1px 0 0;
+  color: #20252b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.accounting-controls-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.accounting-controls-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accounting-controls-form {
+  display: grid;
+  grid-template-columns:
+    100px
+    100px
+    minmax(180px, 1fr)
+    minmax(180px, 1fr)
+    minmax(180px, 1fr)
+    auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.accounting-controls-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.accounting-controls-summary span {
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 6px;
+  row-gap: 3px;
+  align-content: center;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  background: #f8f9fa;
+  padding: 8px 10px;
+}
+
+.accounting-controls-summary svg {
+  grid-row: 1 / span 2;
+  color: #45515e;
+}
+
+.accounting-controls-summary small {
+  color: #59606a;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.accounting-controls-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .journal-workbench {
   display: grid;
   gap: 10px;
@@ -3227,6 +3510,67 @@ td {
 
 .journal-header-fields {
   grid-template-columns: 130px 90px 180px minmax(160px, 1fr) minmax(160px, 1fr);
+}
+
+.journal-period-status {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  background: #f8f9fa;
+  padding: 9px 10px;
+}
+
+.journal-period-status svg {
+  color: #516070;
+}
+
+.journal-period-status span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.journal-period-status small,
+.journal-period-status em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #4e5964;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.journal-period-status strong {
+  color: #20252b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.journal-period-status.open {
+  border-color: #b8d8c4;
+  background: #f1f8f3;
+}
+
+.journal-period-status.open svg,
+.journal-period-status.open strong {
+  color: #217a45;
+}
+
+.journal-period-status.closed,
+.journal-period-status.voided {
+  border-color: #e2bbb7;
+  background: #fff6f5;
+}
+
+.journal-period-status.closed svg,
+.journal-period-status.closed strong,
+.journal-period-status.voided svg,
+.journal-period-status.voided strong {
+  color: #a4493e;
 }
 
 .journal-line-grid {
@@ -3297,6 +3641,53 @@ td {
   margin-bottom: 10px;
 }
 
+.journal-focused-entry {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #cdddea;
+  border-radius: 6px;
+  background: #f5f8fb;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+
+.journal-focused-entry-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.journal-focused-entry-heading div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.journal-focused-entry-heading span,
+.journal-focused-entry-heading small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #4e5964;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.journal-focused-entry-heading strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.journal-focused-entry-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
 .journal-table {
   width: 100%;
   min-width: 920px;
@@ -3320,6 +3711,602 @@ td {
 .journal-table td {
   color: #2c333a;
   font-size: 13px;
+}
+
+.journal-table tr.selected > td {
+  background: #f5f8fb;
+}
+
+.journal-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.journal-line-detail-row > td {
+  background: #f8f9fa;
+  padding: 0 8px 12px;
+}
+
+.journal-line-detail {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.journal-line-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.journal-line-detail-heading span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #4e5964;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.journal-line-detail-heading strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.journal-source-summary {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.4fr) repeat(4, minmax(110px, 1fr));
+  gap: 8px;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  background: #f8f9fa;
+  padding: 8px;
+}
+
+.journal-source-summary.unresolved {
+  grid-template-columns: 1fr;
+  border-color: #d6a0a0;
+  background: #fff8f8;
+}
+
+.journal-source-summary span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.journal-source-summary small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #59606a;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.journal-source-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.journal-line-detail table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.journal-line-detail th,
+.journal-line-detail td {
+  border-top: 1px solid #e1e4e8;
+  border-bottom: 0;
+  padding: 8px 6px;
+}
+
+.journal-line-detail th {
+  color: #4e5964;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.journal-line-detail td {
+  font-size: 12px;
+}
+
+.accounting-period-workbench {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.accounting-period-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.accounting-period-header span,
+.accounting-period-summary-card span {
+  display: block;
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.accounting-period-header h2 {
+  margin: 0;
+  color: #20252b;
+  font-size: 18px;
+}
+
+.accounting-period-header-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accounting-period-form-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.accounting-period-form {
+  display: grid;
+  grid-template-columns: 110px minmax(150px, 1fr) repeat(2, minmax(130px, 160px)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.accounting-period-summary-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.4fr) repeat(2, minmax(120px, 0.7fr));
+  gap: 10px;
+}
+
+.accounting-period-summary-card {
+  min-height: 70px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  background: #f7f8f9;
+}
+
+.accounting-period-summary-card strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.accounting-period-table-panel {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.accounting-period-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.accounting-period-table th,
+.accounting-period-table td {
+  border-bottom: 1px solid #e1e4e8;
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.accounting-period-table th {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.accounting-period-table td {
+  color: #2c333a;
+  font-size: 13px;
+}
+
+.accounting-period-table td strong {
+  color: #20252b;
+}
+
+.accounting-period-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.accounting-period-readiness-panel {
+  display: grid;
+  gap: 12px;
+  border-color: #d2d8de;
+}
+
+.accounting-period-readiness-panel.ready {
+  border-color: #8bc49d;
+  background: #f7fbf8;
+}
+
+.accounting-period-readiness-panel.blocked {
+  border-color: #d6a0a0;
+  background: #fff8f8;
+}
+
+.accounting-period-close-artifact-panel {
+  display: grid;
+  gap: 12px;
+  border-color: #c8d5e0;
+  background: #f8fbfd;
+}
+
+.accounting-close-preview-panel {
+  display: grid;
+  gap: 12px;
+  border-color: #d2d8de;
+  background: #fbfbfc;
+}
+
+.accounting-close-preview-panel.ready {
+  border-color: #8bc49d;
+  background: #f7fbf8;
+}
+
+.accounting-close-preview-panel.blocked {
+  border-color: #d6a0a0;
+  background: #fff8f8;
+}
+
+.accounting-period-artifact-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.accounting-close-preview-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.accounting-period-artifact-summary span {
+  display: grid;
+  gap: 4px;
+  min-height: 68px;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  padding: 9px;
+  background: #ffffff;
+}
+
+.accounting-close-preview-summary span {
+  display: grid;
+  gap: 4px;
+  min-height: 68px;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  padding: 9px;
+  background: #ffffff;
+}
+
+.accounting-period-artifact-summary small {
+  color: #59606a;
+  font-size: 11px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.accounting-close-preview-summary small {
+  color: #59606a;
+  font-size: 11px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.accounting-period-artifact-summary strong {
+  color: #20252b;
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.accounting-close-preview-summary strong {
+  color: #20252b;
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.accounting-close-preview-blockers {
+  display: grid;
+  gap: 6px;
+}
+
+.accounting-close-preview-blockers span {
+  border: 1px solid #d6a0a0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: #742a2a;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.accounting-close-preview-entry-list {
+  display: grid;
+  gap: 10px;
+}
+
+.accounting-close-preview-empty {
+  margin: 0;
+  color: #59606a;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.accounting-close-preview-entry {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.accounting-close-preview-entry-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.accounting-close-preview-entry-header div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.accounting-close-preview-entry-header div:last-child {
+  text-align: right;
+}
+
+.accounting-close-preview-entry-header span {
+  color: #59606a;
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.accounting-close-preview-entry-header strong {
+  color: #20252b;
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.accounting-close-preview-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.accounting-close-preview-table th,
+.accounting-close-preview-table td {
+  border-top: 1px solid #e1e4e8;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.accounting-close-preview-table th {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.accounting-close-preview-table td {
+  color: #2c333a;
+  font-size: 13px;
+}
+
+.accounting-close-preview-table td strong,
+.accounting-close-preview-table td small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.accounting-close-preview-table td strong {
+  color: #20252b;
+  font-weight: 800;
+}
+
+.accounting-close-preview-table td small {
+  color: #59606a;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.accounting-close-preview-table tfoot td {
+  color: #20252b;
+  font-weight: 800;
+}
+
+.accounting-period-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.accounting-period-readiness-check {
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  padding: 9px;
+  background: #ffffff;
+}
+
+.accounting-period-readiness-check.passed {
+  border-color: #8bc49d;
+}
+
+.accounting-period-readiness-check.blocked {
+  border-color: #d6a0a0;
+}
+
+.accounting-period-readiness-check span,
+.accounting-period-readiness-check small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #59606a;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.accounting-period-readiness-check strong {
+  color: #20252b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.accounting-period-currency-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+}
+
+.accounting-period-currency-table th,
+.accounting-period-currency-table td {
+  border-top: 1px solid #e1e4e8;
+  padding: 9px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.accounting-period-currency-table th {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.accounting-period-currency-table td {
+  color: #2c333a;
+  font-size: 13px;
+}
+
+.accounting-period-currency-table td strong {
+  color: #20252b;
+}
+
+.trial-balance-workbench {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.trial-balance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trial-balance-header span,
+.trial-balance-summary-card span {
+  display: block;
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.trial-balance-header h2 {
+  margin: 0;
+  color: #20252b;
+  font-size: 18px;
+}
+
+.trial-balance-filter-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(100px, 140px);
+  gap: 10px;
+}
+
+.trial-balance-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trial-balance-summary-card {
+  min-height: 78px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  background: #f7f8f9;
+}
+
+.trial-balance-summary-card strong {
+  color: #20252b;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.trial-balance-summary-card.balanced strong {
+  color: #145f36;
+}
+
+.trial-balance-summary-card.out strong {
+  color: #8f1f1f;
+}
+
+.trial-balance-table-panel {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.trial-balance-table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+}
+
+.trial-balance-table th,
+.trial-balance-table td {
+  border-bottom: 1px solid #e1e4e8;
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.trial-balance-table th {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.trial-balance-table td {
+  color: #2c333a;
+  font-size: 13px;
+}
+
+.trial-balance-table td strong {
+  color: #20252b;
 }
 
 .statement-workspace {
@@ -3787,9 +4774,20 @@ td {
   .coa-level-legend,
   .coa-range-fields,
   .coa-summary-row,
+  .coa-reconciliation-summary,
+  .accounting-controls-form,
+  .accounting-controls-summary,
+  .accounting-period-form,
+  .accounting-period-summary-row,
+  .accounting-period-artifact-summary,
+  .accounting-close-preview-summary,
+  .accounting-period-readiness-grid,
   .journal-header-fields,
   .journal-filter-panel,
+  .journal-source-summary,
   .journal-total-row,
+  .trial-balance-filter-row,
+  .trial-balance-summary-row,
   .statement-summary-card dl {
     grid-template-columns: repeat(2, minmax(140px, 1fr));
   }
@@ -3909,9 +4907,20 @@ td {
   .coa-level-legend,
   .coa-range-fields,
   .coa-summary-row,
+  .coa-reconciliation-summary,
+  .accounting-controls-form,
+  .accounting-controls-summary,
+  .accounting-period-form,
+  .accounting-period-summary-row,
+  .accounting-period-artifact-summary,
+  .accounting-close-preview-summary,
+  .accounting-period-readiness-grid,
   .journal-header-fields,
   .journal-filter-panel,
+  .journal-source-summary,
   .journal-total-row,
+  .trial-balance-filter-row,
+  .trial-balance-summary-row,
   .statement-summary-card dl,
   .statement-card dl,
   .contact-item dl div,

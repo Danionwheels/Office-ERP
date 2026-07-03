@@ -25,6 +25,22 @@ public sealed class EfCreditNoteRepository : ICreditNoteRepository
             .SingleOrDefaultAsync(creditNote => creditNote.Id == id, cancellationToken);
     }
 
+    public async Task<CreditNote?> GetByNumberAsync(
+        CreditNoteNumber number,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.CreditNotes
+            .SingleOrDefaultAsync(creditNote => creditNote.Number == number, cancellationToken);
+    }
+
+    public async Task<CreditNote?> GetForInvoiceAsync(
+        InvoiceId invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.CreditNotes
+            .SingleOrDefaultAsync(creditNote => creditNote.InvoiceId == invoiceId, cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<CreditNote>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

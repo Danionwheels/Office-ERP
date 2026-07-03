@@ -10,6 +10,7 @@ public sealed class LedgerAccount : Entity<LedgerAccountId>
         string name,
         LedgerAccountType type,
         NormalBalance normalBalance,
+        LedgerAccountLevel level,
         LedgerAccountId? parentAccountId,
         bool isPostingAccount,
         DateTimeOffset createdAtUtc)
@@ -19,6 +20,7 @@ public sealed class LedgerAccount : Entity<LedgerAccountId>
         Name = name;
         Type = type;
         NormalBalance = normalBalance;
+        Level = level;
         ParentAccountId = parentAccountId;
         IsPostingAccount = isPostingAccount;
         CreatedAtUtc = createdAtUtc;
@@ -32,6 +34,8 @@ public sealed class LedgerAccount : Entity<LedgerAccountId>
     public LedgerAccountType Type { get; }
 
     public NormalBalance NormalBalance { get; }
+
+    public LedgerAccountLevel Level { get; }
 
     public LedgerAccountId? ParentAccountId { get; }
 
@@ -47,6 +51,7 @@ public sealed class LedgerAccount : Entity<LedgerAccountId>
         string name,
         LedgerAccountType type,
         NormalBalance normalBalance,
+        LedgerAccountLevel level,
         LedgerAccountId? parentAccountId,
         bool isPostingAccount,
         DateTimeOffset createdAtUtc)
@@ -56,12 +61,27 @@ public sealed class LedgerAccount : Entity<LedgerAccountId>
             throw new ArgumentException("Ledger account name is required.", nameof(name));
         }
 
+        if (RequiresNonPostingAccount(level) && isPostingAccount)
+        {
+            throw new ArgumentException(
+                $"{level} accounts cannot be posting accounts.",
+                nameof(isPostingAccount));
+        }
+
+        if (RequiresPostingAccount(level) && !isPostingAccount)
+        {
+            throw new ArgumentException(
+                $"{level} accounts must be posting accounts.",
+                nameof(isPostingAccount));
+        }
+
         return new LedgerAccount(
             id,
             code,
             name.Trim(),
             type,
             normalBalance,
+            level,
             parentAccountId,
             isPostingAccount,
             createdAtUtc);
@@ -79,6 +99,20 @@ public sealed class LedgerAccount : Entity<LedgerAccountId>
 
     public void SetPostingAccount(bool isPostingAccount)
     {
+        if (RequiresNonPostingAccount(Level) && isPostingAccount)
+        {
+            throw new ArgumentException(
+                $"{Level} accounts cannot be posting accounts.",
+                nameof(isPostingAccount));
+        }
+
+        if (RequiresPostingAccount(Level) && !isPostingAccount)
+        {
+            throw new ArgumentException(
+                $"{Level} accounts must be posting accounts.",
+                nameof(isPostingAccount));
+        }
+
         IsPostingAccount = isPostingAccount;
     }
 
@@ -90,5 +124,19 @@ public sealed class LedgerAccount : Entity<LedgerAccountId>
     public void Deactivate()
     {
         Status = LedgerAccountStatus.Inactive;
+    }
+
+    private static bool RequiresNonPostingAccount(LedgerAccountLevel level)
+    {
+        return level is LedgerAccountLevel.Header
+            or LedgerAccountLevel.Total
+            or LedgerAccountLevel.Master
+            or LedgerAccountLevel.Control;
+    }
+
+    private static bool RequiresPostingAccount(LedgerAccountLevel level)
+    {
+        return level is LedgerAccountLevel.Detail
+            or LedgerAccountLevel.Subsidiary;
     }
 }

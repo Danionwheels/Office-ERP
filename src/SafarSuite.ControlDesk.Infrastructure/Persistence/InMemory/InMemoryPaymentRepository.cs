@@ -23,6 +23,22 @@ public sealed class InMemoryPaymentRepository : IPaymentRepository
         return Task.FromResult(payment);
     }
 
+    public Task<IReadOnlyCollection<Payment>> ListByReferenceAsync(
+        PaymentReference reference,
+        CancellationToken cancellationToken = default)
+    {
+        var payments = _paymentsById.Values
+            .Where(payment => string.Equals(
+                payment.Reference.Value,
+                reference.Value,
+                StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(payment => payment.RecordedAtUtc)
+            .ThenByDescending(payment => payment.Id.Value)
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyCollection<Payment>>(payments);
+    }
+
     public Task<IReadOnlyCollection<Payment>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

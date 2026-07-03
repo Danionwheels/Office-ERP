@@ -25,6 +25,10 @@ public sealed class ControlDeskDbContext : DbContext
 
     public DbSet<AccountCodeRange> AccountCodeRanges => Set<AccountCodeRange>();
 
+    public DbSet<AccountingControlSettings> AccountingControlSettings => Set<AccountingControlSettings>();
+
+    public DbSet<AccountingPeriod> AccountingPeriods => Set<AccountingPeriod>();
+
     public DbSet<LedgerAccount> LedgerAccounts => Set<LedgerAccount>();
 
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
@@ -56,6 +60,8 @@ public sealed class ControlDeskDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ClientAccountingProfileConfiguration());
         modelBuilder.ApplyConfiguration(new ClientDeploymentConfiguration());
         modelBuilder.ApplyConfiguration(new AccountCodeRangeConfiguration());
+        modelBuilder.ApplyConfiguration(new AccountingControlSettingsConfiguration());
+        modelBuilder.ApplyConfiguration(new AccountingPeriodConfiguration());
         modelBuilder.ApplyConfiguration(new LedgerAccountConfiguration());
         modelBuilder.ApplyConfiguration(new JournalEntryConfiguration());
         modelBuilder.ApplyConfiguration(new ChargeCodeConfiguration());

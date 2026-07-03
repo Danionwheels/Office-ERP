@@ -1,6 +1,7 @@
 using System.Text.Json;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
@@ -17,6 +18,7 @@ public sealed class IssueCreditNoteHandler
     private readonly IInvoiceRepository _invoices;
     private readonly ICreditNoteRepository _creditNotes;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
@@ -27,6 +29,7 @@ public sealed class IssueCreditNoteHandler
         IInvoiceRepository invoices,
         ICreditNoteRepository creditNotes,
         IJournalEntryRepository journalEntries,
+        AccountingPeriodPostingGuard periodGuard,
         ICloudOutboxMessageRepository cloudOutboxMessages,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
@@ -36,6 +39,7 @@ public sealed class IssueCreditNoteHandler
         _invoices = invoices;
         _creditNotes = creditNotes;
         _journalEntries = journalEntries;
+        _periodGuard = periodGuard;
         _cloudOutboxMessages = cloudOutboxMessages;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
@@ -102,6 +106,16 @@ public sealed class IssueCreditNoteHandler
                 return Result<IssueCreditNoteResult>.Failure(ApplicationError.NotFound(
                     nameof(command.InvoiceId),
                     "Original posted invoice journal entry was not found."));
+            }
+
+            var periodError = await _periodGuard.ValidateOpenPeriodAsync(
+                command.CreditDate,
+                nameof(command.CreditDate),
+                cancellationToken: cancellationToken);
+
+            if (periodError is not null)
+            {
+                return Result<IssueCreditNoteResult>.Failure(periodError);
             }
 
             var result = await _unitOfWork.ExecuteInTransactionAsync(

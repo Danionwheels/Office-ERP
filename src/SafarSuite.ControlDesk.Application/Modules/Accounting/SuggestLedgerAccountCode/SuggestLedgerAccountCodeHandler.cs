@@ -25,6 +25,15 @@ public sealed class SuggestLedgerAccountCodeHandler
         SuggestLedgerAccountCodeQuery query,
         CancellationToken cancellationToken = default)
     {
+        var companyError = AccountingSetupDefaults.ValidateSingleCompanyCode(
+            query.CompanyCode,
+            nameof(query.CompanyCode));
+
+        if (companyError is not null)
+        {
+            return Result<SuggestLedgerAccountCodeResult>.Failure(companyError);
+        }
+
         var companyCode = AccountingSetupDefaults.NormalizeCompanyCode(query.CompanyCode);
         await _defaults.EnsureSeededAsync(companyCode, cancellationToken);
 

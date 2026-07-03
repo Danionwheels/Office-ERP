@@ -23,6 +23,16 @@ public sealed class InMemoryInvoiceRepository : IInvoiceRepository
         return Task.FromResult(invoice);
     }
 
+    public Task<Invoice?> GetByNumberAsync(
+        InvoiceNumber number,
+        CancellationToken cancellationToken = default)
+    {
+        var invoice = _invoicesById.Values
+            .SingleOrDefault(candidate => candidate.Number.Equals(number));
+
+        return Task.FromResult(invoice);
+    }
+
     public Task<IReadOnlyCollection<Invoice>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

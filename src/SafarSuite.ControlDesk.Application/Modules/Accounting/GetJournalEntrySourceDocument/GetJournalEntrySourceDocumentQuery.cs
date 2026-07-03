@@ -1,0 +1,3 @@
+namespace SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
+
+public sealed record GetJournalEntrySourceDocumentQuery(Guid JournalEntryId);

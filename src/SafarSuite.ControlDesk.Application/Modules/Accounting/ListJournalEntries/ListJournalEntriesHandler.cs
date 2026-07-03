@@ -49,7 +49,7 @@ public sealed class ListJournalEntriesHandler
             entries.Select(ToSummary).ToArray()));
     }
 
-    private static JournalEntrySummaryResult ToSummary(JournalEntry entry)
+    public static JournalEntrySummaryResult ToSummary(JournalEntry entry)
     {
         return new JournalEntrySummaryResult(
             entry.Id.Value,

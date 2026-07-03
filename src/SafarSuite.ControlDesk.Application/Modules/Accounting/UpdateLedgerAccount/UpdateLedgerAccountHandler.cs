@@ -73,6 +73,7 @@ public sealed class UpdateLedgerAccountHandler
                 account.Name,
                 account.Type.ToString(),
                 account.NormalBalance.ToString(),
+                account.Level.ToString(),
                 account.ParentAccountId?.Value,
                 account.IsPostingAccount,
                 account.Status.ToString(),

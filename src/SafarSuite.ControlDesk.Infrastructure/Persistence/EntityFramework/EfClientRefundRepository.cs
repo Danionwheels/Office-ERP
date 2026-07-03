@@ -27,6 +27,14 @@ public sealed class EfClientRefundRepository : IClientRefundRepository
             .SingleOrDefaultAsync(refund => refund.Id == id, cancellationToken);
     }
 
+    public async Task<ClientRefund?> GetByReferenceAsync(
+        ClientRefundReference reference,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.ClientRefunds
+            .SingleOrDefaultAsync(refund => refund.Reference == reference, cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<ClientRefund>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

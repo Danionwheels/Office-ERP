@@ -1,7 +1,19 @@
-import { Plus, RefreshCw, Send, Trash2, Undo2 } from "lucide-react";
-import { type FormEvent } from "react";
+import {
+  CalendarCheck2,
+  ExternalLink,
+  ListTree,
+  Plus,
+  RefreshCw,
+  Send,
+  Trash2,
+  Undo2,
+  X
+} from "lucide-react";
+import { Fragment, type FormEvent } from "react";
 import type {
+  AccountingPeriod,
   JournalEntryFilters,
+  JournalEntrySourceDocument,
   JournalEntrySummary,
   LedgerAccountSummary,
   ManualJournalEntryInput,
@@ -10,14 +22,22 @@ import type {
 
 type JournalWorkbenchPanelProps = {
   accounts: LedgerAccountSummary[];
+  periods: AccountingPeriod[];
   entries: JournalEntrySummary[];
   filters: JournalEntryFilters;
   value: ManualJournalEntryInput;
+  focusedJournalEntryId: string;
+  focusedJournalEntry: JournalEntrySummary | null;
+  sourceDocumentsByJournalEntryId: Record<string, JournalEntrySourceDocument>;
   isBusy: boolean;
   onFiltersChange: (value: JournalEntryFilters) => void;
   onValueChange: (value: ManualJournalEntryInput) => void;
+  onFocusJournalEntry: (journalEntryId: string) => Promise<void>;
   onPost: () => Promise<void>;
   onVoidEntry: (entry: JournalEntrySummary) => Promise<void>;
+  onOpenSourceDocument: (entry: JournalEntrySummary) => Promise<void>;
+  getSourceDocumentLabel: (entry: JournalEntrySummary) => string | null;
+  getSourceDocumentClientLabel: (sourceDocument: JournalEntrySourceDocument) => string;
   onRefresh: () => Promise<void>;
 };
 
@@ -36,25 +56,39 @@ const sourceTypeOptions = [
 
 export function JournalWorkbenchPanel({
   accounts,
+  periods,
   entries,
   filters,
   value,
+  focusedJournalEntryId,
+  focusedJournalEntry,
+  sourceDocumentsByJournalEntryId,
   isBusy,
   onFiltersChange,
   onValueChange,
+  onFocusJournalEntry,
   onPost,
   onVoidEntry,
+  onOpenSourceDocument,
+  getSourceDocumentLabel,
+  getSourceDocumentClientLabel,
   onRefresh
 }: JournalWorkbenchPanelProps) {
   const postingAccounts = accounts.filter(
     (account) => account.status === "Active" && account.isPostingAccount
   );
+  const focusedEntryInRegister = focusedJournalEntryId !== ""
+    && entries.some((entry) => entry.journalEntryId === focusedJournalEntryId);
+  const focusedSourceDocumentLabel = focusedJournalEntry === null
+    ? null
+    : getSourceDocumentLabel(focusedJournalEntry);
   const totalDebit = value.lines.reduce((total, line) => total + amount(line.debit), 0);
   const totalCredit = value.lines.reduce((total, line) => total + amount(line.credit), 0);
   const difference = roundMoney(totalDebit - totalCredit);
   const hasDebit = totalDebit > 0;
   const hasCredit = totalCredit > 0;
   const hasAccounts = value.lines.every((line) => line.ledgerAccountId.trim() !== "");
+  const postingPeriodState = getPostingPeriodState(value.entryDate, periods);
   const canPost =
     value.entryDate.trim() !== ""
     && value.currencyCode.trim() !== ""
@@ -62,7 +96,8 @@ export function JournalWorkbenchPanel({
     && hasDebit
     && hasCredit
     && hasAccounts
-    && difference === 0;
+    && difference === 0
+    && !postingPeriodState.blocksPosting;
 
   async function handlePost(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -174,6 +209,14 @@ export function JournalWorkbenchPanel({
                 disabled={isBusy}
               />
             </label>
+            <div className={`journal-period-status ${postingPeriodState.tone}`}>
+              <CalendarCheck2 size={16} />
+              <span>
+                <small>{postingPeriodState.label}</small>
+                <strong>{postingPeriodState.status}</strong>
+                <em>{postingPeriodState.detail}</em>
+              </span>
+            </div>
           </div>
 
           <div className="journal-line-grid">
@@ -284,7 +327,9 @@ export function JournalWorkbenchPanel({
                 className="icon-button primary"
                 type="submit"
                 disabled={isBusy || !canPost}
-                title="Post manual journal"
+                title={postingPeriodState.blocksPosting
+                  ? postingPeriodState.detail
+                  : "Post manual journal"}
               >
                 <Send size={16} />
                 Post
@@ -352,6 +397,48 @@ export function JournalWorkbenchPanel({
             </select>
           </label>
         </div>
+        {focusedJournalEntry !== null && !focusedEntryInRegister && (
+          <div className="journal-focused-entry">
+            <div className="journal-focused-entry-heading">
+              <div>
+                <span>Focused journal</span>
+                <strong>{focusedJournalEntry.sourceReference ?? focusedJournalEntry.journalEntryId}</strong>
+                <small>
+                  {focusedJournalEntry.entryDate} {focusedJournalEntry.sourceType} {focusedJournalEntry.status}
+                </small>
+              </div>
+              <div className="journal-focused-entry-actions">
+                <button
+                  className="table-icon-button"
+                  type="button"
+                  onClick={() => void onOpenSourceDocument(focusedJournalEntry)}
+                  disabled={isBusy || focusedSourceDocumentLabel === null}
+                  title={sourceDocumentTitle(focusedSourceDocumentLabel)}
+                >
+                  <ExternalLink size={14} />
+                </button>
+                <button
+                  className="table-icon-button"
+                  type="button"
+                  onClick={() => void onFocusJournalEntry("")}
+                  disabled={isBusy}
+                  title="Clear focused journal"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+            <JournalLineDetail
+              entry={focusedJournalEntry}
+              accounts={accounts}
+              sourceDocument={sourceDocumentsByJournalEntryId[focusedJournalEntry.journalEntryId] ?? null}
+              sourceDocumentClientLabel={sourceDocumentClientLabel(
+                sourceDocumentsByJournalEntryId[focusedJournalEntry.journalEntryId],
+                getSourceDocumentClientLabel
+              )}
+            />
+          </div>
+        )}
         <table className="journal-table">
           <thead>
             <tr>
@@ -372,33 +459,76 @@ export function JournalWorkbenchPanel({
                 <td colSpan={9}>No journal entries</td>
               </tr>
             ) : (
-              entries.map((entry) => (
-                <tr key={entry.journalEntryId}>
-                  <td>{entry.entryDate}</td>
-                  <td>{entry.sourceType}</td>
-                  <td>{entry.sourceReference ?? "-"}</td>
-                  <td>{entry.memo ?? "-"}</td>
-                  <td>
-                    <span className={`status-pill ${entry.status.toLowerCase()}`}>
-                      {entry.status}
-                    </span>
-                  </td>
-                  <td>{formatMoney(entry.totalDebit)}</td>
-                  <td>{formatMoney(entry.totalCredit)}</td>
-                  <td>{entry.lines.length}</td>
-                  <td>
-                    <button
-                      className="table-icon-button"
-                      type="button"
-                      onClick={() => void onVoidEntry(entry)}
-                      disabled={isBusy || entry.sourceType !== "Manual" || entry.status !== "Posted"}
-                      title="Void manual journal"
-                    >
-                      <Undo2 size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))
+              entries.map((entry) => {
+                const sourceDocumentLabel = getSourceDocumentLabel(entry);
+
+                return (
+                  <Fragment key={entry.journalEntryId}>
+                    <tr className={focusedJournalEntryId === entry.journalEntryId ? "selected" : ""}>
+                      <td>{entry.entryDate}</td>
+                      <td>{entry.sourceType}</td>
+                      <td>{entry.sourceReference ?? "-"}</td>
+                      <td>{entry.memo ?? "-"}</td>
+                      <td>
+                        <span className={`status-pill ${entry.status.toLowerCase()}`}>
+                          {entry.status}
+                        </span>
+                      </td>
+                      <td>{formatMoney(entry.totalDebit)}</td>
+                      <td>{formatMoney(entry.totalCredit)}</td>
+                      <td>{entry.lines.length}</td>
+                      <td>
+                        <div className="journal-row-actions">
+                          <button
+                            className={`table-icon-button${
+                              focusedJournalEntryId === entry.journalEntryId ? " active" : ""
+                            }`}
+                            type="button"
+                            onClick={() => void onFocusJournalEntry(entry.journalEntryId)}
+                            disabled={isBusy}
+                            title="View journal lines"
+                          >
+                            <ListTree size={14} />
+                          </button>
+                          <button
+                            className="table-icon-button"
+                            type="button"
+                            onClick={() => void onOpenSourceDocument(entry)}
+                            disabled={isBusy || sourceDocumentLabel === null}
+                            title={sourceDocumentTitle(sourceDocumentLabel)}
+                          >
+                            <ExternalLink size={14} />
+                          </button>
+                          <button
+                            className="table-icon-button"
+                            type="button"
+                            onClick={() => void onVoidEntry(entry)}
+                            disabled={isBusy || entry.sourceType !== "Manual" || entry.status !== "Posted"}
+                            title="Void manual journal"
+                          >
+                            <Undo2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {focusedJournalEntryId === entry.journalEntryId && (
+                      <tr className="journal-line-detail-row">
+                        <td colSpan={9}>
+                          <JournalLineDetail
+                            entry={entry}
+                            accounts={accounts}
+                            sourceDocument={sourceDocumentsByJournalEntryId[entry.journalEntryId] ?? null}
+                            sourceDocumentClientLabel={sourceDocumentClientLabel(
+                              sourceDocumentsByJournalEntryId[entry.journalEntryId],
+                              getSourceDocumentClientLabel
+                            )}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -419,4 +549,189 @@ function roundMoney(value: number): number {
 
 function formatMoney(value: number): string {
   return roundMoney(value).toFixed(2);
+}
+
+function sourceDocumentTitle(label: string | null): string {
+  return label === null ? "Source document is not loaded" : `Open ${label}`;
+}
+
+function JournalLineDetail({
+  entry,
+  accounts,
+  sourceDocument,
+  sourceDocumentClientLabel
+}: {
+  entry: JournalEntrySummary;
+  accounts: LedgerAccountSummary[];
+  sourceDocument: JournalEntrySourceDocument | null;
+  sourceDocumentClientLabel: string;
+}) {
+  return (
+    <div className="journal-line-detail">
+      <div className="journal-line-detail-heading">
+        <span>{entry.journalEntryId}</span>
+        <strong>{entry.sourceReference ?? entry.sourceType}</strong>
+      </div>
+      {sourceDocument !== null && (
+        <SourceDocumentSummary
+          sourceDocument={sourceDocument}
+          clientLabel={sourceDocumentClientLabel}
+        />
+      )}
+      <table>
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Description</th>
+            <th>Debit</th>
+            <th>Credit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entry.lines.map((line, index) => (
+            <tr key={`${entry.journalEntryId}-${line.ledgerAccountId}-${index}`}>
+              <td>{formatAccount(line.ledgerAccountId, accounts)}</td>
+              <td>{line.description ?? "-"}</td>
+              <td>{formatMoney(line.debit)}</td>
+              <td>{formatMoney(line.credit)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SourceDocumentSummary({
+  sourceDocument,
+  clientLabel
+}: {
+  sourceDocument: JournalEntrySourceDocument;
+  clientLabel: string;
+}) {
+  if (!sourceDocument.isResolved) {
+    return (
+      <div className="journal-source-summary unresolved">
+        <span>
+          <small>Source document</small>
+          <strong>{sourceDocument.message ?? "Not resolved"}</strong>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="journal-source-summary">
+      <span>
+        <small>Source document</small>
+        <strong>{sourceDocument.label ?? sourceDocument.reference ?? sourceDocument.documentKind ?? "Resolved"}</strong>
+      </span>
+      <span>
+        <small>Status</small>
+        <strong>{sourceDocument.status ?? "-"}</strong>
+      </span>
+      <span>
+        <small>Date</small>
+        <strong>{sourceDocument.documentDate ?? "-"}</strong>
+      </span>
+      <span>
+        <small>Amount</small>
+        <strong>{formatSourceAmount(sourceDocument)}</strong>
+      </span>
+      <span>
+        <small>Client</small>
+        <strong>{clientLabel}</strong>
+      </span>
+    </div>
+  );
+}
+
+function sourceDocumentClientLabel(
+  sourceDocument: JournalEntrySourceDocument | undefined,
+  getSourceDocumentClientLabel: (sourceDocument: JournalEntrySourceDocument) => string
+): string {
+  return sourceDocument === undefined ? "-" : getSourceDocumentClientLabel(sourceDocument);
+}
+
+function formatSourceAmount(sourceDocument: JournalEntrySourceDocument): string {
+  return sourceDocument.amount === null || sourceDocument.amount === undefined
+    ? "-"
+    : `${formatMoney(sourceDocument.amount)} ${sourceDocument.currencyCode ?? ""}`.trim();
+}
+
+function formatAccount(
+  ledgerAccountId: string,
+  accounts: LedgerAccountSummary[]
+): string {
+  const account = accounts.find((candidate) => candidate.ledgerAccountId === ledgerAccountId);
+
+  return account === undefined
+    ? ledgerAccountId
+    : `${account.displayCode} ${account.name}`;
+}
+
+type PostingPeriodState = {
+  tone: "open" | "closed" | "draft" | "voided";
+  label: string;
+  status: string;
+  detail: string;
+  blocksPosting: boolean;
+};
+
+function getPostingPeriodState(
+  entryDate: string,
+  periods: AccountingPeriod[]
+): PostingPeriodState {
+  const normalizedDate = entryDate.trim();
+
+  if (normalizedDate === "") {
+    return {
+      tone: "draft",
+      label: "Posting period",
+      status: "Date needed",
+      detail: "Enter a posting date.",
+      blocksPosting: true
+    };
+  }
+
+  if (periods.length === 0) {
+    return {
+      tone: "draft",
+      label: "Posting period",
+      status: "No calendar",
+      detail: "Posting is available until periods are configured.",
+      blocksPosting: false
+    };
+  }
+
+  const period = periods.find((candidate) =>
+    normalizedDate >= candidate.startsOn && normalizedDate <= candidate.endsOn);
+
+  if (period === undefined) {
+    return {
+      tone: "voided",
+      label: "Posting period",
+      status: "No period",
+      detail: "No MAIN period contains this date.",
+      blocksPosting: true
+    };
+  }
+
+  if (period.status.toLowerCase() === "open") {
+    return {
+      tone: "open",
+      label: "Posting period",
+      status: "Open",
+      detail: `${period.name} ${period.startsOn} to ${period.endsOn}`,
+      blocksPosting: false
+    };
+  }
+
+  return {
+    tone: "closed",
+    label: "Posting period",
+    status: period.status,
+    detail: `${period.name} is closed.`,
+    blocksPosting: true
+  };
 }

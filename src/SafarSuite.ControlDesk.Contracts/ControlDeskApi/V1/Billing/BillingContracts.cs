@@ -112,6 +112,16 @@ public sealed record GenerateInvoiceDraftResponse(
     string Status,
     IReadOnlyCollection<GenerateInvoiceDraftLineResponse> Lines);
 
+public sealed record InvoiceDocumentResponse(
+    GenerateInvoiceDraftResponse Invoice,
+    IssueInvoiceResponse? IssuedInvoice,
+    VoidInvoiceResponse? VoidedInvoice,
+    IssueCreditNoteResponse? CreditNote);
+
+public sealed record CreditNoteDocumentResponse(
+    GenerateInvoiceDraftResponse Invoice,
+    IssueCreditNoteResponse CreditNote);
+
 public sealed record GenerateInvoiceDraftLineResponse(
     Guid? ChargeCodeId,
     string? ProductModuleCode,

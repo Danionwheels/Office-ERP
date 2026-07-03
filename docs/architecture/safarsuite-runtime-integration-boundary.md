@@ -146,8 +146,11 @@ GET  /api/v1/local-server/modules/{moduleCode}/access
 
 ## Handoff Checklist
 
+Detailed app-workspace implementation handoff lives at `docs/planning/safarsuite-app-integration-handoff.md`.
+
 Before we enable `safarsuite-app` by default:
 
+- accept the SafarSuite app integration handoff
 - confirm the real app image name and registry
 - confirm app container port and health route
 - wire the SafarSuite app workspace to the local-server module-gateway endpoint

@@ -9,6 +9,10 @@ public interface IClientRefundRepository
 
     Task<ClientRefund?> GetByIdAsync(ClientRefundId id, CancellationToken cancellationToken = default);
 
+    Task<ClientRefund?> GetByReferenceAsync(
+        ClientRefundReference reference,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<ClientRefund>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

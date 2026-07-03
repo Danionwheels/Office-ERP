@@ -11,5 +11,7 @@ public enum JournalSourceType
     BillingInvoiceVoid = 7,
     BillingCreditNote = 8,
     ClientRefund = 9,
-    ManualReversal = 10
+    ManualReversal = 10,
+    PeriodClose = 11,
+    PeriodCloseReversal = 12
 }

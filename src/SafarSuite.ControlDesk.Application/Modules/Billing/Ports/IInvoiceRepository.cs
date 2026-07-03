@@ -9,6 +9,8 @@ public interface IInvoiceRepository
 
     Task<Invoice?> GetByIdAsync(InvoiceId id, CancellationToken cancellationToken = default);
 
+    Task<Invoice?> GetByNumberAsync(InvoiceNumber number, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<Invoice>> ListForClientAsync(
         ClientId clientId,
         DateOnly? fromDate = null,

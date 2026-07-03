@@ -16,8 +16,10 @@ import type {
   AccountCodeRange,
   AccountCodeRangeFormInput,
   LedgerAccountActivity,
+  LedgerAccountActivityLine,
   LedgerAccountEditorInput,
   LedgerAccountFilters,
+  JournalEntrySummary,
   LedgerAccountSummary
 } from "../types/accountingTypes";
 
@@ -48,6 +50,7 @@ type ChartOfAccountsPanelProps = {
   accountMode: "create" | "edit";
   accountValue: LedgerAccountEditorInput;
   activity: LedgerAccountActivity | null;
+  journalEntries: JournalEntrySummary[];
   isBusy: boolean;
   onFiltersChange: (value: LedgerAccountFilters) => void;
   onRangeSelect: (range: AccountCodeRange) => void;
@@ -59,6 +62,7 @@ type ChartOfAccountsPanelProps = {
   onSaveAccount: () => Promise<void>;
   onToggleAccountStatus: (account: LedgerAccountSummary) => Promise<void>;
   onViewAccountActivity: (account: LedgerAccountSummary) => Promise<void>;
+  onViewJournalEntry: (line: LedgerAccountActivityLine) => Promise<void>;
   onSuggestAccountCode: () => Promise<void>;
   onRefresh: () => Promise<void>;
 };
@@ -72,6 +76,7 @@ export function ChartOfAccountsPanel({
   accountMode,
   accountValue,
   activity,
+  journalEntries,
   isBusy,
   onFiltersChange,
   onRangeSelect,
@@ -83,14 +88,20 @@ export function ChartOfAccountsPanel({
   onSaveAccount,
   onToggleAccountStatus,
   onViewAccountActivity,
+  onViewJournalEntry,
   onSuggestAccountCode,
   onRefresh
 }: ChartOfAccountsPanelProps) {
   const activeRanges = ranges.filter((range) => range.isActive);
   const selectedRange = ranges.find((range) => range.role === selectedRangeRole) ?? null;
+  const accountLevelOptions = getLedgerAccountLevelOptions(
+    selectedRange,
+    accountMode,
+    accountValue.level
+  );
   const visibleAccounts = getVisibleAccounts(accounts, ranges, filters);
   const postingCount = visibleAccounts.filter((account) => account.isPostingAccount).length;
-  const controlCount = visibleAccounts.length - postingCount;
+  const nonPostingCount = visibleAccounts.length - postingCount;
   const canSaveRange =
     selectedRange !== null
     && rangeValue.displayName.trim() !== ""
@@ -308,8 +319,8 @@ export function ChartOfAccountsPanel({
           <strong>{postingCount}</strong>
         </article>
         <article className="client-panel coa-summary-card">
-          <span>Control</span>
-          <strong>{controlCount}</strong>
+          <span>Non-posting</span>
+          <strong>{nonPostingCount}</strong>
         </article>
         <article className="client-panel coa-summary-card">
           <span>Ranges</span>
@@ -626,6 +637,28 @@ export function ChartOfAccountsPanel({
                   </select>
                 </label>
                 <label className="form-field">
+                  <span>Level</span>
+                  <select
+                    value={accountValue.level}
+                    onChange={(event) => {
+                      const level = event.target.value;
+
+                      onAccountChange({
+                        ...accountValue,
+                        level,
+                        isPostingAccount: isPostingLedgerAccountLevel(level)
+                      });
+                    }}
+                    disabled={isBusy || accountMode === "edit"}
+                  >
+                    {accountLevelOptions.map((level) => (
+                      <option key={level.code} value={level.label}>
+                        {level.code} {level.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
                   <span>{accountMode === "edit" ? "Parent account" : "Parent code"}</span>
                   <input
                     value={
@@ -735,7 +768,7 @@ export function ChartOfAccountsPanel({
                         <td>{account.rangeRole ?? "-"}</td>
                         <td>{account.type}</td>
                         <td>{account.normalBalance}</td>
-                        <td>{account.isPostingAccount ? "Posting" : "Control"}</td>
+                        <td>{account.isPostingAccount ? "Posting" : "Non-posting"}</td>
                         <td>
                           <span className={`status-pill ${account.status.toLowerCase()}`}>
                             {account.status}
@@ -806,18 +839,19 @@ export function ChartOfAccountsPanel({
                     <th>Source</th>
                     <th>Reference</th>
                     <th>Status</th>
-                    <th>Debit</th>
-                    <th>Credit</th>
-                    <th>Balance</th>
+                  <th>Debit</th>
+                  <th>Credit</th>
+                  <th>Balance</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activity.lines.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}>No account activity</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {activity.lines.length === 0 ? (
-                    <tr>
-                      <td colSpan={7}>No account activity</td>
-                    </tr>
-                  ) : (
-                    activity.lines.map((line) => (
+                ) : (
+                  activity.lines.map((line) => (
                       <tr key={`${line.journalEntryId}-${line.entryDate}-${line.runningBalance}`}>
                         <td>{line.entryDate}</td>
                         <td>{line.sourceType}</td>
@@ -830,6 +864,18 @@ export function ChartOfAccountsPanel({
                         <td>{formatAmount(line.debit)}</td>
                         <td>{formatAmount(line.credit)}</td>
                         <td>{formatAmount(line.runningBalance)}</td>
+                        <td>
+                          <button
+                            className={`table-icon-button${
+                              hasJournalEntry(line.journalEntryId, journalEntries) ? "" : " muted"
+                            }`}
+                            type="button"
+                            onClick={() => void onViewJournalEntry(line)}
+                            title="View journal lines"
+                          >
+                            <BookOpen size={14} />
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -909,6 +955,12 @@ function getLegacyAccountLevel(
   account: LedgerAccountSummary,
   ranges: AccountCodeRange[]
 ): LegacyAccountLevel {
+  const persistedLevel = getPersistedLegacyAccountLevel(account.level);
+
+  if (persistedLevel !== null) {
+    return persistedLevel;
+  }
+
   const range = getAccountRange(account, ranges);
 
   if (range !== null && isControlRange(range)) {
@@ -930,6 +982,82 @@ function getLegacyAccountLevel(
   return getLegacyAccountLevelDefinition("D");
 }
 
+function getPersistedLegacyAccountLevel(value?: string | null): LegacyAccountLevel | null {
+  const normalized = value?.trim().toLowerCase() ?? "";
+
+  if (normalized === "") {
+    return null;
+  }
+
+  return legacyAccountLevels.find((level) =>
+    level.label.toLowerCase() === normalized
+    || level.code.toLowerCase() === normalized) ?? null;
+}
+
+function getLedgerAccountLevelOptions(
+  range: AccountCodeRange | null,
+  accountMode: "create" | "edit",
+  currentLevel: string
+): LegacyAccountLevel[] {
+  if (accountMode === "edit") {
+    return ensureCurrentLevelOption(legacyAccountLevels, currentLevel);
+  }
+
+  if (range === null) {
+    return legacyAccountLevels;
+  }
+
+  if (hasRangeIntent(range, "Header")) {
+    return [getLegacyAccountLevelDefinition("H")];
+  }
+
+  if (hasRangeIntent(range, "Total")) {
+    return [getLegacyAccountLevelDefinition("T")];
+  }
+
+  if (isControlRange(range)) {
+    return [getLegacyAccountLevelDefinition("C")];
+  }
+
+  if (hasRangeIntent(range, "Master")) {
+    return [getLegacyAccountLevelDefinition("M")];
+  }
+
+  if ((range.parentCode ?? "").trim() !== "") {
+    return [getLegacyAccountLevelDefinition("S")];
+  }
+
+  if (range.isPostingAccount) {
+    return [getLegacyAccountLevelDefinition("D")];
+  }
+
+  return [
+    getLegacyAccountLevelDefinition("H"),
+    getLegacyAccountLevelDefinition("T"),
+    getLegacyAccountLevelDefinition("M"),
+    getLegacyAccountLevelDefinition("C")
+  ];
+}
+
+function ensureCurrentLevelOption(
+  options: LegacyAccountLevel[],
+  currentLevel: string
+): LegacyAccountLevel[] {
+  const current = getPersistedLegacyAccountLevel(currentLevel);
+
+  if (current === null || options.some((option) => option.code === current.code)) {
+    return options;
+  }
+
+  return [current, ...options];
+}
+
+function isPostingLedgerAccountLevel(level: string): boolean {
+  const legacyLevel = getPersistedLegacyAccountLevel(level);
+
+  return legacyLevel?.code === "D" || legacyLevel?.code === "S";
+}
+
 function getAccountRange(
   account: LedgerAccountSummary,
   ranges: AccountCodeRange[]
@@ -948,8 +1076,14 @@ function getAccountRange(
 }
 
 function isControlRange(range: AccountCodeRange): boolean {
-  return range.role.toLowerCase().includes("control")
-    || range.displayName.toLowerCase().includes("control");
+  return hasRangeIntent(range, "Control");
+}
+
+function hasRangeIntent(range: AccountCodeRange, intent: string): boolean {
+  const normalizedIntent = intent.toLowerCase();
+
+  return range.role.toLowerCase().includes(normalizedIntent)
+    || range.displayName.toLowerCase().includes(normalizedIntent);
 }
 
 function getLegacyAccountLevelDefinition(code: LegacyAccountLevelCode): LegacyAccountLevel {
@@ -958,4 +1092,11 @@ function getLegacyAccountLevelDefinition(code: LegacyAccountLevelCode): LegacyAc
 
 function formatAmount(value: number): string {
   return value.toFixed(2);
+}
+
+function hasJournalEntry(
+  journalEntryId: string,
+  journalEntries: JournalEntrySummary[]
+): boolean {
+  return journalEntries.some((entry) => entry.journalEntryId === journalEntryId);
 }

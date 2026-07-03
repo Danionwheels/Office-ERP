@@ -2,14 +2,25 @@ import { apiRequest } from "../../../shared/api/httpClient";
 import type {
   AccountCodeRange,
   AccountCodeRangeFormInput,
+  AccountingControlSettings,
+  AccountingControlSettingsInput,
+  AccountingPeriod,
+  AccountingPeriodCloseJournalPreview,
+  AccountingPeriodCloseReadiness,
+  AccountingPeriodFormInput,
   JournalEntryFilters,
+  JournalEntrySourceDocument,
   JournalEntrySummary,
   LedgerAccountActivity,
   LedgerAccountCodeSuggestion,
   LedgerAccountEditorInput,
   LedgerAccountFilters,
+  LedgerAccountReconciliation,
+  LedgerAccountRepairPlan,
   LedgerAccountSummary,
   ManualJournalEntryInput,
+  TrialBalance,
+  TrialBalanceFilters,
   VoidManualJournalEntryInput,
   VoidManualJournalEntryResult
 } from "../types/accountingTypes";
@@ -19,9 +30,18 @@ type ListLedgerAccountsResponse = {
   accounts: LedgerAccountSummary[];
 };
 
+type LedgerAccountReconciliationResponse = LedgerAccountReconciliation;
+
+type LedgerAccountRepairPlanResponse = LedgerAccountRepairPlan;
+
 type ListAccountCodeRangesResponse = {
   companyCode: string;
   ranges: AccountCodeRange[];
+};
+
+type ListAccountingPeriodsResponse = {
+  companyCode: string;
+  periods: AccountingPeriod[];
 };
 
 type ListJournalEntriesResponse = {
@@ -34,6 +54,7 @@ type LedgerAccountWriteResponse = {
   name: string;
   type: string;
   normalBalance: string;
+  level?: string | null;
   parentAccountId?: string | null;
   isPostingAccount: boolean;
   status: string;
@@ -66,6 +87,32 @@ export async function listLedgerAccounts(
   return response.accounts;
 }
 
+export async function getLedgerAccountReconciliation(
+  companyCode: string
+): Promise<LedgerAccountReconciliation> {
+  const query = new URLSearchParams();
+  setQuery(query, "companyCode", companyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
+  return apiRequest<LedgerAccountReconciliationResponse>(
+    `/api/v1/accounting/ledger-accounts/reconciliation${suffix}`
+  );
+}
+
+export async function getLedgerAccountRepairPlan(
+  companyCode: string
+): Promise<LedgerAccountRepairPlan> {
+  const query = new URLSearchParams();
+  setQuery(query, "companyCode", companyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
+  return apiRequest<LedgerAccountRepairPlanResponse>(
+    `/api/v1/accounting/ledger-accounts/repair-plan${suffix}`
+  );
+}
+
 export async function createLedgerAccount(
   input: LedgerAccountEditorInput
 ): Promise<LedgerAccountWriteResponse> {
@@ -77,7 +124,8 @@ export async function createLedgerAccount(
       type: input.type,
       normalBalance: input.normalBalance,
       parentAccountId: optionalText(input.parentAccountId),
-      isPostingAccount: input.isPostingAccount
+      isPostingAccount: input.isPostingAccount,
+      level: optionalText(input.level)
     })
   });
 }
@@ -123,6 +171,96 @@ export async function listAccountCodeRanges(companyCode: string): Promise<Accoun
   return response.ranges;
 }
 
+export async function getAccountingControlSettings(
+  companyCode: string
+): Promise<AccountingControlSettings> {
+  const query = new URLSearchParams();
+  setQuery(query, "companyCode", companyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
+  return apiRequest<AccountingControlSettings>(`/api/v1/accounting/accounting-controls${suffix}`);
+}
+
+export async function configureAccountingControlSettings(
+  input: AccountingControlSettingsInput
+): Promise<AccountingControlSettings> {
+  return apiRequest<AccountingControlSettings>("/api/v1/accounting/accounting-controls", {
+    method: "PUT",
+    body: JSON.stringify({
+      companyCode: optionalText(input.companyCode),
+      baseCurrencyCode: input.baseCurrencyCode,
+      retainedEarningsAccountId: optionalText(input.retainedEarningsAccountId),
+      incomeSummaryAccountId: optionalText(input.incomeSummaryAccountId),
+      roundingAccountId: optionalText(input.roundingAccountId)
+    })
+  });
+}
+
+export async function listAccountingPeriods(companyCode: string): Promise<AccountingPeriod[]> {
+  const query = new URLSearchParams();
+  setQuery(query, "companyCode", companyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+  const response = await apiRequest<ListAccountingPeriodsResponse>(
+    `/api/v1/accounting/accounting-periods${suffix}`
+  );
+
+  return response.periods;
+}
+
+export async function createAccountingPeriod(
+  input: AccountingPeriodFormInput
+): Promise<AccountingPeriod> {
+  return apiRequest<AccountingPeriod>("/api/v1/accounting/accounting-periods", {
+    method: "POST",
+    body: JSON.stringify({
+      companyCode: optionalText(input.companyCode),
+      name: optionalText(input.name),
+      startsOn: input.startsOn,
+      endsOn: input.endsOn
+    })
+  });
+}
+
+export async function getAccountingPeriodCloseReadiness(
+  accountingPeriodId: string
+): Promise<AccountingPeriodCloseReadiness> {
+  return apiRequest<AccountingPeriodCloseReadiness>(
+    `/api/v1/accounting/accounting-periods/${encodeURIComponent(accountingPeriodId)}/close-readiness`
+  );
+}
+
+export async function getAccountingPeriodCloseJournalPreview(
+  accountingPeriodId: string
+): Promise<AccountingPeriodCloseJournalPreview> {
+  return apiRequest<AccountingPeriodCloseJournalPreview>(
+    `/api/v1/accounting/accounting-periods/${encodeURIComponent(accountingPeriodId)}/close-journal-preview`
+  );
+}
+
+export async function closeAccountingPeriod(
+  accountingPeriodId: string
+): Promise<AccountingPeriod> {
+  return apiRequest<AccountingPeriod>(
+    `/api/v1/accounting/accounting-periods/${encodeURIComponent(accountingPeriodId)}/close`,
+    {
+      method: "POST"
+    }
+  );
+}
+
+export async function reopenAccountingPeriod(
+  accountingPeriodId: string
+): Promise<AccountingPeriod> {
+  return apiRequest<AccountingPeriod>(
+    `/api/v1/accounting/accounting-periods/${encodeURIComponent(accountingPeriodId)}/reopen`,
+    {
+      method: "POST"
+    }
+  );
+}
+
 export async function listJournalEntries(
   filters: JournalEntryFilters
 ): Promise<JournalEntrySummary[]> {
@@ -137,6 +275,20 @@ export async function listJournalEntries(
   );
 
   return response.entries;
+}
+
+export async function getJournalEntry(journalEntryId: string): Promise<JournalEntrySummary> {
+  return apiRequest<JournalEntrySummary>(
+    `/api/v1/accounting/journal-entries/${encodeURIComponent(journalEntryId)}`
+  );
+}
+
+export async function getJournalEntrySourceDocument(
+  journalEntryId: string
+): Promise<JournalEntrySourceDocument> {
+  return apiRequest<JournalEntrySourceDocument>(
+    `/api/v1/accounting/journal-entries/${encodeURIComponent(journalEntryId)}/source-document`
+  );
 }
 
 export async function postManualJournalEntry(
@@ -181,6 +333,18 @@ export async function getLedgerAccountActivity(
   return apiRequest<LedgerAccountActivity>(
     `/api/v1/accounting/ledger-accounts/${encodeURIComponent(ledgerAccountId)}/activity`
   );
+}
+
+export async function getTrialBalance(
+  filters: TrialBalanceFilters
+): Promise<TrialBalance> {
+  const query = new URLSearchParams();
+  setQuery(query, "asOfDate", filters.asOfDate);
+  setQuery(query, "currencyCode", filters.currencyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
+  return apiRequest<TrialBalance>(`/api/v1/accounting/trial-balance${suffix}`);
 }
 
 export async function configureAccountCodeRange(

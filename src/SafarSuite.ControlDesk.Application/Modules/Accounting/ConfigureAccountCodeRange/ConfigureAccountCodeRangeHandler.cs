@@ -40,6 +40,15 @@ public sealed class ConfigureAccountCodeRangeHandler
             return Result<AccountCodeRangeResult>.Failure(validationErrors);
         }
 
+        var companyError = AccountingSetupDefaults.ValidateSingleCompanyCode(
+            command.CompanyCode,
+            nameof(command.CompanyCode));
+
+        if (companyError is not null)
+        {
+            return Result<AccountCodeRangeResult>.Failure(companyError);
+        }
+
         if (!Enum.TryParse<LedgerAccountType>(command.AccountType, true, out var accountType))
         {
             return Result<AccountCodeRangeResult>.Failure(ApplicationError.Validation(

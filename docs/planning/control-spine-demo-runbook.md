@@ -53,6 +53,8 @@ dotnet tool run dotnet-ef database update --project src/SafarSuite.ControlCloud.
 
 Both APIs use the same local PostgreSQL server in development, with Control Cloud data isolated under its own cloud persistence slice.
 
+Use the workspace compose service `safarsuite-control-desk-postgres` on `localhost:54329`. A Docker Desktop compose app still trying to start `safarsuite-postgres` on `55432` is stale for this workspace and can fail before Postgres starts because Windows refuses that host port.
+
 ## Start Services
 
 Use separate terminals.

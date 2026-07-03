@@ -1,5 +1,6 @@
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
@@ -19,6 +20,7 @@ public sealed class RecordInvoicePaymentHandler
     private readonly IPaymentRepository _payments;
     private readonly IJournalEntryRepository _journalEntries;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
+    private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly PaymentPostingService _postingService;
     private readonly PaymentCloudOutboxMessageFactory _outboxMessageFactory;
     private readonly IUnitOfWork _unitOfWork;
@@ -31,6 +33,7 @@ public sealed class RecordInvoicePaymentHandler
         IPaymentRepository payments,
         IJournalEntryRepository journalEntries,
         ICloudOutboxMessageRepository cloudOutboxMessages,
+        AccountingPeriodPostingGuard periodGuard,
         PaymentPostingService postingService,
         PaymentCloudOutboxMessageFactory outboxMessageFactory,
         IUnitOfWork unitOfWork,
@@ -42,6 +45,7 @@ public sealed class RecordInvoicePaymentHandler
         _payments = payments;
         _journalEntries = journalEntries;
         _cloudOutboxMessages = cloudOutboxMessages;
+        _periodGuard = periodGuard;
         _postingService = postingService;
         _outboxMessageFactory = outboxMessageFactory;
         _unitOfWork = unitOfWork;
@@ -152,6 +156,16 @@ public sealed class RecordInvoicePaymentHandler
                 return Result<RecordInvoicePaymentResult>.Failure(ApplicationError.Validation(
                     nameof(command.Method),
                     "Only approved or reviewable payments can be recorded."));
+            }
+
+            var periodError = await _periodGuard.ValidateOpenPeriodAsync(
+                command.PostingDate,
+                nameof(command.PostingDate),
+                cancellationToken: cancellationToken);
+
+            if (periodError is not null)
+            {
+                return Result<RecordInvoicePaymentResult>.Failure(periodError);
             }
 
             var result = await _unitOfWork.ExecuteInTransactionAsync(

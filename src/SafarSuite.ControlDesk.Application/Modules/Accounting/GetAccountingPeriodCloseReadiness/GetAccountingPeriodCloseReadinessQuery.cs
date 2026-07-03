@@ -1,0 +1,3 @@
+namespace SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseReadiness;
+
+public sealed record GetAccountingPeriodCloseReadinessQuery(Guid AccountingPeriodId);

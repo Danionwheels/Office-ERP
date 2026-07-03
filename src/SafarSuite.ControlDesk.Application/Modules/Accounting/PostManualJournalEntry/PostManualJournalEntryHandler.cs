@@ -1,5 +1,6 @@
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
 using SafarSuite.ControlDesk.Domain.SharedKernel;
@@ -10,6 +11,7 @@ public sealed class PostManualJournalEntryHandler
 {
     private readonly IJournalEntryRepository _journalEntries;
     private readonly ILedgerAccountRepository _ledgerAccounts;
+    private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
     private readonly IClock _clock;
@@ -18,6 +20,7 @@ public sealed class PostManualJournalEntryHandler
     public PostManualJournalEntryHandler(
         IJournalEntryRepository journalEntries,
         ILedgerAccountRepository ledgerAccounts,
+        AccountingPeriodPostingGuard periodGuard,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
         IClock clock,
@@ -25,6 +28,7 @@ public sealed class PostManualJournalEntryHandler
     {
         _journalEntries = journalEntries;
         _ledgerAccounts = ledgerAccounts;
+        _periodGuard = periodGuard;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
         _clock = clock;
@@ -44,6 +48,16 @@ public sealed class PostManualJournalEntryHandler
 
         try
         {
+            var periodError = await _periodGuard.ValidateOpenPeriodAsync(
+                command.EntryDate,
+                nameof(command.EntryDate),
+                cancellationToken: cancellationToken);
+
+            if (periodError is not null)
+            {
+                return Result<PostManualJournalEntryResult>.Failure(periodError);
+            }
+
             var accountErrors = await ValidateAccountsAsync(command, cancellationToken);
 
             if (accountErrors.Count > 0)

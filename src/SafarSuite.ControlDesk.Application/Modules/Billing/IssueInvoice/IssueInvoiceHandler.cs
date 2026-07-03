@@ -1,6 +1,7 @@
 using System.Text.Json;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
@@ -21,6 +22,7 @@ public sealed class IssueInvoiceHandler
     private readonly IClientAccountingProfileRepository _clientAccountingProfiles;
     private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
@@ -33,6 +35,7 @@ public sealed class IssueInvoiceHandler
         IClientAccountingProfileRepository clientAccountingProfiles,
         ILedgerAccountRepository ledgerAccounts,
         IJournalEntryRepository journalEntries,
+        AccountingPeriodPostingGuard periodGuard,
         ICloudOutboxMessageRepository cloudOutboxMessages,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
@@ -44,6 +47,7 @@ public sealed class IssueInvoiceHandler
         _clientAccountingProfiles = clientAccountingProfiles;
         _ledgerAccounts = ledgerAccounts;
         _journalEntries = journalEntries;
+        _periodGuard = periodGuard;
         _cloudOutboxMessages = cloudOutboxMessages;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
@@ -114,6 +118,16 @@ public sealed class IssueInvoiceHandler
             if (postingLines.IsFailure)
             {
                 return Result<IssueInvoiceResult>.Failure(postingLines.Errors);
+            }
+
+            var periodError = await _periodGuard.ValidateOpenPeriodAsync(
+                command.PostingDate,
+                nameof(command.PostingDate),
+                cancellationToken: cancellationToken);
+
+            if (periodError is not null)
+            {
+                return Result<IssueInvoiceResult>.Failure(periodError);
             }
 
             var result = await _unitOfWork.ExecuteInTransactionAsync(

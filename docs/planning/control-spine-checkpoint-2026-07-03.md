@@ -51,7 +51,8 @@ The project is still not at the final destination because the deployed SafarSuit
 
 ## Recommended Next Move
 
-1. Move into the real SafarSuite app/runtime integration: publish a real app image or placeholder image with the correct runtime contract and wire the local module-gateway check into the app workspace.
-2. Keep the runbook at `docs/planning/control-spine-demo-runbook.md` as the repeatable proof path before and after each runtime integration slice.
+1. Use `docs/planning/safarsuite-app-integration-handoff.md` as the workspace-switch contract.
+2. Move into the real SafarSuite app/runtime integration: publish a real app image or placeholder image with the correct runtime contract and wire the local module-gateway check into the app workspace.
+3. Keep the runbook at `docs/planning/control-spine-demo-runbook.md` as the repeatable proof path before and after each runtime integration slice.
 
 The recommended order is now real app/module-gateway integration first, then payment/auth hardening later. The control spine is strong enough to carry the next layer.

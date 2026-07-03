@@ -48,6 +48,12 @@ internal sealed class LedgerAccountConfiguration : IEntityTypeConfiguration<Ledg
             .HasConversion<string>()
             .IsRequired();
 
+        builder.Property(account => account.Level)
+            .HasColumnName("level")
+            .HasMaxLength(32)
+            .HasConversion<string>()
+            .IsRequired();
+
         builder.Property(account => account.ParentAccountId)
             .HasColumnName("parent_account_id")
             .HasConversion(

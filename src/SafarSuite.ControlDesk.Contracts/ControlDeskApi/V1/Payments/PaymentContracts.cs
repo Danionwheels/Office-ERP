@@ -1,3 +1,5 @@
+using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Billing;
+
 namespace SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Payments;
 
 public sealed record RecordInvoicePaymentRequest(
@@ -26,6 +28,11 @@ public sealed record RecordInvoicePaymentResponse(
     decimal TotalDebit,
     decimal TotalCredit,
     IReadOnlyCollection<RecordInvoicePaymentJournalLineResponse> JournalLines);
+
+public sealed record InvoicePaymentDocumentResponse(
+    GenerateInvoiceDraftResponse Invoice,
+    RecordInvoicePaymentResponse Payment,
+    ReverseInvoicePaymentResponse? Reversal);
 
 public sealed record RecordInvoicePaymentJournalLineResponse(
     Guid LedgerAccountId,
@@ -126,6 +133,9 @@ public sealed record IssueClientRefundResponse(
     decimal TotalDebit,
     decimal TotalCredit,
     IReadOnlyCollection<IssueClientRefundJournalLineResponse> JournalLines);
+
+public sealed record ClientRefundDocumentResponse(
+    IssueClientRefundResponse Refund);
 
 public sealed record IssueClientRefundJournalLineResponse(
     Guid LedgerAccountId,

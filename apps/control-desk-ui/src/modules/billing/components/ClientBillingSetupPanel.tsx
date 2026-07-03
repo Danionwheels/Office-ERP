@@ -5,6 +5,7 @@ import {
   FilePlus2,
   FileX2,
   Landmark,
+  ListTree,
   PlusCircle,
   ReceiptText,
   RefreshCw,
@@ -74,6 +75,7 @@ type ClientBillingSetupPanelProps = {
   onIssueInvoice: () => Promise<void>;
   onVoidInvoice: (input: VoidInvoiceInput) => Promise<void>;
   onIssueCreditNote: (input: IssueCreditNoteInput) => Promise<void>;
+  onViewJournalEntry: (journalEntryId: string) => Promise<void>;
 };
 
 type ModuleBillingSuggestion = {
@@ -127,6 +129,7 @@ export function ClientBillingSetupPanel({
   onIssueInvoice,
   onVoidInvoice,
   onIssueCreditNote,
+  onViewJournalEntry,
   initialStep = "accounting"
 }: ClientBillingSetupPanelProps) {
   const [activeBillingStep, setActiveBillingStep] = useState<BillingStep>(initialStep);
@@ -1161,7 +1164,18 @@ export function ClientBillingSetupPanel({
             </div>
             <div>
               <dt>Journal</dt>
-              <dd>{issuedInvoice.journalEntryStatus}</dd>
+              <dd className="fact-action-value">
+                <span>{issuedInvoice.journalEntryStatus}</span>
+                <button
+                  className="table-icon-button"
+                  type="button"
+                  onClick={() => void onViewJournalEntry(issuedInvoice.journalEntryId)}
+                  disabled={isBusy}
+                  title="Open related journal"
+                >
+                  <ListTree size={14} />
+                </button>
+              </dd>
             </div>
             <div>
               <dt>Debit</dt>
@@ -1230,7 +1244,18 @@ export function ClientBillingSetupPanel({
             </div>
             <div>
               <dt>Reversal</dt>
-              <dd>{voidedInvoice.reversalJournalEntryStatus}</dd>
+              <dd className="fact-action-value">
+                <span>{voidedInvoice.reversalJournalEntryStatus}</span>
+                <button
+                  className="table-icon-button"
+                  type="button"
+                  onClick={() => void onViewJournalEntry(voidedInvoice.reversalJournalEntryId)}
+                  disabled={isBusy}
+                  title="Open reversal journal"
+                >
+                  <ListTree size={14} />
+                </button>
+              </dd>
             </div>
             <div>
               <dt>Debit</dt>
@@ -1309,6 +1334,21 @@ export function ClientBillingSetupPanel({
             <div>
               <dt>Amount</dt>
               <dd>{formatMoney(issuedCreditNote.amount, issuedCreditNote.currencyCode)}</dd>
+            </div>
+            <div>
+              <dt>Journal</dt>
+              <dd className="fact-action-value">
+                <span>{issuedCreditNote.journalEntryStatus}</span>
+                <button
+                  className="table-icon-button"
+                  type="button"
+                  onClick={() => void onViewJournalEntry(issuedCreditNote.journalEntryId)}
+                  disabled={isBusy}
+                  title="Open related journal"
+                >
+                  <ListTree size={14} />
+                </button>
+              </dd>
             </div>
             <div>
               <dt>Debit</dt>

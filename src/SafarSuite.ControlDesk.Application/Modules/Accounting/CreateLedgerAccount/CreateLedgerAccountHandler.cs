@@ -61,6 +61,13 @@ public sealed class CreateLedgerAccountHandler
                     "Normal balance is invalid."));
             }
 
+            if (!TryParseLedgerAccountLevel(command.Level, out var requestedLevel))
+            {
+                return Result<CreateLedgerAccountResult>.Failure(ApplicationError.Validation(
+                    nameof(command.Level),
+                    "Ledger account level is invalid."));
+            }
+
             var code = LedgerAccountCode.Create(command.Code);
 
             if (await _ledgerAccounts.ExistsByCodeAsync(code, cancellationToken))
@@ -92,12 +99,24 @@ public sealed class CreateLedgerAccountHandler
                 return Result<CreateLedgerAccountResult>.Failure(parentResolution.Error);
             }
 
+            var levelResolution = ResolveLedgerAccountLevel(
+                rangeMatch.Range,
+                parentResolution.ParentAccount,
+                requestedLevel,
+                command.IsPostingAccount);
+
+            if (levelResolution.Error is not null)
+            {
+                return Result<CreateLedgerAccountResult>.Failure(levelResolution.Error);
+            }
+
             var ledgerAccount = LedgerAccount.Create(
                 LedgerAccountId.Create(_idGenerator.NewGuid()),
                 code,
                 command.Name,
                 type,
                 normalBalance,
+                levelResolution.Level,
                 parentResolution.ParentAccountId,
                 command.IsPostingAccount,
                 _clock.UtcNow);
@@ -111,6 +130,7 @@ public sealed class CreateLedgerAccountHandler
                 ledgerAccount.Name,
                 ledgerAccount.Type.ToString(),
                 ledgerAccount.NormalBalance.ToString(),
+                ledgerAccount.Level.ToString(),
                 ledgerAccount.ParentAccountId?.Value,
                 ledgerAccount.IsPostingAccount,
                 ledgerAccount.Status.ToString()));
@@ -187,33 +207,263 @@ public sealed class CreateLedgerAccountHandler
         if (requestedParentAccountId.HasValue)
         {
             var parentAccountId = LedgerAccountId.Create(requestedParentAccountId.Value);
+            var parentAccount = await _ledgerAccounts.GetByIdAsync(parentAccountId, cancellationToken);
 
-            if (await _ledgerAccounts.GetByIdAsync(parentAccountId, cancellationToken) is null)
+            if (parentAccount is null)
             {
-                return new ParentAccountResolution(null, ApplicationError.NotFound(
+                return new ParentAccountResolution(null, null, ApplicationError.NotFound(
                     nameof(CreateLedgerAccountCommand.ParentAccountId),
                     "Parent ledger account was not found."));
             }
 
-            return new ParentAccountResolution(parentAccountId, null);
+            return new ParentAccountResolution(parentAccountId, parentAccount, null);
         }
 
         if (string.IsNullOrWhiteSpace(matchedRange?.ParentCode))
         {
-            return new ParentAccountResolution(null, null);
+            return new ParentAccountResolution(null, null, null);
         }
 
         var parentCode = LedgerAccountCode.Create(matchedRange.ParentCode);
-        var parentAccount = await _ledgerAccounts.GetByCodeAsync(parentCode, cancellationToken);
+        var matchedParentAccount = await _ledgerAccounts.GetByCodeAsync(parentCode, cancellationToken);
 
-        return new ParentAccountResolution(parentAccount?.Id, null);
+        return new ParentAccountResolution(matchedParentAccount?.Id, matchedParentAccount, null);
+    }
+
+    private static LedgerAccountLevelResolution ResolveLedgerAccountLevel(
+        AccountCodeRange? matchedRange,
+        LedgerAccount? parentAccount,
+        LedgerAccountLevel? requestedLevel,
+        bool isPostingAccount)
+    {
+        var level = requestedLevel
+            ?? DetermineLedgerAccountLevel(matchedRange, parentAccount?.Id, isPostingAccount);
+        var validationError = ValidateLedgerAccountLevel(
+            level,
+            matchedRange,
+            parentAccount,
+            isPostingAccount);
+
+        return new LedgerAccountLevelResolution(level, validationError);
+    }
+
+    private static LedgerAccountLevel DetermineLedgerAccountLevel(
+        AccountCodeRange? matchedRange,
+        LedgerAccountId? parentAccountId,
+        bool isPostingAccount)
+    {
+        if (matchedRange is not null && IsHeaderRange(matchedRange))
+        {
+            return LedgerAccountLevel.Header;
+        }
+
+        if (matchedRange is not null && IsTotalRange(matchedRange))
+        {
+            return LedgerAccountLevel.Total;
+        }
+
+        if (matchedRange is not null && IsControlRange(matchedRange))
+        {
+            return LedgerAccountLevel.Control;
+        }
+
+        if (matchedRange is not null && IsMasterRange(matchedRange))
+        {
+            return LedgerAccountLevel.Master;
+        }
+
+        if (!isPostingAccount)
+        {
+            return LedgerAccountLevel.Master;
+        }
+
+        if (parentAccountId.HasValue || !string.IsNullOrWhiteSpace(matchedRange?.ParentCode))
+        {
+            return LedgerAccountLevel.Subsidiary;
+        }
+
+        return LedgerAccountLevel.Detail;
+    }
+
+    private static ApplicationError? ValidateLedgerAccountLevel(
+        LedgerAccountLevel level,
+        AccountCodeRange? matchedRange,
+        LedgerAccount? parentAccount,
+        bool isPostingAccount)
+    {
+        if (RequiresNonPostingAccount(level) && isPostingAccount)
+        {
+            return ApplicationError.Validation(
+                nameof(CreateLedgerAccountCommand.IsPostingAccount),
+                $"{level} accounts cannot be posting accounts.");
+        }
+
+        if (RequiresPostingAccount(level) && !isPostingAccount)
+        {
+            return ApplicationError.Validation(
+                nameof(CreateLedgerAccountCommand.IsPostingAccount),
+                $"{level} accounts must be posting accounts.");
+        }
+
+        if (matchedRange is not null && IsHeaderRange(matchedRange) && level != LedgerAccountLevel.Header)
+        {
+            return ApplicationError.Validation(
+                nameof(CreateLedgerAccountCommand.Level),
+                $"Ledger account level must be Header for range {matchedRange.DisplayName}.");
+        }
+
+        if (matchedRange is not null && IsTotalRange(matchedRange) && level != LedgerAccountLevel.Total)
+        {
+            return ApplicationError.Validation(
+                nameof(CreateLedgerAccountCommand.Level),
+                $"Ledger account level must be Total for range {matchedRange.DisplayName}.");
+        }
+
+        if (matchedRange is not null && IsControlRange(matchedRange) && level != LedgerAccountLevel.Control)
+        {
+            return ApplicationError.Validation(
+                nameof(CreateLedgerAccountCommand.Level),
+                $"Ledger account level must be Control for range {matchedRange.DisplayName}.");
+        }
+
+        if (matchedRange is not null
+            && !string.IsNullOrWhiteSpace(matchedRange.ParentCode)
+            && level != LedgerAccountLevel.Subsidiary)
+        {
+            return ApplicationError.Validation(
+                nameof(CreateLedgerAccountCommand.Level),
+                $"Ledger account level must be Subsidiary for child range {matchedRange.DisplayName}.");
+        }
+
+        if (level is LedgerAccountLevel.Header
+            or LedgerAccountLevel.Total
+            or LedgerAccountLevel.Master
+            or LedgerAccountLevel.Control)
+        {
+            return parentAccount is null
+                ? null
+                : ApplicationError.Validation(
+                    nameof(CreateLedgerAccountCommand.ParentAccountId),
+                    $"{level} accounts cannot use a parent account in this GL setup slice.");
+        }
+
+        if (level == LedgerAccountLevel.Subsidiary)
+        {
+            if (parentAccount is null)
+            {
+                return ApplicationError.Validation(
+                    nameof(CreateLedgerAccountCommand.ParentAccountId),
+                    "Subsidiary accounts require an existing Control parent account.");
+            }
+
+            return parentAccount.Level == LedgerAccountLevel.Control
+                ? null
+                : ApplicationError.Validation(
+                    nameof(CreateLedgerAccountCommand.ParentAccountId),
+                    "Subsidiary account parent must be a Control account.");
+        }
+
+        if (level == LedgerAccountLevel.Detail
+            && parentAccount is not null
+            && parentAccount.Level != LedgerAccountLevel.Master)
+        {
+            return ApplicationError.Validation(
+                nameof(CreateLedgerAccountCommand.ParentAccountId),
+                "Detail account parent must be a Master account.");
+        }
+
+        return null;
+    }
+
+    private static bool TryParseLedgerAccountLevel(
+        string? value,
+        out LedgerAccountLevel? level)
+    {
+        var normalizedValue = value?.Trim();
+        level = null;
+
+        if (string.IsNullOrWhiteSpace(normalizedValue))
+        {
+            return true;
+        }
+
+        level = normalizedValue.ToUpperInvariant() switch
+        {
+            "H" => LedgerAccountLevel.Header,
+            "T" => LedgerAccountLevel.Total,
+            "M" => LedgerAccountLevel.Master,
+            "D" => LedgerAccountLevel.Detail,
+            "C" => LedgerAccountLevel.Control,
+            "S" => LedgerAccountLevel.Subsidiary,
+            _ => null
+        };
+
+        if (level.HasValue)
+        {
+            return true;
+        }
+
+        if (!Enum.TryParse<LedgerAccountLevel>(normalizedValue, true, out var parsedLevel)
+            || !Enum.IsDefined(parsedLevel))
+        {
+            return false;
+        }
+
+        level = parsedLevel;
+
+        return true;
+    }
+
+    private static bool RequiresNonPostingAccount(LedgerAccountLevel level)
+    {
+        return level is LedgerAccountLevel.Header
+            or LedgerAccountLevel.Total
+            or LedgerAccountLevel.Master
+            or LedgerAccountLevel.Control;
+    }
+
+    private static bool RequiresPostingAccount(LedgerAccountLevel level)
+    {
+        return level is LedgerAccountLevel.Detail
+            or LedgerAccountLevel.Subsidiary;
+    }
+
+    private static bool IsHeaderRange(AccountCodeRange range)
+    {
+        return HasRangeIntent(range, "Header");
+    }
+
+    private static bool IsTotalRange(AccountCodeRange range)
+    {
+        return HasRangeIntent(range, "Total");
+    }
+
+    private static bool IsMasterRange(AccountCodeRange range)
+    {
+        return HasRangeIntent(range, "Master");
+    }
+
+    private static bool IsControlRange(AccountCodeRange range)
+    {
+        return HasRangeIntent(range, "Control");
+    }
+
+    private static bool HasRangeIntent(AccountCodeRange range, string intent)
+    {
+        return range.Role.Contains(intent, StringComparison.OrdinalIgnoreCase)
+            || range.DisplayName.Contains(intent, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed record AccountingSetupRangeMatch(
         AccountCodeRange? Range,
         ApplicationError? Error);
 
+    private sealed record LedgerAccountLevelResolution(
+        LedgerAccountLevel Level,
+        ApplicationError? Error);
+
     private sealed record ParentAccountResolution(
         LedgerAccountId? ParentAccountId,
+        LedgerAccount? ParentAccount,
         ApplicationError? Error);
 }

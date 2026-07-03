@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
@@ -39,6 +42,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         IClientAccountingProfileRepository clientAccountingProfiles,
         IContractRepository contracts,
         IAccountCodeRangeRepository accountCodeRanges,
+        IAccountingPeriodRepository accountingPeriods,
         ILedgerAccountRepository ledgerAccounts,
         IJournalEntryRepository journalEntries,
         IChargeCodeRepository chargeCodes,
@@ -56,6 +60,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         ClientAccountingProfiles = clientAccountingProfiles;
         Contracts = contracts;
         AccountCodeRanges = accountCodeRanges;
+        AccountingPeriods = accountingPeriods;
         LedgerAccounts = ledgerAccounts;
         JournalEntries = journalEntries;
         ChargeCodes = chargeCodes;
@@ -73,13 +78,14 @@ internal sealed class SmokeHarness : IAsyncDisposable
         Clock = new SystemClock();
 
         var postingService = new PaymentPostingService(LedgerAccounts, IdGenerator, Clock);
+        var periodGuard = new AccountingPeriodPostingGuard(AccountingPeriods);
         var outboxMessageFactory = new PaymentCloudOutboxMessageFactory(IdGenerator, Clock);
         var creditBalanceService = new ClientCreditBalanceService(
             Invoices,
             CreditNotes,
             ClientRefunds,
             ClientCreditApplications);
-        var accountingSetupDefaults = new AccountingSetupDefaults(
+        AccountingSetupDefaults = new AccountingSetupDefaults(
             AccountCodeRanges,
             UnitOfWork,
             IdGenerator,
@@ -88,16 +94,26 @@ internal sealed class SmokeHarness : IAsyncDisposable
         SuggestLedgerAccountCode = new SuggestLedgerAccountCodeHandler(
             LedgerAccounts,
             AccountCodeRanges,
-            accountingSetupDefaults);
+            AccountingSetupDefaults);
 
         CreateLedgerAccount = new CreateLedgerAccountHandler(
             LedgerAccounts,
             AccountCodeRanges,
-            accountingSetupDefaults,
+            AccountingSetupDefaults,
             UnitOfWork,
             IdGenerator,
             Clock,
             new CreateLedgerAccountValidator());
+
+        GetLedgerAccountReconciliation = new GetLedgerAccountReconciliationHandler(
+            LedgerAccounts,
+            AccountCodeRanges,
+            AccountingSetupDefaults);
+
+        GetLedgerAccountRepairPlan = new GetLedgerAccountRepairPlanHandler(
+            GetLedgerAccountReconciliation,
+            AccountCodeRanges,
+            LedgerAccounts);
 
         CreateClient = new CreateClientHandler(
             Clients,
@@ -157,6 +173,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             ClientAccountingProfiles,
             LedgerAccounts,
             JournalEntries,
+            periodGuard,
             CloudOutboxMessages,
             UnitOfWork,
             IdGenerator,
@@ -168,6 +185,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Payments,
             JournalEntries,
             CloudOutboxMessages,
+            periodGuard,
             postingService,
             outboxMessageFactory,
             UnitOfWork,
@@ -179,6 +197,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Invoices,
             CreditNotes,
             JournalEntries,
+            periodGuard,
             CloudOutboxMessages,
             UnitOfWork,
             IdGenerator,
@@ -190,6 +209,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             ClientRefunds,
             JournalEntries,
             CloudOutboxMessages,
+            periodGuard,
             postingService,
             creditBalanceService,
             outboxMessageFactory,
@@ -242,6 +262,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new InMemoryClientAccountingProfileRepository(),
             new InMemoryContractRepository(),
             new InMemoryAccountCodeRangeRepository(),
+            new InMemoryAccountingPeriodRepository(),
             new InMemoryLedgerAccountRepository(),
             new InMemoryJournalEntryRepository(),
             new InMemoryChargeCodeRepository(),
@@ -273,6 +294,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new EfClientAccountingProfileRepository(dbContext),
             new EfContractRepository(dbContext),
             new EfAccountCodeRangeRepository(dbContext),
+            new EfAccountingPeriodRepository(dbContext),
             new EfLedgerAccountRepository(dbContext),
             new EfJournalEntryRepository(dbContext),
             new EfChargeCodeRepository(dbContext),
@@ -294,6 +316,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public IContractRepository Contracts { get; }
 
     public IAccountCodeRangeRepository AccountCodeRanges { get; }
+
+    public IAccountingPeriodRepository AccountingPeriods { get; }
 
     public ILedgerAccountRepository LedgerAccounts { get; }
 
@@ -321,7 +345,13 @@ internal sealed class SmokeHarness : IAsyncDisposable
 
     public IClock Clock { get; }
 
+    public AccountingSetupDefaults AccountingSetupDefaults { get; }
+
     public CreateLedgerAccountHandler CreateLedgerAccount { get; }
+
+    public GetLedgerAccountReconciliationHandler GetLedgerAccountReconciliation { get; }
+
+    public GetLedgerAccountRepairPlanHandler GetLedgerAccountRepairPlan { get; }
 
     public SuggestLedgerAccountCodeHandler SuggestLedgerAccountCode { get; }
 

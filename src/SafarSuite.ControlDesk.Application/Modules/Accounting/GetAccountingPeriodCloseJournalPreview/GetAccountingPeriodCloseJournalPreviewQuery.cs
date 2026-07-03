@@ -1,0 +1,3 @@
+namespace SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
+
+public sealed record GetAccountingPeriodCloseJournalPreviewQuery(Guid AccountingPeriodId);

@@ -2,6 +2,8 @@ using SafarSuite.ControlDesk.Api.Common;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GetCreditNoteDocument;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GetInvoiceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueCreditNote;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Billing.ListChargeCodes;
@@ -24,9 +26,11 @@ public static class BillingEndpoints
         group.MapPost("/client-charge-rules", CreateClientChargeRuleAsync);
         group.MapGet("/clients/{clientId:guid}/client-charge-rules", ListClientChargeRulesAsync);
         group.MapPost("/invoice-drafts", GenerateInvoiceDraftAsync);
+        group.MapGet("/invoices/{invoiceId:guid}", GetInvoiceDocumentAsync);
         group.MapPost("/invoices/{invoiceId:guid}/issue", IssueInvoiceAsync);
         group.MapPost("/invoices/{invoiceId:guid}/void", VoidInvoiceAsync);
         group.MapPost("/invoices/{invoiceId:guid}/credit-notes", IssueCreditNoteAsync);
+        group.MapGet("/credit-notes/{creditNoteId:guid}", GetCreditNoteDocumentAsync);
 
         return endpoints;
     }
@@ -223,6 +227,25 @@ public static class BillingEndpoints
         return Results.Created($"/api/v1/billing/invoices/{response.InvoiceId}", response);
     }
 
+    private static async Task<IResult> GetInvoiceDocumentAsync(
+        Guid invoiceId,
+        GetInvoiceDocumentHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(new GetInvoiceDocumentQuery(invoiceId), cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new InvoiceDocumentResponse(
+            ToResponse(result.Value.Invoice),
+            result.Value.IssuedInvoice is null ? null : ToResponse(result.Value.IssuedInvoice),
+            result.Value.VoidedInvoice is null ? null : ToResponse(result.Value.VoidedInvoice),
+            result.Value.CreditNote is null ? null : ToResponse(result.Value.CreditNote)));
+    }
+
     private static async Task<IResult> IssueInvoiceAsync(
         Guid invoiceId,
         IssueInvoiceRequest request,
@@ -337,5 +360,106 @@ public static class BillingEndpoints
                 line.Description)).ToArray());
 
         return Results.Created($"/api/v1/billing/credit-notes/{response.CreditNoteId}", response);
+    }
+
+    private static async Task<IResult> GetCreditNoteDocumentAsync(
+        Guid creditNoteId,
+        GetCreditNoteDocumentHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(new GetCreditNoteDocumentQuery(creditNoteId), cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new CreditNoteDocumentResponse(
+            ToResponse(result.Value.Invoice),
+            ToResponse(result.Value.CreditNote)));
+    }
+
+    private static GenerateInvoiceDraftResponse ToResponse(GenerateInvoiceDraftResult result)
+    {
+        return new GenerateInvoiceDraftResponse(
+            result.InvoiceId,
+            result.ClientId,
+            result.ContractId,
+            result.InvoiceNumber,
+            result.IssueDate,
+            result.DueDate,
+            result.BillingDate,
+            result.TotalAmount,
+            result.BalanceDue,
+            result.CurrencyCode,
+            result.Status,
+            result.Lines.Select(line => new GenerateInvoiceDraftLineResponse(
+                line.ChargeCodeId,
+                line.ProductModuleCode,
+                line.LineType,
+                line.Description,
+                line.Amount,
+                line.CurrencyCode)).ToArray());
+    }
+
+    private static IssueInvoiceResponse ToResponse(IssueInvoiceResult result)
+    {
+        return new IssueInvoiceResponse(
+            result.InvoiceId,
+            result.InvoiceNumber,
+            result.InvoiceStatus,
+            result.JournalEntryId,
+            result.JournalEntryStatus,
+            result.PostingDate,
+            result.TotalDebit,
+            result.TotalCredit,
+            result.CurrencyCode,
+            result.JournalLines.Select(line => new IssueInvoiceJournalLineResponse(
+                line.LedgerAccountId,
+                line.Debit,
+                line.Credit,
+                line.Description)).ToArray());
+    }
+
+    private static VoidInvoiceResponse ToResponse(VoidInvoiceResult result)
+    {
+        return new VoidInvoiceResponse(
+            result.InvoiceId,
+            result.InvoiceNumber,
+            result.InvoiceStatus,
+            result.OriginalJournalEntryId,
+            result.ReversalJournalEntryId,
+            result.ReversalJournalEntryStatus,
+            result.VoidDate,
+            result.TotalDebit,
+            result.TotalCredit,
+            result.CurrencyCode,
+            result.JournalLines.Select(line => new VoidInvoiceJournalLineResponse(
+                line.LedgerAccountId,
+                line.Debit,
+                line.Credit,
+                line.Description)).ToArray());
+    }
+
+    private static IssueCreditNoteResponse ToResponse(IssueCreditNoteResult result)
+    {
+        return new IssueCreditNoteResponse(
+            result.CreditNoteId,
+            result.InvoiceId,
+            result.CreditNoteNumber,
+            result.InvoiceNumber,
+            result.CreditNoteStatus,
+            result.CreditDate,
+            result.Amount,
+            result.CurrencyCode,
+            result.JournalEntryId,
+            result.JournalEntryStatus,
+            result.TotalDebit,
+            result.TotalCredit,
+            result.JournalLines.Select(line => new IssueCreditNoteJournalLineResponse(
+                line.LedgerAccountId,
+                line.Debit,
+                line.Credit,
+                line.Description)).ToArray());
     }
 }

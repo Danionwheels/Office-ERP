@@ -54,6 +54,15 @@ public sealed class ListLedgerAccountsHandler
             status = parsedStatus;
         }
 
+        var companyError = AccountingSetupDefaults.ValidateSingleCompanyCode(
+            query.CompanyCode,
+            nameof(query.CompanyCode));
+
+        if (companyError is not null)
+        {
+            return Result<ListLedgerAccountsResult>.Failure(companyError);
+        }
+
         var companyCode = AccountingSetupDefaults.NormalizeCompanyCode(query.CompanyCode);
         await _defaults.EnsureSeededAsync(companyCode, cancellationToken);
 
@@ -92,6 +101,7 @@ public sealed class ListLedgerAccountsHandler
             account.Name,
             account.Type.ToString(),
             account.NormalBalance.ToString(),
+            account.Level.ToString(),
             account.ParentAccountId?.Value,
             account.IsPostingAccount,
             account.Status.ToString(),

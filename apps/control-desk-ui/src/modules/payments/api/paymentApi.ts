@@ -3,6 +3,8 @@ import type {
   ApplyClientCreditInput,
   AppliedClientCredit,
   ApproveInvoicePaymentInput,
+  ClientRefundDocument,
+  InvoicePaymentDocument,
   IssueClientRefundInput,
   IssuedClientRefund,
   RecordedInvoicePayment,
@@ -29,6 +31,10 @@ export async function recordInvoicePayment(
       postingDate: input.postingDate
     })
   });
+}
+
+export async function getInvoicePaymentDocument(paymentId: string): Promise<InvoicePaymentDocument> {
+  return apiRequest<InvoicePaymentDocument>(`/api/v1/payments/invoice-payments/${paymentId}`);
 }
 
 export async function approveInvoicePayment(
@@ -87,6 +93,10 @@ export async function issueClientRefund(
       note: input.note.trim() === "" ? null : input.note
     })
   });
+}
+
+export async function getClientRefundDocument(refundId: string): Promise<ClientRefundDocument> {
+  return apiRequest<ClientRefundDocument>(`/api/v1/payments/client-refunds/${refundId}`);
 }
 
 export async function applyClientCredit(
