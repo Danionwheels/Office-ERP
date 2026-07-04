@@ -21,6 +21,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountingPeriod
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListLedgerAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostManualJournalEntry;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ReopenAccountingPeriod;
@@ -65,6 +66,7 @@ public static class AccountingEndpoints
         group.MapGet("/balance-sheet", GetBalanceSheetAsync);
         group.MapPost("/journal-entries/manual", PostManualJournalEntryAsync);
         group.MapPost("/journal-entries/opening-balances/preview", PreviewOpeningBalanceImportAsync);
+        group.MapPost("/journal-entries/opening-balances", PostOpeningBalanceImportAsync);
         group.MapPost("/journal-entries/{journalEntryId:guid}/void", VoidManualJournalEntryAsync);
         group.MapGet("/ledger-accounts/{ledgerAccountId:guid}/activity", GetLedgerAccountActivityAsync);
 
@@ -835,6 +837,34 @@ public static class AccountingEndpoints
                 line.Description,
                 line.IsValid,
                 line.Issues)).ToArray()));
+    }
+
+    private static async Task<IResult> PostOpeningBalanceImportAsync(
+        PostOpeningBalanceImportRequest request,
+        PostOpeningBalanceImportHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new PostOpeningBalanceImportCommand(
+                request.EntryDate,
+                request.CurrencyCode,
+                request.SourceReference,
+                request.Memo,
+                request.Lines?.Select(line => new PostOpeningBalanceImportLineCommand(
+                    line.AccountCode,
+                    line.Debit,
+                    line.Credit,
+                    line.Description)).ToArray() ?? []),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        var response = ToResponse(result.Value);
+
+        return Results.Created($"/api/v1/accounting/journal-entries/{response.JournalEntryId}", response);
     }
 
     private static async Task<IResult> VoidManualJournalEntryAsync(

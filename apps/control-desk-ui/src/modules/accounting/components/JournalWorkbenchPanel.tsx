@@ -56,6 +56,7 @@ type JournalWorkbenchPanelProps = {
   onSuggestVoucherNumber: () => Promise<void>;
   onOpeningBalanceValueChange: (value: OpeningBalanceImportInput) => void;
   onPreviewOpeningBalance: () => Promise<void>;
+  onPostOpeningBalance: () => Promise<void>;
   onFocusJournalEntry: (journalEntryId: string) => Promise<void>;
   onPost: () => Promise<void>;
   onVoidEntry: (entry: JournalEntrySummary) => Promise<void>;
@@ -83,6 +84,7 @@ export function JournalWorkbenchPanel({
   onSuggestVoucherNumber,
   onOpeningBalanceValueChange,
   onPreviewOpeningBalance,
+  onPostOpeningBalance,
   onFocusJournalEntry,
   onPost,
   onVoidEntry,
@@ -596,6 +598,16 @@ export function JournalWorkbenchPanel({
               >
                 <FileCheck2 size={16} />
                 Dry-run
+              </button>
+              <button
+                className="icon-button primary"
+                type="button"
+                onClick={() => void onPostOpeningBalance()}
+                disabled={isBusy || openingBalancePreview?.canPost !== true}
+                title="Post opening balance journal"
+              >
+                <Send size={16} />
+                Post
               </button>
             </div>
           </div>

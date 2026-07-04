@@ -17,6 +17,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepa
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
@@ -213,6 +214,13 @@ internal sealed class SmokeHarness : IAsyncDisposable
             LedgerAccounts,
             periodGuard,
             voucherNumberService);
+
+        PostOpeningBalanceImport = new PostOpeningBalanceImportHandler(
+            PreviewOpeningBalanceImport,
+            JournalEntries,
+            UnitOfWork,
+            IdGenerator,
+            Clock);
 
         CreateClient = new CreateClientHandler(
             Clients,
@@ -503,6 +511,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public PreviewJournalVoucherNumberHandler PreviewJournalVoucherNumber { get; }
 
     public PreviewOpeningBalanceImportHandler PreviewOpeningBalanceImport { get; }
+
+    public PostOpeningBalanceImportHandler PostOpeningBalanceImport { get; }
 
     public CreateClientHandler CreateClient { get; }
 

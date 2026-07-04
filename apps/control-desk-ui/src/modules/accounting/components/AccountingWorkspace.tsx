@@ -213,6 +213,7 @@ export function AccountingWorkspace({
             onSuggestVoucherNumber={workspace.handleSuggestManualJournalVoucherNumber}
             onOpeningBalanceValueChange={workspace.setOpeningBalanceImportForm}
             onPreviewOpeningBalance={workspace.handlePreviewOpeningBalanceImport}
+            onPostOpeningBalance={workspace.handlePostOpeningBalanceImport}
             onFocusJournalEntry={workspace.handleFocusJournalEntry}
             onPost={workspace.handlePostManualJournalEntry}
             onVoidEntry={workspace.handleVoidManualJournalEntry}

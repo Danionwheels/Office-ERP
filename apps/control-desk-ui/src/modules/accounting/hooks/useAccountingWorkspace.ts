@@ -22,6 +22,7 @@ import {
   listJournalEntries,
   listLedgerAccounts,
   postManualJournalEntry,
+  postOpeningBalanceImport,
   previewJournalVoucherNumber,
   previewOpeningBalanceImport,
   reopenAccountingPeriod,
@@ -903,6 +904,29 @@ export function useAccountingWorkspace({
     });
   }
 
+  async function handlePostOpeningBalanceImport() {
+    await runAction(async () => {
+      const postedEntry = await postOpeningBalanceImport(openingBalanceImportForm);
+      const [entries, balance, profitAndLoss, position] = await Promise.all([
+        listJournalEntries(journalEntryFilters),
+        getTrialBalance(trialBalanceFilters),
+        getProfitAndLossStatement(profitAndLossFilters),
+        getBalanceSheet(balanceSheetFilters)
+      ]);
+
+      setJournalEntries(entries);
+      setTrialBalance(balance);
+      setProfitAndLossStatement(profitAndLoss);
+      setBalanceSheet(position);
+      setOpeningBalanceImportForm(createDefaultOpeningBalanceImportForm());
+      setOpeningBalanceImportPreview(null);
+      setFocusedJournalEntryId(postedEntry.journalEntryId);
+      setFocusedJournalEntry(postedEntry);
+      await refreshSelectedLedgerAccountActivity();
+      setMessage(`Opening balance journal ${postedEntry.sourceReference ?? postedEntry.journalEntryId} posted.`);
+    });
+  }
+
   async function handleVoidManualJournalEntry(entry: JournalEntrySummary) {
     await runAction(async () => {
       const result = await voidManualJournalEntry(entry.journalEntryId, {
@@ -1030,6 +1054,7 @@ export function useAccountingWorkspace({
     handlePostManualJournalEntry,
     handleSuggestManualJournalVoucherNumber,
     handlePreviewOpeningBalanceImport,
+    handlePostOpeningBalanceImport,
     handleVoidManualJournalEntry,
     rememberJournalSourceDocument,
     loadJournalSourceDocument

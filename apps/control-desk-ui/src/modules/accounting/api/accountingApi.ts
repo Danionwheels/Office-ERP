@@ -364,6 +364,29 @@ export async function previewOpeningBalanceImport(
   );
 }
 
+export async function postOpeningBalanceImport(
+  input: OpeningBalanceImportInput
+): Promise<JournalEntrySummary> {
+  return apiRequest<JournalEntrySummary>(
+    "/api/v1/accounting/journal-entries/opening-balances",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        entryDate: input.entryDate,
+        currencyCode: input.currencyCode,
+        sourceReference: optionalText(input.sourceReference),
+        memo: optionalText(input.memo),
+        lines: input.lines.map((line) => ({
+          accountCode: line.accountCode,
+          debit: amountOrZero(line.debit),
+          credit: amountOrZero(line.credit),
+          description: optionalText(line.description)
+        }))
+      })
+    }
+  );
+}
+
 export async function voidManualJournalEntry(
   journalEntryId: string,
   input: VoidManualJournalEntryInput

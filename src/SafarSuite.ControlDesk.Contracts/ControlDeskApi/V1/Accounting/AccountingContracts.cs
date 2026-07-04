@@ -398,6 +398,19 @@ public sealed record PreviewOpeningBalanceImportLineRequest(
     decimal Credit,
     string? Description);
 
+public sealed record PostOpeningBalanceImportRequest(
+    DateOnly EntryDate,
+    string CurrencyCode,
+    string? SourceReference,
+    string? Memo,
+    IReadOnlyCollection<PostOpeningBalanceImportLineRequest> Lines);
+
+public sealed record PostOpeningBalanceImportLineRequest(
+    string AccountCode,
+    decimal Debit,
+    decimal Credit,
+    string? Description);
+
 public sealed record PreviewOpeningBalanceImportResponse(
     DateOnly EntryDate,
     string CurrencyCode,

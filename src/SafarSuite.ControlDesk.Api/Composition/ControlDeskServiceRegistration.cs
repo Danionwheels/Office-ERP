@@ -24,6 +24,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountingPeriod
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListLedgerAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostManualJournalEntry;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ReopenAccountingPeriod;
@@ -206,6 +207,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<PostManualJournalEntryHandler>();
         services.AddScoped<PreviewJournalVoucherNumberHandler>();
         services.AddScoped<PreviewOpeningBalanceImportHandler>();
+        services.AddScoped<PostOpeningBalanceImportHandler>();
         services.AddScoped<VoidManualJournalEntryValidator>();
         services.AddScoped<VoidManualJournalEntryHandler>();
         services.AddScoped<GetLedgerAccountActivityHandler>();

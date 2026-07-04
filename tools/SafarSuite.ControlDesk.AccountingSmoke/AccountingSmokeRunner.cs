@@ -14,6 +14,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReco
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
@@ -598,6 +599,60 @@ internal sealed class AccountingSmokeRunner
             blockedPreview.Blockers.Any(blocker =>
                 blocker.Contains("validation issues", StringComparison.OrdinalIgnoreCase)),
             "blocked opening balance preview should report row validation issues.");
+
+        var futureOpeningDate = new DateOnly(2030, 1, 1);
+        var futureOpeningReference = "OB-FUTURE-2030-0001";
+        var postedOpening = SmokeAssertions.RequireSuccess(
+            await _harness.PostOpeningBalanceImport.HandleAsync(
+                new PostOpeningBalanceImportCommand(
+                    futureOpeningDate,
+                    CurrencyCode,
+                    futureOpeningReference,
+                    "Future-dated opening balance posting smoke",
+                    [
+                        new PostOpeningBalanceImportLineCommand(
+                            cashAccount.Code.Value,
+                            600m,
+                            0m,
+                            "Opening cash post"),
+                        new PostOpeningBalanceImportLineCommand(
+                            retainedEarningsAccount.Code.Value,
+                            0m,
+                            600m,
+                            "Opening equity post")
+                    ]),
+                cancellationToken),
+            "post opening balance import");
+
+        SmokeAssertions.Equal("OpeningBalance", postedOpening.SourceType, "posted opening balance source type");
+        SmokeAssertions.Equal(futureOpeningReference, postedOpening.SourceReference ?? "", "posted opening balance reference");
+        SmokeAssertions.Equal(futureOpeningDate, postedOpening.EntryDate, "posted opening balance date");
+        SmokeAssertions.Money(600m, postedOpening.TotalDebit, "posted opening balance debit");
+        SmokeAssertions.Money(600m, postedOpening.TotalCredit, "posted opening balance credit");
+
+        SmokeAssertions.RequireFailure(
+            await _harness.PostOpeningBalanceImport.HandleAsync(
+                new PostOpeningBalanceImportCommand(
+                    futureOpeningDate,
+                    CurrencyCode,
+                    futureOpeningReference,
+                    "Duplicate opening balance posting smoke",
+                    [
+                        new PostOpeningBalanceImportLineCommand(
+                            cashAccount.Code.Value,
+                            600m,
+                            0m,
+                            "Duplicate opening cash post"),
+                        new PostOpeningBalanceImportLineCommand(
+                            retainedEarningsAccount.Code.Value,
+                            0m,
+                            600m,
+                            "Duplicate opening equity post")
+                    ]),
+                cancellationToken),
+            "reject duplicate opening balance import",
+            nameof(PostOpeningBalanceImportCommand.SourceReference),
+            "already exists");
     }
 
     private static bool IsInsideRange(string code, AccountCodeRange range)
