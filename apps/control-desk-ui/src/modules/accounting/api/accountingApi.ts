@@ -13,6 +13,7 @@ import type {
   JournalEntryFilters,
   JournalEntrySourceDocument,
   JournalEntrySummary,
+  JournalVoucherNumberPreview,
   LedgerAccountActivity,
   LedgerAccountActivityFilters,
   LedgerAccountCodeSuggestion,
@@ -22,6 +23,8 @@ import type {
   LedgerAccountRepairPlan,
   LedgerAccountSummary,
   ManualJournalEntryInput,
+  OpeningBalanceImportInput,
+  OpeningBalanceImportPreview,
   ProfitAndLossStatement,
   ProfitAndLossStatementFilters,
   TrialBalance,
@@ -307,6 +310,17 @@ export async function getJournalEntrySourceDocument(
   );
 }
 
+export async function previewJournalVoucherNumber(
+  sourceType: string,
+  entryDate: string
+): Promise<JournalVoucherNumberPreview> {
+  const query = new URLSearchParams({ sourceType, entryDate });
+
+  return apiRequest<JournalVoucherNumberPreview>(
+    `/api/v1/accounting/journal-entries/voucher-number-preview?${query.toString()}`
+  );
+}
+
 export async function postManualJournalEntry(
   input: ManualJournalEntryInput
 ): Promise<JournalEntrySummary> {
@@ -325,6 +339,29 @@ export async function postManualJournalEntry(
       }))
     })
   });
+}
+
+export async function previewOpeningBalanceImport(
+  input: OpeningBalanceImportInput
+): Promise<OpeningBalanceImportPreview> {
+  return apiRequest<OpeningBalanceImportPreview>(
+    "/api/v1/accounting/journal-entries/opening-balances/preview",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        entryDate: input.entryDate,
+        currencyCode: input.currencyCode,
+        sourceReference: optionalText(input.sourceReference),
+        memo: optionalText(input.memo),
+        lines: input.lines.map((line) => ({
+          accountCode: line.accountCode,
+          debit: amountOrZero(line.debit),
+          credit: amountOrZero(line.credit),
+          description: optionalText(line.description)
+        }))
+      })
+    }
+  );
 }
 
 export async function voidManualJournalEntry(

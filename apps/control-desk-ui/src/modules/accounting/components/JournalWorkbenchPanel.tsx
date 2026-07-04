@@ -1,6 +1,8 @@
 import {
   CalendarCheck2,
   ExternalLink,
+  FileCheck2,
+  Hash,
   ListTree,
   Plus,
   RefreshCw,
@@ -15,9 +17,13 @@ import type {
   JournalEntryFilters,
   JournalEntrySourceDocument,
   JournalEntrySummary,
+  JournalVoucherNumberPreview,
   LedgerAccountSummary,
   ManualJournalEntryInput,
-  ManualJournalEntryLineInput
+  ManualJournalEntryLineInput,
+  OpeningBalanceImportInput,
+  OpeningBalanceImportLineInput,
+  OpeningBalanceImportPreview
 } from "../types/accountingTypes";
 import { journalSourceTypeOptions } from "../constants/accountingConstants";
 import { toDateInputValue } from "../utils/accountingDates";
@@ -38,12 +44,18 @@ type JournalWorkbenchPanelProps = {
   entries: JournalEntrySummary[];
   filters: JournalEntryFilters;
   value: ManualJournalEntryInput;
+  manualVoucherPreview: JournalVoucherNumberPreview | null;
+  openingBalanceValue: OpeningBalanceImportInput;
+  openingBalancePreview: OpeningBalanceImportPreview | null;
   focusedJournalEntryId: string;
   focusedJournalEntry: JournalEntrySummary | null;
   sourceDocumentsByJournalEntryId: Record<string, JournalEntrySourceDocument>;
   isBusy: boolean;
   onFiltersChange: (value: JournalEntryFilters) => void;
   onValueChange: (value: ManualJournalEntryInput) => void;
+  onSuggestVoucherNumber: () => Promise<void>;
+  onOpeningBalanceValueChange: (value: OpeningBalanceImportInput) => void;
+  onPreviewOpeningBalance: () => Promise<void>;
   onFocusJournalEntry: (journalEntryId: string) => Promise<void>;
   onPost: () => Promise<void>;
   onVoidEntry: (entry: JournalEntrySummary) => Promise<void>;
@@ -59,12 +71,18 @@ export function JournalWorkbenchPanel({
   entries,
   filters,
   value,
+  manualVoucherPreview,
+  openingBalanceValue,
+  openingBalancePreview,
   focusedJournalEntryId,
   focusedJournalEntry,
   sourceDocumentsByJournalEntryId,
   isBusy,
   onFiltersChange,
   onValueChange,
+  onSuggestVoucherNumber,
+  onOpeningBalanceValueChange,
+  onPreviewOpeningBalance,
   onFocusJournalEntry,
   onPost,
   onVoidEntry,
@@ -84,6 +102,15 @@ export function JournalWorkbenchPanel({
   const totalDebit = value.lines.reduce((total, line) => total + amount(line.debit), 0);
   const totalCredit = value.lines.reduce((total, line) => total + amount(line.credit), 0);
   const difference = roundMoney(totalDebit - totalCredit);
+  const openingTotalDebit = openingBalanceValue.lines.reduce(
+    (total, line) => total + amount(line.debit),
+    0
+  );
+  const openingTotalCredit = openingBalanceValue.lines.reduce(
+    (total, line) => total + amount(line.credit),
+    0
+  );
+  const openingDifference = roundMoney(openingTotalDebit - openingTotalCredit);
   const hasDebit = totalDebit > 0;
   const hasCredit = totalCredit > 0;
   const hasAccounts = value.lines.every((line) => line.ledgerAccountId.trim() !== "");
@@ -102,6 +129,11 @@ export function JournalWorkbenchPanel({
   async function handlePost(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await onPost();
+  }
+
+  async function handlePreviewOpeningBalance(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onPreviewOpeningBalance();
   }
 
   function updateLine(index: number, patch: Partial<ManualJournalEntryLineInput>) {
@@ -131,6 +163,39 @@ export function JournalWorkbenchPanel({
     onValueChange({
       ...value,
       lines: value.lines.filter((_, lineIndex) => lineIndex !== index)
+    });
+  }
+
+  function updateOpeningBalanceLine(
+    index: number,
+    patch: Partial<OpeningBalanceImportLineInput>
+  ) {
+    onOpeningBalanceValueChange({
+      ...openingBalanceValue,
+      lines: openingBalanceValue.lines.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, ...patch } : line)
+    });
+  }
+
+  function addOpeningBalanceLine() {
+    onOpeningBalanceValueChange({
+      ...openingBalanceValue,
+      lines: [
+        ...openingBalanceValue.lines,
+        {
+          accountCode: "",
+          debit: "",
+          credit: "",
+          description: ""
+        }
+      ]
+    });
+  }
+
+  function removeOpeningBalanceLine(index: number) {
+    onOpeningBalanceValueChange({
+      ...openingBalanceValue,
+      lines: openingBalanceValue.lines.filter((_, lineIndex) => lineIndex !== index)
     });
   }
 
@@ -185,16 +250,32 @@ export function JournalWorkbenchPanel({
             </label>
             <label className="form-field">
               <span>Reference</span>
-              <input
-                value={value.sourceReference}
-                onChange={(event) =>
-                  onValueChange({
-                    ...value,
-                    sourceReference: event.target.value
-                  })
-                }
-                disabled={isBusy}
-              />
+              <div className="journal-inline-field">
+                <input
+                  value={value.sourceReference}
+                  onChange={(event) =>
+                    onValueChange({
+                      ...value,
+                      sourceReference: event.target.value
+                    })
+                  }
+                  disabled={isBusy}
+                />
+                <button
+                  className="table-icon-button"
+                  type="button"
+                  onClick={() => void onSuggestVoucherNumber()}
+                  disabled={isBusy || value.entryDate.trim() === ""}
+                  title="Suggest next voucher number"
+                >
+                  <Hash size={14} />
+                </button>
+              </div>
+              {manualVoucherPreview !== null && (
+                <small className="journal-reference-hint">
+                  {manualVoucherPreview.reference}
+                </small>
+              )}
             </label>
             <label className="form-field wide">
               <span>Memo</span>
@@ -337,6 +418,191 @@ export function JournalWorkbenchPanel({
             </div>
           </div>
         </form>
+      </section>
+
+      <section className="client-panel opening-balance-panel">
+        <div className="client-panel-heading">
+          <div>
+            <span>Legacy import</span>
+            <strong>Opening balance dry-run</strong>
+          </div>
+          <span className={`status-pill ${openingBalancePreview?.canPost ? "open" : "draft"}`}>
+            {openingBalancePreview === null ? "Ready" : openingBalancePreview.canPost ? "Balanced" : "Blocked"}
+          </span>
+        </div>
+        <form className="journal-form" onSubmit={handlePreviewOpeningBalance}>
+          <div className="billing-form-grid journal-header-fields">
+            <label className="form-field">
+              <span>Date</span>
+              <input
+                type="date"
+                value={openingBalanceValue.entryDate}
+                onChange={(event) =>
+                  onOpeningBalanceValueChange({
+                    ...openingBalanceValue,
+                    entryDate: event.target.value
+                  })
+                }
+                disabled={isBusy}
+              />
+            </label>
+            <label className="form-field">
+              <span>Currency</span>
+              <input
+                value={openingBalanceValue.currencyCode}
+                onChange={(event) =>
+                  onOpeningBalanceValueChange({
+                    ...openingBalanceValue,
+                    currencyCode: event.target.value.toUpperCase()
+                  })
+                }
+                disabled={isBusy}
+              />
+            </label>
+            <label className="form-field">
+              <span>Reference</span>
+              <input
+                value={openingBalanceValue.sourceReference}
+                onChange={(event) =>
+                  onOpeningBalanceValueChange({
+                    ...openingBalanceValue,
+                    sourceReference: event.target.value
+                  })
+                }
+                disabled={isBusy}
+              />
+            </label>
+            <label className="form-field wide">
+              <span>Memo</span>
+              <input
+                value={openingBalanceValue.memo}
+                onChange={(event) =>
+                  onOpeningBalanceValueChange({
+                    ...openingBalanceValue,
+                    memo: event.target.value
+                  })
+                }
+                disabled={isBusy}
+              />
+            </label>
+          </div>
+
+          <div className="journal-line-grid opening-balance-line-grid">
+            <div className="journal-line-head">Account code</div>
+            <div className="journal-line-head">Debit</div>
+            <div className="journal-line-head">Credit</div>
+            <div className="journal-line-head">Description</div>
+            <div className="journal-line-head"> </div>
+            {openingBalanceValue.lines.map((line, index) => (
+              <div className="journal-line-row" key={`${index}-${line.accountCode}`}>
+                <label className="form-field journal-account-select">
+                  <input
+                    value={line.accountCode}
+                    onChange={(event) =>
+                      updateOpeningBalanceLine(index, {
+                        accountCode: event.target.value.toUpperCase()
+                      })
+                    }
+                    disabled={isBusy}
+                  />
+                </label>
+                <label className="form-field">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={line.debit}
+                    onChange={(event) =>
+                      updateOpeningBalanceLine(index, {
+                        debit: event.target.value,
+                        credit: event.target.value.trim() === "" ? line.credit : ""
+                      })
+                    }
+                    disabled={isBusy}
+                  />
+                </label>
+                <label className="form-field">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={line.credit}
+                    onChange={(event) =>
+                      updateOpeningBalanceLine(index, {
+                        credit: event.target.value,
+                        debit: event.target.value.trim() === "" ? line.debit : ""
+                      })
+                    }
+                    disabled={isBusy}
+                  />
+                </label>
+                <label className="form-field">
+                  <input
+                    value={line.description}
+                    onChange={(event) =>
+                      updateOpeningBalanceLine(index, {
+                        description: event.target.value
+                      })
+                    }
+                    disabled={isBusy}
+                  />
+                </label>
+                <button
+                  className="table-icon-button"
+                  type="button"
+                  onClick={() => removeOpeningBalanceLine(index)}
+                  disabled={isBusy || openingBalanceValue.lines.length <= 2}
+                  title="Remove opening balance line"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="journal-total-row">
+            <div>
+              <span>Debit</span>
+              <strong>{formatMoney(openingTotalDebit)}</strong>
+            </div>
+            <div>
+              <span>Credit</span>
+              <strong>{formatMoney(openingTotalCredit)}</strong>
+            </div>
+            <div>
+              <span>Difference</span>
+              <strong>{formatMoney(openingDifference)}</strong>
+            </div>
+            <div className="journal-actions">
+              <button
+                className="icon-button"
+                type="button"
+                onClick={addOpeningBalanceLine}
+                disabled={isBusy}
+                title="Add opening balance line"
+              >
+                <Plus size={16} />
+                Line
+              </button>
+              <button
+                className="icon-button primary"
+                type="submit"
+                disabled={
+                  isBusy
+                  || openingBalanceValue.entryDate.trim() === ""
+                  || openingBalanceValue.currencyCode.trim() === ""
+                }
+                title="Preview opening balance import"
+              >
+                <FileCheck2 size={16} />
+                Dry-run
+              </button>
+            </div>
+          </div>
+        </form>
+        {openingBalancePreview !== null && (
+          <OpeningBalancePreviewDetail preview={openingBalancePreview} />
+        )}
       </section>
 
       <section className="client-panel journal-register-panel">
@@ -539,6 +805,78 @@ export function JournalWorkbenchPanel({
         </table>
       </section>
     </section>
+  );
+}
+
+function OpeningBalancePreviewDetail({
+  preview
+}: {
+  preview: OpeningBalanceImportPreview;
+}) {
+  return (
+    <div className={`opening-balance-preview ${preview.canPost ? "ready" : "blocked"}`}>
+      <div className="opening-balance-summary">
+        <span>
+          <small>Reference</small>
+          <strong>{preview.sourceReference || "-"}</strong>
+        </span>
+        <span>
+          <small>Valid lines</small>
+          <strong>{preview.validLineCount}/{preview.importedLineCount}</strong>
+        </span>
+        <span>
+          <small>Debit</small>
+          <strong>{formatMoney(preview.totalDebit)}</strong>
+        </span>
+        <span>
+          <small>Credit</small>
+          <strong>{formatMoney(preview.totalCredit)}</strong>
+        </span>
+        <span>
+          <small>Difference</small>
+          <strong>{formatMoney(preview.difference)}</strong>
+        </span>
+      </div>
+      {preview.blockers.length > 0 && (
+        <div className="opening-balance-blockers">
+          {preview.blockers.map((blocker) => (
+            <span key={blocker}>{blocker}</span>
+          ))}
+        </div>
+      )}
+      <table className="opening-balance-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Account</th>
+            <th>Name</th>
+            <th>Debit</th>
+            <th>Credit</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {preview.lines.map((line) => (
+            <tr key={`${line.lineNumber}-${line.accountCode}`}>
+              <td>{line.lineNumber}</td>
+              <td>{line.accountCode || "-"}</td>
+              <td>{line.ledgerAccountName ?? "-"}</td>
+              <td>{formatMoney(line.debit)}</td>
+              <td>{formatMoney(line.credit)}</td>
+              <td>
+                {line.isValid ? (
+                  <span className="status-pill open">Valid</span>
+                ) : (
+                  <span className="opening-balance-line-issues">
+                    {line.issues.join(" ")}
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

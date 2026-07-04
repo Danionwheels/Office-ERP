@@ -17,6 +17,8 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepa
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
@@ -107,6 +109,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             UnitOfWork,
             IdGenerator,
             Clock);
+        var voucherNumberService = new JournalVoucherNumberService(JournalEntries);
         var settingsResultFactory = new AccountingControlSettingsResultFactory(LedgerAccounts);
         var closeReadinessService = new AccountingPeriodCloseReadinessService(
             AccountingPeriods,
@@ -203,6 +206,13 @@ internal sealed class SmokeHarness : IAsyncDisposable
             LedgerAccounts,
             JournalEntries,
             Clock);
+
+        PreviewJournalVoucherNumber = new PreviewJournalVoucherNumberHandler(voucherNumberService);
+
+        PreviewOpeningBalanceImport = new PreviewOpeningBalanceImportHandler(
+            LedgerAccounts,
+            periodGuard,
+            voucherNumberService);
 
         CreateClient = new CreateClientHandler(
             Clients,
@@ -489,6 +499,10 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public GetProfitAndLossStatementHandler GetProfitAndLossStatement { get; }
 
     public GetBalanceSheetHandler GetBalanceSheet { get; }
+
+    public PreviewJournalVoucherNumberHandler PreviewJournalVoucherNumber { get; }
+
+    public PreviewOpeningBalanceImportHandler PreviewOpeningBalanceImport { get; }
 
     public CreateClientHandler CreateClient { get; }
 

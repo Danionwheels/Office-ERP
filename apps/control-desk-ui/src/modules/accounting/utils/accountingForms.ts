@@ -15,12 +15,12 @@ import type {
   LedgerAccountFilters,
   LedgerAccountSummary,
   ManualJournalEntryInput,
+  OpeningBalanceImportInput,
   ProfitAndLossStatementFilters,
   TrialBalanceFilters
 } from "../types/accountingTypes";
 import {
   addDays,
-  defaultManualJournalReference,
   parseDateInput,
   toDateInputValue
 } from "./accountingDates";
@@ -218,7 +218,7 @@ export function createDefaultManualJournalEntryForm(
   return {
     entryDate: toDateInputValue(value),
     currencyCode: accountingCurrencyCode,
-    sourceReference: defaultManualJournalReference(value),
+    sourceReference: "",
     memo: "",
     lines: [
       {
@@ -229,6 +229,31 @@ export function createDefaultManualJournalEntryForm(
       },
       {
         ledgerAccountId: "",
+        debit: "",
+        credit: "",
+        description: ""
+      }
+    ]
+  };
+}
+
+export function createDefaultOpeningBalanceImportForm(
+  value = new Date()
+): OpeningBalanceImportInput {
+  return {
+    entryDate: toDateInputValue(value),
+    currencyCode: accountingCurrencyCode,
+    sourceReference: "",
+    memo: "Opening balance import",
+    lines: [
+      {
+        accountCode: "",
+        debit: "",
+        credit: "",
+        description: ""
+      },
+      {
+        accountCode: "",
         debit: "",
         credit: "",
         description: ""

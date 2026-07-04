@@ -4202,6 +4202,21 @@ td {
   min-width: 0;
 }
 
+.journal-inline-field {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 6px;
+  align-items: center;
+}
+
+.journal-reference-hint {
+  margin-top: 4px;
+  color: #4e5964;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .journal-total-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(120px, 1fr)) minmax(220px, auto);
@@ -4238,6 +4253,103 @@ td {
 .journal-register-panel {
   min-width: 0;
   overflow-x: auto;
+}
+
+.opening-balance-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.opening-balance-line-grid,
+.opening-balance-line-grid .journal-line-row {
+  grid-template-columns: minmax(150px, 0.9fr) 110px 110px minmax(180px, 1fr) 34px;
+}
+
+.opening-balance-preview {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d8dde2;
+  border-radius: 6px;
+  background: #f8f9fa;
+  padding: 10px;
+}
+
+.opening-balance-preview.ready {
+  border-color: #b8d8c4;
+  background: #f1f8f3;
+}
+
+.opening-balance-preview.blocked {
+  border-color: #e2bbb7;
+  background: #fff6f5;
+}
+
+.opening-balance-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.opening-balance-summary span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(32, 37, 43, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 8px;
+}
+
+.opening-balance-summary small {
+  color: #4e5964;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.opening-balance-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.opening-balance-blockers {
+  display: grid;
+  gap: 6px;
+}
+
+.opening-balance-blockers span,
+.opening-balance-line-issues {
+  color: #8d3d35;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.opening-balance-table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.opening-balance-table th,
+.opening-balance-table td {
+  border-bottom: 1px solid #e1e4e8;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.opening-balance-table th {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.opening-balance-table td {
+  color: #20252b;
+  font-size: 12px;
 }
 
 .journal-filter-panel {
@@ -5835,6 +5947,16 @@ td {
 
   .journal-line-grid {
     grid-template-columns: 1fr;
+  }
+
+  .opening-balance-line-grid,
+  .opening-balance-line-grid .journal-line-row,
+  .opening-balance-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .opening-balance-preview {
+    overflow-x: auto;
   }
 
   .journal-line-head {

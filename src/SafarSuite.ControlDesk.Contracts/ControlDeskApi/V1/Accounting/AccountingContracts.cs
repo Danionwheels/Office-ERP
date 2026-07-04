@@ -285,6 +285,14 @@ public sealed record AccountingPeriodCloseCurrencyResponse(
 public sealed record ListJournalEntriesResponse(
     IReadOnlyCollection<JournalEntrySummaryResponse> Entries);
 
+public sealed record JournalVoucherNumberPreviewResponse(
+    string SourceType,
+    DateOnly EntryDate,
+    string Prefix,
+    int SequenceYear,
+    int NextSequence,
+    string Reference);
+
 public sealed record TrialBalanceResponse(
     DateOnly? FromDate,
     DateOnly AsOfDate,
@@ -376,6 +384,47 @@ public sealed record PostManualJournalEntryLineRequest(
     decimal Debit,
     decimal Credit,
     string? Description);
+
+public sealed record PreviewOpeningBalanceImportRequest(
+    DateOnly EntryDate,
+    string CurrencyCode,
+    string? SourceReference,
+    string? Memo,
+    IReadOnlyCollection<PreviewOpeningBalanceImportLineRequest> Lines);
+
+public sealed record PreviewOpeningBalanceImportLineRequest(
+    string AccountCode,
+    decimal Debit,
+    decimal Credit,
+    string? Description);
+
+public sealed record PreviewOpeningBalanceImportResponse(
+    DateOnly EntryDate,
+    string CurrencyCode,
+    string SourceReference,
+    string? Memo,
+    bool CanPost,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    decimal Difference,
+    int ImportedLineCount,
+    int ValidLineCount,
+    int InvalidLineCount,
+    IReadOnlyCollection<string> Blockers,
+    IReadOnlyCollection<PreviewOpeningBalanceImportLineResponse> Lines);
+
+public sealed record PreviewOpeningBalanceImportLineResponse(
+    int LineNumber,
+    string AccountCode,
+    Guid? LedgerAccountId,
+    string? LedgerAccountName,
+    string? AccountType,
+    string? NormalBalance,
+    decimal Debit,
+    decimal Credit,
+    string? Description,
+    bool IsValid,
+    IReadOnlyCollection<string> Issues);
 
 public sealed record VoidManualJournalEntryRequest(
     DateOnly VoidDate,

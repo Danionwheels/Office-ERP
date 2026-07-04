@@ -22,6 +22,8 @@ import {
   listJournalEntries,
   listLedgerAccounts,
   postManualJournalEntry,
+  previewJournalVoucherNumber,
+  previewOpeningBalanceImport,
   reopenAccountingPeriod,
   suggestLedgerAccountCode,
   updateLedgerAccount,
@@ -43,12 +45,14 @@ import type {
   JournalEntryFilters,
   JournalEntrySourceDocument,
   JournalEntrySummary,
+  JournalVoucherNumberPreview,
   LedgerAccountActivity,
   LedgerAccountActivityLine,
   LedgerAccountFilters,
   LedgerAccountReconciliation,
   LedgerAccountRepairPlan,
   LedgerAccountSummary,
+  OpeningBalanceImportPreview,
   ProfitAndLossStatement,
   ProfitAndLossStatementFilters,
   ProfitAndLossStatementLine,
@@ -63,6 +67,7 @@ import {
   createDefaultBalanceSheetFilters,
   createDefaultLedgerAccountEditorForm,
   createDefaultManualJournalEntryForm,
+  createDefaultOpeningBalanceImportForm,
   createDefaultProfitAndLossFilters,
   createDefaultTrialBalanceFilters,
   defaultJournalEntryFilters,
@@ -127,6 +132,8 @@ export function useAccountingWorkspace({
   const [accountingPeriodCloseJournalPreview, setAccountingPeriodCloseJournalPreview] =
     useState<AccountingPeriodCloseJournalPreview | null>(null);
   const [journalEntries, setJournalEntries] = useState<JournalEntrySummary[]>([]);
+  const [manualJournalVoucherPreview, setManualJournalVoucherPreview] =
+    useState<JournalVoucherNumberPreview | null>(null);
   const [focusedJournalEntryId, setFocusedJournalEntryId] = useState("");
   const [focusedJournalEntry, setFocusedJournalEntry] = useState<JournalEntrySummary | null>(null);
   const [journalSourceDocumentsById, setJournalSourceDocumentsById] =
@@ -161,6 +168,10 @@ export function useAccountingWorkspace({
   );
   const [manualJournalEntryForm, setManualJournalEntryForm] =
     useState(createDefaultManualJournalEntryForm());
+  const [openingBalanceImportForm, setOpeningBalanceImportForm] =
+    useState(createDefaultOpeningBalanceImportForm());
+  const [openingBalanceImportPreview, setOpeningBalanceImportPreview] =
+    useState<OpeningBalanceImportPreview | null>(null);
 
   useEffect(() => {
     void refreshAccountingSetup(ledgerAccountFilters);
@@ -856,10 +867,39 @@ export function useAccountingWorkspace({
       setProfitAndLossStatement(profitAndLoss);
       setBalanceSheet(position);
       setManualJournalEntryForm(createDefaultManualJournalEntryForm());
+      setManualJournalVoucherPreview(null);
       setFocusedJournalEntryId(postedEntry.journalEntryId);
       setFocusedJournalEntry(postedEntry);
       await refreshSelectedLedgerAccountActivity();
       setMessage(`Manual journal ${postedEntry.sourceReference ?? postedEntry.journalEntryId} posted.`);
+    });
+  }
+
+  async function handleSuggestManualJournalVoucherNumber() {
+    await runAction(async () => {
+      const preview = await previewJournalVoucherNumber("Manual", manualJournalEntryForm.entryDate);
+
+      setManualJournalVoucherPreview(preview);
+      setManualJournalEntryForm((current) => ({
+        ...current,
+        sourceReference: preview.reference
+      }));
+      setMessage(`Prepared voucher ${preview.reference}.`);
+    });
+  }
+
+  async function handlePreviewOpeningBalanceImport() {
+    await runAction(async () => {
+      const preview = await previewOpeningBalanceImport(openingBalanceImportForm);
+
+      setOpeningBalanceImportPreview(preview);
+      setOpeningBalanceImportForm((current) => ({
+        ...current,
+        sourceReference: preview.sourceReference
+      }));
+      setMessage(preview.canPost
+        ? `Opening balance dry-run ${preview.sourceReference} is balanced.`
+        : `Opening balance dry-run has ${preview.blockers.length} blocker(s).`);
     });
   }
 
@@ -921,6 +961,7 @@ export function useAccountingWorkspace({
     accountingPeriodReadiness,
     accountingPeriodCloseJournalPreview,
     journalEntries,
+    manualJournalVoucherPreview,
     focusedJournalEntryId,
     focusedJournalEntry,
     journalSourceDocumentsById,
@@ -940,6 +981,8 @@ export function useAccountingWorkspace({
     accountingControlSettingsForm,
     accountingPeriodForm,
     manualJournalEntryForm,
+    openingBalanceImportForm,
+    openingBalanceImportPreview,
     openPeriodCount,
     postingAccountCount,
     handleLedgerAccountFiltersChange,
@@ -952,6 +995,7 @@ export function useAccountingWorkspace({
     setAccountingControlSettingsForm,
     setAccountingPeriodForm,
     setManualJournalEntryForm,
+    setOpeningBalanceImportForm,
     refreshAccountingSetup,
     refreshAccountingControls,
     refreshAccountingPeriods,
@@ -984,6 +1028,8 @@ export function useAccountingWorkspace({
     handleFocusJournalEntry,
     handleViewJournalEntryFromActivity,
     handlePostManualJournalEntry,
+    handleSuggestManualJournalVoucherNumber,
+    handlePreviewOpeningBalanceImport,
     handleVoidManualJournalEntry,
     rememberJournalSourceDocument,
     loadJournalSourceDocument

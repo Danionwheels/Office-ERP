@@ -14,6 +14,8 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReco
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
@@ -67,6 +69,7 @@ internal sealed class AccountingSmokeRunner
         await AssertLedgerAccountReconciliationAsync(accounts, cancellationToken);
         await AssertLedgerAccountGuardrailsAsync(accounts, cancellationToken);
         await AssertPostingPeriodGuardAsync(cancellationToken);
+        await AssertVoucherAndOpeningBalancePreviewAsync(accounts, businessDate, cancellationToken);
         var client = await CreateClientAsync(cancellationToken);
         var contract = await CreateContractAsync(client.ClientId, businessDate, cancellationToken);
         var chargeCode = await CreateBillingSetupAsync(
@@ -519,6 +522,82 @@ internal sealed class AccountingSmokeRunner
                 "Accounting period July 2026 (2026-07-01 to 2026-07-31) is closed for MAIN",
                 StringComparison.OrdinalIgnoreCase),
             "closed posting period error should name the closed MAIN period.");
+    }
+
+    private async Task AssertVoucherAndOpeningBalancePreviewAsync(
+        LedgerAccounts accounts,
+        DateOnly businessDate,
+        CancellationToken cancellationToken)
+    {
+        var manualVoucher = SmokeAssertions.RequireSuccess(
+            await _harness.PreviewJournalVoucherNumber.HandleAsync(
+                new PreviewJournalVoucherNumberQuery("Manual", businessDate),
+                cancellationToken),
+            "preview manual voucher number");
+
+        SmokeAssertions.Equal("MJ", manualVoucher.Prefix, "manual voucher prefix");
+        SmokeAssertions.Equal(2026, manualVoucher.SequenceYear, "manual voucher year");
+        SmokeAssertions.Equal(1, manualVoucher.NextSequence, "manual voucher next sequence");
+        SmokeAssertions.Equal("MJ-2026-0001", manualVoucher.Reference, "manual voucher reference");
+
+        var cashAccount = await RequireLedgerAccountAsync(accounts.CashOrBankAccountId, cancellationToken);
+        var retainedEarningsAccount = await RequireLedgerAccountAsync(
+            accounts.RetainedEarningsAccountId,
+            cancellationToken);
+
+        var openingPreview = SmokeAssertions.RequireSuccess(
+            await _harness.PreviewOpeningBalanceImport.HandleAsync(
+                new PreviewOpeningBalanceImportCommand(
+                    businessDate,
+                    CurrencyCode,
+                    null,
+                    "Legacy opening balance dry-run",
+                    [
+                        new PreviewOpeningBalanceImportLineCommand(
+                            cashAccount.Code.Value,
+                            500m,
+                            0m,
+                            "Legacy cash opening"),
+                        new PreviewOpeningBalanceImportLineCommand(
+                            retainedEarningsAccount.Code.Value,
+                            0m,
+                            500m,
+                            "Legacy equity opening")
+                    ]),
+                cancellationToken),
+            "preview opening balance import");
+
+        SmokeAssertions.True(openingPreview.CanPost, "opening balance preview should be postable.");
+        SmokeAssertions.Equal("OB-2026-0001", openingPreview.SourceReference, "opening balance preview reference");
+        SmokeAssertions.Money(500m, openingPreview.TotalDebit, "opening balance preview debit");
+        SmokeAssertions.Money(500m, openingPreview.TotalCredit, "opening balance preview credit");
+        SmokeAssertions.Money(0m, openingPreview.Difference, "opening balance preview difference");
+        SmokeAssertions.Equal(2, openingPreview.ValidLineCount, "opening balance preview valid lines");
+        SmokeAssertions.Equal(0, openingPreview.InvalidLineCount, "opening balance preview invalid lines");
+
+        var blockedPreview = SmokeAssertions.RequireSuccess(
+            await _harness.PreviewOpeningBalanceImport.HandleAsync(
+                new PreviewOpeningBalanceImportCommand(
+                    businessDate,
+                    CurrencyCode,
+                    null,
+                    null,
+                    [
+                        new PreviewOpeningBalanceImportLineCommand(
+                            "NO-SUCH-ACCOUNT",
+                            25m,
+                            0m,
+                            "Missing account")
+                    ]),
+                cancellationToken),
+            "preview blocked opening balance import");
+
+        SmokeAssertions.True(!blockedPreview.CanPost, "blocked opening balance preview should not be postable.");
+        SmokeAssertions.Equal(1, blockedPreview.InvalidLineCount, "blocked opening balance invalid lines");
+        SmokeAssertions.True(
+            blockedPreview.Blockers.Any(blocker =>
+                blocker.Contains("validation issues", StringComparison.OrdinalIgnoreCase)),
+            "blocked opening balance preview should report row validation issues.");
     }
 
     private static bool IsInsideRange(string code, AccountCodeRange range)
@@ -1352,6 +1431,16 @@ internal sealed class AccountingSmokeRunner
         return statement.Sections.SingleOrDefault(section =>
             string.Equals(section.Type, sectionType, StringComparison.OrdinalIgnoreCase))
             ?? throw new SmokeFailureException($"{label} was not included.");
+    }
+
+    private async Task<LedgerAccount> RequireLedgerAccountAsync(
+        Guid ledgerAccountId,
+        CancellationToken cancellationToken)
+    {
+        return await _harness.LedgerAccounts.GetByIdAsync(
+            LedgerAccountId.Create(ledgerAccountId),
+            cancellationToken)
+            ?? throw new SmokeFailureException($"ledger account {ledgerAccountId} was not found.");
     }
 
     private string Code(string prefix)

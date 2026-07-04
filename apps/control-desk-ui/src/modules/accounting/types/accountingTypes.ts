@@ -336,6 +336,15 @@ export type JournalEntryFilters = {
   sourceType: string;
 };
 
+export type JournalVoucherNumberPreview = {
+  sourceType: string;
+  entryDate: string;
+  prefix: string;
+  sequenceYear: number;
+  nextSequence: number;
+  reference: string;
+};
+
 export type ManualJournalEntryInput = {
   entryDate: string;
   currencyCode: string;
@@ -349,6 +358,51 @@ export type ManualJournalEntryLineInput = {
   debit: string;
   credit: string;
   description: string;
+};
+
+export type OpeningBalanceImportInput = {
+  entryDate: string;
+  currencyCode: string;
+  sourceReference: string;
+  memo: string;
+  lines: OpeningBalanceImportLineInput[];
+};
+
+export type OpeningBalanceImportLineInput = {
+  accountCode: string;
+  debit: string;
+  credit: string;
+  description: string;
+};
+
+export type OpeningBalanceImportPreview = {
+  entryDate: string;
+  currencyCode: string;
+  sourceReference: string;
+  memo?: string | null;
+  canPost: boolean;
+  totalDebit: number;
+  totalCredit: number;
+  difference: number;
+  importedLineCount: number;
+  validLineCount: number;
+  invalidLineCount: number;
+  blockers: string[];
+  lines: OpeningBalanceImportPreviewLine[];
+};
+
+export type OpeningBalanceImportPreviewLine = {
+  lineNumber: number;
+  accountCode: string;
+  ledgerAccountId?: string | null;
+  ledgerAccountName?: string | null;
+  accountType?: string | null;
+  normalBalance?: string | null;
+  debit: number;
+  credit: number;
+  description?: string | null;
+  isValid: boolean;
+  issues: string[];
 };
 
 export type LedgerAccountActivity = {
