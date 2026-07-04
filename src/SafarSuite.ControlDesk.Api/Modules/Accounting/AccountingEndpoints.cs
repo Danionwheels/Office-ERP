@@ -3,6 +3,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPerio
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountCodeRange;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureVoucherNumberingRule;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingControlSettings;
@@ -20,6 +21,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountCodeRange
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountingPeriods;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListLedgerAccounts;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ListVoucherNumberingRules;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostManualJournalEntry;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
@@ -49,6 +51,8 @@ public static class AccountingEndpoints
         group.MapGet("/ledger-accounts/suggest-code", SuggestLedgerAccountCodeAsync);
         group.MapGet("/accounting-setup/account-code-ranges", ListAccountCodeRangesAsync);
         group.MapPut("/accounting-setup/account-code-ranges/{role}", ConfigureAccountCodeRangeAsync);
+        group.MapGet("/accounting-setup/voucher-numbering", ListVoucherNumberingRulesAsync);
+        group.MapPut("/accounting-setup/voucher-numbering/{sourceType}", ConfigureVoucherNumberingRuleAsync);
         group.MapGet("/accounting-controls", GetAccountingControlSettingsAsync);
         group.MapPut("/accounting-controls", ConfigureAccountingControlSettingsAsync);
         group.MapPost("/accounting-controls/defaults", ConfigureDefaultAccountingControlSettingsAsync);
@@ -345,6 +349,49 @@ public static class AccountingEndpoints
         return Results.Ok(ToResponse(result.Value));
     }
 
+    private static async Task<IResult> ListVoucherNumberingRulesAsync(
+        string? companyCode,
+        ListVoucherNumberingRulesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListVoucherNumberingRulesQuery(companyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ListVoucherNumberingRulesResponse(
+            result.Value.CompanyCode,
+            result.Value.Rules.Select(ToResponse).ToArray()));
+    }
+
+    private static async Task<IResult> ConfigureVoucherNumberingRuleAsync(
+        string sourceType,
+        string? companyCode,
+        ConfigureVoucherNumberingRuleRequest request,
+        ConfigureVoucherNumberingRuleHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ConfigureVoucherNumberingRuleCommand(
+                companyCode,
+                sourceType,
+                request.Prefix,
+                request.NumberPaddingWidth,
+                request.IsActive),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
     private static async Task<IResult> GetAccountingControlSettingsAsync(
         string? companyCode,
         GetAccountingControlSettingsHandler handler,
@@ -624,6 +671,7 @@ public static class AccountingEndpoints
             result.Value.Prefix,
             result.Value.SequenceYear,
             result.Value.NextSequence,
+            result.Value.NumberPaddingWidth,
             result.Value.Reference));
     }
 
@@ -1086,6 +1134,19 @@ public static class AccountingEndpoints
             range.IsPostingAccount,
             range.ParentCode,
             range.IsActive);
+    }
+
+    private static VoucherNumberingRuleResponse ToResponse(VoucherNumberingRuleResult rule)
+    {
+        return new VoucherNumberingRuleResponse(
+            rule.CompanyCode,
+            rule.SourceType,
+            rule.Prefix,
+            rule.NumberPaddingWidth,
+            rule.IsActive,
+            rule.IsConfigured,
+            rule.CreatedAtUtc,
+            rule.UpdatedAtUtc);
     }
 
     private static AccountingControlSettingsResponse ToResponse(GetAccountingControlSettingsResult settings)

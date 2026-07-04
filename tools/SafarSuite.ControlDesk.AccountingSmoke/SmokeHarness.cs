@@ -5,6 +5,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureVoucherNumberingRule;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
@@ -16,6 +17,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReco
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ListVoucherNumberingRules;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
@@ -62,6 +64,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         IContractRepository contracts,
         IAccountCodeRangeRepository accountCodeRanges,
         IAccountingControlSettingsRepository accountingControlSettings,
+        IVoucherNumberingRuleRepository voucherNumberingRules,
         IAccountingPeriodRepository accountingPeriods,
         ILedgerAccountRepository ledgerAccounts,
         IJournalEntryRepository journalEntries,
@@ -81,6 +84,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         Contracts = contracts;
         AccountCodeRanges = accountCodeRanges;
         AccountingControlSettings = accountingControlSettings;
+        VoucherNumberingRules = voucherNumberingRules;
         AccountingPeriods = accountingPeriods;
         LedgerAccounts = ledgerAccounts;
         JournalEntries = journalEntries;
@@ -111,7 +115,9 @@ internal sealed class SmokeHarness : IAsyncDisposable
             UnitOfWork,
             IdGenerator,
             Clock);
-        var voucherNumberService = new JournalVoucherNumberService(JournalEntries);
+        var voucherNumberService = new JournalVoucherNumberService(
+            JournalEntries,
+            VoucherNumberingRules);
         var settingsResultFactory = new AccountingControlSettingsResultFactory(LedgerAccounts);
         var closeReadinessService = new AccountingPeriodCloseReadinessService(
             AccountingPeriods,
@@ -147,6 +153,13 @@ internal sealed class SmokeHarness : IAsyncDisposable
             SuggestLedgerAccountCode,
             CreateLedgerAccount,
             ConfigureAccountingControlSettings);
+
+        ConfigureVoucherNumberingRule = new ConfigureVoucherNumberingRuleHandler(
+            VoucherNumberingRules,
+            UnitOfWork,
+            IdGenerator,
+            Clock);
+        ListVoucherNumberingRules = new ListVoucherNumberingRulesHandler(VoucherNumberingRules);
 
         CreateAccountingPeriod = new CreateAccountingPeriodHandler(
             AccountingPeriods,
@@ -394,6 +407,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new InMemoryContractRepository(),
             new InMemoryAccountCodeRangeRepository(),
             new InMemoryAccountingControlSettingsRepository(),
+            new InMemoryVoucherNumberingRuleRepository(),
             new InMemoryAccountingPeriodRepository(),
             new InMemoryLedgerAccountRepository(),
             new InMemoryJournalEntryRepository(),
@@ -427,6 +441,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new EfContractRepository(dbContext),
             new EfAccountCodeRangeRepository(dbContext),
             new EfAccountingControlSettingsRepository(dbContext),
+            new EfVoucherNumberingRuleRepository(dbContext),
             new EfAccountingPeriodRepository(dbContext),
             new EfLedgerAccountRepository(dbContext),
             new EfJournalEntryRepository(dbContext),
@@ -451,6 +466,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public IAccountCodeRangeRepository AccountCodeRanges { get; }
 
     public IAccountingControlSettingsRepository AccountingControlSettings { get; }
+
+    public IVoucherNumberingRuleRepository VoucherNumberingRules { get; }
 
     public IAccountingPeriodRepository AccountingPeriods { get; }
 
@@ -487,6 +504,10 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public ConfigureAccountingControlSettingsHandler ConfigureAccountingControlSettings { get; }
 
     public ConfigureDefaultAccountingControlSettingsHandler ConfigureDefaultAccountingControlSettings { get; }
+
+    public ConfigureVoucherNumberingRuleHandler ConfigureVoucherNumberingRule { get; }
+
+    public ListVoucherNumberingRulesHandler ListVoucherNumberingRules { get; }
 
     public CreateAccountingPeriodHandler CreateAccountingPeriod { get; }
 

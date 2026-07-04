@@ -39,6 +39,7 @@ public sealed class PreviewJournalVoucherNumberHandler
             preview.Prefix,
             preview.SequenceYear,
             preview.NextSequence,
+            preview.NumberPaddingWidth,
             preview.Reference));
     }
 }

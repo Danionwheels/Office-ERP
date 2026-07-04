@@ -4,9 +4,11 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPerio
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureVoucherNumberingRule;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ListVoucherNumberingRules;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetBalanceSheet;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
@@ -540,7 +542,48 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Equal("MJ", manualVoucher.Prefix, "manual voucher prefix");
         SmokeAssertions.Equal(2026, manualVoucher.SequenceYear, "manual voucher year");
         SmokeAssertions.Equal(1, manualVoucher.NextSequence, "manual voucher next sequence");
+        SmokeAssertions.Equal(4, manualVoucher.NumberPaddingWidth, "manual voucher padding width");
         SmokeAssertions.Equal("MJ-2026-0001", manualVoucher.Reference, "manual voucher reference");
+
+        var defaultVoucherRules = SmokeAssertions.RequireSuccess(
+            await _harness.ListVoucherNumberingRules.HandleAsync(
+                new ListVoucherNumberingRulesQuery(),
+                cancellationToken),
+            "list default voucher numbering rules");
+
+        SmokeAssertions.True(
+            defaultVoucherRules.Rules.Any(rule =>
+                rule.SourceType == "Manual"
+                && rule.Prefix == "MJ"
+                && rule.NumberPaddingWidth == 4
+                && rule.IsActive
+                && !rule.IsConfigured),
+            "default manual voucher numbering rule should be listed.");
+
+        var configuredManualRule = SmokeAssertions.RequireSuccess(
+            await _harness.ConfigureVoucherNumberingRule.HandleAsync(
+                new ConfigureVoucherNumberingRuleCommand(
+                    null,
+                    "Manual",
+                    "JV",
+                    5,
+                    true),
+                cancellationToken),
+            "configure manual voucher numbering rule");
+
+        SmokeAssertions.Equal("JV", configuredManualRule.Prefix, "configured manual voucher prefix");
+        SmokeAssertions.Equal(5, configuredManualRule.NumberPaddingWidth, "configured manual voucher padding");
+        SmokeAssertions.True(configuredManualRule.IsConfigured, "configured manual voucher rule flag");
+
+        var configuredManualVoucher = SmokeAssertions.RequireSuccess(
+            await _harness.PreviewJournalVoucherNumber.HandleAsync(
+                new PreviewJournalVoucherNumberQuery("Manual", businessDate),
+                cancellationToken),
+            "preview configured manual voucher number");
+
+        SmokeAssertions.Equal("JV", configuredManualVoucher.Prefix, "configured manual voucher preview prefix");
+        SmokeAssertions.Equal(5, configuredManualVoucher.NumberPaddingWidth, "configured manual voucher preview padding");
+        SmokeAssertions.Equal("JV-2026-00001", configuredManualVoucher.Reference, "configured manual voucher reference");
 
         var cashAccount = await RequireLedgerAccountAsync(accounts.CashOrBankAccountId, cancellationToken);
         var retainedEarningsAccount = await RequireLedgerAccountAsync(
@@ -576,6 +619,44 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Money(0m, openingPreview.Difference, "opening balance preview difference");
         SmokeAssertions.Equal(2, openingPreview.ValidLineCount, "opening balance preview valid lines");
         SmokeAssertions.Equal(0, openingPreview.InvalidLineCount, "opening balance preview invalid lines");
+
+        SmokeAssertions.RequireSuccess(
+            await _harness.ConfigureVoucherNumberingRule.HandleAsync(
+                new ConfigureVoucherNumberingRuleCommand(
+                    null,
+                    "OpeningBalance",
+                    "OPEN",
+                    5,
+                    true),
+                cancellationToken),
+            "configure opening balance voucher numbering rule");
+
+        var configuredOpeningPreview = SmokeAssertions.RequireSuccess(
+            await _harness.PreviewOpeningBalanceImport.HandleAsync(
+                new PreviewOpeningBalanceImportCommand(
+                    businessDate,
+                    CurrencyCode,
+                    null,
+                    "Configured opening balance dry-run",
+                    [
+                        new PreviewOpeningBalanceImportLineCommand(
+                            cashAccount.Code.Value,
+                            50m,
+                            0m,
+                            "Configured cash opening"),
+                        new PreviewOpeningBalanceImportLineCommand(
+                            retainedEarningsAccount.Code.Value,
+                            0m,
+                            50m,
+                            "Configured equity opening")
+                    ]),
+                cancellationToken),
+            "preview configured opening balance import");
+
+        SmokeAssertions.Equal(
+            "OPEN-2026-00001",
+            configuredOpeningPreview.SourceReference,
+            "configured opening balance preview reference");
 
         var textPreview = SmokeAssertions.RequireSuccess(
             await _harness.PreviewOpeningBalanceImportText.HandleAsync(

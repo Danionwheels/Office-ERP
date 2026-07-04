@@ -4,6 +4,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountCodeRange;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureVoucherNumberingRule;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
@@ -23,6 +24,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountCodeRange
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountingPeriods;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListLedgerAccounts;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ListVoucherNumberingRules;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostManualJournalEntry;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
@@ -183,6 +185,8 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<GetAccountingControlSettingsHandler>();
         services.AddScoped<ConfigureAccountingControlSettingsHandler>();
         services.AddScoped<ConfigureDefaultAccountingControlSettingsHandler>();
+        services.AddScoped<ListVoucherNumberingRulesHandler>();
+        services.AddScoped<ConfigureVoucherNumberingRuleHandler>();
         services.AddScoped<AccountingPeriodPostingGuard>();
         services.AddScoped<JournalVoucherNumberService>();
         services.AddScoped<AccountingPeriodCloseReadinessService>();
@@ -315,6 +319,7 @@ public static class ControlDeskServiceRegistration
             services.AddScoped<IClientDeploymentRepository, EfClientDeploymentRepository>();
             services.AddScoped<IAccountCodeRangeRepository, EfAccountCodeRangeRepository>();
             services.AddScoped<IAccountingControlSettingsRepository, EfAccountingControlSettingsRepository>();
+            services.AddScoped<IVoucherNumberingRuleRepository, EfVoucherNumberingRuleRepository>();
             services.AddScoped<IAccountingPeriodRepository, EfAccountingPeriodRepository>();
             services.AddScoped<ILedgerAccountRepository, EfLedgerAccountRepository>();
             services.AddScoped<IJournalEntryRepository, EfJournalEntryRepository>();
@@ -345,6 +350,7 @@ public static class ControlDeskServiceRegistration
         services.AddSingleton<IClientDeploymentRepository, InMemoryClientDeploymentRepository>();
         services.AddSingleton<IAccountCodeRangeRepository, InMemoryAccountCodeRangeRepository>();
         services.AddSingleton<IAccountingControlSettingsRepository, InMemoryAccountingControlSettingsRepository>();
+        services.AddSingleton<IVoucherNumberingRuleRepository, InMemoryVoucherNumberingRuleRepository>();
         services.AddSingleton<IAccountingPeriodRepository, InMemoryAccountingPeriodRepository>();
         services.AddSingleton<ILedgerAccountRepository, InMemoryLedgerAccountRepository>();
         services.AddSingleton<IJournalEntryRepository, InMemoryJournalEntryRepository>();

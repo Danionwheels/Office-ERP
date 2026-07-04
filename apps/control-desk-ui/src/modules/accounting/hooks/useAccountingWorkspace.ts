@@ -4,6 +4,7 @@ import {
   configureAccountingControlSettings,
   configureAccountCodeRange,
   configureDefaultAccountingControlSettings,
+  configureVoucherNumberingRule,
   createAccountingPeriod,
   createLedgerAccount,
   getAccountingControlSettings,
@@ -21,6 +22,7 @@ import {
   listAccountingPeriods,
   listJournalEntries,
   listLedgerAccounts,
+  listVoucherNumberingRules,
   postManualJournalEntry,
   postOpeningBalanceImport,
   previewJournalVoucherNumber,
@@ -61,7 +63,9 @@ import type {
   ProfitAndLossStatementLine,
   TrialBalance,
   TrialBalanceFilters,
-  TrialBalanceLine
+  TrialBalanceLine,
+  VoucherNumberingRule,
+  VoucherNumberingRuleInput
 } from "../types/accountingTypes";
 import { toDateInputValue } from "../utils/accountingDates";
 import {
@@ -129,6 +133,8 @@ export function useAccountingWorkspace({
   const [accountCodeRanges, setAccountCodeRanges] = useState<AccountCodeRange[]>([]);
   const [accountingControlSettings, setAccountingControlSettings] =
     useState<AccountingControlSettings | null>(null);
+  const [voucherNumberingRules, setVoucherNumberingRules] =
+    useState<VoucherNumberingRule[]>([]);
   const [accountingPeriods, setAccountingPeriods] = useState<AccountingPeriod[]>([]);
   const [accountingPeriodReadiness, setAccountingPeriodReadiness] =
     useState<AccountingPeriodCloseReadiness | null>(null);
@@ -166,6 +172,8 @@ export function useAccountingWorkspace({
   );
   const [accountingControlSettingsForm, setAccountingControlSettingsForm] =
     useState(createDefaultAccountingControlSettingsForm());
+  const [voucherNumberingRuleForms, setVoucherNumberingRuleForms] =
+    useState<Record<string, VoucherNumberingRuleInput>>({});
   const [accountingPeriodForm, setAccountingPeriodForm] = useState(
     createDefaultAccountingPeriodForm()
   );
@@ -245,10 +253,15 @@ export function useAccountingWorkspace({
 
   async function refreshAccountingControls() {
     await runAction(async () => {
-      const settings = await getAccountingControlSettings(accountingCompanyCode);
+      const [settings, voucherRules] = await Promise.all([
+        getAccountingControlSettings(accountingCompanyCode),
+        listVoucherNumberingRules(accountingCompanyCode)
+      ]);
 
       setAccountingControlSettings(settings);
       setAccountingControlSettingsForm(toAccountingControlSettingsForm(settings));
+      setVoucherNumberingRules(voucherRules);
+      setVoucherNumberingRuleForms(toVoucherNumberingRuleForms(voucherRules));
     });
   }
 
@@ -295,6 +308,39 @@ export function useAccountingWorkspace({
       );
       await onLedgerSetupChanged?.();
       setMessage("Default MAIN GL controls configured.");
+    });
+  }
+
+  function handleVoucherNumberingRuleFormChange(
+    sourceType: string,
+    value: VoucherNumberingRuleInput
+  ) {
+    setVoucherNumberingRuleForms((current) => ({
+      ...current,
+      [sourceType]: value
+    }));
+  }
+
+  async function handleSaveVoucherNumberingRule(sourceType: string) {
+    const value = voucherNumberingRuleForms[sourceType];
+
+    if (value === undefined) {
+      return;
+    }
+
+    await runAction(async () => {
+      const updatedRule = await configureVoucherNumberingRule(
+        sourceType,
+        accountingCompanyCode,
+        value);
+
+      setVoucherNumberingRules((current) =>
+        current.map((rule) => rule.sourceType === updatedRule.sourceType ? updatedRule : rule));
+      setVoucherNumberingRuleForms((current) => ({
+        ...current,
+        [updatedRule.sourceType]: toVoucherNumberingRuleForm(updatedRule)
+      }));
+      setMessage(`${updatedRule.sourceType} voucher numbering saved.`);
     });
   }
 
@@ -1022,6 +1068,7 @@ export function useAccountingWorkspace({
     ledgerAccountRepairPlan,
     accountCodeRanges,
     accountingControlSettings,
+    voucherNumberingRules,
     accountingPeriods,
     accountingPeriodReadiness,
     accountingPeriodCloseJournalPreview,
@@ -1044,6 +1091,7 @@ export function useAccountingWorkspace({
     profitAndLossFilters,
     balanceSheetFilters,
     accountingControlSettingsForm,
+    voucherNumberingRuleForms,
     accountingPeriodForm,
     manualJournalEntryForm,
     openingBalanceImportForm,
@@ -1061,6 +1109,7 @@ export function useAccountingWorkspace({
     setProfitAndLossFilters,
     setBalanceSheetFilters,
     setAccountingControlSettingsForm,
+    handleVoucherNumberingRuleFormChange,
     setAccountingPeriodForm,
     setManualJournalEntryForm,
     setOpeningBalanceImportForm,
@@ -1077,6 +1126,7 @@ export function useAccountingWorkspace({
     refreshBalanceSheet,
     handleSaveAccountingControls,
     handleUseDefaultAccountingControls,
+    handleSaveVoucherNumberingRule,
     handlePrepareNextAccountingPeriod,
     handleCreateAccountingPeriod,
     handleCheckAccountingPeriodReadiness,
@@ -1106,5 +1156,22 @@ export function useAccountingWorkspace({
     handleVoidManualJournalEntry,
     rememberJournalSourceDocument,
     loadJournalSourceDocument
+  };
+}
+
+function toVoucherNumberingRuleForms(
+  rules: VoucherNumberingRule[]
+): Record<string, VoucherNumberingRuleInput> {
+  return rules.reduce<Record<string, VoucherNumberingRuleInput>>((forms, rule) => {
+    forms[rule.sourceType] = toVoucherNumberingRuleForm(rule);
+    return forms;
+  }, {});
+}
+
+function toVoucherNumberingRuleForm(rule: VoucherNumberingRule): VoucherNumberingRuleInput {
+  return {
+    prefix: rule.prefix,
+    numberPaddingWidth: rule.numberPaddingWidth.toString(),
+    isActive: rule.isActive
   };
 }

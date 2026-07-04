@@ -6,4 +6,5 @@ public sealed record PreviewJournalVoucherNumberResult(
     string Prefix,
     int SequenceYear,
     int NextSequence,
+    int NumberPaddingWidth,
     string Reference);

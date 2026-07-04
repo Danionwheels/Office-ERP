@@ -164,6 +164,23 @@ export type AccountingControlSettingsInput = {
   roundingAccountId: string;
 };
 
+export type VoucherNumberingRule = {
+  companyCode: string;
+  sourceType: string;
+  prefix: string;
+  numberPaddingWidth: number;
+  isActive: boolean;
+  isConfigured: boolean;
+  createdAtUtc?: string | null;
+  updatedAtUtc?: string | null;
+};
+
+export type VoucherNumberingRuleInput = {
+  prefix: string;
+  numberPaddingWidth: string;
+  isActive: boolean;
+};
+
 export type AccountingPeriod = {
   accountingPeriodId: string;
   companyCode: string;
@@ -342,6 +359,7 @@ export type JournalVoucherNumberPreview = {
   prefix: string;
   sequenceYear: number;
   nextSequence: number;
+  numberPaddingWidth: number;
   reference: string;
 };
 

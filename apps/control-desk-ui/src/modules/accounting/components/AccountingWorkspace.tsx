@@ -166,9 +166,13 @@ export function AccountingWorkspace({
           <AccountingControlsPanel
             settings={workspace.accountingControlSettings}
             value={workspace.accountingControlSettingsForm}
+            voucherRules={workspace.voucherNumberingRules}
+            voucherRuleForms={workspace.voucherNumberingRuleForms}
             accounts={workspace.ledgerAccounts}
             isBusy={isBusy}
             onValueChange={workspace.setAccountingControlSettingsForm}
+            onVoucherRuleChange={workspace.handleVoucherNumberingRuleFormChange}
+            onSaveVoucherRule={workspace.handleSaveVoucherNumberingRule}
             onSave={workspace.handleSaveAccountingControls}
             onUseDefaults={workspace.handleUseDefaultAccountingControls}
             onRefresh={() => workspace.refreshAccountingControls()}

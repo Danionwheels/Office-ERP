@@ -30,6 +30,8 @@ import type {
   ProfitAndLossStatementFilters,
   TrialBalance,
   TrialBalanceFilters,
+  VoucherNumberingRule,
+  VoucherNumberingRuleInput,
   VoidManualJournalEntryInput,
   VoidManualJournalEntryResult
 } from "../types/accountingTypes";
@@ -51,6 +53,11 @@ type ListAccountCodeRangesResponse = {
 type ListAccountingPeriodsResponse = {
   companyCode: string;
   periods: AccountingPeriod[];
+};
+
+type ListVoucherNumberingRulesResponse = {
+  companyCode: string;
+  rules: VoucherNumberingRule[];
 };
 
 type ListJournalEntriesResponse = {
@@ -215,6 +222,43 @@ export async function configureDefaultAccountingControlSettings(
       companyCode: optionalText(companyCode)
     })
   });
+}
+
+export async function listVoucherNumberingRules(
+  companyCode: string
+): Promise<VoucherNumberingRule[]> {
+  const query = new URLSearchParams();
+  setQuery(query, "companyCode", companyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+  const response = await apiRequest<ListVoucherNumberingRulesResponse>(
+    `/api/v1/accounting/accounting-setup/voucher-numbering${suffix}`
+  );
+
+  return response.rules;
+}
+
+export async function configureVoucherNumberingRule(
+  sourceType: string,
+  companyCode: string,
+  input: VoucherNumberingRuleInput
+): Promise<VoucherNumberingRule> {
+  const query = new URLSearchParams();
+  setQuery(query, "companyCode", companyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
+  return apiRequest<VoucherNumberingRule>(
+    `/api/v1/accounting/accounting-setup/voucher-numbering/${encodeURIComponent(sourceType)}${suffix}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        prefix: input.prefix,
+        numberPaddingWidth: Number(input.numberPaddingWidth),
+        isActive: input.isActive
+      })
+    }
+  );
 }
 
 export async function listAccountingPeriods(companyCode: string): Promise<AccountingPeriod[]> {

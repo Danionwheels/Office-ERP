@@ -159,6 +159,25 @@ public sealed record ListAccountCodeRangesResponse(
     string CompanyCode,
     IReadOnlyCollection<AccountCodeRangeResponse> Ranges);
 
+public sealed record ConfigureVoucherNumberingRuleRequest(
+    string Prefix,
+    int NumberPaddingWidth,
+    bool IsActive = true);
+
+public sealed record VoucherNumberingRuleResponse(
+    string CompanyCode,
+    string SourceType,
+    string Prefix,
+    int NumberPaddingWidth,
+    bool IsActive,
+    bool IsConfigured,
+    DateTimeOffset? CreatedAtUtc,
+    DateTimeOffset? UpdatedAtUtc);
+
+public sealed record ListVoucherNumberingRulesResponse(
+    string CompanyCode,
+    IReadOnlyCollection<VoucherNumberingRuleResponse> Rules);
+
 public sealed record ConfigureAccountingControlSettingsRequest(
     string? CompanyCode,
     string BaseCurrencyCode,
@@ -291,6 +310,7 @@ public sealed record JournalVoucherNumberPreviewResponse(
     string Prefix,
     int SequenceYear,
     int NextSequence,
+    int NumberPaddingWidth,
     string Reference);
 
 public sealed record TrialBalanceResponse(
