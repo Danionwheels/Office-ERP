@@ -158,7 +158,7 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:51046/api/v1/local-server/
 
 ## Known Limits During Demo
 
-- The SafarSuite app image/profile slot points at the pushed `ghcr.io/danionwheels/localserver:0.1.0` image, but app-specific health/log evidence and deployment-profile behavior still need proof.
+- The SafarSuite app image/profile slot points at the pushed `ghcr.io/danionwheels/localserver:0.1.0` image, and the app now exposes runtime health/profile/log evidence; a production-shaped generated-bootstrap proof with the optional app profile is still pending.
 - Portal payment UI and real payment provider callbacks are still pending.
 - Provider/admin auth still uses the local provider-key boundary; real roles, MFA, password reset, and production mail retry remain pending.
 - The local-server background worker is disabled by default, so manual API calls or smoke tools are still useful during proof runs.

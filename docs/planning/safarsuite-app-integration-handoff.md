@@ -37,6 +37,7 @@ Verified in the app workspace:
 - packaging probes passed: Windows client production build, local-server Release publish into `artifacts\codex\localserver-publish`, runtime Compose config validation, and internal `/health` check against the published LocalServer
 - Docker image build completed after MCR access recovered, the pushed GHCR image `ghcr.io/danionwheels/localserver:0.1.0` was produced, and the Compose runtime now runs `local-db` plus `safarsuite-app` with container health and v1 module-gateway probes verified
 - Control-side command diagnostics now report each runtime service's signed manifest intent, including the optional app profile's `SAFARSUITE_APP_IMAGE`, `SAFARSUITE_APP_HTTP_PORT`, and `http://safarsuite-app:5280/health` wiring even when the profile is disabled
+- app LocalServer now exposes runtime deployment context through `GET /health` and `GET /api/v1/local-server/runtime/profile`, and module-gateway decisions log deployment mode, site id, and site role for Control-side log-tail diagnostics
 
 ## Workspace Boundary
 
@@ -295,7 +296,7 @@ Results:
 - Published LocalServer internal healthcheck returned success against `http://127.0.0.1:5299/health`.
 - Docker image build completed after MCR access recovered, `scripts\deploy\build-localserver-image.ps1 -Version 0.1.0` produced tags `ghcr.io/danionwheels/localserver:0.1.0` and `safarsuite/localserver:dev`, `ghcr.io/danionwheels/localserver:0.1.0` was pushed with digest `sha256:0deacfd234d59354d7560371d9b475633903e7d18dd0a84cb5cfbb0cdb182ba1`, anonymous manifest/pull checks passed using an empty Docker config, `docker-compose.runtime.yml` runs with Postgres on host port `55632` and app HTTP on `5280`, 39 local migrations applied, and container `/health` plus v1 module-gateway GET/POST probes returned the expected contract shape.
 
-The remaining app-side gap is no longer the module-gateway contract, first image wrapper, image push, tag discipline, local container proof, or control-side manifest diagnostics; it is wiring app-specific health/log evidence and deployment-profile behavior into the Control Desk bootstrap/runtime path.
+The remaining app-side gap is no longer the module-gateway contract, first image wrapper, image push, tag discipline, local container proof, control-side manifest diagnostics, or app health/log/profile evidence; it is production install proof for the optional app profile and later operational deployment-profile behavior beyond the commercial control channel.
 
 ## Do Not Drift
 
@@ -351,4 +352,4 @@ The first workspace switch gate was met and verified on 2026-07-04:
 - the app workspace path is known
 - app menu/window access and backend write behavior now consume the module gateway
 
-Return to the app workspace next for app-specific health/log evidence and deployment-profile behavior. Return to this workspace after that so the bootstrap/runtime tracker can be updated with any final diagnostics shape and module-code map changes.
+Return to the Control Desk workspace next for a generated-bootstrap app-profile proof when ready. The app workspace now has the health/profile/log diagnostics needed by the Control-side runtime diagnostics path.
