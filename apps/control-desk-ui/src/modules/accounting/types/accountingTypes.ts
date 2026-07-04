@@ -391,6 +391,21 @@ export type OpeningBalanceImportPreview = {
   lines: OpeningBalanceImportPreviewLine[];
 };
 
+export type OpeningBalanceImportTextPreview = {
+  format: string;
+  parsedLineCount: number;
+  ignoredLineCount: number;
+  parseIssues: OpeningBalanceImportTextParseIssue[];
+  preview: OpeningBalanceImportPreview;
+};
+
+export type OpeningBalanceImportTextParseIssue = {
+  lineNumber: number;
+  column: string;
+  message: string;
+  rawValue?: string | null;
+};
+
 export type OpeningBalanceImportPreviewLine = {
   lineNumber: number;
   accountCode: string;

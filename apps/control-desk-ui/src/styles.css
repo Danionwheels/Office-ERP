@@ -4265,6 +4265,19 @@ td {
   grid-template-columns: minmax(150px, 0.9fr) 110px 110px minmax(180px, 1fr) 34px;
 }
 
+.opening-balance-text-import {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, auto);
+  gap: 10px;
+  align-items: end;
+}
+
+.opening-balance-import-actions {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr);
+  gap: 8px;
+}
+
 .opening-balance-preview {
   display: grid;
   gap: 10px;
@@ -4290,7 +4303,23 @@ td {
   gap: 8px;
 }
 
+.opening-balance-text-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  gap: 8px;
+}
+
 .opening-balance-summary span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(32, 37, 43, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 8px;
+}
+
+.opening-balance-text-summary span {
   min-width: 0;
   display: grid;
   gap: 3px;
@@ -4306,7 +4335,21 @@ td {
   font-weight: 700;
 }
 
+.opening-balance-text-summary small {
+  color: #4e5964;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .opening-balance-summary strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.opening-balance-text-summary strong {
   min-width: 0;
   overflow-wrap: anywhere;
   color: #20252b;
@@ -5951,7 +5994,9 @@ td {
 
   .opening-balance-line-grid,
   .opening-balance-line-grid .journal-line-row,
-  .opening-balance-summary {
+  .opening-balance-summary,
+  .opening-balance-text-import,
+  .opening-balance-text-summary {
     grid-template-columns: 1fr;
   }
 

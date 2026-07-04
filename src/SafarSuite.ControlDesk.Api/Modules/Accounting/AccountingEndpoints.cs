@@ -24,6 +24,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.PostManualJournalEnt
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImportText;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ReopenAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.UpdateLedgerAccount;
@@ -66,6 +67,7 @@ public static class AccountingEndpoints
         group.MapGet("/balance-sheet", GetBalanceSheetAsync);
         group.MapPost("/journal-entries/manual", PostManualJournalEntryAsync);
         group.MapPost("/journal-entries/opening-balances/preview", PreviewOpeningBalanceImportAsync);
+        group.MapPost("/journal-entries/opening-balances/text-preview", PreviewOpeningBalanceImportTextAsync);
         group.MapPost("/journal-entries/opening-balances", PostOpeningBalanceImportAsync);
         group.MapPost("/journal-entries/{journalEntryId:guid}/void", VoidManualJournalEntryAsync);
         group.MapGet("/ledger-accounts/{ledgerAccountId:guid}/activity", GetLedgerAccountActivityAsync);
@@ -867,6 +869,38 @@ public static class AccountingEndpoints
         return Results.Created($"/api/v1/accounting/journal-entries/{response.JournalEntryId}", response);
     }
 
+    private static async Task<IResult> PreviewOpeningBalanceImportTextAsync(
+        PreviewOpeningBalanceImportTextRequest request,
+        PreviewOpeningBalanceImportTextHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new PreviewOpeningBalanceImportTextCommand(
+                request.EntryDate,
+                request.CurrencyCode,
+                request.SourceReference,
+                request.Memo,
+                request.ImportText,
+                request.Delimiter),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new PreviewOpeningBalanceImportTextResponse(
+            result.Value.Format,
+            result.Value.ParsedLineCount,
+            result.Value.IgnoredLineCount,
+            result.Value.ParseIssues.Select(issue => new OpeningBalanceImportTextParseIssueResponse(
+                issue.LineNumber,
+                issue.Column,
+                issue.Message,
+                issue.RawValue)).ToArray(),
+            ToResponse(result.Value.Preview)));
+    }
+
     private static async Task<IResult> VoidManualJournalEntryAsync(
         Guid journalEntryId,
         VoidManualJournalEntryRequest request,
@@ -983,6 +1017,35 @@ public static class AccountingEndpoints
                 line.Debit,
                 line.Credit,
                 line.Description)).ToArray());
+    }
+
+    private static PreviewOpeningBalanceImportResponse ToResponse(PreviewOpeningBalanceImportResult preview)
+    {
+        return new PreviewOpeningBalanceImportResponse(
+            preview.EntryDate,
+            preview.CurrencyCode,
+            preview.SourceReference,
+            preview.Memo,
+            preview.CanPost,
+            preview.TotalDebit,
+            preview.TotalCredit,
+            preview.Difference,
+            preview.ImportedLineCount,
+            preview.ValidLineCount,
+            preview.InvalidLineCount,
+            preview.Blockers,
+            preview.Lines.Select(line => new PreviewOpeningBalanceImportLineResponse(
+                line.LineNumber,
+                line.AccountCode,
+                line.LedgerAccountId,
+                line.LedgerAccountName,
+                line.AccountType,
+                line.NormalBalance,
+                line.Debit,
+                line.Credit,
+                line.Description,
+                line.IsValid,
+                line.Issues)).ToArray());
     }
 
     private static JournalEntrySourceDocumentResponse ToResponse(JournalEntrySourceDocumentResult sourceDocument)

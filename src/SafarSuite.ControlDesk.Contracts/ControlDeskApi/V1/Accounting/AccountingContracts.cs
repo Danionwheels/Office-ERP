@@ -398,6 +398,14 @@ public sealed record PreviewOpeningBalanceImportLineRequest(
     decimal Credit,
     string? Description);
 
+public sealed record PreviewOpeningBalanceImportTextRequest(
+    DateOnly EntryDate,
+    string CurrencyCode,
+    string? SourceReference,
+    string? Memo,
+    string ImportText,
+    string? Delimiter);
+
 public sealed record PostOpeningBalanceImportRequest(
     DateOnly EntryDate,
     string CurrencyCode,
@@ -438,6 +446,19 @@ public sealed record PreviewOpeningBalanceImportLineResponse(
     string? Description,
     bool IsValid,
     IReadOnlyCollection<string> Issues);
+
+public sealed record PreviewOpeningBalanceImportTextResponse(
+    string Format,
+    int ParsedLineCount,
+    int IgnoredLineCount,
+    IReadOnlyCollection<OpeningBalanceImportTextParseIssueResponse> ParseIssues,
+    PreviewOpeningBalanceImportResponse Preview);
+
+public sealed record OpeningBalanceImportTextParseIssueResponse(
+    int LineNumber,
+    string Column,
+    string Message,
+    string? RawValue);
 
 public sealed record VoidManualJournalEntryRequest(
     DateOnly VoidDate,

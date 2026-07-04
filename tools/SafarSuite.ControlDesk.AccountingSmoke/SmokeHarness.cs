@@ -20,6 +20,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImportText;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
@@ -214,6 +215,9 @@ internal sealed class SmokeHarness : IAsyncDisposable
             LedgerAccounts,
             periodGuard,
             voucherNumberService);
+
+        PreviewOpeningBalanceImportText = new PreviewOpeningBalanceImportTextHandler(
+            PreviewOpeningBalanceImport);
 
         PostOpeningBalanceImport = new PostOpeningBalanceImportHandler(
             PreviewOpeningBalanceImport,
@@ -511,6 +515,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public PreviewJournalVoucherNumberHandler PreviewJournalVoucherNumber { get; }
 
     public PreviewOpeningBalanceImportHandler PreviewOpeningBalanceImport { get; }
+
+    public PreviewOpeningBalanceImportTextHandler PreviewOpeningBalanceImportText { get; }
 
     public PostOpeningBalanceImportHandler PostOpeningBalanceImport { get; }
 

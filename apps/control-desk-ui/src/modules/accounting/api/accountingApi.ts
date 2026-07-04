@@ -25,6 +25,7 @@ import type {
   ManualJournalEntryInput,
   OpeningBalanceImportInput,
   OpeningBalanceImportPreview,
+  OpeningBalanceImportTextPreview,
   ProfitAndLossStatement,
   ProfitAndLossStatementFilters,
   TrialBalance,
@@ -359,6 +360,27 @@ export async function previewOpeningBalanceImport(
           credit: amountOrZero(line.credit),
           description: optionalText(line.description)
         }))
+      })
+    }
+  );
+}
+
+export async function previewOpeningBalanceImportText(
+  input: OpeningBalanceImportInput,
+  importText: string,
+  delimiter: string
+): Promise<OpeningBalanceImportTextPreview> {
+  return apiRequest<OpeningBalanceImportTextPreview>(
+    "/api/v1/accounting/journal-entries/opening-balances/text-preview",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        entryDate: input.entryDate,
+        currencyCode: input.currencyCode,
+        sourceReference: optionalText(input.sourceReference),
+        memo: optionalText(input.memo),
+        importText,
+        delimiter: optionalText(delimiter)
       })
     }
   );

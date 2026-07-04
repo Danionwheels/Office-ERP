@@ -1,5 +1,6 @@
 import {
   CalendarCheck2,
+  ClipboardList,
   ExternalLink,
   FileCheck2,
   Hash,
@@ -23,7 +24,8 @@ import type {
   ManualJournalEntryLineInput,
   OpeningBalanceImportInput,
   OpeningBalanceImportLineInput,
-  OpeningBalanceImportPreview
+  OpeningBalanceImportPreview,
+  OpeningBalanceImportTextPreview
 } from "../types/accountingTypes";
 import { journalSourceTypeOptions } from "../constants/accountingConstants";
 import { toDateInputValue } from "../utils/accountingDates";
@@ -47,6 +49,9 @@ type JournalWorkbenchPanelProps = {
   manualVoucherPreview: JournalVoucherNumberPreview | null;
   openingBalanceValue: OpeningBalanceImportInput;
   openingBalancePreview: OpeningBalanceImportPreview | null;
+  openingBalanceImportText: string;
+  openingBalanceImportDelimiter: string;
+  openingBalanceImportTextPreview: OpeningBalanceImportTextPreview | null;
   focusedJournalEntryId: string;
   focusedJournalEntry: JournalEntrySummary | null;
   sourceDocumentsByJournalEntryId: Record<string, JournalEntrySourceDocument>;
@@ -56,6 +61,10 @@ type JournalWorkbenchPanelProps = {
   onSuggestVoucherNumber: () => Promise<void>;
   onOpeningBalanceValueChange: (value: OpeningBalanceImportInput) => void;
   onPreviewOpeningBalance: () => Promise<void>;
+  onOpeningBalanceImportTextChange: (value: string) => void;
+  onOpeningBalanceImportDelimiterChange: (value: string) => void;
+  onPreviewOpeningBalanceText: () => Promise<void>;
+  onUseOpeningBalanceTemplate: () => void;
   onPostOpeningBalance: () => Promise<void>;
   onFocusJournalEntry: (journalEntryId: string) => Promise<void>;
   onPost: () => Promise<void>;
@@ -75,6 +84,9 @@ export function JournalWorkbenchPanel({
   manualVoucherPreview,
   openingBalanceValue,
   openingBalancePreview,
+  openingBalanceImportText,
+  openingBalanceImportDelimiter,
+  openingBalanceImportTextPreview,
   focusedJournalEntryId,
   focusedJournalEntry,
   sourceDocumentsByJournalEntryId,
@@ -84,6 +96,10 @@ export function JournalWorkbenchPanel({
   onSuggestVoucherNumber,
   onOpeningBalanceValueChange,
   onPreviewOpeningBalance,
+  onOpeningBalanceImportTextChange,
+  onOpeningBalanceImportDelimiterChange,
+  onPreviewOpeningBalanceText,
+  onUseOpeningBalanceTemplate,
   onPostOpeningBalance,
   onFocusJournalEntry,
   onPost,
@@ -489,6 +505,52 @@ export function JournalWorkbenchPanel({
             </label>
           </div>
 
+          <div className="opening-balance-text-import">
+            <label className="form-field wide">
+              <span>Import text</span>
+              <textarea
+                value={openingBalanceImportText}
+                onChange={(event) => onOpeningBalanceImportTextChange(event.target.value)}
+                disabled={isBusy}
+                rows={5}
+              />
+            </label>
+            <div className="opening-balance-import-actions">
+              <label className="form-field">
+                <span>Delimiter</span>
+                <select
+                  value={openingBalanceImportDelimiter}
+                  onChange={(event) => onOpeningBalanceImportDelimiterChange(event.target.value)}
+                  disabled={isBusy}
+                >
+                  <option value="comma">Comma</option>
+                  <option value="tab">Tab</option>
+                  <option value="pipe">Pipe</option>
+                </select>
+              </label>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={onUseOpeningBalanceTemplate}
+                disabled={isBusy}
+                title="Load opening balance import template"
+              >
+                <ClipboardList size={16} />
+                Template
+              </button>
+              <button
+                className="icon-button primary"
+                type="button"
+                onClick={() => void onPreviewOpeningBalanceText()}
+                disabled={isBusy || openingBalanceImportText.trim() === ""}
+                title="Parse opening balance import text"
+              >
+                <FileCheck2 size={16} />
+                Parse
+              </button>
+            </div>
+          </div>
+
           <div className="journal-line-grid opening-balance-line-grid">
             <div className="journal-line-head">Account code</div>
             <div className="journal-line-head">Debit</div>
@@ -613,7 +675,10 @@ export function JournalWorkbenchPanel({
           </div>
         </form>
         {openingBalancePreview !== null && (
-          <OpeningBalancePreviewDetail preview={openingBalancePreview} />
+          <OpeningBalancePreviewDetail
+            preview={openingBalancePreview}
+            textPreview={openingBalanceImportTextPreview}
+          />
         )}
       </section>
 
@@ -821,9 +886,11 @@ export function JournalWorkbenchPanel({
 }
 
 function OpeningBalancePreviewDetail({
-  preview
+  preview,
+  textPreview
 }: {
   preview: OpeningBalanceImportPreview;
+  textPreview: OpeningBalanceImportTextPreview | null;
 }) {
   return (
     <div className={`opening-balance-preview ${preview.canPost ? "ready" : "blocked"}`}>
@@ -855,6 +922,48 @@ function OpeningBalancePreviewDetail({
             <span key={blocker}>{blocker}</span>
           ))}
         </div>
+      )}
+      {textPreview !== null && (
+        <div className="opening-balance-text-summary">
+          <span>
+            <small>Format</small>
+            <strong>{textPreview.format}</strong>
+          </span>
+          <span>
+            <small>Parsed</small>
+            <strong>{textPreview.parsedLineCount}</strong>
+          </span>
+          <span>
+            <small>Ignored</small>
+            <strong>{textPreview.ignoredLineCount}</strong>
+          </span>
+          <span>
+            <small>Issues</small>
+            <strong>{textPreview.parseIssues.length}</strong>
+          </span>
+        </div>
+      )}
+      {textPreview !== null && textPreview.parseIssues.length > 0 && (
+        <table className="opening-balance-table">
+          <thead>
+            <tr>
+              <th>Line</th>
+              <th>Column</th>
+              <th>Value</th>
+              <th>Issue</th>
+            </tr>
+          </thead>
+          <tbody>
+            {textPreview.parseIssues.map((issue) => (
+              <tr key={`${issue.lineNumber}-${issue.column}-${issue.message}`}>
+                <td>{issue.lineNumber}</td>
+                <td>{issue.column}</td>
+                <td>{issue.rawValue ?? "-"}</td>
+                <td>{issue.message}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
       <table className="opening-balance-table">
         <thead>

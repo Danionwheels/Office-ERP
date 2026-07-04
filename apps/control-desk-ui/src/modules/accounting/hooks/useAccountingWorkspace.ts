@@ -25,6 +25,7 @@ import {
   postOpeningBalanceImport,
   previewJournalVoucherNumber,
   previewOpeningBalanceImport,
+  previewOpeningBalanceImportText,
   reopenAccountingPeriod,
   suggestLedgerAccountCode,
   updateLedgerAccount,
@@ -54,6 +55,7 @@ import type {
   LedgerAccountRepairPlan,
   LedgerAccountSummary,
   OpeningBalanceImportPreview,
+  OpeningBalanceImportTextPreview,
   ProfitAndLossStatement,
   ProfitAndLossStatementFilters,
   ProfitAndLossStatementLine,
@@ -173,6 +175,11 @@ export function useAccountingWorkspace({
     useState(createDefaultOpeningBalanceImportForm());
   const [openingBalanceImportPreview, setOpeningBalanceImportPreview] =
     useState<OpeningBalanceImportPreview | null>(null);
+  const [openingBalanceImportText, setOpeningBalanceImportText] = useState("");
+  const [openingBalanceImportDelimiter, setOpeningBalanceImportDelimiter] =
+    useState("comma");
+  const [openingBalanceImportTextPreview, setOpeningBalanceImportTextPreview] =
+    useState<OpeningBalanceImportTextPreview | null>(null);
 
   useEffect(() => {
     void refreshAccountingSetup(ledgerAccountFilters);
@@ -894,6 +901,7 @@ export function useAccountingWorkspace({
       const preview = await previewOpeningBalanceImport(openingBalanceImportForm);
 
       setOpeningBalanceImportPreview(preview);
+      setOpeningBalanceImportTextPreview(null);
       setOpeningBalanceImportForm((current) => ({
         ...current,
         sourceReference: preview.sourceReference
@@ -902,6 +910,37 @@ export function useAccountingWorkspace({
         ? `Opening balance dry-run ${preview.sourceReference} is balanced.`
         : `Opening balance dry-run has ${preview.blockers.length} blocker(s).`);
     });
+  }
+
+  async function handlePreviewOpeningBalanceImportText() {
+    await runAction(async () => {
+      const textPreview = await previewOpeningBalanceImportText(
+        openingBalanceImportForm,
+        openingBalanceImportText,
+        openingBalanceImportDelimiter);
+
+      setOpeningBalanceImportTextPreview(textPreview);
+      setOpeningBalanceImportPreview(textPreview.preview);
+      setOpeningBalanceImportForm((current) => ({
+        ...current,
+        sourceReference: textPreview.preview.sourceReference,
+        lines: textPreview.preview.lines.map((line) => ({
+          accountCode: line.accountCode,
+          debit: line.debit === 0 ? "" : line.debit.toString(),
+          credit: line.credit === 0 ? "" : line.credit.toString(),
+          description: line.description ?? ""
+        }))
+      }));
+      setMessage(textPreview.preview.canPost
+        ? `Parsed ${textPreview.parsedLineCount} opening balance line(s).`
+        : `Parsed text has ${textPreview.preview.blockers.length} blocker(s).`);
+    });
+  }
+
+  function handleUseOpeningBalanceImportTemplate() {
+    setOpeningBalanceImportDelimiter("comma");
+    setOpeningBalanceImportText("accountCode,debit,credit,description\n");
+    setOpeningBalanceImportTextPreview(null);
   }
 
   async function handlePostOpeningBalanceImport() {
@@ -920,6 +959,8 @@ export function useAccountingWorkspace({
       setBalanceSheet(position);
       setOpeningBalanceImportForm(createDefaultOpeningBalanceImportForm());
       setOpeningBalanceImportPreview(null);
+      setOpeningBalanceImportText("");
+      setOpeningBalanceImportTextPreview(null);
       setFocusedJournalEntryId(postedEntry.journalEntryId);
       setFocusedJournalEntry(postedEntry);
       await refreshSelectedLedgerAccountActivity();
@@ -1007,6 +1048,9 @@ export function useAccountingWorkspace({
     manualJournalEntryForm,
     openingBalanceImportForm,
     openingBalanceImportPreview,
+    openingBalanceImportText,
+    openingBalanceImportDelimiter,
+    openingBalanceImportTextPreview,
     openPeriodCount,
     postingAccountCount,
     handleLedgerAccountFiltersChange,
@@ -1020,6 +1064,8 @@ export function useAccountingWorkspace({
     setAccountingPeriodForm,
     setManualJournalEntryForm,
     setOpeningBalanceImportForm,
+    setOpeningBalanceImportText,
+    setOpeningBalanceImportDelimiter,
     refreshAccountingSetup,
     refreshAccountingControls,
     refreshAccountingPeriods,
@@ -1054,6 +1100,8 @@ export function useAccountingWorkspace({
     handlePostManualJournalEntry,
     handleSuggestManualJournalVoucherNumber,
     handlePreviewOpeningBalanceImport,
+    handlePreviewOpeningBalanceImportText,
+    handleUseOpeningBalanceImportTemplate,
     handlePostOpeningBalanceImport,
     handleVoidManualJournalEntry,
     rememberJournalSourceDocument,

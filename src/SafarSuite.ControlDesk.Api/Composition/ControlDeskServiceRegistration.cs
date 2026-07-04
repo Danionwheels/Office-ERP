@@ -27,6 +27,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.PostManualJournalEnt
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImportText;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ReopenAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.UpdateLedgerAccount;
@@ -207,6 +208,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<PostManualJournalEntryHandler>();
         services.AddScoped<PreviewJournalVoucherNumberHandler>();
         services.AddScoped<PreviewOpeningBalanceImportHandler>();
+        services.AddScoped<PreviewOpeningBalanceImportTextHandler>();
         services.AddScoped<PostOpeningBalanceImportHandler>();
         services.AddScoped<VoidManualJournalEntryValidator>();
         services.AddScoped<VoidManualJournalEntryHandler>();

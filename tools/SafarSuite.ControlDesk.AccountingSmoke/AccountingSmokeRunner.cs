@@ -17,6 +17,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImportText;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
@@ -575,6 +576,58 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Money(0m, openingPreview.Difference, "opening balance preview difference");
         SmokeAssertions.Equal(2, openingPreview.ValidLineCount, "opening balance preview valid lines");
         SmokeAssertions.Equal(0, openingPreview.InvalidLineCount, "opening balance preview invalid lines");
+
+        var textPreview = SmokeAssertions.RequireSuccess(
+            await _harness.PreviewOpeningBalanceImportText.HandleAsync(
+                new PreviewOpeningBalanceImportTextCommand(
+                    businessDate,
+                    CurrencyCode,
+                    null,
+                    "Legacy opening balance text dry-run",
+                    string.Join(
+                        Environment.NewLine,
+                        [
+                            "accountCode,debit,credit,description",
+                            $"{cashAccount.Code.Value},125,0,CSV cash opening",
+                            $"{retainedEarningsAccount.Code.Value},0,125,CSV equity opening"
+                        ]),
+                    "comma"),
+                cancellationToken),
+            "preview opening balance import text");
+
+        SmokeAssertions.Equal("Comma", textPreview.Format, "opening balance text format");
+        SmokeAssertions.Equal(2, textPreview.ParsedLineCount, "opening balance text parsed line count");
+        SmokeAssertions.Equal(1, textPreview.IgnoredLineCount, "opening balance text ignored header count");
+        SmokeAssertions.Equal(0, textPreview.ParseIssues.Count, "opening balance text parse issue count");
+        SmokeAssertions.True(textPreview.Preview.CanPost, "opening balance text preview should be postable.");
+        SmokeAssertions.Money(125m, textPreview.Preview.TotalDebit, "opening balance text debit");
+        SmokeAssertions.Money(125m, textPreview.Preview.TotalCredit, "opening balance text credit");
+
+        var blockedTextPreview = SmokeAssertions.RequireSuccess(
+            await _harness.PreviewOpeningBalanceImportText.HandleAsync(
+                new PreviewOpeningBalanceImportTextCommand(
+                    businessDate,
+                    CurrencyCode,
+                    null,
+                    null,
+                    string.Join(
+                        Environment.NewLine,
+                        [
+                            "accountCode|debit|credit|description",
+                            $"{cashAccount.Code.Value}|not-a-number|0|Bad debit",
+                            $"{retainedEarningsAccount.Code.Value}|0|125|CSV equity opening"
+                        ]),
+                    "pipe"),
+                cancellationToken),
+            "preview blocked opening balance import text");
+
+        SmokeAssertions.Equal("Pipe", blockedTextPreview.Format, "blocked opening balance text format");
+        SmokeAssertions.Equal(1, blockedTextPreview.ParseIssues.Count, "blocked opening balance text parse issue count");
+        SmokeAssertions.True(!blockedTextPreview.Preview.CanPost, "blocked opening balance text preview should not post.");
+        SmokeAssertions.True(
+            blockedTextPreview.Preview.Blockers.Any(blocker =>
+                blocker.Contains("text issue", StringComparison.OrdinalIgnoreCase)),
+            "blocked opening balance text preview should report parse blockers.");
 
         var blockedPreview = SmokeAssertions.RequireSuccess(
             await _harness.PreviewOpeningBalanceImport.HandleAsync(

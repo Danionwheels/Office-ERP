@@ -204,6 +204,9 @@ export function AccountingWorkspace({
             manualVoucherPreview={workspace.manualJournalVoucherPreview}
             openingBalanceValue={workspace.openingBalanceImportForm}
             openingBalancePreview={workspace.openingBalanceImportPreview}
+            openingBalanceImportText={workspace.openingBalanceImportText}
+            openingBalanceImportDelimiter={workspace.openingBalanceImportDelimiter}
+            openingBalanceImportTextPreview={workspace.openingBalanceImportTextPreview}
             focusedJournalEntryId={workspace.focusedJournalEntryId}
             focusedJournalEntry={workspace.focusedJournalEntry}
             sourceDocumentsByJournalEntryId={workspace.journalSourceDocumentsById}
@@ -213,6 +216,10 @@ export function AccountingWorkspace({
             onSuggestVoucherNumber={workspace.handleSuggestManualJournalVoucherNumber}
             onOpeningBalanceValueChange={workspace.setOpeningBalanceImportForm}
             onPreviewOpeningBalance={workspace.handlePreviewOpeningBalanceImport}
+            onOpeningBalanceImportTextChange={workspace.setOpeningBalanceImportText}
+            onOpeningBalanceImportDelimiterChange={workspace.setOpeningBalanceImportDelimiter}
+            onPreviewOpeningBalanceText={workspace.handlePreviewOpeningBalanceImportText}
+            onUseOpeningBalanceTemplate={workspace.handleUseOpeningBalanceImportTemplate}
             onPostOpeningBalance={workspace.handlePostOpeningBalanceImport}
             onFocusJournalEntry={workspace.handleFocusJournalEntry}
             onPost={workspace.handlePostManualJournalEntry}
