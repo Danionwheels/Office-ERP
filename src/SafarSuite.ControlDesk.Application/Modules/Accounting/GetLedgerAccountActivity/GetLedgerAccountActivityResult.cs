@@ -9,6 +9,9 @@ public sealed record GetLedgerAccountActivityResult(
     DateOnly? FromDate,
     DateOnly? ToDate,
     string? CurrencyCode,
+    decimal OpeningBalance,
+    decimal PeriodDebit,
+    decimal PeriodCredit,
     decimal EndingBalance,
     IReadOnlyCollection<LedgerAccountActivityLineResult> Lines);
 

@@ -303,8 +303,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                     ComposeProfile: "app-runtime",
                     ImageEnvironmentVariable: "SAFARSUITE_APP_IMAGE",
                     PublishedPortEnvironmentVariable: "SAFARSUITE_APP_HTTP_PORT",
-                    InternalBaseUrl: "http://safarsuite-app:8080",
-                    HealthUrl: "http://safarsuite-app:8080/health",
+                    InternalBaseUrl: "http://safarsuite-app:5280",
+                    HealthUrl: "http://safarsuite-app:5280/health",
                     DependsOn: ["local-api", "local-db"])
             ]);
     }
@@ -529,8 +529,9 @@ public sealed class CreateLocalServerBootstrapPackageHandler
               local-api:
                 condition: service_started
             ports:
-              - "${SAFARSUITE_APP_HTTP_PORT:-8090}:8080"
+              - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280"
             environment:
+              ASPNETCORE_URLS: http://0.0.0.0:5280
               SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-http://local-api:8080}
               SAFARSUITE_MODULE_GATEWAY_URL: ${SAFARSUITE_MODULE_GATEWAY_URL:-http://local-api:8080}
               SAFARSUITE_RUNTIME_MANIFEST_PATH: ${SAFARSUITE_RUNTIME_MANIFEST_PATH:-/etc/safarsuite/local-server/runtime-services.manifest.json}
@@ -560,8 +561,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         SAFARSUITE_LOCAL_SERVER_IMAGE=ghcr.io/safarsuite/local-server:{{SAFARSUITE_LOCAL_SERVER_VERSION}}
         SAFARSUITE_LOCAL_SERVER_HTTP_PORT=8080
         SAFARSUITE_APP_VERSION={{SAFARSUITE_APP_VERSION}}
-        SAFARSUITE_APP_IMAGE=ghcr.io/safarsuite/app:{{SAFARSUITE_APP_VERSION}}
-        SAFARSUITE_APP_HTTP_PORT=8090
+        SAFARSUITE_APP_IMAGE=ghcr.io/danionwheels/localserver:{{SAFARSUITE_APP_VERSION}}
+        SAFARSUITE_APP_HTTP_PORT=5280
         SAFARSUITE_LOCAL_API_BASE_URL=http://local-api:8080
         SAFARSUITE_MODULE_GATEWAY_URL=http://local-api:8080
         SAFARSUITE_RUNTIME_MANIFEST_PATH=/etc/safarsuite/local-server/runtime-services.manifest.json

@@ -205,7 +205,10 @@ The implementation must support:
 64. Done: add explicit Header/Total account creation and stricter parent/account-level rules. Accounting Setup now backfills Header/Total ranges for major account classes, the COA account editor can pass an explicit level, Subsidiary accounts require an existing Control parent, and Detail parents must be Master accounts when supplied.
 65. Done: add old loose-account reconciliation/admin review. Control Desk now has a read-only COA reconciliation endpoint and panel that flags setup-range drift, level/posting mismatches, orphan subsidiaries, wrong parent levels, and inactive/outside-range accounts without mutating data.
 66. Done: add guided COA repair dry-run. Control Desk now has a repair-plan endpoint and reconciliation-panel repair guidance that maps findings to current value, suggested value, repair mode, safety notes, and future automatable/manual repair classification without mutating accounts.
-67. Next accounting dependency: add broader import dry-run checks and deliberate guided repair actions for reconciliation findings.
+67. Done: add Accounting workspace report surfaces. Trial balance, profit and loss, balance sheet, ledger activity, and report refresh now sit inside the extracted Accounting workspace, with filters and drill-through back into account activity.
+68. Done: add MAIN default GL controls plus period-close handoff polish. Control Desk can create/reuse retained earnings, income summary, and rounding accounts from Accounting Setup ranges, configure controls from one action, close/reopen periods with refreshed reports, suppress current earnings after close, and open generated close journals from the close artifact.
+69. Done: capture the accounting/GL MVP checkpoint in `docs/planning/accounting-gl-mvp-checkpoint-2026-07-04.md`, including verified behavior, legacy alignment, acceptance checklist, gaps, and next controlled moves.
+70. Next accounting dependency: add broader import dry-run checks and deliberate guided repair actions for reconciliation findings, then opening balances.
 
 ## Guardrails
 

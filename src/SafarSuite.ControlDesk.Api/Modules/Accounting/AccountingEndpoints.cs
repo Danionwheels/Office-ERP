@@ -2,9 +2,11 @@ using SafarSuite.ControlDesk.Api.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountCodeRange;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetBalanceSheet;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntry;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
@@ -12,6 +14,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepa
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseReadiness;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountCodeRanges;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountingPeriods;
@@ -44,6 +47,7 @@ public static class AccountingEndpoints
         group.MapPut("/accounting-setup/account-code-ranges/{role}", ConfigureAccountCodeRangeAsync);
         group.MapGet("/accounting-controls", GetAccountingControlSettingsAsync);
         group.MapPut("/accounting-controls", ConfigureAccountingControlSettingsAsync);
+        group.MapPost("/accounting-controls/defaults", ConfigureDefaultAccountingControlSettingsAsync);
         group.MapGet("/accounting-periods", ListAccountingPeriodsAsync);
         group.MapPost("/accounting-periods", CreateAccountingPeriodAsync);
         group.MapGet("/accounting-periods/{accountingPeriodId:guid}/close-readiness", GetAccountingPeriodCloseReadinessAsync);
@@ -54,6 +58,8 @@ public static class AccountingEndpoints
         group.MapGet("/journal-entries/{journalEntryId:guid}", GetJournalEntryAsync);
         group.MapGet("/journal-entries/{journalEntryId:guid}/source-document", GetJournalEntrySourceDocumentAsync);
         group.MapGet("/trial-balance", GetTrialBalanceAsync);
+        group.MapGet("/profit-and-loss", GetProfitAndLossStatementAsync);
+        group.MapGet("/balance-sheet", GetBalanceSheetAsync);
         group.MapPost("/journal-entries/manual", PostManualJournalEntryAsync);
         group.MapPost("/journal-entries/{journalEntryId:guid}/void", VoidManualJournalEntryAsync);
         group.MapGet("/ledger-accounts/{ledgerAccountId:guid}/activity", GetLedgerAccountActivityAsync);
@@ -370,6 +376,23 @@ public static class AccountingEndpoints
         return Results.Ok(ToResponse(result.Value));
     }
 
+    private static async Task<IResult> ConfigureDefaultAccountingControlSettingsAsync(
+        ConfigureDefaultAccountingControlSettingsRequest request,
+        ConfigureDefaultAccountingControlSettingsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ConfigureDefaultAccountingControlSettingsCommand(request.CompanyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
     private static async Task<IResult> ListAccountingPeriodsAsync(
         string? companyCode,
         DateOnly? fromDate,
@@ -590,13 +613,14 @@ public static class AccountingEndpoints
     }
 
     private static async Task<IResult> GetTrialBalanceAsync(
+        DateOnly? fromDate,
         DateOnly? asOfDate,
         string? currencyCode,
         GetTrialBalanceHandler handler,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new GetTrialBalanceQuery(asOfDate, currencyCode),
+            new GetTrialBalanceQuery(fromDate, asOfDate, currencyCode),
             cancellationToken);
 
         if (result.IsFailure)
@@ -605,10 +629,13 @@ public static class AccountingEndpoints
         }
 
         return Results.Ok(new TrialBalanceResponse(
+            result.Value.FromDate,
             result.Value.AsOfDate,
             result.Value.CurrencyCode,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
+            result.Value.TotalPeriodDebit,
+            result.Value.TotalPeriodCredit,
             result.Value.Difference,
             result.Value.Lines.Select(line => new TrialBalanceLineResponse(
                 line.LedgerAccountId,
@@ -616,10 +643,92 @@ public static class AccountingEndpoints
                 line.Name,
                 line.Type,
                 line.NormalBalance,
+                line.OpeningBalance,
+                line.PeriodDebit,
+                line.PeriodCredit,
                 line.DebitBalance,
                 line.CreditBalance,
                 line.NetBalance,
                 line.ActivityCount)).ToArray()));
+    }
+
+    private static async Task<IResult> GetProfitAndLossStatementAsync(
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? currencyCode,
+        GetProfitAndLossStatementHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetProfitAndLossStatementQuery(fromDate, toDate, currencyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ProfitAndLossStatementResponse(
+            result.Value.FromDate,
+            result.Value.ToDate,
+            result.Value.CurrencyCode,
+            result.Value.TotalRevenue,
+            result.Value.TotalExpense,
+            result.Value.NetIncome,
+            result.Value.Sections.Select(section => new ProfitAndLossStatementSectionResponse(
+                section.Type,
+                section.Title,
+                section.Total,
+                section.Lines.Select(line => new ProfitAndLossStatementLineResponse(
+                    line.LedgerAccountId,
+                    line.Code,
+                    line.Name,
+                    line.Type,
+                    line.NormalBalance,
+                    line.Debit,
+                    line.Credit,
+                    line.Amount,
+                    line.ActivityCount)).ToArray())).ToArray()));
+    }
+
+    private static async Task<IResult> GetBalanceSheetAsync(
+        DateOnly? asOfDate,
+        string? currencyCode,
+        GetBalanceSheetHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetBalanceSheetQuery(asOfDate, currencyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new BalanceSheetResponse(
+            result.Value.AsOfDate,
+            result.Value.CurrencyCode,
+            result.Value.TotalAssets,
+            result.Value.TotalLiabilities,
+            result.Value.TotalEquity,
+            result.Value.TotalLiabilitiesAndEquity,
+            result.Value.Difference,
+            result.Value.Sections.Select(section => new BalanceSheetSectionResponse(
+                section.Type,
+                section.Title,
+                section.Total,
+                section.Lines.Select(line => new BalanceSheetLineResponse(
+                    line.LedgerAccountId,
+                    line.Code,
+                    line.Name,
+                    line.Type,
+                    line.NormalBalance,
+                    line.Debit,
+                    line.Credit,
+                    line.Amount,
+                    line.ActivityCount,
+                    line.IsSystemLine)).ToArray())).ToArray()));
     }
 
     private static async Task<IResult> PostManualJournalEntryAsync(
@@ -688,11 +797,12 @@ public static class AccountingEndpoints
         Guid ledgerAccountId,
         DateOnly? fromDate,
         DateOnly? toDate,
+        string? currencyCode,
         GetLedgerAccountActivityHandler handler,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new GetLedgerAccountActivityQuery(ledgerAccountId, fromDate, toDate),
+            new GetLedgerAccountActivityQuery(ledgerAccountId, fromDate, toDate, currencyCode),
             cancellationToken);
 
         if (result.IsFailure)
@@ -709,6 +819,9 @@ public static class AccountingEndpoints
             result.Value.FromDate,
             result.Value.ToDate,
             result.Value.CurrencyCode,
+            result.Value.OpeningBalance,
+            result.Value.PeriodDebit,
+            result.Value.PeriodCredit,
             result.Value.EndingBalance,
             result.Value.Lines.Select(line => new LedgerAccountActivityLineResponse(
                 line.JournalEntryId,

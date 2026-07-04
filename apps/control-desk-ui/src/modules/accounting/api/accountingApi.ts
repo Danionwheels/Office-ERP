@@ -8,10 +8,13 @@ import type {
   AccountingPeriodCloseJournalPreview,
   AccountingPeriodCloseReadiness,
   AccountingPeriodFormInput,
+  BalanceSheet,
+  BalanceSheetFilters,
   JournalEntryFilters,
   JournalEntrySourceDocument,
   JournalEntrySummary,
   LedgerAccountActivity,
+  LedgerAccountActivityFilters,
   LedgerAccountCodeSuggestion,
   LedgerAccountEditorInput,
   LedgerAccountFilters,
@@ -19,6 +22,8 @@ import type {
   LedgerAccountRepairPlan,
   LedgerAccountSummary,
   ManualJournalEntryInput,
+  ProfitAndLossStatement,
+  ProfitAndLossStatementFilters,
   TrialBalance,
   TrialBalanceFilters,
   VoidManualJournalEntryInput,
@@ -197,6 +202,17 @@ export async function configureAccountingControlSettings(
   });
 }
 
+export async function configureDefaultAccountingControlSettings(
+  companyCode: string
+): Promise<AccountingControlSettings> {
+  return apiRequest<AccountingControlSettings>("/api/v1/accounting/accounting-controls/defaults", {
+    method: "POST",
+    body: JSON.stringify({
+      companyCode: optionalText(companyCode)
+    })
+  });
+}
+
 export async function listAccountingPeriods(companyCode: string): Promise<AccountingPeriod[]> {
   const query = new URLSearchParams();
   setQuery(query, "companyCode", companyCode);
@@ -328,10 +344,21 @@ export async function voidManualJournalEntry(
 }
 
 export async function getLedgerAccountActivity(
-  ledgerAccountId: string
+  ledgerAccountId: string,
+  filters?: LedgerAccountActivityFilters
 ): Promise<LedgerAccountActivity> {
+  const query = new URLSearchParams();
+
+  if (filters !== undefined) {
+    setQuery(query, "fromDate", filters.fromDate);
+    setQuery(query, "toDate", filters.toDate);
+    setQuery(query, "currencyCode", filters.currencyCode);
+  }
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
   return apiRequest<LedgerAccountActivity>(
-    `/api/v1/accounting/ledger-accounts/${encodeURIComponent(ledgerAccountId)}/activity`
+    `/api/v1/accounting/ledger-accounts/${encodeURIComponent(ledgerAccountId)}/activity${suffix}`
   );
 }
 
@@ -339,12 +366,38 @@ export async function getTrialBalance(
   filters: TrialBalanceFilters
 ): Promise<TrialBalance> {
   const query = new URLSearchParams();
+  setQuery(query, "fromDate", filters.fromDate);
   setQuery(query, "asOfDate", filters.asOfDate);
   setQuery(query, "currencyCode", filters.currencyCode);
 
   const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
 
   return apiRequest<TrialBalance>(`/api/v1/accounting/trial-balance${suffix}`);
+}
+
+export async function getProfitAndLossStatement(
+  filters: ProfitAndLossStatementFilters
+): Promise<ProfitAndLossStatement> {
+  const query = new URLSearchParams();
+  setQuery(query, "fromDate", filters.fromDate);
+  setQuery(query, "toDate", filters.toDate);
+  setQuery(query, "currencyCode", filters.currencyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
+  return apiRequest<ProfitAndLossStatement>(`/api/v1/accounting/profit-and-loss${suffix}`);
+}
+
+export async function getBalanceSheet(
+  filters: BalanceSheetFilters
+): Promise<BalanceSheet> {
+  const query = new URLSearchParams();
+  setQuery(query, "asOfDate", filters.asOfDate);
+  setQuery(query, "currencyCode", filters.currencyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
+  return apiRequest<BalanceSheet>(`/api/v1/accounting/balance-sheet${suffix}`);
 }
 
 export async function configureAccountCodeRange(

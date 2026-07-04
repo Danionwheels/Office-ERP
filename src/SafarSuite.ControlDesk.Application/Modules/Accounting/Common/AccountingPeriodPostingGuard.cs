@@ -43,13 +43,13 @@ public sealed class AccountingPeriodPostingGuard
                 ? null
                 : ApplicationError.Validation(
                     target,
-                    $"No accounting period contains posting date {postingDate:yyyy-MM-dd}.");
+                    $"No {normalizedCompanyCode} accounting period contains posting date {postingDate:yyyy-MM-dd}. Create a {normalizedCompanyCode} period that includes this date or choose a date in an open period.");
         }
 
         return period.Status == AccountingPeriodStatus.Closed
             ? ApplicationError.Conflict(
                 target,
-                $"Accounting period {period.Name} is closed.")
+                $"Accounting period {period.Name} ({period.StartsOn:yyyy-MM-dd} to {period.EndsOn:yyyy-MM-dd}) is closed for {normalizedCompanyCode}. Reopen the period or choose a date in an open period.")
             : null;
     }
 }

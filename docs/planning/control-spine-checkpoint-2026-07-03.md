@@ -24,17 +24,23 @@ Purpose: freeze the current project status after the support-command sweep so th
 - The low-risk support command lane is now end to end for the first two command types. Control Desk can queue `request_diagnostics` and `refresh_entitlement`; Control Cloud signs/stores them; the local-server processor verifies, executes, uploads or refreshes, and acknowledges them.
 - Signed support commands now survive PostgreSQL `jsonb` payload reordering and microsecond timestamp precision round-trips because signing and verification canonicalize JSON payloads and normalize command timestamps before hashing/signing.
 - Command-triggered diagnostics now collect the signed bootstrap runtime manifest automatically and probe Docker/Compose when available, so Local Server uploads include runtime availability, expected service state, recent warning/error log-tail lines, and the optional `safarsuite-app` Compose profile slot.
+- `tools/SafarSuite.AppRuntimeProbe` now acts as a placeholder app-side consumer of the local module-gateway v1 contract and has a self-test for allowed plus module-disabled responses.
 
 ## Current Standing
 
 We are no longer in the "can this control spine exist?" phase. The first spine exists and is smoke-proven across the desktop/API/cloud/local-server/UI pieces, including a live PostgreSQL run through Control Cloud and Local Server.
 
-The project is still not at the final destination because the deployed SafarSuite runtime is not consuming this control plane yet. The next risk is not another small Control Desk screen; it is proving the app/runtime package can use the module-gateway contract and report useful runtime status/logs.
+The 2026-07-04 app-workspace follow-up verified that the real SafarSuite workspace now consumes the module-gateway contract for local-server routes, Windows client menu/window access, and backend write enforcement. The project is still not at the final destination because the deployed SafarSuite runtime image is not packaged, published, health-checked, or included in runtime diagnostics yet.
+
+Verified in `C:\Users\Daniyal\Documents\Codex\2026-06-09\hello-there-2`:
+
+- `dotnet run --no-restore --project tests\ProductKernelGuardSmoke\ProductKernelGuardSmoke.csproj` passed 30 checks.
+- `dotnet run --no-restore --project tests\ReadOnlyEnforcementSmoke\ReadOnlyEnforcementSmoke.csproj` passed 24 checks.
 
 ## Remaining Gaps
 
 - Real SafarSuite image publication and version/channel handling.
-- Actual SafarSuite app workspace integration with the local module-gateway contract.
+- SafarSuite app runtime health/log diagnostics and deployment-profile behavior.
 - Portal payment UI and the first Pakistani payment provider adapter.
 - Real provider/admin authorization, roles, MFA, password reset, and production mail retry handling.
 - Product module catalog management screens beyond the current seeded/catalog boundary.
@@ -52,7 +58,7 @@ The project is still not at the final destination because the deployed SafarSuit
 ## Recommended Next Move
 
 1. Use `docs/planning/safarsuite-app-integration-handoff.md` as the workspace-switch contract.
-2. Move into the real SafarSuite app/runtime integration: publish a real app image or placeholder image with the correct runtime contract and wire the local module-gateway check into the app workspace.
+2. Move into the real SafarSuite app/runtime packaging slice: publish a real app image or controlled placeholder image with `GET /health`, app logs, and the runtime environment contract.
 3. Keep the runbook at `docs/planning/control-spine-demo-runbook.md` as the repeatable proof path before and after each runtime integration slice.
 
-The recommended order is now real app/module-gateway integration first, then payment/auth hardening later. The control spine is strong enough to carry the next layer.
+The recommended order is now real app image/runtime diagnostics first, then payment/auth hardening later. The control spine is strong enough to carry the next layer.

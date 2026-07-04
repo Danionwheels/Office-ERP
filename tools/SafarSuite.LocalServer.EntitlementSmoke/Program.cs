@@ -563,7 +563,10 @@ Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Any(service 
 Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Any(service =>
     service.ServiceName == "safarsuite-app"
     && service.ExpectedState == "ProfileDisabled"
-    && service.CurrentState == "ProfileDisabled") == true, "Command diagnostics should include the optional SafarSuite app runtime service slot.");
+    && service.CurrentState == "ProfileDisabled"
+    && service.Detail?.Contains("SAFARSUITE_APP_IMAGE", StringComparison.Ordinal) == true
+    && service.Detail?.Contains("SAFARSUITE_APP_HTTP_PORT", StringComparison.Ordinal) == true
+    && service.Detail?.Contains("http://safarsuite-app:5280/health", StringComparison.Ordinal) == true) == true, "Command diagnostics should include the optional SafarSuite app runtime service slot with manifest intent.");
 Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Any(error =>
     error.Source == "local-api"
     && error.Severity == "Error"

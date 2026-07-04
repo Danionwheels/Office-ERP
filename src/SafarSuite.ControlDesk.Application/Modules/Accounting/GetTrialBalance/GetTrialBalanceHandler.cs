@@ -30,6 +30,13 @@ public sealed class GetTrialBalanceHandler
             ? "PKR"
             : query.CurrencyCode.Trim().ToUpperInvariant();
 
+        if (query.FromDate.HasValue && query.FromDate.Value > asOfDate)
+        {
+            return Result<GetTrialBalanceResult>.Failure(ApplicationError.Validation(
+                nameof(query.FromDate),
+                "From date cannot be after as-of date."));
+        }
+
         if (currencyCode.Length != 3)
         {
             return Result<GetTrialBalanceResult>.Failure(ApplicationError.Validation(
@@ -49,6 +56,8 @@ public sealed class GetTrialBalanceHandler
             entry.Status != JournalEntryStatus.Draft
             && string.Equals(entry.CurrencyCode, currencyCode, StringComparison.Ordinal)))
         {
+            var isOpeningEntry = query.FromDate.HasValue && entry.EntryDate < query.FromDate.Value;
+
             foreach (var line in entry.Lines)
             {
                 if (!accountBalances.TryGetValue(line.LedgerAccountId, out var balance))
@@ -56,32 +65,46 @@ public sealed class GetTrialBalanceHandler
                     continue;
                 }
 
-                balance.Apply(line.Debit.Amount, line.Credit.Amount);
+                if (isOpeningEntry)
+                {
+                    balance.ApplyOpening(line.Debit.Amount, line.Credit.Amount);
+                }
+                else
+                {
+                    balance.ApplyPeriod(line.Debit.Amount, line.Credit.Amount);
+                }
             }
         }
 
         var lines = accountBalances.Values
-            .Where(balance => balance.ActivityCount > 0 || balance.Account.Status == LedgerAccountStatus.Active)
+            .Where(balance => balance.HasBalance || balance.Account.Status == LedgerAccountStatus.Active)
             .OrderBy(balance => balance.Account.Code.Value, StringComparer.Ordinal)
             .ThenBy(balance => balance.Account.Name, StringComparer.OrdinalIgnoreCase)
             .Select(balance => balance.ToResult())
             .ToArray();
         var totalDebit = lines.Sum(line => line.DebitBalance);
         var totalCredit = lines.Sum(line => line.CreditBalance);
+        var totalPeriodDebit = lines.Sum(line => line.PeriodDebit);
+        var totalPeriodCredit = lines.Sum(line => line.PeriodCredit);
 
         return Result<GetTrialBalanceResult>.Success(new GetTrialBalanceResult(
+            query.FromDate,
             asOfDate,
             currencyCode,
             totalDebit,
             totalCredit,
+            totalPeriodDebit,
+            totalPeriodCredit,
             totalDebit - totalCredit,
             lines));
     }
 
     private sealed class AccountBalance
     {
-        private decimal _debit;
-        private decimal _credit;
+        private decimal _openingDebit;
+        private decimal _openingCredit;
+        private decimal _periodDebit;
+        private decimal _periodCredit;
 
         public AccountBalance(LedgerAccount account)
         {
@@ -92,18 +115,56 @@ public sealed class GetTrialBalanceHandler
 
         public int ActivityCount { get; private set; }
 
-        public void Apply(decimal debit, decimal credit)
+        public bool HasBalance =>
+            _openingDebit != 0m
+            || _openingCredit != 0m
+            || _periodDebit != 0m
+            || _periodCredit != 0m;
+
+        public void ApplyOpening(decimal debit, decimal credit)
         {
-            _debit += debit;
-            _credit += credit;
+            _openingDebit += debit;
+            _openingCredit += credit;
+        }
+
+        public void ApplyPeriod(decimal debit, decimal credit)
+        {
+            _periodDebit += debit;
+            _periodCredit += credit;
             ActivityCount++;
         }
 
         public TrialBalanceLineResult ToResult()
         {
-            var netBalance = Account.NormalBalance == NormalBalance.Debit
-                ? _debit - _credit
-                : _credit - _debit;
+            var openingBalance = GetNormalBalance(_openingDebit, _openingCredit);
+            var periodMovement = GetNormalBalance(_periodDebit, _periodCredit);
+            var closingBalance = openingBalance + periodMovement;
+            var (debitBalance, creditBalance) = ToDebitCreditBalance(closingBalance);
+
+            return new TrialBalanceLineResult(
+                Account.Id.Value,
+                Account.Code.Value,
+                Account.Name,
+                Account.Type.ToString(),
+                Account.NormalBalance.ToString(),
+                decimal.Round(openingBalance, 2),
+                decimal.Round(_periodDebit, 2),
+                decimal.Round(_periodCredit, 2),
+                decimal.Round(debitBalance, 2),
+                decimal.Round(creditBalance, 2),
+                decimal.Round(closingBalance, 2),
+                ActivityCount);
+        }
+
+        private decimal GetNormalBalance(decimal debit, decimal credit)
+        {
+            return Account.NormalBalance == NormalBalance.Debit
+                ? debit - credit
+                : credit - debit;
+        }
+
+        private (decimal DebitBalance, decimal CreditBalance) ToDebitCreditBalance(decimal netBalance)
+        {
             var debitBalance = 0m;
             var creditBalance = 0m;
 
@@ -130,16 +191,7 @@ public sealed class GetTrialBalanceHandler
                 }
             }
 
-            return new TrialBalanceLineResult(
-                Account.Id.Value,
-                Account.Code.Value,
-                Account.Name,
-                Account.Type.ToString(),
-                Account.NormalBalance.ToString(),
-                decimal.Round(debitBalance, 2),
-                decimal.Round(creditBalance, 2),
-                decimal.Round(netBalance, 2),
-                ActivityCount);
+            return (debitBalance, creditBalance);
         }
     }
 }

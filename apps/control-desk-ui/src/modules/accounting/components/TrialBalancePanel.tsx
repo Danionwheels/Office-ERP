@@ -45,6 +45,20 @@ export function TrialBalancePanel({
 
       <div className="client-panel trial-balance-filter-row">
         <label className="form-field">
+          <span>From</span>
+          <input
+            type="date"
+            value={filters.fromDate}
+            onChange={(event) =>
+              onFiltersChange({
+                ...filters,
+                fromDate: event.target.value
+              })
+            }
+            disabled={isBusy}
+          />
+        </label>
+        <label className="form-field">
           <span>As of</span>
           <input
             type="date"
@@ -75,12 +89,20 @@ export function TrialBalancePanel({
 
       <div className="trial-balance-summary-row">
         <article className="client-panel trial-balance-summary-card">
-          <span>Debit</span>
+          <span>Closing debit</span>
           <strong>{formatMoney(balance?.totalDebit ?? 0)}</strong>
         </article>
         <article className="client-panel trial-balance-summary-card">
-          <span>Credit</span>
+          <span>Closing credit</span>
           <strong>{formatMoney(balance?.totalCredit ?? 0)}</strong>
+        </article>
+        <article className="client-panel trial-balance-summary-card">
+          <span>Period debit</span>
+          <strong>{formatMoney(balance?.totalPeriodDebit ?? 0)}</strong>
+        </article>
+        <article className="client-panel trial-balance-summary-card">
+          <span>Period credit</span>
+          <strong>{formatMoney(balance?.totalPeriodCredit ?? 0)}</strong>
         </article>
         <article className={`client-panel trial-balance-summary-card${difference === 0 ? " balanced" : " out"}`}>
           <span>Difference</span>
@@ -95,7 +117,7 @@ export function TrialBalancePanel({
       <section className="client-panel trial-balance-table-panel">
         <div className="client-panel-heading">
           <div>
-            <span>{balance?.asOfDate ?? filters.asOfDate}</span>
+            <span>{formatWindow(balance?.fromDate ?? filters.fromDate, balance?.asOfDate ?? filters.asOfDate)}</span>
             <strong>Account balances</strong>
           </div>
           <Scale size={18} />
@@ -106,9 +128,12 @@ export function TrialBalancePanel({
               <th>Code</th>
               <th>Name</th>
               <th>Type</th>
-              <th>Normal</th>
+              <th>Opening</th>
               <th>Debit</th>
               <th>Credit</th>
+              <th>Closing Dr</th>
+              <th>Closing Cr</th>
+              <th>Net</th>
               <th>Activity</th>
               <th>Actions</th>
             </tr>
@@ -116,7 +141,7 @@ export function TrialBalancePanel({
           <tbody>
             {balance === null || balance.lines.length === 0 ? (
               <tr>
-                <td colSpan={8}>No balances</td>
+                <td colSpan={11}>No balances</td>
               </tr>
             ) : (
               balance.lines.map((line) => (
@@ -126,16 +151,19 @@ export function TrialBalancePanel({
                   </td>
                   <td>{line.name}</td>
                   <td>{line.type}</td>
-                  <td>{line.normalBalance}</td>
+                  <td>{formatMoney(line.openingBalance)}</td>
+                  <td>{formatMoney(line.periodDebit)}</td>
+                  <td>{formatMoney(line.periodCredit)}</td>
                   <td>{formatMoney(line.debitBalance)}</td>
                   <td>{formatMoney(line.creditBalance)}</td>
+                  <td>{formatMoney(line.netBalance)}</td>
                   <td>{line.activityCount}</td>
                   <td>
                     <button
                       className="table-icon-button"
                       type="button"
                       onClick={() => void onViewAccountActivity(line)}
-                      disabled={isBusy || line.activityCount === 0}
+                      disabled={isBusy || (line.activityCount === 0 && line.openingBalance === 0)}
                       title="View account activity"
                     >
                       <BookOpen size={14} />
@@ -153,4 +181,10 @@ export function TrialBalancePanel({
 
 function formatMoney(value: number): string {
   return value.toFixed(2);
+}
+
+function formatWindow(fromDate: string | null | undefined, toDate: string): string {
+  return fromDate === null || fromDate === undefined || fromDate.trim() === ""
+    ? `Through ${toDate}`
+    : `${fromDate} to ${toDate}`;
 }

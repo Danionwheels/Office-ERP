@@ -20,6 +20,46 @@ export type ProductModuleBillingDefaults = {
   billingCycle: string;
 };
 
+export type ProductAccessKind = "Public" | "CoreIncluded" | "PaidModule" | string;
+
+export type ProductModuleGroup = {
+  groupId: string;
+  displayName: string;
+  accessKind: ProductAccessKind;
+  moduleCodes: string[];
+};
+
+export type ProductResource = {
+  resourceId: string;
+  displayName: string;
+  accessKind: ProductAccessKind;
+  requiredGroupIds: string[];
+  requiredModuleCodes: string[];
+  resolvedModuleCodes: string[];
+};
+
+export type ProductAccessCatalog = {
+  moduleGroups: ProductModuleGroup[];
+  resources: ProductResource[];
+};
+
+export type PublishProductAccessCatalogCommandInput = {
+  activationRequestId: string;
+  expiresInHours: string;
+  requestedBy: string;
+};
+
+export type PublishedProductAccessCatalogCommand = {
+  commandId: string;
+  serverInstallationId: string;
+  commandType: string;
+  productKernelCommand: string;
+  signature: string;
+  signingKeyId: string;
+  expiresAt: string;
+  accessCatalog: ProductAccessCatalog;
+};
+
 export type ClientContract = {
   contractId: string;
   clientId: string;

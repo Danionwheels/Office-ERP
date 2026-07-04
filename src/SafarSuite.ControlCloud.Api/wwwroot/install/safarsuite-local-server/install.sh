@@ -41,8 +41,8 @@ bundle_file="${SAFARSUITE_BOOTSTRAP_BUNDLE_FILE:-}"
 bundle_sha256="${SAFARSUITE_BOOTSTRAP_BUNDLE_SHA256:-}"
 local_server_image="${SAFARSUITE_LOCAL_SERVER_IMAGE:-ghcr.io/safarsuite/local-server:$local_server_version}"
 local_server_http_port="${SAFARSUITE_LOCAL_SERVER_HTTP_PORT:-8080}"
-safarsuite_app_image="${SAFARSUITE_APP_IMAGE:-ghcr.io/safarsuite/app:$safarsuite_app_version}"
-safarsuite_app_http_port="${SAFARSUITE_APP_HTTP_PORT:-8090}"
+safarsuite_app_image="${SAFARSUITE_APP_IMAGE:-ghcr.io/danionwheels/localserver:$safarsuite_app_version}"
+safarsuite_app_http_port="${SAFARSUITE_APP_HTTP_PORT:-5280}"
 local_api_base_url="${SAFARSUITE_LOCAL_API_BASE_URL:-http://local-api:8080}"
 module_gateway_url="${SAFARSUITE_MODULE_GATEWAY_URL:-http://local-api:8080}"
 runtime_manifest_path="${SAFARSUITE_RUNTIME_MANIFEST_PATH:-$config_dir/runtime-services.manifest.json}"
@@ -175,8 +175,8 @@ cat > "$runtime_manifest_file" <<EOF
       "composeProfile": "app-runtime",
       "imageEnvironmentVariable": "SAFARSUITE_APP_IMAGE",
       "publishedPortEnvironmentVariable": "SAFARSUITE_APP_HTTP_PORT",
-      "internalBaseUrl": "http://safarsuite-app:8080",
-      "healthUrl": "http://safarsuite-app:8080/health",
+      "internalBaseUrl": "http://safarsuite-app:5280",
+      "healthUrl": "http://safarsuite-app:5280/health",
       "dependsOn": ["local-api", "local-db"]
     }
   ]
@@ -253,8 +253,9 @@ services:
       local-api:
         condition: service_started
     ports:
-      - "${SAFARSUITE_APP_HTTP_PORT:-8090}:8080"
+      - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280"
     environment:
+      ASPNETCORE_URLS: http://0.0.0.0:5280
       SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-http://local-api:8080}
       SAFARSUITE_MODULE_GATEWAY_URL: ${SAFARSUITE_MODULE_GATEWAY_URL:-http://local-api:8080}
       SAFARSUITE_RUNTIME_MANIFEST_PATH: ${SAFARSUITE_RUNTIME_MANIFEST_PATH:-/etc/safarsuite/local-server/runtime-services.manifest.json}

@@ -119,6 +119,16 @@ GET  /api/v1/local-server/modules/{moduleCode}/access
 
 The SafarSuite app workspace should point module-gated screens and APIs at `SAFARSUITE_MODULE_GATEWAY_URL`, call one of these endpoints, and treat `isAllowed = false` as authoritative. The app should show a restricted/renewal/module-disabled state based on `accessState` instead of reimplementing entitlement rules.
 
+As of 2026-07-04, the real app workspace at `C:\Users\Daniyal\Documents\Codex\2026-06-09\hello-there-2` verifies this contract through app local-server GET/POST routes, Windows client menu/window policy, backend `LocalWritePolicy` enforcement, reporting execution/audit enforcement, `tests\ProductKernelGuardSmoke`, `tests\ReadOnlyEnforcementSmoke`, and `tests\ReportExecutionSmoke`. It also has the first runtime wrapper in `Dockerfile.localserver`, `.dockerignore`, `docker-compose.runtime.yml`, and `docker/localserver.env.template`; local publish, Compose config, Docker image build, Compose runtime startup, container `/health`, local migrations, and v1 module-gateway probes now pass.
+
+This workspace also includes a placeholder app-side probe at:
+
+```text
+tools/SafarSuite.AppRuntimeProbe
+```
+
+It reads `SAFARSUITE_MODULE_GATEWAY_URL`, `SAFARSUITE_INSTALLATION_ID`, and module-code environment variables, calls the same local module-gateway v1 contract, and has a `--self-test` mode for allowed and module-disabled responses. It is a contract probe, not the real SafarSuite app image.
+
 ## Local Server Contract
 
 The local server image should provide:
@@ -150,11 +160,12 @@ Detailed app-workspace implementation handoff lives at `docs/planning/safarsuite
 
 Before we enable `safarsuite-app` by default:
 
-- accept the SafarSuite app integration handoff
+- keep the SafarSuite app integration handoff current
+- keep `tools/SafarSuite.AppRuntimeProbe --self-test` passing as the Control Desk contract probe
+- keep the app workspace `ProductKernelGuardSmoke`, `ReadOnlyEnforcementSmoke`, and `ReportExecutionSmoke` passing
+- keep the app workspace LocalServer publish, Compose config validation, and internal healthcheck passing
 - confirm the real app image name and registry
 - confirm app container port and health route
-- wire the SafarSuite app workspace to the local-server module-gateway endpoint
 - confirm whether the app owns its own database or uses local-server APIs only
 - consume the explicit installation/deployment profile before implementing branch/HQ/cloud data-sync behavior
-- add the required changes in the separate SafarSuite app workspace
 - add runtime diagnostics for the real app container state

@@ -1,15 +1,28 @@
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseReadiness;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetBalanceSheet;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GetCreditNoteDocument;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GetInvoiceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueCreditNote;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
@@ -23,6 +36,8 @@ using SafarSuite.ControlDesk.Application.Modules.Contracts.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ApplyClientCredit;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Common;
+using SafarSuite.ControlDesk.Application.Modules.Payments.GetClientRefundDocument;
+using SafarSuite.ControlDesk.Application.Modules.Payments.GetInvoicePaymentDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.IssueClientRefund;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayment;
@@ -42,6 +57,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         IClientAccountingProfileRepository clientAccountingProfiles,
         IContractRepository contracts,
         IAccountCodeRangeRepository accountCodeRanges,
+        IAccountingControlSettingsRepository accountingControlSettings,
         IAccountingPeriodRepository accountingPeriods,
         ILedgerAccountRepository ledgerAccounts,
         IJournalEntryRepository journalEntries,
@@ -60,6 +76,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         ClientAccountingProfiles = clientAccountingProfiles;
         Contracts = contracts;
         AccountCodeRanges = accountCodeRanges;
+        AccountingControlSettings = accountingControlSettings;
         AccountingPeriods = accountingPeriods;
         LedgerAccounts = ledgerAccounts;
         JournalEntries = journalEntries;
@@ -90,6 +107,10 @@ internal sealed class SmokeHarness : IAsyncDisposable
             UnitOfWork,
             IdGenerator,
             Clock);
+        var settingsResultFactory = new AccountingControlSettingsResultFactory(LedgerAccounts);
+        var closeReadinessService = new AccountingPeriodCloseReadinessService(
+            AccountingPeriods,
+            JournalEntries);
 
         SuggestLedgerAccountCode = new SuggestLedgerAccountCodeHandler(
             LedgerAccounts,
@@ -105,6 +126,48 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Clock,
             new CreateLedgerAccountValidator());
 
+        ConfigureAccountingControlSettings = new ConfigureAccountingControlSettingsHandler(
+            AccountingControlSettings,
+            LedgerAccounts,
+            settingsResultFactory,
+            UnitOfWork,
+            IdGenerator,
+            Clock);
+
+        ConfigureDefaultAccountingControlSettings = new ConfigureDefaultAccountingControlSettingsHandler(
+            AccountingControlSettings,
+            LedgerAccounts,
+            AccountCodeRanges,
+            AccountingSetupDefaults,
+            SuggestLedgerAccountCode,
+            CreateLedgerAccount,
+            ConfigureAccountingControlSettings);
+
+        CreateAccountingPeriod = new CreateAccountingPeriodHandler(
+            AccountingPeriods,
+            UnitOfWork,
+            IdGenerator,
+            Clock,
+            new CreateAccountingPeriodValidator());
+
+        GetAccountingPeriodCloseReadiness = new GetAccountingPeriodCloseReadinessHandler(
+            closeReadinessService);
+
+        GetAccountingPeriodCloseJournalPreview = new GetAccountingPeriodCloseJournalPreviewHandler(
+            AccountingPeriods,
+            AccountingControlSettings,
+            LedgerAccounts,
+            JournalEntries);
+
+        CloseAccountingPeriod = new CloseAccountingPeriodHandler(
+            AccountingPeriods,
+            closeReadinessService,
+            GetAccountingPeriodCloseJournalPreview,
+            JournalEntries,
+            UnitOfWork,
+            IdGenerator,
+            Clock);
+
         GetLedgerAccountReconciliation = new GetLedgerAccountReconciliationHandler(
             LedgerAccounts,
             AccountCodeRanges,
@@ -114,6 +177,32 @@ internal sealed class SmokeHarness : IAsyncDisposable
             GetLedgerAccountReconciliation,
             AccountCodeRanges,
             LedgerAccounts);
+
+        GetJournalEntrySourceDocument = new GetJournalEntrySourceDocumentHandler(
+            JournalEntries,
+            Invoices,
+            CreditNotes,
+            Payments,
+            ClientRefunds);
+
+        GetLedgerAccountActivity = new GetLedgerAccountActivityHandler(
+            LedgerAccounts,
+            JournalEntries);
+
+        GetTrialBalance = new GetTrialBalanceHandler(
+            LedgerAccounts,
+            JournalEntries,
+            Clock);
+
+        GetProfitAndLossStatement = new GetProfitAndLossStatementHandler(
+            LedgerAccounts,
+            JournalEntries,
+            Clock);
+
+        GetBalanceSheet = new GetBalanceSheetHandler(
+            LedgerAccounts,
+            JournalEntries,
+            Clock);
 
         CreateClient = new CreateClientHandler(
             Clients,
@@ -167,6 +256,16 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Clock,
             new GenerateInvoiceDraftValidator());
 
+        GetInvoiceDocument = new GetInvoiceDocumentHandler(
+            Invoices,
+            CreditNotes,
+            JournalEntries);
+
+        GetCreditNoteDocument = new GetCreditNoteDocumentHandler(
+            CreditNotes,
+            Invoices,
+            JournalEntries);
+
         IssueInvoice = new IssueInvoiceHandler(
             Invoices,
             ChargeCodes,
@@ -193,6 +292,11 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Clock,
             new RecordInvoicePaymentValidator());
 
+        GetInvoicePaymentDocument = new GetInvoicePaymentDocumentHandler(
+            Payments,
+            Invoices,
+            JournalEntries);
+
         IssueCreditNote = new IssueCreditNoteHandler(
             Invoices,
             CreditNotes,
@@ -217,6 +321,11 @@ internal sealed class SmokeHarness : IAsyncDisposable
             IdGenerator,
             Clock,
             new IssueClientRefundValidator());
+
+        GetClientRefundDocument = new GetClientRefundDocumentHandler(
+            ClientRefunds,
+            JournalEntries,
+            creditBalanceService);
 
         ApplyClientCredit = new ApplyClientCreditHandler(
             Clients,
@@ -262,6 +371,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new InMemoryClientAccountingProfileRepository(),
             new InMemoryContractRepository(),
             new InMemoryAccountCodeRangeRepository(),
+            new InMemoryAccountingControlSettingsRepository(),
             new InMemoryAccountingPeriodRepository(),
             new InMemoryLedgerAccountRepository(),
             new InMemoryJournalEntryRepository(),
@@ -294,6 +404,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new EfClientAccountingProfileRepository(dbContext),
             new EfContractRepository(dbContext),
             new EfAccountCodeRangeRepository(dbContext),
+            new EfAccountingControlSettingsRepository(dbContext),
             new EfAccountingPeriodRepository(dbContext),
             new EfLedgerAccountRepository(dbContext),
             new EfJournalEntryRepository(dbContext),
@@ -316,6 +427,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public IContractRepository Contracts { get; }
 
     public IAccountCodeRangeRepository AccountCodeRanges { get; }
+
+    public IAccountingControlSettingsRepository AccountingControlSettings { get; }
 
     public IAccountingPeriodRepository AccountingPeriods { get; }
 
@@ -349,11 +462,33 @@ internal sealed class SmokeHarness : IAsyncDisposable
 
     public CreateLedgerAccountHandler CreateLedgerAccount { get; }
 
+    public ConfigureAccountingControlSettingsHandler ConfigureAccountingControlSettings { get; }
+
+    public ConfigureDefaultAccountingControlSettingsHandler ConfigureDefaultAccountingControlSettings { get; }
+
+    public CreateAccountingPeriodHandler CreateAccountingPeriod { get; }
+
+    public GetAccountingPeriodCloseReadinessHandler GetAccountingPeriodCloseReadiness { get; }
+
+    public GetAccountingPeriodCloseJournalPreviewHandler GetAccountingPeriodCloseJournalPreview { get; }
+
+    public CloseAccountingPeriodHandler CloseAccountingPeriod { get; }
+
     public GetLedgerAccountReconciliationHandler GetLedgerAccountReconciliation { get; }
 
     public GetLedgerAccountRepairPlanHandler GetLedgerAccountRepairPlan { get; }
 
     public SuggestLedgerAccountCodeHandler SuggestLedgerAccountCode { get; }
+
+    public GetJournalEntrySourceDocumentHandler GetJournalEntrySourceDocument { get; }
+
+    public GetLedgerAccountActivityHandler GetLedgerAccountActivity { get; }
+
+    public GetTrialBalanceHandler GetTrialBalance { get; }
+
+    public GetProfitAndLossStatementHandler GetProfitAndLossStatement { get; }
+
+    public GetBalanceSheetHandler GetBalanceSheet { get; }
 
     public CreateClientHandler CreateClient { get; }
 
@@ -367,13 +502,21 @@ internal sealed class SmokeHarness : IAsyncDisposable
 
     public GenerateInvoiceDraftHandler GenerateInvoiceDraft { get; }
 
+    public GetInvoiceDocumentHandler GetInvoiceDocument { get; }
+
+    public GetCreditNoteDocumentHandler GetCreditNoteDocument { get; }
+
     public IssueInvoiceHandler IssueInvoice { get; }
 
     public RecordInvoicePaymentHandler RecordInvoicePayment { get; }
 
+    public GetInvoicePaymentDocumentHandler GetInvoicePaymentDocument { get; }
+
     public IssueCreditNoteHandler IssueCreditNote { get; }
 
     public IssueClientRefundHandler IssueClientRefund { get; }
+
+    public GetClientRefundDocumentHandler GetClientRefundDocument { get; }
 
     public ApplyClientCreditHandler ApplyClientCredit { get; }
 
@@ -395,6 +538,14 @@ internal sealed class SmokeHarness : IAsyncDisposable
             cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult<IReadOnlyCollection<ProductModuleCatalogItem>>([]);
+        }
+
+        public Task<ProductAccessCatalog> GetAccessCatalogAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(new ProductAccessCatalog([], []));
         }
     }
 }

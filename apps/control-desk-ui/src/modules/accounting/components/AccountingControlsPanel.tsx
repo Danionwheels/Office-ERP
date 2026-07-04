@@ -1,4 +1,4 @@
-import { RefreshCw, Save, Settings2 } from "lucide-react";
+import { RefreshCw, Save, Settings2, WandSparkles } from "lucide-react";
 import { type FormEvent } from "react";
 import type {
   AccountingControlSettings,
@@ -13,6 +13,7 @@ type AccountingControlsPanelProps = {
   isBusy: boolean;
   onValueChange: (value: AccountingControlSettingsInput) => void;
   onSave: () => Promise<void>;
+  onUseDefaults: () => Promise<void>;
   onRefresh: () => Promise<void>;
 };
 
@@ -25,6 +26,7 @@ export function AccountingControlsPanel({
   isBusy,
   onValueChange,
   onSave,
+  onUseDefaults,
   onRefresh
 }: AccountingControlsPanelProps) {
   const activePostingAccounts = accounts
@@ -51,6 +53,16 @@ export function AccountingControlsPanel({
           <span className={`status-pill ${settings?.isConfigured ? "open" : "draft"}`}>
             {settings?.isConfigured ? "Configured" : "Partial"}
           </span>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={onUseDefaults}
+            disabled={isBusy}
+            title="Use default MAIN GL controls"
+          >
+            <WandSparkles size={16} />
+            Use defaults
+          </button>
           <button
             className="icon-button"
             type="button"

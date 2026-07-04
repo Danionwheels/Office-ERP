@@ -19,6 +19,18 @@ import type {
   ManualJournalEntryInput,
   ManualJournalEntryLineInput
 } from "../types/accountingTypes";
+import { journalSourceTypeOptions } from "../constants/accountingConstants";
+import { toDateInputValue } from "../utils/accountingDates";
+import {
+  amount,
+  formatAccount,
+  formatMoney,
+  formatSourceAmount,
+  getPostingPeriodState,
+  roundMoney,
+  sourceDocumentTitle,
+  voidManualJournalTitle
+} from "../utils/journalModel";
 
 type JournalWorkbenchPanelProps = {
   accounts: LedgerAccountSummary[];
@@ -40,19 +52,6 @@ type JournalWorkbenchPanelProps = {
   getSourceDocumentClientLabel: (sourceDocument: JournalEntrySourceDocument) => string;
   onRefresh: () => Promise<void>;
 };
-
-const sourceTypeOptions = [
-  "Manual",
-  "BillingInvoice",
-  "PaymentReceipt",
-  "OpeningBalance",
-  "Adjustment",
-  "ManualReversal",
-  "PaymentReversal",
-  "BillingInvoiceVoid",
-  "BillingCreditNote",
-  "ClientRefund"
-];
 
 export function JournalWorkbenchPanel({
   accounts,
@@ -89,6 +88,7 @@ export function JournalWorkbenchPanel({
   const hasCredit = totalCredit > 0;
   const hasAccounts = value.lines.every((line) => line.ledgerAccountId.trim() !== "");
   const postingPeriodState = getPostingPeriodState(value.entryDate, periods);
+  const reversalPeriodState = getPostingPeriodState(toDateInputValue(new Date()), periods);
   const canPost =
     value.entryDate.trim() !== ""
     && value.currencyCode.trim() !== ""
@@ -389,7 +389,7 @@ export function JournalWorkbenchPanel({
               disabled={isBusy}
             >
               <option value="">All</option>
-              {sourceTypeOptions.map((option) => (
+              {journalSourceTypeOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -503,8 +503,13 @@ export function JournalWorkbenchPanel({
                             className="table-icon-button"
                             type="button"
                             onClick={() => void onVoidEntry(entry)}
-                            disabled={isBusy || entry.sourceType !== "Manual" || entry.status !== "Posted"}
-                            title="Void manual journal"
+                            disabled={
+                              isBusy
+                              || entry.sourceType !== "Manual"
+                              || entry.status !== "Posted"
+                              || reversalPeriodState.blocksPosting
+                            }
+                            title={voidManualJournalTitle(entry, reversalPeriodState)}
                           >
                             <Undo2 size={14} />
                           </button>
@@ -535,24 +540,6 @@ export function JournalWorkbenchPanel({
       </section>
     </section>
   );
-}
-
-function amount(value: string): number {
-  const parsed = Number(value);
-
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function formatMoney(value: number): string {
-  return roundMoney(value).toFixed(2);
-}
-
-function sourceDocumentTitle(label: string | null): string {
-  return label === null ? "Source document is not loaded" : `Open ${label}`;
 }
 
 function JournalLineDetail({
@@ -651,87 +638,4 @@ function sourceDocumentClientLabel(
   getSourceDocumentClientLabel: (sourceDocument: JournalEntrySourceDocument) => string
 ): string {
   return sourceDocument === undefined ? "-" : getSourceDocumentClientLabel(sourceDocument);
-}
-
-function formatSourceAmount(sourceDocument: JournalEntrySourceDocument): string {
-  return sourceDocument.amount === null || sourceDocument.amount === undefined
-    ? "-"
-    : `${formatMoney(sourceDocument.amount)} ${sourceDocument.currencyCode ?? ""}`.trim();
-}
-
-function formatAccount(
-  ledgerAccountId: string,
-  accounts: LedgerAccountSummary[]
-): string {
-  const account = accounts.find((candidate) => candidate.ledgerAccountId === ledgerAccountId);
-
-  return account === undefined
-    ? ledgerAccountId
-    : `${account.displayCode} ${account.name}`;
-}
-
-type PostingPeriodState = {
-  tone: "open" | "closed" | "draft" | "voided";
-  label: string;
-  status: string;
-  detail: string;
-  blocksPosting: boolean;
-};
-
-function getPostingPeriodState(
-  entryDate: string,
-  periods: AccountingPeriod[]
-): PostingPeriodState {
-  const normalizedDate = entryDate.trim();
-
-  if (normalizedDate === "") {
-    return {
-      tone: "draft",
-      label: "Posting period",
-      status: "Date needed",
-      detail: "Enter a posting date.",
-      blocksPosting: true
-    };
-  }
-
-  if (periods.length === 0) {
-    return {
-      tone: "draft",
-      label: "Posting period",
-      status: "No calendar",
-      detail: "Posting is available until periods are configured.",
-      blocksPosting: false
-    };
-  }
-
-  const period = periods.find((candidate) =>
-    normalizedDate >= candidate.startsOn && normalizedDate <= candidate.endsOn);
-
-  if (period === undefined) {
-    return {
-      tone: "voided",
-      label: "Posting period",
-      status: "No period",
-      detail: "No MAIN period contains this date.",
-      blocksPosting: true
-    };
-  }
-
-  if (period.status.toLowerCase() === "open") {
-    return {
-      tone: "open",
-      label: "Posting period",
-      status: "Open",
-      detail: `${period.name} ${period.startsOn} to ${period.endsOn}`,
-      blocksPosting: false
-    };
-  }
-
-  return {
-    tone: "closed",
-    label: "Posting period",
-    status: period.status,
-    detail: `${period.name} is closed.`,
-    blocksPosting: true
-  };
 }

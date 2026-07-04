@@ -1200,6 +1200,38 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.ToTable("payments", "control");
                 });
 
+            modelBuilder.Entity("SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.ProductAccessCatalogRecord", b =>
+                {
+                    b.Property<string>("CatalogId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("catalog_id");
+
+                    b.Property<string>("ModuleGroupsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("module_groups_json");
+
+                    b.Property<string>("ResourcesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("resources_json");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("CatalogId");
+
+                    b.ToTable("product_access_catalogs", "control");
+                });
+
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.JournalEntry", b =>
                 {
                     b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Accounting.JournalLine", "Lines", b1 =>

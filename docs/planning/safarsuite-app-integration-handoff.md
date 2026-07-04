@@ -6,7 +6,7 @@ Purpose: record the exact handoff from the Control Desk/Control Cloud/local-serv
 
 ## Current Readiness
 
-The Control Desk side is ready for a deliberate workspace switch after this handoff is accepted.
+The Control Desk side is ready for a deliberate workspace switch after this handoff is accepted. The first real app-workspace module-gateway slice was also verified on 2026-07-04 in `C:\Users\Daniyal\Documents\Codex\2026-06-09\hello-there-2`.
 
 Already available in this workspace:
 
@@ -15,6 +15,7 @@ Already available in this workspace:
 - signed entitlement bundle import/cache rules with replay, version, signature, and clock-rollback protection
 - module access decisions for active, warning, grace, restricted, expired, missing, disabled, and installation mismatch states
 - repeatable smoke proof in `tools/SafarSuite.LocalServer.EntitlementSmoke`
+- placeholder app-runtime gateway probe in `tools/SafarSuite.AppRuntimeProbe`
 
 Not in this workspace:
 
@@ -22,6 +23,20 @@ Not in this workspace:
 - the app's module menus/screens/routes
 - the app's own runtime health endpoint and app-specific logs
 - the app-side module enforcement middleware/components
+
+Verified in the app workspace:
+
+- shared v1 module-gateway contracts and access states exist in `src/Shared/Contracts/ProductKernelContracts.cs`
+- app local-server exposes `GET /api/v1/local-server/modules/{moduleCode}/access` and `POST /api/v1/local-server/modules/access`
+- module-code mapping currently covers `Accounting`, `Travel`, `Tour`, `Reports`, `Reporting`, and `ReportingCore`
+- Windows client state reads module-gateway access and folds `isAllowed` into menu/window access policy
+- backend `LocalWritePolicy` consults the module gateway before allowing writes, so menu visibility is not the only protection
+- reporting execution and audit endpoints use a reusable read-side module access guard for `reporting-core`
+- app smokes passed: `tests\ProductKernelGuardSmoke` passed 30 checks, `tests\ReadOnlyEnforcementSmoke` passed 24 checks, and `tests\ReportExecutionSmoke` passed 28 checks
+- runtime packaging wrapper exists: `Dockerfile.localserver`, `.dockerignore`, `docker-compose.runtime.yml`, and `docker/localserver.env.template`
+- packaging probes passed: Windows client production build, local-server Release publish into `artifacts\codex\localserver-publish`, runtime Compose config validation, and internal `/health` check against the published LocalServer
+- Docker image build completed after MCR access recovered, the pushed GHCR image `ghcr.io/danionwheels/localserver:0.1.0` was produced, and the Compose runtime now runs `local-db` plus `safarsuite-app` with container health and v1 module-gateway probes verified
+- Control-side command diagnostics now report each runtime service's signed manifest intent, including the optional app profile's `SAFARSUITE_APP_IMAGE`, `SAFARSUITE_APP_HTTP_PORT`, and `http://safarsuite-app:5280/health` wiring even when the profile is disabled
 
 ## Workspace Boundary
 
@@ -125,6 +140,16 @@ Response:
 }
 ```
 
+## Product Access Catalog Requirement
+
+Owner-controlled product packaging is now a required behavior, not a reporting-only shortcut. Record and follow the requirements in:
+
+```text
+docs/planning/safarsuite-product-access-catalog-requirements.md
+```
+
+The required model is: endpoints/menus require stable resources, resources resolve to Product Owner-managed module groups, groups contain modules, and paid/core/public access is decided by catalog and local module-gateway entitlement state. Future modules such as Payroll, Travel, Tour, or other add-ons must enter through this catalog model instead of one-off endpoint guards.
+
 ## App Behavior Rules
 
 The SafarSuite app must treat `isAllowed` as authoritative.
@@ -148,6 +173,26 @@ Denied or restricted states:
 If the local-server module gateway is unreachable, the app should fail closed for paid module entry after a small retry. The app may still show a local status/diagnostics page, but it must not silently unlock paid modules.
 
 The app should not calculate warning, grace, expiry, offline validity, replay, or signature rules. Those stay in the local server.
+
+## Placeholder App Runtime Probe
+
+This workspace now includes a small app-like probe:
+
+```text
+tools/SafarSuite.AppRuntimeProbe
+```
+
+It reads the same runtime variables the app image should receive:
+
+```text
+SAFARSUITE_MODULE_GATEWAY_URL
+SAFARSUITE_INSTALLATION_ID
+SAFARSUITE_REQUIRED_MODULE
+SAFARSUITE_MODULE_CODE
+SAFARSUITE_RUNTIME_PROBE_REQUESTED_BY
+```
+
+It calls the local module gateway using the shared v1 contracts and exits non-zero when the observed allowed/denied state does not match the expected result. This is not the real app image; it is a contract probe to keep the app workspace integration honest.
 
 ## Initial Module-Code Proof
 
@@ -201,6 +246,57 @@ First implementation behavior:
 - deny disabled/missing/expired modules through the same menu/window access policy already used by the Windows client
 - keep backend write guards in place through the existing local write policy
 
+## App Workspace Verification - 2026-07-04
+
+Verified app workspace:
+
+```text
+C:\Users\Daniyal\Documents\Codex\2026-06-09\hello-there-2
+```
+
+Verified files:
+
+| File | Verified behavior |
+| --- | --- |
+| `src/Shared/Contracts/ProductKernelContracts.cs` | v1 module-gateway format, request, response, and access-state constants exist |
+| `src/LocalServer/Modules/Platform/Api/PlatformEndpoints.cs` | app local-server exposes the v1 GET and POST module-gateway routes |
+| `src/LocalServer/Modules/Platform/ModuleGateway/LocalModuleGatewayService.cs` | gateway uses activation identity, module registry, and entitlement snapshot state |
+| `src/LocalServer/Modules/Platform/ModuleRegistry/ModuleRegistry.cs` | gateway module codes map onto existing app module ids |
+| `src/LocalServer/Modules/Platform/Entitlements/EntitlementSnapshotStore.cs` | access decisions reuse entitlement state and keep `Active`, `Warning`, and `Grace` allowed |
+| `apps/windows-client/src/api/localApi.ts` | Windows client reads module-gateway access for product-kernel state |
+| `apps/windows-client/src/app/accessPolicy.ts` | menu/window access denies modules when gateway `isAllowed` is false |
+| `src/LocalServer/Modules/Platform/Policies/LocalWritePolicy.cs` | backend writes fail closed when the gateway denies the module |
+| `src/LocalServer/Modules/Platform/Policies/LocalModuleAccessGuard.cs` | protected read endpoints can require gateway access, with explicit read-only `Restricted` opt-in |
+| `src/LocalServer/Modules/Reporting/Api/ReportingEndpoints.cs` | report execution and audit require `reporting-core` gateway access after identity permission succeeds |
+| `src/LocalServer/Program.cs` | exposes `/health` and supports `dotnet LocalServer.dll --healthcheck --healthcheck-url <url>` for container health checks |
+| `Dockerfile.localserver` | builds the app LocalServer ASP.NET image |
+| `docker-compose.runtime.yml` | runs `local-db` and `safarsuite-app` with the runtime contract environment variables |
+| `docker/localserver.env.template` | documents production-shaped container configuration values |
+| `tests/ProductKernelGuardSmoke/Program.cs` | smoke covers v1 GET/POST, disabled module, expired window, and installation mismatch |
+| `tests/ReadOnlyEnforcementSmoke/Program.cs` | smoke proves an accounting write is blocked when the gateway denies `module.accounting` |
+| `tests/ReportExecutionSmoke/Program.cs` | smoke proves report execution/audit are blocked when `module.reporting-core` is denied while read-only reporting remains readable |
+
+Verified commands:
+
+```powershell
+dotnet run --no-restore --project tests\ProductKernelGuardSmoke\ProductKernelGuardSmoke.csproj
+dotnet run --no-restore --project tests\ReadOnlyEnforcementSmoke\ReadOnlyEnforcementSmoke.csproj
+dotnet run --no-restore --project tests\ReportExecutionSmoke\ReportExecutionSmoke.csproj
+```
+
+Results:
+
+- Product-kernel guard smoke passed 30 checks.
+- Read-only enforcement smoke passed 24 checks.
+- Report execution smoke passed 28 checks.
+- Windows client production build passed.
+- Local-server Release publish passed into `artifacts\codex\localserver-publish`.
+- Runtime Compose config validation passed.
+- Published LocalServer internal healthcheck returned success against `http://127.0.0.1:5299/health`.
+- Docker image build completed after MCR access recovered, `scripts\deploy\build-localserver-image.ps1 -Version 0.1.0` produced tags `ghcr.io/danionwheels/localserver:0.1.0` and `safarsuite/localserver:dev`, `ghcr.io/danionwheels/localserver:0.1.0` was pushed with digest `sha256:0deacfd234d59354d7560371d9b475633903e7d18dd0a84cb5cfbb0cdb182ba1`, anonymous manifest/pull checks passed using an empty Docker config, `docker-compose.runtime.yml` runs with Postgres on host port `55632` and app HTTP on `5280`, 39 local migrations applied, and container `/health` plus v1 module-gateway GET/POST probes returned the expected contract shape.
+
+The remaining app-side gap is no longer the module-gateway contract, first image wrapper, image push, tag discipline, local container proof, or control-side manifest diagnostics; it is wiring app-specific health/log evidence and deployment-profile behavior into the Control Desk bootstrap/runtime path.
+
 ## Do Not Drift
 
 - Do not bypass the local module gateway for paid add-ons.
@@ -211,10 +307,11 @@ First implementation behavior:
 
 ## Local Proof Command
 
-Before and after app workspace changes, run the local-server entitlement smoke from this workspace:
+Before and after app workspace changes, run the local-server entitlement smoke and the app runtime probe self-test from this workspace:
 
 ```powershell
 dotnet run --project tools\SafarSuite.LocalServer.EntitlementSmoke\SafarSuite.LocalServer.EntitlementSmoke.csproj --no-build
+dotnet run --project tools\SafarSuite.AppRuntimeProbe\SafarSuite.AppRuntimeProbe.csproj --no-build -- --self-test
 ```
 
 Expected proof fields include:
@@ -228,13 +325,30 @@ Expected proof fields include:
 }
 ```
 
+Expected app probe self-test fields include:
+
+```json
+{
+  "status": "Passed",
+  "allowedState": "Active",
+  "deniedState": "ModuleDisabled",
+  "contractFormat": "safarsuite-local-module-gateway-v1"
+}
+```
+
+When a local-server API is running with imported bootstrap and entitlement cache, the app-like live probe can be run with:
+
+```powershell
+dotnet run --project tools\SafarSuite.AppRuntimeProbe\SafarSuite.AppRuntimeProbe.csproj --no-build -- --gateway-url http://localhost:51046 --installation-id office-main --module Billing
+```
+
 ## Workspace Switch Gate
 
-Switch to the SafarSuite app workspace only when:
+The first workspace switch gate was met and verified on 2026-07-04:
 
-- this handoff is accepted
-- the local-server entitlement smoke passes
+- the local-server entitlement smoke passed
+- the app runtime probe self-test passed
 - the app workspace path is known
-- we are ready to change app menu/routes/API behavior rather than Control Desk scaffolding
+- app menu/window access and backend write behavior now consume the module gateway
 
-Return to this workspace after the first app-side gate is working so the bootstrap/runtime tracker can be updated with the real image, health route, and module-code map.
+Return to the app workspace next for app-specific health/log evidence and deployment-profile behavior. Return to this workspace after that so the bootstrap/runtime tracker can be updated with any final diagnostics shape and module-code map changes.

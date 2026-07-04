@@ -35,6 +35,15 @@ public sealed class GetLedgerAccountActivityHandler
                 "From date cannot be after to date."));
         }
 
+        var normalizedCurrencyCode = NormalizeCurrencyCode(query.CurrencyCode);
+
+        if (normalizedCurrencyCode is null && !string.IsNullOrWhiteSpace(query.CurrencyCode))
+        {
+            return Result<GetLedgerAccountActivityResult>.Failure(ApplicationError.Validation(
+                nameof(query.CurrencyCode),
+                "Ledger account activity currency code must be three characters."));
+        }
+
         var ledgerAccountId = LedgerAccountId.Create(query.LedgerAccountId);
         var ledgerAccount = await _ledgerAccounts.GetByIdAsync(ledgerAccountId, cancellationToken);
 
@@ -45,6 +54,29 @@ public sealed class GetLedgerAccountActivityHandler
                 "Ledger account was not found."));
         }
 
+        var openingBalance = 0m;
+        string? currencyCode = normalizedCurrencyCode;
+
+        if (query.FromDate.HasValue && query.FromDate.Value > DateOnly.MinValue)
+        {
+            var openingEntries = await _journalEntries.ListForLedgerAccountAsync(
+                ledgerAccountId,
+                toDate: query.FromDate.Value.AddDays(-1),
+                cancellationToken: cancellationToken);
+
+            foreach (var entry in FilterReportEntries(openingEntries, normalizedCurrencyCode))
+            {
+                foreach (var journalLine in entry.Lines.Where(line => line.LedgerAccountId == ledgerAccountId))
+                {
+                    currencyCode ??= journalLine.Debit.CurrencyCode;
+                    openingBalance += GetBalanceMovement(
+                        ledgerAccount.NormalBalance,
+                        journalLine.Debit.Amount,
+                        journalLine.Credit.Amount);
+                }
+            }
+        }
+
         var entries = await _journalEntries.ListForLedgerAccountAsync(
             ledgerAccountId,
             query.FromDate,
@@ -52,14 +84,17 @@ public sealed class GetLedgerAccountActivityHandler
             cancellationToken);
 
         var lines = new List<LedgerAccountActivityLineResult>();
-        var runningBalance = 0m;
-        string? currencyCode = null;
+        var runningBalance = openingBalance;
+        var periodDebit = 0m;
+        var periodCredit = 0m;
 
-        foreach (var entry in entries)
+        foreach (var entry in FilterReportEntries(entries, normalizedCurrencyCode))
         {
             foreach (var journalLine in entry.Lines.Where(line => line.LedgerAccountId == ledgerAccountId))
             {
                 currencyCode ??= journalLine.Debit.CurrencyCode;
+                periodDebit += journalLine.Debit.Amount;
+                periodCredit += journalLine.Credit.Amount;
                 runningBalance += GetBalanceMovement(ledgerAccount.NormalBalance, journalLine.Debit.Amount, journalLine.Credit.Amount);
 
                 lines.Add(new LedgerAccountActivityLineResult(
@@ -86,8 +121,34 @@ public sealed class GetLedgerAccountActivityHandler
             query.FromDate,
             query.ToDate,
             currencyCode,
-            runningBalance,
+            decimal.Round(openingBalance, 2),
+            decimal.Round(periodDebit, 2),
+            decimal.Round(periodCredit, 2),
+            decimal.Round(runningBalance, 2),
             lines));
+    }
+
+    private static IEnumerable<JournalEntry> FilterReportEntries(
+        IEnumerable<JournalEntry> entries,
+        string? currencyCode)
+    {
+        return entries.Where(entry =>
+            entry.Status != JournalEntryStatus.Draft
+            && (currencyCode is null || string.Equals(entry.CurrencyCode, currencyCode, StringComparison.Ordinal)));
+    }
+
+    private static string? NormalizeCurrencyCode(string? currencyCode)
+    {
+        if (string.IsNullOrWhiteSpace(currencyCode))
+        {
+            return null;
+        }
+
+        var normalizedCurrencyCode = currencyCode.Trim().ToUpperInvariant();
+
+        return normalizedCurrencyCode.Length == 3
+            ? normalizedCurrencyCode
+            : null;
     }
 
     private static decimal GetBalanceMovement(NormalBalance normalBalance, decimal debit, decimal credit)

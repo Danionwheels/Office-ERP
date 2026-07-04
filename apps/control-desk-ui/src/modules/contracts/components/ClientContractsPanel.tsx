@@ -18,6 +18,9 @@ import type {
   ClientContract,
   ClientContractModule,
   ClientContractFormInput,
+  ProductAccessCatalog,
+  PublishedProductAccessCatalogCommand,
+  PublishProductAccessCatalogCommandInput,
   ProductModule
 } from "../types/contractTypes";
 import {
@@ -28,10 +31,14 @@ import {
   getProductModuleMeta,
   normalizeProductModuleCode
 } from "../utils/productModuleDisplay";
+import { ProductAccessCatalogPanel } from "./ProductAccessCatalogPanel";
 
 type ClientContractsPanelProps = {
   contracts: ClientContract[];
   productModules: ProductModule[];
+  accessCatalog: ProductAccessCatalog | null;
+  publishedAccessCatalogCommand: PublishedProductAccessCatalogCommand | null;
+  accessCatalogPublishValue: PublishProductAccessCatalogCommandInput;
   chargeRules: ClientChargeRule[];
   latestSnapshot: EntitlementSnapshot | null;
   latestSnapshotMissing: boolean;
@@ -39,6 +46,10 @@ type ClientContractsPanelProps = {
   value: ClientContractFormInput;
   isBusy: boolean;
   onChange: (value: ClientContractFormInput) => void;
+  onAccessCatalogPublishValueChange: (value: PublishProductAccessCatalogCommandInput) => void;
+  onRefreshAccessCatalog: () => Promise<void>;
+  onSaveAccessCatalog: (catalog: ProductAccessCatalog, requestedBy: string) => Promise<void>;
+  onPublishAccessCatalog: () => Promise<void>;
   onCreate: () => Promise<void>;
   onReplaceActive: () => Promise<void>;
   onSuspend: (contractId: string) => Promise<void>;
@@ -46,7 +57,7 @@ type ClientContractsPanelProps = {
   onResolveEntitlementReadiness: () => Promise<void>;
 };
 
-type ContractWorkspaceView = "current" | "setup" | "history";
+type ContractWorkspaceView = "current" | "setup" | "history" | "catalog";
 
 type ContractWorkspaceItem = {
   view: ContractWorkspaceView;
@@ -59,6 +70,9 @@ type ContractWorkspaceItem = {
 export function ClientContractsPanel({
   contracts,
   productModules,
+  accessCatalog,
+  publishedAccessCatalogCommand,
+  accessCatalogPublishValue,
   chargeRules,
   latestSnapshot,
   latestSnapshotMissing,
@@ -66,6 +80,10 @@ export function ClientContractsPanel({
   value,
   isBusy,
   onChange,
+  onAccessCatalogPublishValueChange,
+  onRefreshAccessCatalog,
+  onSaveAccessCatalog,
+  onPublishAccessCatalog,
   onCreate,
   onReplaceActive,
   onSuspend,
@@ -74,7 +92,7 @@ export function ClientContractsPanel({
 }: ClientContractsPanelProps) {
   const [activeView, setActiveView] = useState<ContractWorkspaceView>("current");
   const activeContract = getActiveContract(contracts);
-  const workspaceItems = getContractWorkspaceItems(contracts, activeContract);
+  const workspaceItems = getContractWorkspaceItems(contracts, activeContract, accessCatalog);
   const activeWorkspaceItem =
     workspaceItems.find((item) => item.view === activeView) ?? workspaceItems[0];
   const activeProductModules = productModules.filter((module) => module.isActive);
@@ -449,6 +467,19 @@ export function ClientContractsPanel({
         </div>
       </div>
       )}
+
+      {activeView === "catalog" && (
+        <ProductAccessCatalogPanel
+          catalog={accessCatalog}
+          publishedCommand={publishedAccessCatalogCommand}
+          value={accessCatalogPublishValue}
+          isBusy={isBusy}
+          onChange={onAccessCatalogPublishValueChange}
+          onRefresh={onRefreshAccessCatalog}
+          onSaveCatalog={onSaveAccessCatalog}
+          onPublish={onPublishAccessCatalog}
+        />
+      )}
     </div>
   );
 }
@@ -803,7 +834,8 @@ function getActiveContract(contracts: ClientContract[]): ClientContract | null {
 
 function getContractWorkspaceItems(
   contracts: ClientContract[],
-  activeContract: ClientContract | null
+  activeContract: ClientContract | null,
+  accessCatalog: ProductAccessCatalog | null
 ): ContractWorkspaceItem[] {
   return [
     {
@@ -826,6 +858,13 @@ function getContractWorkspaceItems(
       summary: `${contracts.length} contracts`,
       tone: contracts.length === 0 ? "neutral" : "ready",
       Icon: History
+    },
+    {
+      view: "catalog",
+      label: "Access catalog",
+      summary: accessCatalog === null ? "Not loaded" : `${accessCatalog.moduleGroups.length} groups`,
+      tone: accessCatalog === null ? "neutral" : "ready",
+      Icon: ListChecks
     }
   ];
 }

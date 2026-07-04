@@ -2,6 +2,7 @@ import {
   CalendarRange,
   FileCheck2,
   FileSearch,
+  ListTree,
   Lock,
   Plus,
   RefreshCw,
@@ -29,6 +30,7 @@ type AccountingPeriodsPanelProps = {
   onPreviewCloseJournal: (period: AccountingPeriod) => Promise<void>;
   onClose: (period: AccountingPeriod) => Promise<void>;
   onReopen: (period: AccountingPeriod) => Promise<void>;
+  onViewCloseJournalEntry: (journalEntryId: string) => Promise<void>;
   onRefresh: () => Promise<void>;
 };
 
@@ -47,6 +49,7 @@ export function AccountingPeriodsPanel({
   onPreviewCloseJournal,
   onClose,
   onReopen,
+  onViewCloseJournalEntry,
   onRefresh
 }: AccountingPeriodsPanelProps) {
   const [selectedArtifactPeriodId, setSelectedArtifactPeriodId] = useState("");
@@ -280,7 +283,10 @@ export function AccountingPeriodsPanel({
                         <button
                           className="table-icon-button"
                           type="button"
-                          onClick={() => void onClose(period)}
+                          onClick={() => {
+                            setSelectedArtifactPeriodId(period.accountingPeriodId);
+                            void onClose(period);
+                          }}
                           disabled={isBusy || isKnownBlocked(period, readiness)}
                           title="Close accounting period"
                         >
@@ -531,12 +537,13 @@ export function AccountingPeriodsPanel({
                 <th>Debit</th>
                 <th>Credit</th>
                 <th>Memo</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {artifactPeriod.closeArtifact.closeJournalEntries.length === 0 ? (
                 <tr>
-                  <td colSpan={6}>No generated close journals</td>
+                  <td colSpan={7}>No generated close journals</td>
                 </tr>
               ) : (
                 artifactPeriod.closeArtifact.closeJournalEntries.map((entry) => (
@@ -549,6 +556,17 @@ export function AccountingPeriodsPanel({
                     <td>{formatMoney(entry.totalDebit)}</td>
                     <td>{formatMoney(entry.totalCredit)}</td>
                     <td>{entry.memo}</td>
+                    <td>
+                      <button
+                        className="table-icon-button"
+                        type="button"
+                        onClick={() => void onViewCloseJournalEntry(entry.journalEntryId)}
+                        disabled={isBusy}
+                        title={`Open close journal ${entry.sourceReference}`}
+                      >
+                        <ListTree size={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}

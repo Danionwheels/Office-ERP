@@ -360,6 +360,9 @@ export type LedgerAccountActivity = {
   fromDate?: string | null;
   toDate?: string | null;
   currencyCode?: string | null;
+  openingBalance: number;
+  periodDebit: number;
+  periodCredit: number;
   endingBalance: number;
   lines: LedgerAccountActivityLine[];
 };
@@ -379,10 +382,13 @@ export type LedgerAccountActivityLine = {
 };
 
 export type TrialBalance = {
+  fromDate?: string | null;
   asOfDate: string;
   currencyCode: string;
   totalDebit: number;
   totalCredit: number;
+  totalPeriodDebit: number;
+  totalPeriodCredit: number;
   difference: number;
   lines: TrialBalanceLine[];
 };
@@ -393,6 +399,9 @@ export type TrialBalanceLine = {
   name: string;
   type: string;
   normalBalance: string;
+  openingBalance: number;
+  periodDebit: number;
+  periodCredit: number;
   debitBalance: number;
   creditBalance: number;
   netBalance: number;
@@ -400,6 +409,84 @@ export type TrialBalanceLine = {
 };
 
 export type TrialBalanceFilters = {
+  fromDate: string;
   asOfDate: string;
+  currencyCode: string;
+};
+
+export type ProfitAndLossStatement = {
+  fromDate?: string | null;
+  toDate: string;
+  currencyCode: string;
+  totalRevenue: number;
+  totalExpense: number;
+  netIncome: number;
+  sections: ProfitAndLossStatementSection[];
+};
+
+export type ProfitAndLossStatementSection = {
+  type: string;
+  title: string;
+  total: number;
+  lines: ProfitAndLossStatementLine[];
+};
+
+export type ProfitAndLossStatementLine = {
+  ledgerAccountId: string;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  debit: number;
+  credit: number;
+  amount: number;
+  activityCount: number;
+};
+
+export type ProfitAndLossStatementFilters = {
+  fromDate: string;
+  toDate: string;
+  currencyCode: string;
+};
+
+export type BalanceSheet = {
+  asOfDate: string;
+  currencyCode: string;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  totalLiabilitiesAndEquity: number;
+  difference: number;
+  sections: BalanceSheetSection[];
+};
+
+export type BalanceSheetSection = {
+  type: string;
+  title: string;
+  total: number;
+  lines: BalanceSheetLine[];
+};
+
+export type BalanceSheetLine = {
+  ledgerAccountId?: string | null;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  debit: number;
+  credit: number;
+  amount: number;
+  activityCount: number;
+  isSystemLine: boolean;
+};
+
+export type BalanceSheetFilters = {
+  asOfDate: string;
+  currencyCode: string;
+};
+
+export type LedgerAccountActivityFilters = {
+  fromDate: string;
+  toDate: string;
   currencyCode: string;
 };

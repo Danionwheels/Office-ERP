@@ -12,6 +12,11 @@ import {
   Wand2
 } from "lucide-react";
 import { type FormEvent } from "react";
+import {
+  accountTypeOptions,
+  legacyAccountLevels,
+  normalBalanceOptions
+} from "../constants/accountingConstants";
 import type {
   AccountCodeRange,
   AccountCodeRangeFormInput,
@@ -22,24 +27,13 @@ import type {
   JournalEntrySummary,
   LedgerAccountSummary
 } from "../types/accountingTypes";
-
-const accountTypeOptions = ["Asset", "Liability", "Equity", "Revenue", "Expense"];
-const normalBalanceOptions = ["Debit", "Credit"];
-const legacyAccountLevels: LegacyAccountLevel[] = [
-  { code: "H", label: "Header" },
-  { code: "T", label: "Total" },
-  { code: "M", label: "Master" },
-  { code: "D", label: "Detail" },
-  { code: "C", label: "Control" },
-  { code: "S", label: "Subsidiary" }
-];
-
-type LegacyAccountLevelCode = "H" | "T" | "M" | "D" | "C" | "S";
-
-type LegacyAccountLevel = {
-  code: LegacyAccountLevelCode;
-  label: string;
-};
+import {
+  getLedgerAccountLevelOptions,
+  getLegacyAccountLevel,
+  getVisibleAccounts,
+  isPostingLedgerAccountLevel
+} from "../utils/chartOfAccountsModel";
+import { formatMoney } from "../utils/journalModel";
 
 type ChartOfAccountsPanelProps = {
   accounts: LedgerAccountSummary[];
@@ -829,8 +823,14 @@ export function ChartOfAccountsPanel({
                   <strong>{activity.name}</strong>
                 </div>
                 <span className="billing-small-fact">
-                  {activity.currencyCode ?? "No currency"} {formatAmount(activity.endingBalance)}
+                  {formatActivityWindow(activity)} - {activity.currencyCode ?? "No currency"}
                 </span>
+              </div>
+              <div className="coa-activity-summary">
+                <ActivityFact label="Opening" value={formatMoney(activity.openingBalance)} />
+                <ActivityFact label="Debit" value={formatMoney(activity.periodDebit)} />
+                <ActivityFact label="Credit" value={formatMoney(activity.periodCredit)} />
+                <ActivityFact label="Ending" value={formatMoney(activity.endingBalance)} />
               </div>
               <table className="coa-activity-table">
                 <thead>
@@ -839,19 +839,19 @@ export function ChartOfAccountsPanel({
                     <th>Source</th>
                     <th>Reference</th>
                     <th>Status</th>
-                  <th>Debit</th>
-                  <th>Credit</th>
-                  <th>Balance</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activity.lines.length === 0 ? (
-                  <tr>
-                    <td colSpan={8}>No account activity</td>
+                    <th>Debit</th>
+                    <th>Credit</th>
+                    <th>Balance</th>
+                    <th>Actions</th>
                   </tr>
-                ) : (
-                  activity.lines.map((line) => (
+                </thead>
+                <tbody>
+                  {activity.lines.length === 0 ? (
+                    <tr>
+                      <td colSpan={8}>No account activity</td>
+                    </tr>
+                  ) : (
+                    activity.lines.map((line) => (
                       <tr key={`${line.journalEntryId}-${line.entryDate}-${line.runningBalance}`}>
                         <td>{line.entryDate}</td>
                         <td>{line.sourceType}</td>
@@ -861,9 +861,9 @@ export function ChartOfAccountsPanel({
                             {line.status}
                           </span>
                         </td>
-                        <td>{formatAmount(line.debit)}</td>
-                        <td>{formatAmount(line.credit)}</td>
-                        <td>{formatAmount(line.runningBalance)}</td>
+                        <td>{formatMoney(line.debit)}</td>
+                        <td>{formatMoney(line.credit)}</td>
+                        <td>{formatMoney(line.runningBalance)}</td>
                         <td>
                           <button
                             className={`table-icon-button${
@@ -893,205 +893,35 @@ function formatRange(range: AccountCodeRange): string {
   return `${range.rangeStart}-${range.rangeEnd}`;
 }
 
-function getVisibleAccounts(
-  accounts: LedgerAccountSummary[],
-  ranges: AccountCodeRange[],
-  filters: LedgerAccountFilters
-): LedgerAccountSummary[] {
-  const search = filters.search.trim().toLowerCase();
-
-  return accounts.filter((account) => {
-    if (search !== ""
-      && !account.code.toLowerCase().includes(search)
-      && !account.displayCode.toLowerCase().includes(search)
-      && !account.name.toLowerCase().includes(search)) {
-      return false;
-    }
-
-    if (filters.type !== "" && account.type !== filters.type) {
-      return false;
-    }
-
-    if (filters.status !== "" && account.status !== filters.status) {
-      return false;
-    }
-
-    if (filters.posting === "posting" && !account.isPostingAccount) {
-      return false;
-    }
-
-    if (filters.posting === "control" && account.isPostingAccount) {
-      return false;
-    }
-
-    if (filters.role !== "") {
-      const matchedRange = ranges.find((range) => range.role === filters.role);
-
-      if (account.rangeRole !== filters.role
-        && (matchedRange === undefined || !account.code.startsWith(matchedRange.searchPrefix))) {
-        return false;
-      }
-    }
-
-    const level = getLegacyAccountLevel(account, ranges);
-
-    if (filters.level !== "" && level.code !== filters.level) {
-      return false;
-    }
-
-    if (filters.viewMode === "headerTotal") {
-      return level.code === "H" || level.code === "T";
-    }
-
-    if (filters.viewMode === "default") {
-      return level.code !== "H" && level.code !== "T";
-    }
-
-    return true;
-  });
+function ActivityFact({
+  label,
+  value
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <span>
+      <small>{label}</small>
+      <strong>{value}</strong>
+    </span>
+  );
 }
 
-function getLegacyAccountLevel(
-  account: LedgerAccountSummary,
-  ranges: AccountCodeRange[]
-): LegacyAccountLevel {
-  const persistedLevel = getPersistedLegacyAccountLevel(account.level);
-
-  if (persistedLevel !== null) {
-    return persistedLevel;
+function formatActivityWindow(activity: LedgerAccountActivity): string {
+  if ((activity.fromDate ?? "").trim() === "" && (activity.toDate ?? "").trim() === "") {
+    return "All dates";
   }
 
-  const range = getAccountRange(account, ranges);
-
-  if (range !== null && isControlRange(range)) {
-    return getLegacyAccountLevelDefinition("C");
+  if ((activity.fromDate ?? "").trim() === "") {
+    return `Through ${activity.toDate}`;
   }
 
-  if (!account.isPostingAccount) {
-    return getLegacyAccountLevelDefinition("M");
+  if ((activity.toDate ?? "").trim() === "") {
+    return `From ${activity.fromDate}`;
   }
 
-  if (account.parentAccountId !== null && account.parentAccountId !== undefined) {
-    return getLegacyAccountLevelDefinition("S");
-  }
-
-  if ((range?.parentCode ?? "").trim() !== "") {
-    return getLegacyAccountLevelDefinition("S");
-  }
-
-  return getLegacyAccountLevelDefinition("D");
-}
-
-function getPersistedLegacyAccountLevel(value?: string | null): LegacyAccountLevel | null {
-  const normalized = value?.trim().toLowerCase() ?? "";
-
-  if (normalized === "") {
-    return null;
-  }
-
-  return legacyAccountLevels.find((level) =>
-    level.label.toLowerCase() === normalized
-    || level.code.toLowerCase() === normalized) ?? null;
-}
-
-function getLedgerAccountLevelOptions(
-  range: AccountCodeRange | null,
-  accountMode: "create" | "edit",
-  currentLevel: string
-): LegacyAccountLevel[] {
-  if (accountMode === "edit") {
-    return ensureCurrentLevelOption(legacyAccountLevels, currentLevel);
-  }
-
-  if (range === null) {
-    return legacyAccountLevels;
-  }
-
-  if (hasRangeIntent(range, "Header")) {
-    return [getLegacyAccountLevelDefinition("H")];
-  }
-
-  if (hasRangeIntent(range, "Total")) {
-    return [getLegacyAccountLevelDefinition("T")];
-  }
-
-  if (isControlRange(range)) {
-    return [getLegacyAccountLevelDefinition("C")];
-  }
-
-  if (hasRangeIntent(range, "Master")) {
-    return [getLegacyAccountLevelDefinition("M")];
-  }
-
-  if ((range.parentCode ?? "").trim() !== "") {
-    return [getLegacyAccountLevelDefinition("S")];
-  }
-
-  if (range.isPostingAccount) {
-    return [getLegacyAccountLevelDefinition("D")];
-  }
-
-  return [
-    getLegacyAccountLevelDefinition("H"),
-    getLegacyAccountLevelDefinition("T"),
-    getLegacyAccountLevelDefinition("M"),
-    getLegacyAccountLevelDefinition("C")
-  ];
-}
-
-function ensureCurrentLevelOption(
-  options: LegacyAccountLevel[],
-  currentLevel: string
-): LegacyAccountLevel[] {
-  const current = getPersistedLegacyAccountLevel(currentLevel);
-
-  if (current === null || options.some((option) => option.code === current.code)) {
-    return options;
-  }
-
-  return [current, ...options];
-}
-
-function isPostingLedgerAccountLevel(level: string): boolean {
-  const legacyLevel = getPersistedLegacyAccountLevel(level);
-
-  return legacyLevel?.code === "D" || legacyLevel?.code === "S";
-}
-
-function getAccountRange(
-  account: LedgerAccountSummary,
-  ranges: AccountCodeRange[]
-): AccountCodeRange | null {
-  const byRole = ranges.find((range) => range.role === account.rangeRole);
-
-  if (byRole !== undefined) {
-    return byRole;
-  }
-
-  return ranges.find((range) =>
-    account.code.length === range.codeLength
-    && account.code.startsWith(range.searchPrefix)
-    && account.code >= range.rangeStart
-    && account.code <= range.rangeEnd) ?? null;
-}
-
-function isControlRange(range: AccountCodeRange): boolean {
-  return hasRangeIntent(range, "Control");
-}
-
-function hasRangeIntent(range: AccountCodeRange, intent: string): boolean {
-  const normalizedIntent = intent.toLowerCase();
-
-  return range.role.toLowerCase().includes(normalizedIntent)
-    || range.displayName.toLowerCase().includes(normalizedIntent);
-}
-
-function getLegacyAccountLevelDefinition(code: LegacyAccountLevelCode): LegacyAccountLevel {
-  return legacyAccountLevels.find((level) => level.code === code) ?? legacyAccountLevels[0];
-}
-
-function formatAmount(value: number): string {
-  return value.toFixed(2);
+  return `${activity.fromDate} to ${activity.toDate}`;
 }
 
 function hasJournalEntry(

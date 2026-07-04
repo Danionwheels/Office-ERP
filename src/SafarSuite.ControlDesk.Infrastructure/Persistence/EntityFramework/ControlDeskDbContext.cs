@@ -74,5 +74,6 @@ public sealed class ControlDeskDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ClientCreditApplicationConfiguration());
         modelBuilder.ApplyConfiguration(new EntitlementSnapshotConfiguration());
         modelBuilder.ApplyConfiguration(new ClientContractConfiguration());
+        modelBuilder.ApplyConfiguration(new ProductAccessCatalogRecordConfiguration());
     }
 }

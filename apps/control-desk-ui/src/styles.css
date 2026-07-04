@@ -1451,7 +1451,7 @@ td {
 
 .contract-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
   gap: 8px;
 }
 
@@ -1539,13 +1539,15 @@ td {
 
 .contract-current-panel,
 .contract-setup-panel,
-.contract-history-panel {
+.contract-history-panel,
+.product-access-catalog-panel {
   grid-column: 1 / -1;
 }
 
 .contract-current-panel .client-panel-heading,
 .contract-setup-panel .client-panel-heading,
-.contract-history-panel .client-panel-heading {
+.contract-history-panel .client-panel-heading,
+.product-access-catalog-panel .client-panel-heading {
   border-bottom: 1px solid #e3e7eb;
   margin-bottom: 12px;
   padding-bottom: 9px;
@@ -1906,6 +1908,293 @@ td {
   border-top: 1px solid #e3e7eb;
   margin-top: 12px;
   padding-top: 12px;
+}
+
+.product-access-catalog-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.product-access-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.product-access-summary-card {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 54px;
+  border: 1px solid #d6dde5;
+  border-radius: 5px;
+  padding: 8px;
+  background: #f8fbf9;
+}
+
+.product-access-summary-card svg {
+  color: #247343;
+}
+
+.product-access-summary-card strong,
+.product-access-summary-card small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.product-access-summary-card strong {
+  color: #20252b;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.product-access-summary-card small {
+  color: #59606a;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.product-access-publish-form {
+  display: grid;
+  grid-template-columns: minmax(250px, 1.3fr) minmax(110px, 0.45fr) minmax(180px, 0.8fr) auto;
+  gap: 8px;
+  align-items: end;
+  border: 1px solid #d2d8de;
+  border-radius: 6px;
+  padding: 10px;
+  background: #f8f9fb;
+}
+
+.product-access-publish-button {
+  min-width: 104px;
+}
+
+.product-access-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.product-access-edit-form {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid #d2d8de;
+  border-radius: 6px;
+  padding: 10px;
+  background: #f8f9fb;
+}
+
+.product-access-textarea {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+.product-access-form-actions,
+.product-access-item-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.product-access-form-actions {
+  border-top: 1px solid #e3e7eb;
+  padding-top: 8px;
+}
+
+.product-access-item-actions {
+  border-top: 1px solid #edf0f2;
+  padding-top: 7px;
+}
+
+.product-access-empty-state {
+  margin-top: 2px;
+}
+
+.product-access-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.product-access-list-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.product-access-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.product-access-section-heading span {
+  color: #59606a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.product-access-section-heading strong {
+  color: #20252b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.product-access-list {
+  display: grid;
+  gap: 8px;
+}
+
+.product-access-item {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid #d6dde5;
+  border-radius: 6px;
+  padding: 9px;
+  background: #ffffff;
+}
+
+.product-access-item header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.product-access-item span,
+.product-access-item strong,
+.product-access-item small,
+.product-access-item p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.product-access-item strong,
+.product-access-item small {
+  display: block;
+}
+
+.product-access-item strong {
+  color: #20252b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.product-access-item small,
+.product-access-item p,
+.product-access-resource-facts dt,
+.product-access-resource-facts dd {
+  color: #59606a;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.product-access-item p {
+  margin: 0;
+}
+
+.product-access-kind {
+  flex: 0 0 auto;
+  border: 1px solid #9bb0c5;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #33485d;
+  background: #eef3f8;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.product-access-kind.public {
+  border-color: #a4abb3;
+  color: #4e5964;
+  background: #f7f8f9;
+}
+
+.product-access-kind.coreincluded {
+  border-color: #8bc49d;
+  color: #145f36;
+  background: #edf8f0;
+}
+
+.product-access-kind.paidmodule {
+  border-color: #d0a24e;
+  color: #704d0d;
+  background: #fff7df;
+}
+
+.product-access-resource-facts {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.product-access-resource-facts div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 8px;
+  border-top: 1px solid #edf0f2;
+  padding-top: 5px;
+}
+
+.product-access-resource-facts dt {
+  color: #4e5964;
+  font-weight: 800;
+}
+
+.product-access-resource-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.product-access-command-result {
+  display: grid;
+  gap: 9px;
+  border: 1px solid #c2c7cd;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fbfcfd;
+}
+
+.product-access-command-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.product-access-command-facts div {
+  min-width: 0;
+  border-top: 1px solid #c2c7cd;
+  padding-top: 6px;
+}
+
+.product-access-command-facts dt {
+  color: #4e5964;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.product-access-command-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #20252b;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.product-access-command-field textarea {
+  min-height: 72px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
 }
 
 .client-billing-zone {
@@ -2900,6 +3189,290 @@ td {
   font-weight: 700;
 }
 
+.accounting-workspace {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid #9ca4ad;
+  border-radius: 6px;
+  padding: 8px;
+  background: #eef1f4;
+}
+
+.accounting-workspace-header {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.8fr) auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #9aa3ad;
+  border-radius: 4px;
+  background: #edf0f2;
+  padding: 7px 8px;
+}
+
+.accounting-workspace-header div {
+  min-width: 0;
+}
+
+.accounting-workspace-header span,
+.accounting-workspace-status span,
+.accounting-kpi-card span,
+.accounting-kpi-card small {
+  display: block;
+  color: #52606d;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.accounting-workspace-header h2 {
+  margin: 2px 0 0;
+  color: #20252b;
+  font-size: 17px;
+  line-height: 1.1;
+}
+
+.accounting-workspace-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  border: 1px solid #c5cbd1;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #3f4a56;
+  padding: 5px 8px;
+}
+
+.accounting-workspace-status svg {
+  color: #3f4a56;
+}
+
+.accounting-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.accounting-kpi-card {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 7px;
+  row-gap: 2px;
+  align-content: center;
+  border: 1px solid #aeb6bf;
+  border-radius: 4px;
+  background: #ffffff;
+  padding: 6px 8px;
+}
+
+.accounting-kpi-card svg {
+  grid-row: 1 / span 2;
+  color: #495663;
+}
+
+.accounting-kpi-card strong {
+  grid-row: 1;
+  justify-self: end;
+  color: #20252b;
+  font-size: 15px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.accounting-kpi-card small {
+  grid-column: 2 / span 2;
+  font-size: 11px;
+}
+
+.accounting-kpi-card.good {
+  border-color: #a6cfb3;
+  background: #f5fbf7;
+}
+
+.accounting-kpi-card.good svg,
+.accounting-kpi-card.good strong {
+  color: #217a45;
+}
+
+.accounting-kpi-card.attention {
+  border-color: #dfbd77;
+  background: #fff9ec;
+}
+
+.accounting-kpi-card.attention svg,
+.accounting-kpi-card.attention strong {
+  color: #855d00;
+}
+
+.accounting-workspace-nav {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 3px;
+  border: 1px solid #9aa3ad;
+  border-radius: 4px;
+  padding: 3px;
+  background: #cfd6dc;
+}
+
+.accounting-workspace-nav button {
+  min-width: 0;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: #39414c;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.accounting-workspace-nav button:hover,
+.accounting-workspace-nav button.active {
+  border-color: #7f8b97;
+  background: #ffffff;
+  color: #20252b;
+  box-shadow: inset 0 -2px 0 #2f74c0;
+}
+
+.accounting-workspace-nav button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.accounting-workspace-nav span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.accounting-workspace-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.accounting-report-workspace {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.accounting-report-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border: 1px solid #b7bec6;
+  border-radius: 4px;
+  padding: 4px;
+  background: #e7ebef;
+}
+
+.accounting-report-nav button {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #9ea7b0;
+  border-radius: 3px;
+  padding: 4px 8px;
+  color: #2c333a;
+  background: #ffffff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.accounting-report-nav button.active {
+  border-color: #2f74c0;
+  color: #173f68;
+  background: #f3f8fd;
+}
+
+.accounting-report-nav .accounting-report-refresh {
+  margin-left: auto;
+}
+
+.accounting-workspace .client-panel {
+  border-color: #b7bec6;
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.accounting-workspace .client-panel-heading {
+  margin-bottom: 6px;
+}
+
+.accounting-workspace .client-panel-heading strong {
+  font-size: 13px;
+}
+
+.accounting-workspace input,
+.accounting-workspace select,
+.accounting-workspace textarea {
+  min-height: 28px;
+  padding: 3px 6px;
+}
+
+.accounting-workspace .icon-button {
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
+.accounting-workspace .billing-form-grid,
+.accounting-workspace .coa-filter-panel,
+.accounting-workspace .journal-header-fields,
+.accounting-workspace .journal-filter-panel,
+.accounting-workspace .trial-balance-filter-row,
+.accounting-workspace .profit-loss-filter-row,
+.accounting-workspace .balance-sheet-filter-row {
+  gap: 6px;
+}
+
+.accounting-workspace .coa-table-panel,
+.accounting-workspace .coa-activity-panel,
+.accounting-workspace .journal-register-panel,
+.accounting-workspace .accounting-period-table-panel,
+.accounting-workspace .trial-balance-table-panel,
+.accounting-workspace .profit-loss-table-panel,
+.accounting-workspace .balance-sheet-table-panel,
+.accounting-workspace .coa-reconciliation-panel {
+  max-height: min(640px, 72vh);
+  overflow: auto;
+}
+
+.accounting-workspace .coa-range-panel {
+  max-height: none;
+  overflow: visible;
+}
+
+.accounting-workspace .coa-range-list {
+  max-height: min(360px, 46vh);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.accounting-workspace .journal-workbench,
+.accounting-workspace .accounting-period-workbench,
+.accounting-workspace .trial-balance-workbench,
+.accounting-workspace .profit-loss-workbench,
+.accounting-workspace .balance-sheet-workbench,
+.accounting-workspace .accounting-controls-panel {
+  margin-top: 0;
+}
+
 .coa-workspace {
   display: grid;
   gap: 10px;
@@ -3181,8 +3754,39 @@ td {
 }
 
 .coa-activity-panel {
+  display: grid;
+  gap: 10px;
   min-width: 0;
   overflow-x: auto;
+}
+
+.coa-activity-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.coa-activity-summary span {
+  display: grid;
+  gap: 4px;
+  min-height: 64px;
+  align-content: center;
+  border: 1px solid #e1e4e8;
+  border-radius: 8px;
+  background: #f7f8f9;
+  padding: 10px;
+}
+
+.coa-activity-summary small {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.coa-activity-summary strong {
+  color: #20252b;
+  font-size: 18px;
+  line-height: 1.1;
 }
 
 .coa-activity-table {
@@ -4243,13 +4847,13 @@ td {
 
 .trial-balance-filter-row {
   display: grid;
-  grid-template-columns: minmax(140px, 180px) minmax(100px, 140px);
+  grid-template-columns: repeat(3, minmax(120px, 180px));
   gap: 10px;
 }
 
 .trial-balance-summary-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -4282,7 +4886,7 @@ td {
 
 .trial-balance-table {
   width: 100%;
-  min-width: 820px;
+  min-width: 1080px;
   border-collapse: collapse;
 }
 
@@ -4307,6 +4911,255 @@ td {
 
 .trial-balance-table td strong {
   color: #20252b;
+}
+
+.profit-loss-workbench {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.profit-loss-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.profit-loss-header span,
+.profit-loss-summary-card span {
+  display: block;
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.profit-loss-header h2 {
+  margin: 0;
+  color: #20252b;
+  font-size: 18px;
+}
+
+.profit-loss-filter-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 180px));
+  gap: 10px;
+}
+
+.profit-loss-summary-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profit-loss-summary-card {
+  min-height: 78px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  background: #f7f8f9;
+}
+
+.profit-loss-summary-card strong {
+  color: #20252b;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.profit-loss-summary-card.income strong {
+  color: #145f36;
+}
+
+.profit-loss-summary-card.loss strong {
+  color: #8f1f1f;
+}
+
+.profit-loss-table-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.profit-loss-section {
+  display: grid;
+  gap: 8px;
+}
+
+.profit-loss-section header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #e1e4e8;
+  padding-bottom: 8px;
+  color: #20252b;
+}
+
+.profit-loss-section header span {
+  color: #4e5964;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.profit-loss-table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+}
+
+.profit-loss-table th,
+.profit-loss-table td {
+  border-bottom: 1px solid #e1e4e8;
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.profit-loss-table th {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.profit-loss-table td {
+  color: #2c333a;
+  font-size: 13px;
+}
+
+.profit-loss-table td strong {
+  color: #20252b;
+}
+
+.balance-sheet-workbench {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.balance-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.balance-sheet-header span,
+.balance-sheet-summary-card span {
+  display: block;
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.balance-sheet-header h2 {
+  margin: 0;
+  color: #20252b;
+  font-size: 18px;
+}
+
+.balance-sheet-filter-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 180px));
+  gap: 10px;
+}
+
+.balance-sheet-summary-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.balance-sheet-summary-card {
+  min-height: 78px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  background: #f7f8f9;
+}
+
+.balance-sheet-summary-card strong {
+  color: #20252b;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.balance-sheet-summary-card.balanced strong {
+  color: #145f36;
+}
+
+.balance-sheet-summary-card.out strong {
+  color: #8f1f1f;
+}
+
+.balance-sheet-table-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.balance-sheet-section {
+  display: grid;
+  gap: 8px;
+}
+
+.balance-sheet-section header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #e1e4e8;
+  padding-bottom: 8px;
+  color: #20252b;
+}
+
+.balance-sheet-section header span {
+  color: #4e5964;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.balance-sheet-table {
+  width: 100%;
+  min-width: 840px;
+  border-collapse: collapse;
+}
+
+.balance-sheet-table th,
+.balance-sheet-table td {
+  border-bottom: 1px solid #e1e4e8;
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.balance-sheet-table th {
+  color: #4e5964;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.balance-sheet-table td {
+  color: #2c333a;
+  font-size: 13px;
+}
+
+.balance-sheet-table td strong {
+  color: #20252b;
+}
+
+.balance-sheet-system-line {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  margin-left: 8px;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #edf1f5;
+  color: #4e5964;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .statement-workspace {
@@ -4722,6 +5575,38 @@ td {
 }
 
 @media (max-width: 1120px) {
+  .accounting-kpi-grid,
+  .accounting-workspace-nav {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .accounting-workspace-header {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .accounting-workspace-status {
+    justify-content: center;
+  }
+
+  .accounting-report-nav .accounting-report-refresh {
+    margin-left: 0;
+  }
+
+  .accounting-kpi-grid,
+  .accounting-workspace-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .accounting-workspace-body {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 1120px) {
   .dashboard-header,
   .dashboard-shell,
   .client-window-strip,
@@ -4774,6 +5659,7 @@ td {
   .coa-level-legend,
   .coa-range-fields,
   .coa-summary-row,
+  .coa-activity-summary,
   .coa-reconciliation-summary,
   .accounting-controls-form,
   .accounting-controls-summary,
@@ -4786,8 +5672,12 @@ td {
   .journal-filter-panel,
   .journal-source-summary,
   .journal-total-row,
+  .balance-sheet-filter-row,
+  .balance-sheet-summary-row,
   .trial-balance-filter-row,
   .trial-balance-summary-row,
+  .profit-loss-filter-row,
+  .profit-loss-summary-row,
   .statement-summary-card dl {
     grid-template-columns: repeat(2, minmax(140px, 1fr));
   }
@@ -4819,7 +5709,8 @@ td {
 
   .contract-current-panel,
   .contract-setup-panel,
-  .contract-history-panel {
+  .contract-history-panel,
+  .product-access-catalog-panel {
     grid-column: 1;
   }
 
@@ -4899,6 +5790,10 @@ td {
   .billing-result-facts.issued,
   .payment-form-grid.account,
   .payment-form-grid.receipt,
+  .product-access-editor-grid,
+  .product-access-publish-form,
+  .product-access-layout,
+  .product-access-command-facts,
   .payment-review-actions,
   .payment-result-facts,
   .entitlement-facts,
@@ -4907,6 +5802,7 @@ td {
   .coa-level-legend,
   .coa-range-fields,
   .coa-summary-row,
+  .coa-activity-summary,
   .coa-reconciliation-summary,
   .accounting-controls-form,
   .accounting-controls-summary,
@@ -4919,8 +5815,12 @@ td {
   .journal-filter-panel,
   .journal-source-summary,
   .journal-total-row,
+  .balance-sheet-filter-row,
+  .balance-sheet-summary-row,
   .trial-balance-filter-row,
   .trial-balance-summary-row,
+  .profit-loss-filter-row,
+  .profit-loss-summary-row,
   .statement-summary-card dl,
   .statement-card dl,
   .contact-item dl div,
@@ -4961,7 +5861,9 @@ td {
   .contract-summary-grid,
   .contract-workspace-nav,
   .contract-fact-grid,
-  .module-readiness-grid {
+  .module-readiness-grid,
+  .product-access-summary-grid,
+  .product-access-resource-facts div {
     grid-template-columns: 1fr;
   }
 

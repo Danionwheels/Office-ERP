@@ -46,8 +46,8 @@
       "composeProfile": "app-runtime",
       "imageEnvironmentVariable": "SAFARSUITE_APP_IMAGE",
       "publishedPortEnvironmentVariable": "SAFARSUITE_APP_HTTP_PORT",
-      "internalBaseUrl": "http://safarsuite-app:8080",
-      "healthUrl": "http://safarsuite-app:8080/health",
+      "internalBaseUrl": "http://safarsuite-app:5280",
+      "healthUrl": "http://safarsuite-app:5280/health",
       "dependsOn": ["local-api", "local-db"]
     }
   ]

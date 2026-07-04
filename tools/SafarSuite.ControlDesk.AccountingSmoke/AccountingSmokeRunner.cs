@@ -1,12 +1,25 @@
 using System.Numerics;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetBalanceSheet;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GetCreditNoteDocument;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GetInvoiceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueCreditNote;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientAccountingProfile;
@@ -15,11 +28,14 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ApplyClientCredit;
+using SafarSuite.ControlDesk.Application.Modules.Payments.GetClientRefundDocument;
+using SafarSuite.ControlDesk.Application.Modules.Payments.GetInvoicePaymentDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.IssueClientRefund;
 using SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayment;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
 using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Infrastructure.ControlCloud;
+using SafarSuite.ControlDesk.Infrastructure.Persistence.InMemory;
 using Microsoft.Extensions.Options;
 
 namespace SafarSuite.ControlDesk.AccountingSmoke;
@@ -50,6 +66,7 @@ internal sealed class AccountingSmokeRunner
         var accounts = await CreateLedgerAccountsAsync(cancellationToken);
         await AssertLedgerAccountReconciliationAsync(accounts, cancellationToken);
         await AssertLedgerAccountGuardrailsAsync(accounts, cancellationToken);
+        await AssertPostingPeriodGuardAsync(cancellationToken);
         var client = await CreateClientAsync(cancellationToken);
         var contract = await CreateContractAsync(client.ClientId, businessDate, cancellationToken);
         var chargeCode = await CreateBillingSetupAsync(
@@ -103,6 +120,14 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Money(-110m, refund.ClientBalanceBefore, "refund balance before");
         SmokeAssertions.Money(-70m, refund.ClientBalanceAfter, "refund balance after");
 
+        await AssertSourceDocumentReadbackAsync(
+            firstInvoice,
+            firstIssue,
+            payment,
+            creditNote,
+            refund,
+            cancellationToken);
+
         var secondInvoice = await DraftInvoiceAsync(
             client.ClientId,
             contract.ContractId,
@@ -131,8 +156,10 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Money(40m, creditApplication.ClientBalanceBefore, "settlement client balance before");
         SmokeAssertions.Money(40m, creditApplication.ClientBalanceAfter, "settlement client balance after");
 
+        await AssertGeneralLedgerReportsAsync(accounts, businessDate, cancellationToken);
         await AssertFinalStatementAsync(client.ClientId, cancellationToken);
         await AssertJournalAndOutboxShapeAsync(cancellationToken);
+        await AssertPeriodCloseBalanceSheetHandoffAsync(accounts, businessDate, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(_options.CloudReceiverUrl))
         {
@@ -194,6 +221,21 @@ internal sealed class AccountingSmokeRunner
             "Tax payable",
             null,
             cancellationToken);
+        var retainedEarnings = await GetOrCreateReusableLedgerAccountAsync(
+            "RetainedEarnings",
+            "Retained earnings",
+            null,
+            cancellationToken);
+        var incomeSummary = await GetOrCreateReusableLedgerAccountAsync(
+            "IncomeSummary",
+            "Income summary",
+            null,
+            cancellationToken);
+        var roundingAdjustment = await GetOrCreateReusableLedgerAccountAsync(
+            "RoundingAdjustment",
+            "Rounding adjustment",
+            null,
+            cancellationToken);
 
         var nextAccountsReceivableSuggestion = await SuggestLedgerAccountCodeAsync("ClientReceivable", cancellationToken);
         SmokeAssertions.Equal(
@@ -206,6 +248,9 @@ internal sealed class AccountingSmokeRunner
             cashOrBank.LedgerAccountId,
             revenue.LedgerAccountId,
             tax.LedgerAccountId,
+            retainedEarnings.LedgerAccountId,
+            incomeSummary.LedgerAccountId,
+            roundingAdjustment.LedgerAccountId,
             [
                 assetHeader.LedgerAccountId,
                 assetTotal.LedgerAccountId,
@@ -213,7 +258,10 @@ internal sealed class AccountingSmokeRunner
                 accountsReceivable.LedgerAccountId,
                 cashOrBank.LedgerAccountId,
                 revenue.LedgerAccountId,
-                tax.LedgerAccountId
+                tax.LedgerAccountId,
+                retainedEarnings.LedgerAccountId,
+                incomeSummary.LedgerAccountId,
+                roundingAdjustment.LedgerAccountId
             ]);
     }
 
@@ -398,6 +446,79 @@ internal sealed class AccountingSmokeRunner
             "reject subsidiary with non-control parent",
             nameof(CreateLedgerAccountCommand.ParentAccountId),
             "Control account");
+    }
+
+    private static async Task AssertPostingPeriodGuardAsync(CancellationToken cancellationToken)
+    {
+        const string Target = "PostingDate";
+        var periods = new InMemoryAccountingPeriodRepository();
+        var guard = new AccountingPeriodPostingGuard(periods);
+        var julyPostingDate = new DateOnly(2026, 7, 15);
+
+        SmokeAssertions.True(
+            await guard.ValidateOpenPeriodAsync(julyPostingDate, Target, cancellationToken: cancellationToken) is null,
+            "posting guard should allow posting before MAIN periods are configured.");
+
+        var julyPeriod = AccountingPeriod.Create(
+            AccountingPeriodId.Create(Guid.NewGuid()),
+            AccountingSetupDefaults.DefaultCompanyCode,
+            "July 2026",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31),
+            new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero));
+        await periods.AddAsync(julyPeriod, cancellationToken);
+
+        SmokeAssertions.True(
+            await guard.ValidateOpenPeriodAsync(julyPostingDate, Target, cancellationToken: cancellationToken) is null,
+            "posting guard should allow dates in an open MAIN period.");
+
+        var missingPeriodError = await guard.ValidateOpenPeriodAsync(
+            new DateOnly(2026, 8, 1),
+            Target,
+            cancellationToken: cancellationToken);
+
+        if (missingPeriodError is null)
+        {
+            throw new SmokeFailureException("posting guard should block dates outside configured MAIN periods.");
+        }
+
+        SmokeAssertions.Equal("validation", missingPeriodError.Code, "missing posting period error code");
+        SmokeAssertions.Equal(Target, missingPeriodError.Target ?? "", "missing posting period error target");
+        SmokeAssertions.True(
+            missingPeriodError.Message.Contains(
+                "No MAIN accounting period contains posting date 2026-08-01",
+                StringComparison.OrdinalIgnoreCase),
+            "missing posting period error should name the MAIN calendar.");
+
+        julyPeriod.Close(
+            new DateTimeOffset(2026, 7, 31, 23, 59, 0, TimeSpan.Zero),
+            AccountingPeriodCloseArtifact.Create(
+                new DateTimeOffset(2026, 7, 31, 23, 59, 0, TimeSpan.Zero),
+                "smoke",
+                1,
+                0,
+                1,
+                0,
+                0,
+                "{}"));
+
+        var closedPeriodError = await guard.ValidateOpenPeriodAsync(
+            julyPostingDate,
+            Target,
+            cancellationToken: cancellationToken);
+
+        if (closedPeriodError is null)
+        {
+            throw new SmokeFailureException("posting guard should block dates in closed MAIN periods.");
+        }
+
+        SmokeAssertions.Equal("conflict", closedPeriodError.Code, "closed posting period error code");
+        SmokeAssertions.Equal(Target, closedPeriodError.Target ?? "", "closed posting period error target");
+        SmokeAssertions.True(
+            closedPeriodError.Message.Contains(
+                "Accounting period July 2026 (2026-07-01 to 2026-07-31) is closed for MAIN",
+                StringComparison.OrdinalIgnoreCase),
+            "closed posting period error should name the closed MAIN period.");
     }
 
     private static bool IsInsideRange(string code, AccountCodeRange range)
@@ -747,6 +868,345 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Equal(5, statement.JournalPostings.Count, "statement journal posting count");
     }
 
+    private async Task AssertGeneralLedgerReportsAsync(
+        LedgerAccounts accounts,
+        DateOnly businessDate,
+        CancellationToken cancellationToken)
+    {
+        var reportDate = businessDate.AddDays(1);
+        var trialBalance = SmokeAssertions.RequireSuccess(
+            await _harness.GetTrialBalance.HandleAsync(
+                new GetTrialBalanceQuery(reportDate, reportDate, CurrencyCode),
+                cancellationToken),
+            "get trial balance");
+
+        SmokeAssertions.Equal(reportDate, trialBalance.FromDate ?? DateOnly.MinValue, "trial balance from date");
+        SmokeAssertions.Equal(reportDate, trialBalance.AsOfDate, "trial balance as-of date");
+        SmokeAssertions.Money(110m, trialBalance.TotalDebit, "trial balance closing debit total");
+        SmokeAssertions.Money(110m, trialBalance.TotalCredit, "trial balance closing credit total");
+        SmokeAssertions.Money(110m, trialBalance.TotalPeriodDebit, "trial balance period debit total");
+        SmokeAssertions.Money(110m, trialBalance.TotalPeriodCredit, "trial balance period credit total");
+        SmokeAssertions.Money(0m, trialBalance.Difference, "trial balance difference");
+
+        var receivableLine = FindTrialBalanceLine(
+            trialBalance,
+            accounts.AccountsReceivableAccountId,
+            "trial balance receivable account");
+        SmokeAssertions.Money(-70m, receivableLine.OpeningBalance, "receivable opening balance");
+        SmokeAssertions.Money(110m, receivableLine.PeriodDebit, "receivable period debit");
+        SmokeAssertions.Money(0m, receivableLine.PeriodCredit, "receivable period credit");
+        SmokeAssertions.Money(40m, receivableLine.DebitBalance, "receivable closing debit balance");
+        SmokeAssertions.Money(0m, receivableLine.CreditBalance, "receivable closing credit balance");
+        SmokeAssertions.Money(40m, receivableLine.NetBalance, "receivable net balance");
+        SmokeAssertions.Equal(1, receivableLine.ActivityCount, "receivable period activity count");
+
+        var receivableActivity = SmokeAssertions.RequireSuccess(
+            await _harness.GetLedgerAccountActivity.HandleAsync(
+                new GetLedgerAccountActivityQuery(
+                    accounts.AccountsReceivableAccountId,
+                    reportDate,
+                    reportDate,
+                    CurrencyCode),
+                cancellationToken),
+            "get receivable account activity");
+
+        SmokeAssertions.Money(-70m, receivableActivity.OpeningBalance, "receivable activity opening balance");
+        SmokeAssertions.Money(110m, receivableActivity.PeriodDebit, "receivable activity period debit");
+        SmokeAssertions.Money(0m, receivableActivity.PeriodCredit, "receivable activity period credit");
+        SmokeAssertions.Money(40m, receivableActivity.EndingBalance, "receivable activity ending balance");
+        SmokeAssertions.Equal(1, receivableActivity.Lines.Count, "receivable activity line count");
+
+        var activityLine = receivableActivity.Lines.Single();
+        SmokeAssertions.Equal(reportDate, activityLine.EntryDate, "receivable activity entry date");
+        SmokeAssertions.Equal("BillingInvoice", activityLine.SourceType, "receivable activity source type");
+        SmokeAssertions.Money(110m, activityLine.Debit, "receivable activity line debit");
+        SmokeAssertions.Money(0m, activityLine.Credit, "receivable activity line credit");
+        SmokeAssertions.Money(40m, activityLine.RunningBalance, "receivable activity line running balance");
+
+        var profitAndLoss = SmokeAssertions.RequireSuccess(
+            await _harness.GetProfitAndLossStatement.HandleAsync(
+                new GetProfitAndLossStatementQuery(reportDate, reportDate, CurrencyCode),
+                cancellationToken),
+            "get profit and loss statement");
+
+        SmokeAssertions.Equal(reportDate, profitAndLoss.FromDate ?? DateOnly.MinValue, "profit and loss from date");
+        SmokeAssertions.Equal(reportDate, profitAndLoss.ToDate, "profit and loss to date");
+        SmokeAssertions.Money(100m, profitAndLoss.TotalRevenue, "profit and loss total revenue");
+        SmokeAssertions.Money(0m, profitAndLoss.TotalExpense, "profit and loss total expense");
+        SmokeAssertions.Money(100m, profitAndLoss.NetIncome, "profit and loss net income");
+
+        var revenueSection = FindProfitAndLossSection(
+            profitAndLoss,
+            "Revenue",
+            "profit and loss revenue section");
+        var revenueLine = revenueSection.Lines.SingleOrDefault(line => line.LedgerAccountId == accounts.RevenueAccountId)
+            ?? throw new SmokeFailureException("profit and loss revenue account was not included.");
+        SmokeAssertions.Money(100m, revenueLine.Amount, "profit and loss revenue line amount");
+        SmokeAssertions.Money(0m, revenueLine.Debit, "profit and loss revenue line debit");
+        SmokeAssertions.Money(100m, revenueLine.Credit, "profit and loss revenue line credit");
+
+        var balanceSheet = SmokeAssertions.RequireSuccess(
+            await _harness.GetBalanceSheet.HandleAsync(
+                new GetBalanceSheetQuery(reportDate, CurrencyCode),
+                cancellationToken),
+            "get balance sheet");
+
+        SmokeAssertions.Equal(reportDate, balanceSheet.AsOfDate, "balance sheet as-of date");
+        SmokeAssertions.Money(110m, balanceSheet.TotalAssets, "balance sheet total assets");
+        SmokeAssertions.Money(10m, balanceSheet.TotalLiabilities, "balance sheet total liabilities");
+        SmokeAssertions.Money(100m, balanceSheet.TotalEquity, "balance sheet total equity");
+        SmokeAssertions.Money(110m, balanceSheet.TotalLiabilitiesAndEquity, "balance sheet liabilities and equity");
+        SmokeAssertions.Money(0m, balanceSheet.Difference, "balance sheet difference");
+
+        var assetSection = FindBalanceSheetSection(
+            balanceSheet,
+            "Asset",
+            "balance sheet asset section");
+        var receivableBalanceSheetLine = assetSection.Lines.SingleOrDefault(
+                line => line.LedgerAccountId == accounts.AccountsReceivableAccountId)
+            ?? throw new SmokeFailureException("balance sheet receivable account was not included.");
+        var cashBalanceSheetLine = assetSection.Lines.SingleOrDefault(
+                line => line.LedgerAccountId == accounts.CashOrBankAccountId)
+            ?? throw new SmokeFailureException("balance sheet cash account was not included.");
+        SmokeAssertions.Money(40m, receivableBalanceSheetLine.Amount, "balance sheet receivable amount");
+        SmokeAssertions.Money(70m, cashBalanceSheetLine.Amount, "balance sheet cash amount");
+
+        var liabilitySection = FindBalanceSheetSection(
+            balanceSheet,
+            "Liability",
+            "balance sheet liability section");
+        var taxBalanceSheetLine = liabilitySection.Lines.SingleOrDefault(
+                line => line.LedgerAccountId == accounts.TaxAccountId)
+            ?? throw new SmokeFailureException("balance sheet tax payable account was not included.");
+        SmokeAssertions.Money(10m, taxBalanceSheetLine.Amount, "balance sheet tax payable amount");
+
+        var equitySection = FindBalanceSheetSection(
+            balanceSheet,
+            "Equity",
+            "balance sheet equity section");
+        var currentEarningsLine = equitySection.Lines.SingleOrDefault(line => line.IsSystemLine)
+            ?? throw new SmokeFailureException("balance sheet current earnings line was not included.");
+        if (currentEarningsLine.LedgerAccountId is not null)
+        {
+            throw new SmokeFailureException("balance sheet current earnings line should not have a ledger id.");
+        }
+
+        SmokeAssertions.Equal("Current earnings", currentEarningsLine.Name, "balance sheet current earnings name");
+        SmokeAssertions.Money(100m, currentEarningsLine.Amount, "balance sheet current earnings amount");
+    }
+
+    private async Task AssertPeriodCloseBalanceSheetHandoffAsync(
+        LedgerAccounts accounts,
+        DateOnly businessDate,
+        CancellationToken cancellationToken)
+    {
+        var periodStart = businessDate;
+        var periodEnd = new DateOnly(2026, 7, 31);
+        var period = SmokeAssertions.RequireSuccess(
+            await _harness.CreateAccountingPeriod.HandleAsync(
+                new CreateAccountingPeriodCommand(
+                    AccountingSetupDefaults.DefaultCompanyCode,
+                    $"Smoke July {RunId}",
+                    periodStart,
+                    periodEnd),
+                cancellationToken),
+            "create smoke accounting period");
+
+        var controls = SmokeAssertions.RequireSuccess(
+            await _harness.ConfigureDefaultAccountingControlSettings.HandleAsync(
+                new ConfigureDefaultAccountingControlSettingsCommand(
+                    AccountingSetupDefaults.DefaultCompanyCode),
+                cancellationToken),
+            "configure default accounting controls for close");
+
+        SmokeAssertions.True(controls.IsConfigured, "accounting controls should be configured for close.");
+        SmokeAssertions.Equal(
+            accounts.RetainedEarningsAccountId,
+            controls.RetainedEarningsAccountId ?? Guid.Empty,
+            "default retained earnings control account");
+        SmokeAssertions.Equal(
+            accounts.IncomeSummaryAccountId,
+            controls.IncomeSummaryAccountId ?? Guid.Empty,
+            "default income summary control account");
+        SmokeAssertions.Equal(
+            accounts.RoundingAdjustmentAccountId,
+            controls.RoundingAccountId ?? Guid.Empty,
+            "default rounding control account");
+
+        var closePreview = SmokeAssertions.RequireSuccess(
+            await _harness.GetAccountingPeriodCloseJournalPreview.HandleAsync(
+                new GetAccountingPeriodCloseJournalPreviewQuery(period.AccountingPeriodId),
+                cancellationToken),
+            "get accounting period close preview");
+
+        SmokeAssertions.True(closePreview.CanGenerate, "close preview should be generatable.");
+        SmokeAssertions.Money(100m, closePreview.NetIncome, "close preview net income");
+        SmokeAssertions.Money(200m, closePreview.TotalDebit, "close preview total debit");
+        SmokeAssertions.Money(200m, closePreview.TotalCredit, "close preview total credit");
+        SmokeAssertions.Equal(2, closePreview.Entries.Count, "close preview entry count");
+
+        var closedPeriod = SmokeAssertions.RequireSuccess(
+            await _harness.CloseAccountingPeriod.HandleAsync(
+                new CloseAccountingPeriodCommand(period.AccountingPeriodId, "accounting-smoke"),
+                cancellationToken),
+            "close smoke accounting period");
+
+        SmokeAssertions.Equal("Closed", closedPeriod.Status, "closed period status");
+        SmokeAssertions.Equal(2, closedPeriod.CloseArtifact?.CloseJournalEntries.Count ?? 0, "close artifact journal count");
+
+        var postCloseProfitAndLoss = SmokeAssertions.RequireSuccess(
+            await _harness.GetProfitAndLossStatement.HandleAsync(
+                new GetProfitAndLossStatementQuery(periodStart, periodEnd, CurrencyCode),
+                cancellationToken),
+            "get post-close profit and loss");
+
+        SmokeAssertions.Money(0m, postCloseProfitAndLoss.TotalRevenue, "post-close profit and loss revenue");
+        SmokeAssertions.Money(0m, postCloseProfitAndLoss.TotalExpense, "post-close profit and loss expense");
+        SmokeAssertions.Money(0m, postCloseProfitAndLoss.NetIncome, "post-close profit and loss net income");
+
+        var postCloseBalanceSheet = SmokeAssertions.RequireSuccess(
+            await _harness.GetBalanceSheet.HandleAsync(
+                new GetBalanceSheetQuery(periodEnd, CurrencyCode),
+                cancellationToken),
+            "get post-close balance sheet");
+
+        SmokeAssertions.Money(110m, postCloseBalanceSheet.TotalAssets, "post-close balance sheet total assets");
+        SmokeAssertions.Money(10m, postCloseBalanceSheet.TotalLiabilities, "post-close balance sheet total liabilities");
+        SmokeAssertions.Money(100m, postCloseBalanceSheet.TotalEquity, "post-close balance sheet total equity");
+        SmokeAssertions.Money(110m, postCloseBalanceSheet.TotalLiabilitiesAndEquity, "post-close balance sheet liabilities and equity");
+        SmokeAssertions.Money(0m, postCloseBalanceSheet.Difference, "post-close balance sheet difference");
+
+        var equitySection = FindBalanceSheetSection(
+            postCloseBalanceSheet,
+            "Equity",
+            "post-close balance sheet equity section");
+        var retainedEarningsLine = equitySection.Lines.SingleOrDefault(
+                line => line.LedgerAccountId == accounts.RetainedEarningsAccountId)
+            ?? throw new SmokeFailureException("post-close retained earnings account was not included.");
+
+        SmokeAssertions.Money(100m, retainedEarningsLine.Amount, "post-close retained earnings amount");
+
+        if (equitySection.Lines.Any(line => line.IsSystemLine))
+        {
+            throw new SmokeFailureException("post-close balance sheet should not include current earnings.");
+        }
+    }
+
+    private async Task AssertSourceDocumentReadbackAsync(
+        GenerateInvoiceDraftResult invoice,
+        IssueInvoiceResult issuedInvoice,
+        RecordInvoicePaymentResult payment,
+        IssueCreditNoteResult creditNote,
+        IssueClientRefundResult refund,
+        CancellationToken cancellationToken)
+    {
+        var invoiceSource = await ResolveSourceDocumentAsync(
+            issuedInvoice.JournalEntryId,
+            "Invoice",
+            cancellationToken);
+        SmokeAssertions.Equal(invoice.InvoiceId, invoiceSource.DocumentId ?? Guid.Empty, "invoice source document id");
+        SmokeAssertions.Equal("billing", invoiceSource.DashboardModule ?? "", "invoice source dashboard module");
+
+        var invoiceDocument = SmokeAssertions.RequireSuccess(
+            await _harness.GetInvoiceDocument.HandleAsync(
+                new GetInvoiceDocumentQuery(invoiceSource.DocumentId ?? Guid.Empty),
+                cancellationToken),
+            "get invoice source document");
+        SmokeAssertions.Equal(invoice.InvoiceId, invoiceDocument.Invoice.InvoiceId, "invoice document invoice id");
+        SmokeAssertions.Equal(
+            issuedInvoice.JournalEntryId,
+            invoiceDocument.IssuedInvoice?.JournalEntryId ?? Guid.Empty,
+            "invoice document issue journal id");
+        SmokeAssertions.Equal(
+            creditNote.CreditNoteId,
+            invoiceDocument.CreditNote?.CreditNoteId ?? Guid.Empty,
+            "invoice document credit note id");
+        SmokeAssertions.True(invoiceDocument.VoidedInvoice is null, "invoice document should not include a void journal.");
+
+        var paymentJournalEntryId = payment.JournalEntryId
+            ?? throw new SmokeFailureException("payment journal entry id should be present.");
+        var paymentSource = await ResolveSourceDocumentAsync(
+            paymentJournalEntryId,
+            "Payment",
+            cancellationToken);
+        SmokeAssertions.Equal(payment.PaymentId, paymentSource.DocumentId ?? Guid.Empty, "payment source document id");
+        SmokeAssertions.Equal("payments", paymentSource.DashboardModule ?? "", "payment source dashboard module");
+
+        var paymentDocument = SmokeAssertions.RequireSuccess(
+            await _harness.GetInvoicePaymentDocument.HandleAsync(
+                new GetInvoicePaymentDocumentQuery(paymentSource.DocumentId ?? Guid.Empty),
+                cancellationToken),
+            "get payment source document");
+        SmokeAssertions.Equal(invoice.InvoiceId, paymentDocument.Invoice.InvoiceId, "payment document invoice id");
+        SmokeAssertions.Equal(payment.PaymentId, paymentDocument.Payment.PaymentId, "payment document payment id");
+        SmokeAssertions.Equal(
+            payment.JournalEntryId ?? Guid.Empty,
+            paymentDocument.Payment.JournalEntryId ?? Guid.Empty,
+            "payment document journal id");
+        SmokeAssertions.True(paymentDocument.Reversal is null, "payment document should not include a reversal.");
+
+        var creditNoteSource = await ResolveSourceDocumentAsync(
+            creditNote.JournalEntryId,
+            "CreditNote",
+            cancellationToken);
+        SmokeAssertions.Equal(
+            creditNote.CreditNoteId,
+            creditNoteSource.DocumentId ?? Guid.Empty,
+            "credit note source document id");
+
+        var creditNoteDocument = SmokeAssertions.RequireSuccess(
+            await _harness.GetCreditNoteDocument.HandleAsync(
+                new GetCreditNoteDocumentQuery(creditNoteSource.DocumentId ?? Guid.Empty),
+                cancellationToken),
+            "get credit note source document");
+        SmokeAssertions.Equal(invoice.InvoiceId, creditNoteDocument.Invoice.InvoiceId, "credit note invoice id");
+        SmokeAssertions.Equal(
+            creditNote.CreditNoteId,
+            creditNoteDocument.CreditNote.CreditNoteId,
+            "credit note document id");
+        SmokeAssertions.Equal(
+            creditNote.JournalEntryId,
+            creditNoteDocument.CreditNote.JournalEntryId,
+            "credit note journal id");
+
+        var refundSource = await ResolveSourceDocumentAsync(
+            refund.JournalEntryId,
+            "ClientRefund",
+            cancellationToken);
+        SmokeAssertions.Equal(refund.RefundId, refundSource.DocumentId ?? Guid.Empty, "refund source document id");
+        SmokeAssertions.Equal("refund", refundSource.DashboardStep ?? "", "refund source dashboard step");
+
+        var refundDocument = SmokeAssertions.RequireSuccess(
+            await _harness.GetClientRefundDocument.HandleAsync(
+                new GetClientRefundDocumentQuery(refundSource.DocumentId ?? Guid.Empty),
+                cancellationToken),
+            "get refund source document");
+        SmokeAssertions.Equal(refund.RefundId, refundDocument.Refund.RefundId, "refund document id");
+        SmokeAssertions.Equal(refund.JournalEntryId, refundDocument.Refund.JournalEntryId, "refund journal id");
+        SmokeAssertions.Money(refund.ClientBalanceBefore, refundDocument.Refund.ClientBalanceBefore, "refund readback balance before");
+        SmokeAssertions.Money(refund.ClientBalanceAfter, refundDocument.Refund.ClientBalanceAfter, "refund readback balance after");
+    }
+
+    private async Task<JournalEntrySourceDocumentResult> ResolveSourceDocumentAsync(
+        Guid journalEntryId,
+        string expectedDocumentKind,
+        CancellationToken cancellationToken)
+    {
+        var sourceDocument = SmokeAssertions.RequireSuccess(
+            await _harness.GetJournalEntrySourceDocument.HandleAsync(
+                new GetJournalEntrySourceDocumentQuery(journalEntryId),
+                cancellationToken),
+            $"resolve {expectedDocumentKind} source document");
+
+        SmokeAssertions.True(sourceDocument.IsResolved, $"{expectedDocumentKind} source document should resolve.");
+        SmokeAssertions.Equal(
+            expectedDocumentKind,
+            sourceDocument.DocumentKind ?? "",
+            $"{expectedDocumentKind} source document kind");
+
+        return sourceDocument;
+    }
+
     private async Task AssertJournalAndOutboxShapeAsync(CancellationToken cancellationToken)
     {
         var journalEntries = (await _harness.JournalEntries.ListAsync(cancellationToken: cancellationToken))
@@ -865,6 +1325,35 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Money(totalDebit, totalCredit, label);
     }
 
+    private static TrialBalanceLineResult FindTrialBalanceLine(
+        GetTrialBalanceResult trialBalance,
+        Guid ledgerAccountId,
+        string label)
+    {
+        return trialBalance.Lines.SingleOrDefault(line => line.LedgerAccountId == ledgerAccountId)
+            ?? throw new SmokeFailureException($"{label} was not included.");
+    }
+
+    private static ProfitAndLossStatementSectionResult FindProfitAndLossSection(
+        GetProfitAndLossStatementResult statement,
+        string sectionType,
+        string label)
+    {
+        return statement.Sections.SingleOrDefault(section =>
+            string.Equals(section.Type, sectionType, StringComparison.OrdinalIgnoreCase))
+            ?? throw new SmokeFailureException($"{label} was not included.");
+    }
+
+    private static BalanceSheetSectionResult FindBalanceSheetSection(
+        GetBalanceSheetResult statement,
+        string sectionType,
+        string label)
+    {
+        return statement.Sections.SingleOrDefault(section =>
+            string.Equals(section.Type, sectionType, StringComparison.OrdinalIgnoreCase))
+            ?? throw new SmokeFailureException($"{label} was not included.");
+    }
+
     private string Code(string prefix)
     {
         return $"{prefix}{_runId}";
@@ -880,5 +1369,8 @@ internal sealed class AccountingSmokeRunner
         Guid CashOrBankAccountId,
         Guid RevenueAccountId,
         Guid TaxAccountId,
+        Guid RetainedEarningsAccountId,
+        Guid IncomeSummaryAccountId,
+        Guid RoundingAdjustmentAccountId,
         IReadOnlyCollection<Guid> ReconciledLedgerAccountIds);
 }

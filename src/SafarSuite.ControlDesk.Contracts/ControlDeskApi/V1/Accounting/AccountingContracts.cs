@@ -166,6 +166,9 @@ public sealed record ConfigureAccountingControlSettingsRequest(
     Guid? IncomeSummaryAccountId,
     Guid? RoundingAccountId);
 
+public sealed record ConfigureDefaultAccountingControlSettingsRequest(
+    string? CompanyCode);
+
 public sealed record AccountingControlSettingsResponse(
     string CompanyCode,
     string BaseCurrencyCode,
@@ -283,10 +286,13 @@ public sealed record ListJournalEntriesResponse(
     IReadOnlyCollection<JournalEntrySummaryResponse> Entries);
 
 public sealed record TrialBalanceResponse(
+    DateOnly? FromDate,
     DateOnly AsOfDate,
     string CurrencyCode,
     decimal TotalDebit,
     decimal TotalCredit,
+    decimal TotalPeriodDebit,
+    decimal TotalPeriodCredit,
     decimal Difference,
     IReadOnlyCollection<TrialBalanceLineResponse> Lines);
 
@@ -296,10 +302,67 @@ public sealed record TrialBalanceLineResponse(
     string Name,
     string Type,
     string NormalBalance,
+    decimal OpeningBalance,
+    decimal PeriodDebit,
+    decimal PeriodCredit,
     decimal DebitBalance,
     decimal CreditBalance,
     decimal NetBalance,
     int ActivityCount);
+
+public sealed record ProfitAndLossStatementResponse(
+    DateOnly? FromDate,
+    DateOnly ToDate,
+    string CurrencyCode,
+    decimal TotalRevenue,
+    decimal TotalExpense,
+    decimal NetIncome,
+    IReadOnlyCollection<ProfitAndLossStatementSectionResponse> Sections);
+
+public sealed record ProfitAndLossStatementSectionResponse(
+    string Type,
+    string Title,
+    decimal Total,
+    IReadOnlyCollection<ProfitAndLossStatementLineResponse> Lines);
+
+public sealed record ProfitAndLossStatementLineResponse(
+    Guid LedgerAccountId,
+    string Code,
+    string Name,
+    string Type,
+    string NormalBalance,
+    decimal Debit,
+    decimal Credit,
+    decimal Amount,
+    int ActivityCount);
+
+public sealed record BalanceSheetResponse(
+    DateOnly AsOfDate,
+    string CurrencyCode,
+    decimal TotalAssets,
+    decimal TotalLiabilities,
+    decimal TotalEquity,
+    decimal TotalLiabilitiesAndEquity,
+    decimal Difference,
+    IReadOnlyCollection<BalanceSheetSectionResponse> Sections);
+
+public sealed record BalanceSheetSectionResponse(
+    string Type,
+    string Title,
+    decimal Total,
+    IReadOnlyCollection<BalanceSheetLineResponse> Lines);
+
+public sealed record BalanceSheetLineResponse(
+    Guid? LedgerAccountId,
+    string Code,
+    string Name,
+    string Type,
+    string NormalBalance,
+    decimal Debit,
+    decimal Credit,
+    decimal Amount,
+    int ActivityCount,
+    bool IsSystemLine);
 
 public sealed record PostManualJournalEntryRequest(
     DateOnly EntryDate,
@@ -375,6 +438,9 @@ public sealed record LedgerAccountActivityResponse(
     DateOnly? FromDate,
     DateOnly? ToDate,
     string? CurrencyCode,
+    decimal OpeningBalance,
+    decimal PeriodDebit,
+    decimal PeriodCredit,
     decimal EndingBalance,
     IReadOnlyCollection<LedgerAccountActivityLineResponse> Lines);
 

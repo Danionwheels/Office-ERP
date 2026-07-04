@@ -3,11 +3,13 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPerio
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountCodeRange;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetBalanceSheet;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntry;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
@@ -15,6 +17,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepa
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseReadiness;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountCodeRanges;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountingPeriods;
@@ -61,9 +64,12 @@ using SafarSuite.ControlDesk.Application.Modules.Contracts;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.GetClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ListClientContracts;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.ListProductAccessCatalog;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ListProductModules;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.PublishProductAccessCatalogCommand;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ReplaceActiveClientContract;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.SaveProductAccessCatalog;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.SuspendClientContract;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationBootstrapPackage;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
@@ -112,9 +118,12 @@ public static class ControlDeskServiceRegistration
             configuration.GetSection(ControlCloudPortalInvitationOptions.SectionName));
         services.Configure<ProductModuleCatalogOptions>(
             configuration.GetSection(ProductModuleCatalogOptions.SectionName));
+        services.Configure<ProductKernelCommandIssuerOptions>(
+            configuration.GetSection(ProductKernelCommandIssuerOptions.SectionName));
         services.AddSingleton<ControlCloudEnvelopeBuilder>();
         services.AddSingleton<ICloudOutboxPublishPolicy, ConfiguredCloudOutboxPublishPolicy>();
-        services.AddSingleton<IProductModuleCatalog, ConfiguredProductModuleCatalog>();
+        services.AddSingleton<ConfiguredProductModuleCatalog>();
+        services.AddScoped<IProductModuleCatalog, PersistedProductModuleCatalog>();
         AddControlCloudPublisher(services, configuration);
         services.AddHttpClient<IControlCloudInstallationStatusClient, HttpControlCloudInstallationStatusClient>();
         services.AddHttpClient<IControlCloudInstallationProvisioningClient, HttpControlCloudInstallationProvisioningClient>();
@@ -122,6 +131,7 @@ public static class ControlDeskServiceRegistration
         services.AddHttpClient<IControlCloudInstallationCommandClient, HttpControlCloudInstallationCommandClient>();
         services.AddHttpClient<IControlCloudAuditClient, HttpControlCloudAuditClient>();
         services.AddHttpClient<IClientPortalInvitationClient, HttpClientPortalInvitationClient>();
+        services.AddHttpClient<IProductKernelCommandIssuerClient, HttpProductKernelCommandIssuerClient>();
 
         AddPersistence(services, configuration);
 
@@ -155,7 +165,10 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<CreateClientContractHandler>();
         services.AddScoped<GetClientContractHandler>();
         services.AddScoped<ListClientContractsHandler>();
+        services.AddScoped<ListProductAccessCatalogHandler>();
         services.AddScoped<ListProductModulesHandler>();
+        services.AddScoped<PublishProductAccessCatalogCommandHandler>();
+        services.AddScoped<SaveProductAccessCatalogHandler>();
         services.AddScoped<SuspendClientContractHandler>();
         services.AddScoped<ReplaceActiveClientContractHandler>();
         services.AddScoped<AccountingSetupDefaults>();
@@ -165,6 +178,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<AccountingControlSettingsResultFactory>();
         services.AddScoped<GetAccountingControlSettingsHandler>();
         services.AddScoped<ConfigureAccountingControlSettingsHandler>();
+        services.AddScoped<ConfigureDefaultAccountingControlSettingsHandler>();
         services.AddScoped<AccountingPeriodPostingGuard>();
         services.AddScoped<AccountingPeriodCloseReadinessService>();
         services.AddScoped<GetAccountingPeriodCloseReadinessHandler>();
@@ -191,6 +205,8 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<VoidManualJournalEntryHandler>();
         services.AddScoped<GetLedgerAccountActivityHandler>();
         services.AddScoped<GetTrialBalanceHandler>();
+        services.AddScoped<GetProfitAndLossStatementHandler>();
+        services.AddScoped<GetBalanceSheetHandler>();
         services.AddScoped<ListCloudOutboxMessagesHandler>();
         services.AddScoped<GetCloudInstallationStatusHandler>();
         services.AddScoped<GetCloudInstallationDiagnosticsHandler>();
@@ -285,6 +301,7 @@ public static class ControlDeskServiceRegistration
 
             services.AddScoped<IClientRepository, EfClientRepository>();
             services.AddScoped<IContractRepository, EfContractRepository>();
+            services.AddScoped<IProductAccessCatalogRepository, EfProductAccessCatalogRepository>();
             services.AddScoped<IClientAccountingProfileRepository, EfClientAccountingProfileRepository>();
             services.AddScoped<IClientDeploymentRepository, EfClientDeploymentRepository>();
             services.AddScoped<IAccountCodeRangeRepository, EfAccountCodeRangeRepository>();
@@ -314,6 +331,7 @@ public static class ControlDeskServiceRegistration
 
         services.AddSingleton<IClientRepository, InMemoryClientRepository>();
         services.AddSingleton<IContractRepository, InMemoryContractRepository>();
+        services.AddSingleton<IProductAccessCatalogRepository, InMemoryProductAccessCatalogRepository>();
         services.AddSingleton<IClientAccountingProfileRepository, InMemoryClientAccountingProfileRepository>();
         services.AddSingleton<IClientDeploymentRepository, InMemoryClientDeploymentRepository>();
         services.AddSingleton<IAccountCodeRangeRepository, InMemoryAccountCodeRangeRepository>();
