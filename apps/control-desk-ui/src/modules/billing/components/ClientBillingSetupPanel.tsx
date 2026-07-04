@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   Banknote,
   CircleDollarSign,
   FileCheck2,
@@ -325,25 +326,17 @@ export function ClientBillingSetupPanel({
           <span>Billing setup</span>
           <h2>{activeBillingStepItem.label}</h2>
         </div>
-        <div className="billing-step-summary-grid">
-          {billingSteps.map((step) => (
-            <button
-              className={`billing-step-summary ${step.tone}${
-                activeBillingStep === step.step ? " active" : ""
-              }`}
-              key={step.step}
-              type="button"
-              onClick={() => setActiveBillingStep(step.step)}
-            >
-              <step.Icon size={16} />
-              <span>
-                <strong>{step.label}</strong>
-                <small>{step.summary}</small>
-              </span>
-            </button>
-          ))}
+        <div className={`billing-step-current ${activeBillingStepItem.tone}`}>
+          <span>Current status</span>
+          <strong>{activeBillingStepItem.summary}</strong>
         </div>
       </header>
+
+      <BillingFlowRegister
+        activeStep={activeBillingStep}
+        onSelectStep={setActiveBillingStep}
+        steps={billingSteps}
+      />
 
       <div
         className={`client-panel billing-accounting-panel billing-light-panel${
@@ -1365,6 +1358,75 @@ export function ClientBillingSetupPanel({
   );
 }
 
+function BillingFlowRegister({
+  activeStep,
+  onSelectStep,
+  steps
+}: {
+  activeStep: BillingStep;
+  onSelectStep: (step: BillingStep) => void;
+  steps: BillingStepItem[];
+}) {
+  return (
+    <div className="billing-flow-register">
+      <table className="billing-flow-table" aria-label="Billing workflow">
+        <thead>
+          <tr>
+            <th className="billing-flow-sequence" scope="col">No.</th>
+            <th scope="col">Work area</th>
+            <th className="billing-flow-status-cell" scope="col">Status</th>
+            <th className="billing-flow-cue-cell" scope="col">Next action</th>
+            <th className="billing-flow-open" scope="col">Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          {steps.map((step, index) => {
+            const isActive = activeStep === step.step;
+
+            return (
+              <tr
+                className={`${step.tone}${isActive ? " active" : ""}`}
+                key={step.step}
+              >
+                <td className="billing-flow-sequence">
+                  <span>{index + 1}</span>
+                </td>
+                <td>
+                  <div className="billing-flow-step">
+                    <step.Icon size={16} />
+                    <span>
+                      <strong>{step.label}</strong>
+                      <small>{isActive ? "Current work area" : "Available"}</small>
+                    </span>
+                  </div>
+                </td>
+                <td className="billing-flow-status-cell">
+                  <span className={`billing-flow-status ${step.tone}`}>
+                    {step.summary}
+                  </span>
+                </td>
+                <td className="billing-flow-cue-cell">{getBillingStepCue(step.step)}</td>
+                <td className="billing-flow-open">
+                  <button
+                    className="table-icon-button"
+                    type="button"
+                    onClick={() => onSelectStep(step.step)}
+                    aria-current={isActive ? "step" : undefined}
+                    aria-label={`Open ${step.label}`}
+                    title={`Open ${step.label}`}
+                  >
+                    <ArrowRight size={14} />
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function AccountDefaults({ account }: { account: LedgerAccountFormInput }) {
   return (
     <div className="billing-account-defaults">
@@ -1438,6 +1500,19 @@ function getBillingStepItems({
       Icon: FileCheck2
     }
   ];
+}
+
+function getBillingStepCue(step: BillingStep): string {
+  switch (step) {
+    case "accounting":
+      return "Confirm AR account and customer profile";
+    case "rules":
+      return "Set revenue account, charge code, and rule";
+    case "draft":
+      return "Generate draft with billing and due dates";
+    case "issue":
+      return "Post invoice, void, or issue credit note";
+  }
 }
 
 function chargeRulePatchForChargeCode(

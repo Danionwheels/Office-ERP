@@ -90,7 +90,7 @@ export function ClientDetailPanel({
 
   return (
     <section className="client-detail-panel profile-workspace">
-      <div className="client-detail-header profile-hero">
+      <div className="client-detail-header profile-hero profile-record-header">
         <div>
           <span>{client.code}</span>
           <h1>{client.displayName}</h1>
@@ -106,6 +106,24 @@ export function ClientDetailPanel({
             Suspend
           </button>
         </div>
+        <dl className="profile-record-strip">
+          <div>
+            <dt>Legal name</dt>
+            <dd>{client.legalName}</dd>
+          </div>
+          <div>
+            <dt>Contacts</dt>
+            <dd>{client.contacts.length}</dd>
+          </div>
+          <div>
+            <dt>Portal invites</dt>
+            <dd>{portalInvitations.length}</dd>
+          </div>
+          <div>
+            <dt>Currency</dt>
+            <dd>{accountingProfile?.defaultCurrencyCode ?? "-"}</dd>
+          </div>
+        </dl>
       </div>
 
       <div className="client-detail-grid profile-top-grid">
@@ -113,7 +131,7 @@ export function ClientDetailPanel({
           <div className="client-panel-heading">
             <div>
               <span>Profile</span>
-              <strong>Client details</strong>
+              <strong>Master record</strong>
             </div>
             <button className="icon-button primary" type="submit" disabled={isBusy} title="Save client">
               <Save size={16} />
@@ -122,6 +140,10 @@ export function ClientDetailPanel({
           </div>
 
           <div className="profile-form-grid">
+            <label className="form-field">
+              <span>Client code</span>
+              <input value={client.code} readOnly />
+            </label>
             <label className="form-field">
               <span>Legal name</span>
               <input
@@ -197,63 +219,73 @@ export function ClientDetailPanel({
             </div>
           )}
 
-          <div className="portal-invitation-list">
-            {portalInvitations.length === 0 && (
-              <div className="client-empty-state">No portal invitations loaded</div>
-            )}
-            {portalInvitations.map((invitation) => {
-              const status = invitation.status.toLowerCase();
-              const canChange = status !== "accepted" && status !== "revoked";
+          <div className="profile-register-frame portal-invitation-register">
+            <table className="profile-register-table profile-portal-table">
+              <thead>
+                <tr>
+                  <th scope="col">Email</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Invited</th>
+                  <th scope="col">Expires</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portalInvitations.length === 0 && (
+                  <tr>
+                    <td colSpan={6}>
+                      <div className="client-empty-state">No portal invitations loaded</div>
+                    </td>
+                  </tr>
+                )}
+                {portalInvitations.map((invitation) => {
+                  const status = invitation.status.toLowerCase();
+                  const canChange = status !== "accepted" && status !== "revoked";
 
-              return (
-                <article className="portal-invitation-item" key={invitation.invitationId}>
-                  <header>
-                    <div>
-                      <strong>{invitation.email}</strong>
-                      <span>{invitation.role}</span>
-                    </div>
-                    <span className={`status-pill ${status}`}>{invitation.status}</span>
-                  </header>
-                  <dl>
-                    <div>
-                      <dt>Invited</dt>
-                      <dd>{formatDateTime(invitation.invitedAtUtc)}</dd>
-                    </div>
-                    <div>
-                      <dt>Expires</dt>
-                      <dd>{formatDateTime(invitation.expiresAtUtc)}</dd>
-                    </div>
-                  </dl>
-                  <div className="portal-invitation-actions">
-                    <button
-                      className="icon-button"
-                      type="button"
-                      onClick={() => onResendPortalInvitation(invitation.invitationId)}
-                      disabled={isBusy || !canChange}
-                      title="Resend invitation"
-                    >
-                      <Send size={14} />
-                      Resend
-                    </button>
-                    <button
-                      className="icon-button"
-                      type="button"
-                      onClick={() => onRevokePortalInvitation(invitation.invitationId)}
-                      disabled={isBusy || !canChange}
-                      title="Revoke invitation"
-                    >
-                      <XCircle size={14} />
-                      Revoke
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
+                  return (
+                    <tr key={invitation.invitationId}>
+                      <td title={invitation.email}>{invitation.email}</td>
+                      <td>{invitation.role}</td>
+                      <td>
+                        <span className={`status-pill ${status}`}>{invitation.status}</span>
+                      </td>
+                      <td>{formatDateTime(invitation.invitedAtUtc)}</td>
+                      <td>{formatDateTime(invitation.expiresAtUtc)}</td>
+                      <td>
+                        <div className="profile-register-actions">
+                          <button
+                            className="mini-button"
+                            type="button"
+                            onClick={() => onResendPortalInvitation(invitation.invitationId)}
+                            disabled={isBusy || !canChange}
+                            title="Resend invitation"
+                          >
+                            <Send size={13} />
+                            Resend
+                          </button>
+                          <button
+                            className="mini-button"
+                            type="button"
+                            onClick={() => onRevokePortalInvitation(invitation.invitationId)}
+                            disabled={isBusy || !canChange}
+                            title="Revoke invitation"
+                          >
+                            <XCircle size={13} />
+                            Revoke
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
           <form className="client-contact-form profile-inline-form" onSubmit={handleAddContact}>
-            <div className="contact-form-grid">
-              <label className="form-field">
+            <div className="contact-form-grid profile-contact-form-grid">
+              <label className="form-field contact-role-field">
                 <span>Role</span>
                 <select
                   value={contactValue.role}
@@ -268,7 +300,7 @@ export function ClientDetailPanel({
                   <option value="Other">Other</option>
                 </select>
               </label>
-              <label className="form-field">
+              <label className="form-field contact-name-field">
                 <span>Full name</span>
                 <input
                   value={contactValue.fullName}
@@ -276,7 +308,7 @@ export function ClientDetailPanel({
                   disabled={isBusy}
                 />
               </label>
-              <label className="form-field">
+              <label className="form-field contact-title-field">
                 <span>Title</span>
                 <input
                   value={contactValue.jobTitle}
@@ -284,7 +316,7 @@ export function ClientDetailPanel({
                   disabled={isBusy}
                 />
               </label>
-              <label className="form-field">
+              <label className="form-field contact-email-field">
                 <span>Email</span>
                 <input
                   value={contactValue.email}
@@ -292,7 +324,7 @@ export function ClientDetailPanel({
                   disabled={isBusy}
                 />
               </label>
-              <label className="form-field">
+              <label className="form-field contact-phone-field">
                 <span>Phone</span>
                 <input
                   value={contactValue.phone}
@@ -318,42 +350,56 @@ export function ClientDetailPanel({
             </div>
           </form>
 
-          <div className="contact-list">
-            {client.contacts.length === 0 && <div className="client-empty-state">No contacts</div>}
-            {client.contacts.map((contact) => (
-              <article className="contact-item" key={contact.clientContactId}>
-                <header>
-                  <div className="contact-card-title">
-                    <strong>{contact.fullName}</strong>
-                    <span>{contact.isPrimary ? `${contact.role} primary` : contact.role}</span>
-                  </div>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    onClick={() => onInvitePortalContact(contact.clientContactId)}
-                    disabled={isBusy || contact.email === null || contact.email === undefined || contact.email.trim() === ""}
-                    title="Invite to portal"
-                  >
-                    <Send size={14} />
-                    Invite
-                  </button>
-                </header>
-                <dl>
-                  <div>
-                    <dt>Title</dt>
-                    <dd>{contact.jobTitle ?? "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>Email</dt>
-                    <dd>{contact.email ?? "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>Phone</dt>
-                    <dd>{contact.phone ?? "-"}</dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
+          <div className="profile-register-frame contact-register">
+            <table className="profile-register-table profile-contact-table">
+              <thead>
+                <tr>
+                  <th scope="col">Contact</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Title</th>
+                  <th scope="col">Email</th>
+                  <th scope="col">Phone</th>
+                  <th scope="col">Portal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {client.contacts.length === 0 && (
+                  <tr>
+                    <td colSpan={6}>
+                      <div className="client-empty-state">No contacts</div>
+                    </td>
+                  </tr>
+                )}
+                {client.contacts.map((contact) => (
+                  <tr key={contact.clientContactId}>
+                    <td>
+                      <strong title={contact.fullName}>{contact.fullName}</strong>
+                    </td>
+                    <td>
+                      <span className="profile-role-chip">
+                        {contact.role}
+                        {contact.isPrimary && <em>Primary</em>}
+                      </span>
+                    </td>
+                    <td title={contact.jobTitle ?? ""}>{contact.jobTitle ?? "-"}</td>
+                    <td title={contact.email ?? ""}>{contact.email ?? "-"}</td>
+                    <td title={contact.phone ?? ""}>{contact.phone ?? "-"}</td>
+                    <td>
+                      <button
+                        className="mini-button"
+                        type="button"
+                        onClick={() => onInvitePortalContact(contact.clientContactId)}
+                        disabled={isBusy || contact.email === null || contact.email === undefined || contact.email.trim() === ""}
+                        title="Invite to portal"
+                      >
+                        <Send size={13} />
+                        Invite
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 

@@ -151,6 +151,11 @@ Implemented first persisted owner-management slice on 2026-07-04:
 - The Control Desk `Access catalog` view can add, update, and remove module groups and resources, then save the catalog before publishing it to the app product kernel.
 - Saved catalogs keep module-code ownership in Control Desk, so future modules such as Payroll, Travel, Tour, or other paid/core groups can be introduced through catalog data before app-specific module implementation catches up.
 
+Implemented repeatable persistence smoke on 2026-07-05:
+
+- `tools\SafarSuite.ControlDesk.ProductAccessCatalogSmoke` reads the current catalog, saves a temporary owner-managed Payroll group/resource, verifies persisted readback and resolved module codes, then restores the original catalog by default.
+- The smoke can optionally publish the current catalog through `POST /api/v1/contracts/product-access-catalog/product-kernel-command` and import the signed command into app LocalServer when supplied an app CloudServer activation request id and LocalServer URL.
+
 ## Verification Record
 
 Verified app workspace on 2026-07-04:

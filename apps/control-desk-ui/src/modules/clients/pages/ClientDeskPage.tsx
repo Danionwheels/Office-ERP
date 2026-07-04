@@ -4,12 +4,19 @@ import {
   Banknote,
   CheckCircle2,
   Cloud,
+  Download,
+  FilePlus2,
   FileText,
   KeyRound,
   LayoutDashboard,
   ListTree,
+  Plus,
+  Printer,
   ReceiptText,
+  RefreshCw,
   ScrollText,
+  Save,
+  Send,
   UserRound,
   Users,
   type LucideIcon
@@ -208,6 +215,16 @@ type JournalSourceDocumentTarget =
 type PendingJournalSourceOpen = {
   sourceDocument: JournalEntrySourceDocument;
   target: JournalSourceDocumentTarget;
+};
+
+type ModuleCommandItem = {
+  key: string;
+  label: string;
+  title: string;
+  Icon: LucideIcon;
+  onClick?: () => void | Promise<void>;
+  disabled?: boolean;
+  variant?: "primary" | "default";
 };
 
 type JournalSourceHydrationContext = {
@@ -2153,23 +2170,386 @@ export function ClientDeskPage() {
     setIssuedEntitlementSnapshot(null);
   }
 
+  function focusClientQuickAdd() {
+    setActiveDashboardModule("clients");
+    window.requestAnimationFrame(() => {
+      const codeField = document.querySelector<HTMLInputElement>(".client-window-create input");
+      codeField?.focus();
+      codeField?.select();
+    });
+  }
+
+  async function handleRefreshActiveModuleCommand() {
+    switch (activeDashboardModule) {
+      case "clients":
+        await refreshClients();
+        return;
+      case "contracts":
+        await handleRefreshContractsCommand();
+        return;
+      case "accounting":
+        await accounting.refreshAccountingSetup();
+        return;
+      case "billing":
+        await handleRefreshBillingCommand();
+        return;
+      case "payments":
+      case "statement":
+        await handleRefreshClientStatement();
+        return;
+      case "entitlements":
+        await handleRefreshLatestEntitlementSnapshot();
+        return;
+      case "cloud":
+        await handleRefreshCloudInstallationStatus();
+        return;
+      case "dashboard":
+      case "profile":
+      default:
+        if (selectedClient === null) {
+          await refreshClients();
+          return;
+        }
+
+        await loadClient(selectedClient.clientId);
+    }
+  }
+
+  async function handleRefreshContractsCommand() {
+    await runClientAction(async () => {
+      const [nextProductModules, nextCatalog] = await Promise.all([
+        listProductModules(),
+        listProductAccessCatalog()
+      ]);
+      setProductModules(nextProductModules);
+      setProductAccessCatalog(nextCatalog);
+
+      if (selectedClient !== null) {
+        const nextContracts = await listClientContracts(selectedClient.clientId);
+        const nextActiveContract = getActiveContract(nextContracts);
+        setContracts(sortContracts(nextContracts));
+        await loadClientChargeRules(selectedClient.clientId, nextActiveContract?.contractId);
+      }
+
+      setMessage("Contracts refreshed.");
+    });
+  }
+
+  async function handleRefreshBillingCommand() {
+    await runClientAction(async () => {
+      const nextChargeCodes = await listChargeCodes();
+      setChargeCodes(sortChargeCodes(nextChargeCodes));
+
+      if (selectedClient !== null) {
+        await loadClientChargeRules(selectedClient.clientId, getActiveContract(contracts)?.contractId);
+      }
+
+      setMessage("Billing setup refreshed.");
+    });
+  }
+
+  function getModuleCommandItems(): ModuleCommandItem[] {
+    const clientCommandDisabled = isBusy || selectedClient === null;
+    const canGenerateInvoiceDraft =
+      selectedClient !== null
+      && invoiceDraftForm.contractId.trim() !== ""
+      && invoiceDraftForm.invoiceNumber.trim() !== ""
+      && invoiceDraftForm.issueDate !== ""
+      && invoiceDraftForm.dueDate >= invoiceDraftForm.issueDate
+      && invoiceDraftForm.billingDate !== ""
+      && invoiceDraftForm.currencyCode.trim().length === 3;
+    const canIssueInvoiceFromCommand =
+      invoiceDraft !== null
+      && issuedInvoice === null
+      && invoiceDraft.status === "Draft"
+      && issueInvoiceForm.postingDate !== ""
+      && issueInvoiceForm.accountsReceivableAccountId.trim() !== "";
+    const canRecordPaymentFromCommand =
+      selectedClient !== null
+      && issuedInvoice !== null
+      && invoiceDraft !== null
+      && invoiceDraft.balanceDue > 0;
+    const refreshCommand: ModuleCommandItem = {
+      key: "refresh",
+      label: "Refresh",
+      title: "Refresh this section",
+      Icon: RefreshCw,
+      onClick: handleRefreshActiveModuleCommand,
+      disabled: isBusy
+    };
+
+    switch (activeDashboardModule) {
+      case "clients":
+        return [
+          refreshCommand,
+          {
+            key: "new-client",
+            label: "New",
+            title: "Move to quick add",
+            Icon: Plus,
+            onClick: focusClientQuickAdd,
+            disabled: isBusy,
+            variant: "primary"
+          }
+        ];
+      case "dashboard":
+        return [
+          refreshCommand,
+          {
+            key: "client-register",
+            label: "Clients",
+            title: "Open client register",
+            Icon: Users,
+            onClick: () => setActiveDashboardModule("clients")
+          },
+          {
+            key: "statement",
+            label: "Statement",
+            title: "Open client statement",
+            Icon: ScrollText,
+            onClick: () => setActiveDashboardModule("statement"),
+            disabled: clientCommandDisabled
+          }
+        ];
+      case "profile":
+        return [
+          refreshCommand,
+          {
+            key: "save-profile",
+            label: "Save",
+            title: "Save client profile",
+            Icon: Save,
+            onClick: handleUpdateClient,
+            disabled: clientCommandDisabled,
+            variant: "primary"
+          }
+        ];
+      case "contracts":
+        return [
+          refreshCommand,
+          {
+            key: "create-contract",
+            label: "New",
+            title: "Create contract from the current contract form",
+            Icon: Plus,
+            onClick: handleCreateContract,
+            disabled: clientCommandDisabled,
+            variant: "primary"
+          },
+          {
+            key: "replace-contract",
+            label: "Replace",
+            title: "Replace the active contract from the current contract form",
+            Icon: Send,
+            onClick: handleReplaceActiveContract,
+            disabled: clientCommandDisabled
+          },
+          {
+            key: "catalog",
+            label: "Catalog",
+            title: "Refresh product access catalog",
+            Icon: ListTree,
+            onClick: handleRefreshProductAccessCatalog,
+            disabled: isBusy
+          }
+        ];
+      case "accounting":
+        return [
+          refreshCommand,
+          {
+            key: "reports",
+            label: "Reports",
+            title: "Refresh accounting reports",
+            Icon: FileText,
+            onClick: () => accounting.refreshAccountingReports(),
+            disabled: isBusy
+          },
+          {
+            key: "reconcile",
+            label: "Reconcile",
+            title: "Refresh chart of accounts reconciliation",
+            Icon: CheckCircle2,
+            onClick: () => accounting.refreshLedgerAccountReconciliation(),
+            disabled: isBusy,
+            variant: "primary"
+          }
+        ];
+      case "billing":
+        return [
+          refreshCommand,
+          {
+            key: "save-accounting-profile",
+            label: "Save",
+            title: "Save client accounting profile",
+            Icon: Save,
+            onClick: handleSaveAccountingProfile,
+            disabled: clientCommandDisabled
+          },
+          {
+            key: "generate-draft",
+            label: "Draft",
+            title: "Generate invoice draft",
+            Icon: FilePlus2,
+            onClick: handleGenerateInvoiceDraft,
+            disabled: isBusy || !canGenerateInvoiceDraft,
+            variant: "primary"
+          },
+          {
+            key: "issue-invoice",
+            label: "Issue",
+            title: "Issue the current invoice draft",
+            Icon: Send,
+            onClick: handleIssueInvoice,
+            disabled: isBusy || !canIssueInvoiceFromCommand
+          }
+        ];
+      case "payments":
+        return [
+          refreshCommand,
+          {
+            key: "cash-account",
+            label: "Cash",
+            title: "Create cash or bank account from the current form",
+            Icon: Banknote,
+            onClick: handleCreateCashAccount,
+            disabled: clientCommandDisabled
+          },
+          {
+            key: "record-payment",
+            label: "Receipt",
+            title: "Record the current invoice payment",
+            Icon: ReceiptText,
+            onClick: handleRecordInvoicePayment,
+            disabled: isBusy || !canRecordPaymentFromCommand,
+            variant: "primary"
+          }
+        ];
+      case "entitlements":
+        return [
+          refreshCommand,
+          {
+            key: "issue-entitlement",
+            label: "Issue",
+            title: "Issue entitlement snapshot from paid invoice",
+            Icon: KeyRound,
+            onClick: handleIssueEntitlementSnapshot,
+            disabled: isBusy || !canIssueCurrentEntitlementSnapshot,
+            variant: "primary"
+          }
+        ];
+      case "cloud":
+        return [
+          refreshCommand,
+          {
+            key: "save-deployment",
+            label: "Save",
+            title: "Save client deployment",
+            Icon: Save,
+            onClick: handleSaveClientDeployment,
+            disabled: clientCommandDisabled,
+            variant: "primary"
+          },
+          {
+            key: "setup-token",
+            label: "Token",
+            title: "Create setup token",
+            Icon: KeyRound,
+            onClick: handleCreateCloudSetupToken,
+            disabled: clientCommandDisabled
+          },
+          {
+            key: "bootstrap",
+            label: "Bootstrap",
+            title: "Create bootstrap package",
+            Icon: Download,
+            onClick: handleCreateCloudBootstrapPackage,
+            disabled: clientCommandDisabled
+          }
+        ];
+      case "statement":
+        return [
+          refreshCommand,
+          {
+            key: "billing",
+            label: "Billing",
+            title: "Open billing workspace",
+            Icon: FileText,
+            onClick: () => setActiveDashboardModule("billing"),
+            disabled: clientCommandDisabled
+          },
+          {
+            key: "payments",
+            label: "Payments",
+            title: "Open payment workspace",
+            Icon: Banknote,
+            onClick: () => setActiveDashboardModule("payments"),
+            disabled: clientCommandDisabled
+          }
+        ];
+      default:
+        return [refreshCommand];
+    }
+  }
+
+  function getModuleOutputCommandItems(): ModuleCommandItem[] {
+    return [
+      {
+        key: "print",
+        label: "Print",
+        title: "Print output is not available for this section yet",
+        Icon: Printer,
+        disabled: true
+      },
+      {
+        key: "export",
+        label: "Export",
+        title: "Export output is not available for this section yet",
+        Icon: Download,
+        disabled: true
+      }
+    ];
+  }
+
+  function getModuleCommandStatus() {
+    if (isBusy) {
+      return "Working...";
+    }
+
+    if (activeDashboardModule === "clients") {
+      return `${clients.length} clients`;
+    }
+
+    if (selectedClient === null) {
+      return "Select a client";
+    }
+
+    switch (activeDashboardModule) {
+      case "billing":
+        return invoiceDraft === null
+          ? "No invoice draft"
+          : `${invoiceDraft.invoiceNumber} ${invoiceDraft.status}`;
+      case "payments":
+        return recordedPayment === null
+          ? "No receipt posted"
+          : `${recordedPayment.invoiceNumber} ${recordedPayment.paymentStatus}`;
+      case "entitlements":
+        return issuedEntitlementSnapshot !== null || latestEntitlementSnapshot !== null
+          ? "Snapshot available"
+          : "Snapshot not loaded";
+      case "cloud":
+        return cloudInstallationStatus?.installationStatus ?? "Cloud status not loaded";
+      case "statement":
+        return clientStatement === null ? "Statement not loaded" : "Statement loaded";
+      default:
+        return `${selectedClient.code} selected`;
+    }
+  }
+
   const activeContract = getActiveContract(contracts);
   const canIssueCurrentEntitlementSnapshot = canIssueEntitlementSnapshot(
     invoiceDraft,
     recordedPayment
   );
-  const clientReadinessItems = getClientReadinessItems({
-    activeContract,
-    accountingProfile,
-    productModules,
-    chargeRules: clientChargeRules,
-    issuedEntitlementSnapshot,
-    latestEntitlementSnapshot,
-    latestEntitlementSnapshotMissing,
-    cloudInstallationStatus,
-    latestPortalInvitation,
-    portalInvitations
-  });
   const dashboardMetrics = getDashboardMetrics({
     activeContract,
     accountCodeRangeCount: accounting.accountCodeRanges.length,
@@ -2180,11 +2560,32 @@ export function ClientDeskPage() {
     cloudInstallationStatus,
     clientStatement
   });
+  const dashboardWorkQueueItems = getDashboardWorkQueueItems({
+    clientCount: clients.length,
+    selectedClient,
+    activeContract,
+    accountingProfile,
+    productModules,
+    chargeRules: clientChargeRules,
+    invoiceDraft,
+    issuedInvoice,
+    recordedPayment,
+    issuedEntitlementSnapshot,
+    latestEntitlementSnapshot,
+    latestEntitlementSnapshotMissing,
+    cloudInstallationStatus,
+    latestPortalInvitation,
+    portalInvitations,
+    clientStatement
+  });
   const dashboardNavigation = getDashboardNavigation(dashboardMetrics, clients.length, selectedClient);
   const activeNavigationItem = getDashboardNavigationItem(
     dashboardNavigation,
     activeDashboardModule
   );
+  const moduleCommandItems = getModuleCommandItems();
+  const moduleOutputCommandItems = getModuleOutputCommandItems();
+  const moduleCommandStatus = getModuleCommandStatus();
 
   return (
     <div className="client-desk control-desk-shell">
@@ -2254,12 +2655,12 @@ export function ClientDeskPage() {
             )}
           </header>
 
-          {selectedClient !== null && (
-            <ClientReadinessStrip
-              items={clientReadinessItems}
-              onNavigate={setActiveDashboardModule}
-            />
-          )}
+          <ModuleCommandBar
+            label={activeNavigationItem.label}
+            items={moduleCommandItems}
+            outputItems={moduleOutputCommandItems}
+            status={moduleCommandStatus}
+          />
 
           <div className="module-window-body">
             {activeDashboardModule === "clients" && (
@@ -2319,6 +2720,11 @@ export function ClientDeskPage() {
                     </button>
                   ))}
                 </div>
+
+                <DashboardWorkQueue
+                  items={dashboardWorkQueueItems}
+                  onNavigate={setActiveDashboardModule}
+                />
               </section>
             )}
 
@@ -2517,31 +2923,124 @@ export function ClientDeskPage() {
   );
 }
 
-function ClientReadinessStrip({
+function ModuleCommandBar({
+  label,
+  items,
+  outputItems,
+  status
+}: {
+  label: string;
+  items: ModuleCommandItem[];
+  outputItems: ModuleCommandItem[];
+  status: string;
+}) {
+  return (
+    <section className="module-command-bar" aria-label={`${label} commands`}>
+      <div className="module-command-group" role="toolbar" aria-label="Module commands">
+        {items.map((item) => (
+          <button
+            className={`module-command-button ${
+              item.variant === "primary" ? "primary" : ""
+            }`}
+            disabled={item.disabled === true || item.onClick === undefined}
+            key={item.key}
+            onClick={() => {
+              void item.onClick?.();
+            }}
+            title={item.title}
+            type="button"
+          >
+            <item.Icon size={15} />
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="module-command-group module-command-output" role="toolbar" aria-label="Output commands">
+        {outputItems.map((item) => (
+          <button
+            className="module-command-button"
+            disabled
+            key={item.key}
+            title={item.title}
+            type="button"
+          >
+            <item.Icon size={15} />
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <span className="module-command-status">{status}</span>
+    </section>
+  );
+}
+
+function DashboardWorkQueue({
   items,
   onNavigate
 }: {
-  items: ClientReadinessItem[];
+  items: DashboardWorkQueueItem[];
   onNavigate: (module: DashboardModule) => void;
 }) {
+  const openItemCount = items.filter((item) => item.priority !== "done").length;
+
   return (
-    <section className="client-readiness-strip" aria-label="Client readiness">
-      {items.map((item) => (
-        <button
-          className={`client-readiness-item ${item.tone}`}
-          key={item.key}
-          type="button"
-          onClick={() => onNavigate(item.module)}
-          title={item.label}
-        >
-          <item.Icon size={16} />
-          <span>
-            <small>{item.label}</small>
-            <strong>{item.value}</strong>
-            <em>{item.summary}</em>
-          </span>
-        </button>
-      ))}
+    <section className="dashboard-work-queue" aria-label="Dashboard work queue">
+      <div className="dashboard-work-queue-heading">
+        <div>
+          <span>Daily desk</span>
+          <strong>Work queue</strong>
+        </div>
+        <em>{openItemCount === 0 ? "Clear" : `${openItemCount} open`}</em>
+      </div>
+
+      <div className="dashboard-work-queue-frame">
+        <table className="dashboard-work-queue-table">
+          <thead>
+            <tr>
+              <th scope="col">Priority</th>
+              <th scope="col">Area</th>
+              <th scope="col">Work item</th>
+              <th scope="col">Status</th>
+              <th scope="col">Next step</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr className={item.priority} key={item.key}>
+                <td>
+                  <span className={`dashboard-queue-priority ${item.priority}`}>
+                    {formatDashboardQueuePriority(item.priority)}
+                  </span>
+                </td>
+                <td>
+                  <span className="dashboard-queue-area">
+                    <item.Icon size={15} />
+                    {item.area}
+                  </span>
+                </td>
+                <td>
+                  <strong>{item.label}</strong>
+                  <small>{item.detail}</small>
+                </td>
+                <td>{item.status}</td>
+                <td>
+                  <button
+                    className="dashboard-queue-action"
+                    type="button"
+                    onClick={() => onNavigate(item.module)}
+                    title={item.actionLabel}
+                  >
+                    <ArrowRight size={14} />
+                    <span>{item.actionLabel}</span>
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -2564,14 +3063,18 @@ type DashboardNavigationItem = {
   Icon: LucideIcon;
 };
 
-type ClientReadinessItem = {
+type DashboardWorkQueuePriority = "high" | "medium" | "low" | "done";
+
+type DashboardWorkQueueItem = {
   key: string;
+  priority: DashboardWorkQueuePriority;
+  area: string;
   label: string;
-  value: string;
-  summary: string;
-  tone: DashboardMetric["tone"];
-  Icon: LucideIcon;
+  detail: string;
+  status: string;
+  actionLabel: string;
   module: DashboardModule;
+  Icon: LucideIcon;
 };
 
 type DashboardMetricInput = {
@@ -2585,241 +3088,291 @@ type DashboardMetricInput = {
   clientStatement: ClientStatement | null;
 };
 
-type ClientReadinessInput = {
+type DashboardWorkQueueInput = {
+  clientCount: number;
+  selectedClient: ClientDetails | null;
   activeContract: ClientContract | null;
   accountingProfile: ClientAccountingProfile | null;
   productModules: ProductModule[];
   chargeRules: ClientChargeRule[];
+  invoiceDraft: InvoiceDraft | null;
+  issuedInvoice: IssuedInvoice | null;
+  recordedPayment: RecordedInvoicePayment | null;
   issuedEntitlementSnapshot: IssuedEntitlementSnapshot | null;
   latestEntitlementSnapshot: EntitlementSnapshot | null;
   latestEntitlementSnapshotMissing: boolean;
   cloudInstallationStatus: ControlCloudInstallationStatus | null;
   latestPortalInvitation: ClientPortalInvitation | null;
   portalInvitations: ClientPortalInvitation[];
+  clientStatement: ClientStatement | null;
 };
 
-function getClientReadinessItems({
+function getDashboardWorkQueueItems({
+  clientCount,
+  selectedClient,
   activeContract,
   accountingProfile,
   productModules,
   chargeRules,
+  invoiceDraft,
+  issuedInvoice,
+  recordedPayment,
   issuedEntitlementSnapshot,
   latestEntitlementSnapshot,
   latestEntitlementSnapshotMissing,
   cloudInstallationStatus,
   latestPortalInvitation,
-  portalInvitations
-}: ClientReadinessInput): ClientReadinessItem[] {
-  const contractStatus = activeContract?.status ?? "Missing";
-  const contractIsReady = activeContract?.status.toLowerCase() === "active";
+  portalInvitations,
+  clientStatement
+}: DashboardWorkQueueInput): DashboardWorkQueueItem[] {
+  if (selectedClient === null) {
+    return [
+      {
+        key: "select-client",
+        priority: "high",
+        area: "Clients",
+        label: "Select a client",
+        detail: "Open the register before reviewing contracts, billing, payments, or cloud status.",
+        status: `${clientCount} clients`,
+        actionLabel: "Open register",
+        module: "clients",
+        Icon: Users
+      }
+    ];
+  }
 
-  return [
-    {
-      key: "contract",
-      label: "Contract",
-      value: contractStatus,
-      summary: activeContract === null
-        ? "Create agreement"
-        : `${activeContract.allowedDevices} devices, ${activeContract.allowedBranches} branches`,
-      tone: contractIsReady ? "ready" : "warning",
-      Icon: FileText,
-      module: "contracts"
-    },
-    getBillingReadinessItem(activeContract, accountingProfile, productModules, chargeRules),
-    getEntitlementReadinessItem(
-      activeContract,
-      issuedEntitlementSnapshot ?? latestEntitlementSnapshot,
-      latestEntitlementSnapshotMissing
-    ),
-    getCloudReadinessItem(cloudInstallationStatus),
-    getPortalReadinessItem(latestPortalInvitation, portalInvitations)
-  ];
-}
+  const items: DashboardWorkQueueItem[] = [];
+  const invoiceStatus = invoiceDraft?.status.toLowerCase() ?? "";
+  const hasEntitlementSnapshot = issuedEntitlementSnapshot !== null || latestEntitlementSnapshot !== null;
+  const statementBalance = getPrimaryStatementBalance(clientStatement);
 
-function getBillingReadinessItem(
-  activeContract: ClientContract | null,
-  accountingProfile: ClientAccountingProfile | null,
-  productModules: ProductModule[],
-  chargeRules: ClientChargeRule[]
-): ClientReadinessItem {
+  if (selectedClient.status.toLowerCase() !== "active") {
+    items.push({
+      key: "client-status",
+      priority: "medium",
+      area: "Profile",
+      label: "Review client status",
+      detail: "The client is not active, so lifecycle and access should be checked before billing work.",
+      status: selectedClient.status,
+      actionLabel: "Open profile",
+      module: "profile",
+      Icon: UserRound
+    });
+  }
+
+  if (activeContract === null) {
+    items.push({
+      key: "contract-missing",
+      priority: "high",
+      area: "Contracts",
+      label: "Create active contract",
+      detail: "Billing, entitlements, and device limits need an active agreement.",
+      status: "Missing",
+      actionLabel: "Open contracts",
+      module: "contracts",
+      Icon: FileText
+    });
+  } else if (activeContract.status.toLowerCase() !== "active") {
+    items.push({
+      key: "contract-review",
+      priority: "high",
+      area: "Contracts",
+      label: "Review contract status",
+      detail: "The current agreement is not active, so downstream billing and access may be blocked.",
+      status: activeContract.status,
+      actionLabel: "Open contracts",
+      module: "contracts",
+      Icon: FileText
+    });
+  }
+
   if (accountingProfile === null) {
-    return {
-      key: "billing",
-      label: "Billing",
-      value: "Not linked",
-      summary: "Accounting profile",
-      tone: "warning",
-      Icon: ReceiptText,
-      module: "billing"
-    };
+    items.push({
+      key: "accounting-profile",
+      priority: "high",
+      area: "Billing",
+      label: "Link accounting profile",
+      detail: "Invoices need receivable account, currency, and cloud customer identity.",
+      status: "Not linked",
+      actionLabel: "Open billing",
+      module: "billing",
+      Icon: ReceiptText
+    });
   }
 
-  if (activeContract === null) {
-    return {
-      key: "billing",
-      label: "Billing",
-      value: accountingProfile.defaultCurrencyCode,
-      summary: "Needs contract",
-      tone: "warning",
-      Icon: ReceiptText,
-      module: "billing"
-    };
+  if (activeContract !== null && accountingProfile !== null) {
+    const missingRuleCount = getMissingPaidAddOnRuleCount(activeContract, productModules, chargeRules);
+
+    if (missingRuleCount > 0) {
+      items.push({
+        key: "billing-rules",
+        priority: "medium",
+        area: "Billing",
+        label: "Complete paid add-on rules",
+        detail: "Paid modules should have charge rules before invoice drafting.",
+        status: `${missingRuleCount} missing`,
+        actionLabel: "Open billing",
+        module: "billing",
+        Icon: ReceiptText
+      });
+    }
+
+    if (invoiceDraft === null) {
+      items.push({
+        key: "invoice-draft",
+        priority: "medium",
+        area: "Billing",
+        label: "Prepare invoice draft",
+        detail: "The client has setup context but no current invoice draft loaded.",
+        status: "No draft",
+        actionLabel: "Open billing",
+        module: "billing",
+        Icon: ReceiptText
+      });
+    }
   }
 
-  const paidAddOnCodes = getPaidAddOnModuleCodes(activeContract, productModules);
-  const billedModuleCodes = getBilledModuleCodes(chargeRules, activeContract);
-  const missingCount = paidAddOnCodes.filter((moduleCode) => !billedModuleCodes.has(moduleCode)).length;
-
-  if (missingCount > 0) {
-    return {
-      key: "billing",
-      label: "Billing",
-      value: `${missingCount} missing`,
-      summary: "Paid add-on rules",
-      tone: "warning",
-      Icon: ReceiptText,
-      module: "billing"
-    };
+  if (invoiceDraft !== null && invoiceStatus === "draft" && issuedInvoice === null) {
+    items.push({
+      key: "invoice-issue",
+      priority: "high",
+      area: "Billing",
+      label: "Issue invoice",
+      detail: "Draft is ready for posting once the invoice issue fields are complete.",
+      status: invoiceDraft.invoiceNumber,
+      actionLabel: "Open billing",
+      module: "billing",
+      Icon: ReceiptText
+    });
   }
 
-  return {
-    key: "billing",
-    label: "Billing",
-    value: "Ready",
-    summary: paidAddOnCodes.length === 0 ? "Base plan" : `${paidAddOnCodes.length} add-ons covered`,
-    tone: "ready",
-    Icon: ReceiptText,
-    module: "billing"
-  };
-}
-
-function getEntitlementReadinessItem(
-  activeContract: ClientContract | null,
-  snapshot: EntitlementSnapshot | null,
-  latestEntitlementSnapshotMissing: boolean
-): ClientReadinessItem {
-  if (activeContract === null) {
-    return {
-      key: "entitlement",
-      label: "Entitlement",
-      value: "Blocked",
-      summary: "Needs contract",
-      tone: "warning",
-      Icon: KeyRound,
-      module: "entitlements"
-    };
+  if (recordedPayment?.paymentStatus === "PendingReview") {
+    items.push({
+      key: "payment-review",
+      priority: "high",
+      area: "Payments",
+      label: "Review pending payment",
+      detail: "Bank transfer receipts should be approved or rejected from payments.",
+      status: recordedPayment.invoiceNumber,
+      actionLabel: "Open payments",
+      module: "payments",
+      Icon: Banknote
+    });
+  } else if (
+    invoiceDraft !== null
+    && ["issued", "partiallypaid"].includes(invoiceStatus)
+    && invoiceDraft.balanceDue > 0
+  ) {
+    items.push({
+      key: "payment-due",
+      priority: "medium",
+      area: "Payments",
+      label: "Record invoice payment",
+      detail: "The issued invoice still has receivable balance outstanding.",
+      status: `${invoiceDraft.balanceDue.toFixed(2)} ${invoiceDraft.currencyCode}`,
+      actionLabel: "Open payments",
+      module: "payments",
+      Icon: Banknote
+    });
   }
 
-  if (snapshot === null) {
-    return {
-      key: "entitlement",
-      label: "Entitlement",
-      value: latestEntitlementSnapshotMissing ? "Missing" : "Not loaded",
-      summary: "Snapshot required",
-      tone: "warning",
-      Icon: KeyRound,
-      module: "entitlements"
-    };
+  if (invoiceStatus === "paid" && recordedPayment !== null && !hasEntitlementSnapshot) {
+    items.push({
+      key: "entitlement-issue",
+      priority: "high",
+      area: "Entitlements",
+      label: "Issue entitlement snapshot",
+      detail: "Paid invoice is available; cloud access should be synchronized.",
+      status: "Not issued",
+      actionLabel: "Open entitlements",
+      module: "entitlements",
+      Icon: KeyRound
+    });
+  } else if (latestEntitlementSnapshotMissing) {
+    items.push({
+      key: "entitlement-missing",
+      priority: "medium",
+      area: "Entitlements",
+      label: "Refresh entitlement snapshot",
+      detail: "The latest entitlement snapshot could not be found for this client.",
+      status: "Missing",
+      actionLabel: "Open entitlements",
+      module: "entitlements",
+      Icon: KeyRound
+    });
   }
 
-  const contractModuleCodes = getEnabledModuleCodes(activeContract.modules);
-  const snapshotModuleCodes = getEnabledModuleCodes(snapshot.modules);
-  const hasContractMismatch = snapshot.contractId !== activeContract.contractId;
-  const hasLimitMismatch =
-    snapshot.allowedDevices !== activeContract.allowedDevices
-    || snapshot.allowedBranches !== activeContract.allowedBranches;
-  const hasModuleMismatch =
-    contractModuleCodes.some((moduleCode) => !snapshotModuleCodes.includes(moduleCode))
-    || snapshotModuleCodes.some((moduleCode) => !contractModuleCodes.includes(moduleCode));
-
-  if (hasContractMismatch || hasLimitMismatch || hasModuleMismatch) {
-    const differences = [
-      hasContractMismatch ? "contract" : null,
-      hasLimitMismatch ? "limits" : null,
-      hasModuleMismatch ? "modules" : null
-    ].filter((item): item is string => item !== null);
-
-    return {
-      key: "entitlement",
-      label: "Entitlement",
-      value: "Out of sync",
-      summary: differences.join(", "),
-      tone: "warning",
-      Icon: KeyRound,
-      module: "entitlements"
-    };
+  if (cloudInstallationStatus === null) {
+    items.push({
+      key: "cloud-status",
+      priority: "low",
+      area: "Cloud",
+      label: "Load cloud installation status",
+      detail: "Heartbeat, license state, and command status have not been refreshed.",
+      status: "Not loaded",
+      actionLabel: "Open cloud",
+      module: "cloud",
+      Icon: Cloud
+    });
+  } else if (!isDashboardCloudStatusReady(cloudInstallationStatus)) {
+    items.push({
+      key: "cloud-review",
+      priority: "medium",
+      area: "Cloud",
+      label: "Review cloud status",
+      detail: "The latest installation state is not active, healthy, or registered.",
+      status: cloudInstallationStatus.installationStatus,
+      actionLabel: "Open cloud",
+      module: "cloud",
+      Icon: Cloud
+    });
   }
 
-  return {
-    key: "entitlement",
-    label: "Entitlement",
-    value: snapshot.status,
-    summary: `${snapshotModuleCodes.length} modules aligned`,
-    tone: snapshot.status.toLowerCase() === "active" ? "ready" : "warning",
-    Icon: KeyRound,
-    module: "entitlements"
-  };
-}
-
-function getCloudReadinessItem(
-  cloudInstallationStatus: ControlCloudInstallationStatus | null
-): ClientReadinessItem {
-  const cloudHeartbeat = cloudInstallationStatus?.latestHeartbeat ?? null;
-  const deploymentProfile = getCloudDeploymentProfile(cloudInstallationStatus);
-  const deploymentSummary = formatCloudDeploymentSummary(deploymentProfile);
-  const cloudStatus = cloudHeartbeat?.licenseStatus
-    ?? cloudInstallationStatus?.installationStatus
-    ?? "Not loaded";
-  const normalizedCloudStatus = cloudStatus.toLowerCase();
-  const cloudReady =
-    normalizedCloudStatus === "active"
-    || normalizedCloudStatus === "healthy"
-    || normalizedCloudStatus === "registered";
-
-  return {
-    key: "cloud",
-    label: "Cloud",
-    value: cloudStatus,
-    summary: cloudHeartbeat === null
-      ? deploymentSummary
-      : `${deploymentSummary} / ${formatDashboardDateTime(cloudHeartbeat.receivedAtUtc)}`,
-    tone: cloudReady ? "ready" : cloudInstallationStatus === null ? "neutral" : "warning",
-    Icon: Cloud,
-    module: "cloud"
-  };
-}
-
-function getPortalReadinessItem(
-  latestPortalInvitation: ClientPortalInvitation | null,
-  portalInvitations: ClientPortalInvitation[]
-): ClientReadinessItem {
-  const invitation = getLatestPortalInvitation(latestPortalInvitation, portalInvitations);
-
-  if (invitation === null) {
-    return {
-      key: "portal",
-      label: "Portal",
-      value: "No invite",
-      summary: "Client access",
-      tone: "neutral",
-      Icon: UserRound,
-      module: "profile"
-    };
+  if (latestPortalInvitation === null && portalInvitations.length === 0) {
+    items.push({
+      key: "portal-invite",
+      priority: "low",
+      area: "Profile",
+      label: "Invite portal contact",
+      detail: "No client portal invitation is loaded for this client.",
+      status: "No invite",
+      actionLabel: "Open profile",
+      module: "profile",
+      Icon: UserRound
+    });
   }
 
-  const status = invitation.status.toLowerCase();
-  const isReady = status === "accepted";
-  const isWarning = status === "revoked" || status === "expired";
+  if (statementBalance !== null && statementBalance.balanceDue > 0) {
+    items.push({
+      key: "statement-balance",
+      priority: "low",
+      area: "Statement",
+      label: "Review receivable balance",
+      detail: "Statement shows an outstanding client balance.",
+      status: `${statementBalance.balanceDue.toFixed(2)} ${statementBalance.currencyCode}`,
+      actionLabel: "Open statement",
+      module: "statement",
+      Icon: ScrollText
+    });
+  }
 
-  return {
-    key: "portal",
-    label: "Portal",
-    value: invitation.status,
-    summary: invitation.email,
-    tone: isReady ? "ready" : isWarning ? "warning" : "neutral",
-    Icon: UserRound,
-    module: "profile"
-  };
+  if (items.length === 0) {
+    return [
+      {
+        key: "client-clear",
+        priority: "done",
+        area: "Client",
+        label: "No open control items",
+        detail: "The selected client has no dashboard-level work requiring attention.",
+        status: selectedClient.code,
+        actionLabel: "View statement",
+        module: "statement",
+        Icon: CheckCircle2
+      }
+    ];
+  }
+
+  return items.sort(compareDashboardWorkQueueItems);
 }
 
 function getDashboardMetrics({
@@ -3036,6 +3589,99 @@ function findDashboardMetric(metrics: DashboardMetric[], label: string): Dashboa
     Icon: LayoutDashboard,
     module: "dashboard"
   };
+}
+
+function compareDashboardWorkQueueItems(
+  left: DashboardWorkQueueItem,
+  right: DashboardWorkQueueItem
+): number {
+  const priorityOrder: Record<DashboardWorkQueuePriority, number> = {
+    high: 0,
+    medium: 1,
+    low: 2,
+    done: 3
+  };
+  const priorityDifference = priorityOrder[left.priority] - priorityOrder[right.priority];
+
+  return priorityDifference !== 0
+    ? priorityDifference
+    : left.area.localeCompare(right.area);
+}
+
+function formatDashboardQueuePriority(priority: DashboardWorkQueuePriority): string {
+  switch (priority) {
+    case "high":
+      return "High";
+    case "medium":
+      return "Medium";
+    case "low":
+      return "Low";
+    case "done":
+      return "Clear";
+    default:
+      return "Review";
+  }
+}
+
+function getMissingPaidAddOnRuleCount(
+  contract: ClientContract,
+  productModules: ProductModule[],
+  chargeRules: ClientChargeRule[]
+): number {
+  const enabledModuleCodes = getDashboardEnabledModuleCodes(contract.modules);
+  const paidAddOnCodes = enabledModuleCodes.filter((moduleCode) =>
+    findProductModule(productModules, moduleCode)?.commercialMode === "PaidAddOn"
+  );
+  const billedModuleCodes = new Set(
+    chargeRules
+      .filter((rule) => rule.status.toLowerCase() === "active")
+      .filter((rule) => rule.contractId === undefined
+        || rule.contractId === null
+        || rule.contractId === contract.contractId)
+      .map((rule) => normalizeDashboardModuleCode(rule.productModuleCode ?? ""))
+      .filter((moduleCode) => moduleCode !== "")
+  );
+
+  return paidAddOnCodes.filter((moduleCode) => !billedModuleCodes.has(moduleCode)).length;
+}
+
+function getDashboardEnabledModuleCodes(
+  modules: Array<{ moduleCode: string; isEnabled: boolean }>
+): string[] {
+  const seen = new Set<string>();
+
+  return modules
+    .filter((module) => module.isEnabled)
+    .map((module) => normalizeDashboardModuleCode(module.moduleCode))
+    .filter((moduleCode) => {
+      if (moduleCode === "" || seen.has(moduleCode)) {
+        return false;
+      }
+
+      seen.add(moduleCode);
+      return true;
+    });
+}
+
+function normalizeDashboardModuleCode(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+function isDashboardCloudStatusReady(status: ControlCloudInstallationStatus): boolean {
+  const latestStatus = (
+    status.latestHeartbeat?.licenseStatus
+    ?? status.installationStatus
+  ).toLowerCase();
+
+  return latestStatus === "active"
+    || latestStatus === "healthy"
+    || latestStatus === "registered";
+}
+
+function getPrimaryStatementBalance(
+  statement: ClientStatement | null
+): ClientStatement["currencySummaries"][number] | null {
+  return statement?.currencySummaries[0] ?? null;
 }
 
 function createDefaultReceivableAccountForm(client?: ClientDetails): LedgerAccountFormInput {
@@ -3699,76 +4345,6 @@ function getSelectedDeploymentId(deployments: ClientDeployment[], installationId
   return deployments.find((deployment) =>
     deployment.installationId.toLowerCase() === installationId.trim().toLowerCase()
   )?.clientDeploymentId ?? "";
-}
-
-function getPaidAddOnModuleCodes(
-  contract: ClientContract,
-  productModules: ProductModule[]
-): string[] {
-  return getEnabledModuleCodes(contract.modules).filter((moduleCode) =>
-    findProductModule(productModules, moduleCode)?.commercialMode === "PaidAddOn"
-  );
-}
-
-function getBilledModuleCodes(
-  chargeRules: ClientChargeRule[],
-  contract: ClientContract
-): Set<string> {
-  return new Set(
-    chargeRules
-      .filter((rule) => rule.status.toLowerCase() === "active")
-      .filter((rule) => rule.contractId === undefined
-        || rule.contractId === null
-        || rule.contractId === contract.contractId)
-      .map((rule) => normalizeOptionalModuleCode(rule.productModuleCode))
-      .filter((moduleCode): moduleCode is string => moduleCode !== null)
-  );
-}
-
-function getEnabledModuleCodes(modules: Array<{ moduleCode: string; isEnabled: boolean }>): string[] {
-  const seen = new Set<string>();
-
-  return modules
-    .filter((module) => module.isEnabled)
-    .map((module) => normalizeModuleCode(module.moduleCode))
-    .filter((moduleCode) => {
-      if (moduleCode === "" || seen.has(moduleCode)) {
-        return false;
-      }
-
-      seen.add(moduleCode);
-      return true;
-    });
-}
-
-function getLatestPortalInvitation(
-  latestPortalInvitation: ClientPortalInvitation | null,
-  portalInvitations: ClientPortalInvitation[]
-): ClientPortalInvitation | null {
-  const invitations = latestPortalInvitation === null
-    ? portalInvitations
-    : [latestPortalInvitation, ...portalInvitations];
-
-  return invitations
-    .filter((invitation, index, source) =>
-      source.findIndex((item) => item.invitationId === invitation.invitationId) === index
-    )
-    .sort((left, right) => right.invitedAtUtc.localeCompare(left.invitedAtUtc))[0]
-    ?? null;
-}
-
-function normalizeOptionalModuleCode(value: string | null | undefined): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  const normalizedModuleCode = normalizeModuleCode(value);
-
-  return normalizedModuleCode === "" ? null : normalizedModuleCode;
-}
-
-function normalizeModuleCode(value: string): string {
-  return value.trim().toUpperCase();
 }
 
 function canIssueEntitlementSnapshot(

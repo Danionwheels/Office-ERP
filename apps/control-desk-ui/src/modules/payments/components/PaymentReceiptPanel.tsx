@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  ArrowRight,
   ArrowRightLeft,
   Banknote,
   CheckCircle2,
@@ -228,25 +229,17 @@ export function PaymentReceiptPanel({
           <span>Payments</span>
           <h2>{activePaymentStepItem.label}</h2>
         </div>
-        <div className="billing-step-summary-grid">
-          {paymentSteps.map((step) => (
-            <button
-              className={`billing-step-summary payment-step-summary ${step.tone}${
-                activePaymentStep === step.step ? " active" : ""
-              }`}
-              key={step.step}
-              type="button"
-              onClick={() => setActivePaymentStep(step.step)}
-            >
-              <step.Icon size={16} />
-              <span>
-                <strong>{step.label}</strong>
-                <small>{step.summary}</small>
-              </span>
-            </button>
-          ))}
+        <div className={`billing-step-current ${activePaymentStepItem.tone}`}>
+          <span>Current status</span>
+          <strong>{activePaymentStepItem.summary}</strong>
         </div>
       </header>
+
+      <PaymentFlowRegister
+        activeStep={activePaymentStep}
+        onSelectStep={setActivePaymentStep}
+        steps={paymentSteps}
+      />
 
       <section
         className={`client-panel billing-light-panel payment-readiness-panel${
@@ -1175,6 +1168,75 @@ export function PaymentReceiptPanel({
   );
 }
 
+function PaymentFlowRegister({
+  activeStep,
+  onSelectStep,
+  steps
+}: {
+  activeStep: PaymentStep;
+  onSelectStep: (step: PaymentStep) => void;
+  steps: PaymentStepItem[];
+}) {
+  return (
+    <div className="billing-flow-register payment-flow-register">
+      <table className="billing-flow-table payment-flow-table" aria-label="Payment workflow">
+        <thead>
+          <tr>
+            <th className="billing-flow-sequence" scope="col">No.</th>
+            <th scope="col">Work area</th>
+            <th className="billing-flow-status-cell" scope="col">Status</th>
+            <th className="billing-flow-cue-cell" scope="col">Next action</th>
+            <th className="billing-flow-open" scope="col">Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          {steps.map((step, index) => {
+            const isActive = activeStep === step.step;
+
+            return (
+              <tr
+                className={`${step.tone}${isActive ? " active" : ""}`}
+                key={step.step}
+              >
+                <td className="billing-flow-sequence">
+                  <span>{index + 1}</span>
+                </td>
+                <td>
+                  <div className="billing-flow-step">
+                    <step.Icon size={16} />
+                    <span>
+                      <strong>{step.label}</strong>
+                      <small>{isActive ? "Current work area" : "Available"}</small>
+                    </span>
+                  </div>
+                </td>
+                <td className="billing-flow-status-cell">
+                  <span className={`billing-flow-status ${step.tone}`}>
+                    {step.summary}
+                  </span>
+                </td>
+                <td className="billing-flow-cue-cell">{getPaymentStepCue(step.step)}</td>
+                <td className="billing-flow-open">
+                  <button
+                    className="table-icon-button"
+                    type="button"
+                    onClick={() => onSelectStep(step.step)}
+                    aria-current={isActive ? "step" : undefined}
+                    aria-label={`Open ${step.label}`}
+                    title={`Open ${step.label}`}
+                  >
+                    <ArrowRight size={14} />
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function formatMoney(amount: number, currencyCode: string): string {
   return `${amount.toFixed(2)} ${currencyCode}`;
 }
@@ -1331,6 +1393,23 @@ function getReadinessSummary({
   }
 
   return "Review";
+}
+
+function getPaymentStepCue(step: PaymentStep): string {
+  switch (step) {
+    case "readiness":
+      return "Confirm invoice, AR, cash, and balance";
+    case "cash":
+      return "Create or link the cash/bank posting account";
+    case "receipt":
+      return "Record payment against the issued invoice";
+    case "settlement":
+      return "Apply unapplied credit to open balance";
+    case "refund":
+      return "Return available client credit";
+    case "result":
+      return "Review posting, approval, reversal, and journal";
+  }
 }
 
 type RefundCreditSummary = {

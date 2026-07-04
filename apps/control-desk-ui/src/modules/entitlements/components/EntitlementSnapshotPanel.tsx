@@ -26,6 +26,13 @@ type EntitlementSnapshotPanelProps = {
   onRefreshLatest: () => Promise<void>;
 };
 
+type EntitlementControlRow = {
+  label: string;
+  status: string;
+  detail: string;
+  tone: "neutral" | "ready" | "warning";
+};
+
 export function EntitlementSnapshotPanel({
   invoiceDraft,
   recordedPayment,
@@ -43,6 +50,13 @@ export function EntitlementSnapshotPanel({
     && invoiceDraft.status.toLowerCase() === "paid"
     && recordedPayment !== null
     && !isBusy;
+  const controlRows = getEntitlementControlRows({
+    displaySnapshot,
+    invoiceDraft,
+    issuedSnapshot,
+    latestSnapshotMissing,
+    recordedPayment
+  });
 
   return (
     <section className="client-panel entitlement-panel">
@@ -57,6 +71,8 @@ export function EntitlementSnapshotPanel({
           </span>
         )}
       </div>
+
+      <EntitlementControlRegister rows={controlRows} />
 
       <div className="entitlement-action-row">
         <button
@@ -137,6 +153,37 @@ export function EntitlementSnapshotPanel({
   );
 }
 
+function EntitlementControlRegister({ rows }: { rows: EntitlementControlRow[] }) {
+  return (
+    <div className="entitlement-control-register">
+      <table className="entitlement-control-table" aria-label="Entitlement controls">
+        <thead>
+          <tr>
+            <th scope="col">Control</th>
+            <th scope="col">Status</th>
+            <th scope="col">Operator cue</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr className={row.tone} key={row.label}>
+              <td>
+                <strong>{row.label}</strong>
+              </td>
+              <td>
+                <span className={`entitlement-control-status ${row.tone}`}>
+                  {row.status}
+                </span>
+              </td>
+              <td>{row.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function EntitlementModuleList({
   modules,
   productModules
@@ -146,38 +193,112 @@ function EntitlementModuleList({
 }) {
   if (modules.length === 0) {
     return (
-      <div className="module-control-list">
-        <span className="entitlement-module disabled">No modules</span>
+      <div className="entitlement-module-register">
+        <span className="entitlement-module-register-empty">No modules</span>
       </div>
     );
   }
 
   return (
-    <div className="module-control-list">
-      {modules.map((module) => {
-        const productModule = findProductModule(productModules, module.moduleCode);
-        const billingDefaults = formatProductModuleBillingDefaults(productModule);
+    <div className="entitlement-module-register">
+      <table className="entitlement-module-table" aria-label="Entitlement modules">
+        <thead>
+          <tr>
+            <th scope="col">Module</th>
+            <th scope="col">Access</th>
+            <th scope="col">Commercial rule</th>
+            <th scope="col">Catalog</th>
+          </tr>
+        </thead>
+        <tbody>
+          {modules.map((module) => {
+            const productModule = findProductModule(productModules, module.moduleCode);
+            const billingDefaults = formatProductModuleBillingDefaults(productModule);
 
-        return (
-          <article
-            className={`module-control-item entitlement-module-item${
-              module.isEnabled ? "" : " disabled"
-            }`}
-            key={module.moduleCode}
-          >
-            <header>
-              <span>
-                <strong>{getProductModuleDisplayName(productModules, module.moduleCode)}</strong>
-                <small>{getProductModuleMeta(productModules, module.moduleCode)}</small>
-              </span>
-              <em>{module.isEnabled ? "Enabled" : "Disabled"}</em>
-            </header>
-            {billingDefaults !== null && <p>{billingDefaults}</p>}
-          </article>
-        );
-      })}
+            return (
+              <tr className={module.isEnabled ? "enabled" : "disabled"} key={module.moduleCode}>
+                <td>
+                  <strong>{getProductModuleDisplayName(productModules, module.moduleCode)}</strong>
+                  <small>{module.moduleCode}</small>
+                </td>
+                <td>
+                  <span className={`entitlement-module-status${
+                    module.isEnabled ? " enabled" : " disabled"
+                  }`}
+                  >
+                    {module.isEnabled ? "Enabled" : "Disabled"}
+                  </span>
+                </td>
+                <td>{billingDefaults ?? "Included or no billing rule"}</td>
+                <td>{getProductModuleMeta(productModules, module.moduleCode)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
+}
+
+function getEntitlementControlRows({
+  displaySnapshot,
+  invoiceDraft,
+  issuedSnapshot,
+  latestSnapshotMissing,
+  recordedPayment
+}: {
+  displaySnapshot: EntitlementSnapshot | null;
+  invoiceDraft: InvoiceDraft | null;
+  issuedSnapshot: IssuedEntitlementSnapshot | null;
+  latestSnapshotMissing: boolean;
+  recordedPayment: RecordedInvoicePayment | null;
+}): EntitlementControlRow[] {
+  return [
+    {
+      label: "Invoice gate",
+      status: invoiceDraft === null ? "No invoice" : invoiceDraft.status,
+      detail: invoiceDraft?.status.toLowerCase() === "paid"
+        ? "Paid invoice can issue a fresh entitlement snapshot"
+        : "Payment must be complete before issue",
+      tone: invoiceDraft?.status.toLowerCase() === "paid" ? "ready" : "warning"
+    },
+    {
+      label: "Receipt trail",
+      status: recordedPayment === null ? "No receipt" : recordedPayment.paymentStatus,
+      detail: recordedPayment === null
+        ? "Recorded payment is required before issue"
+        : "Payment record is available for entitlement issue",
+      tone: recordedPayment === null ? "warning" : "ready"
+    },
+    {
+      label: "Snapshot",
+      status: displaySnapshot === null
+        ? latestSnapshotMissing ? "Missing" : "Not loaded"
+        : displaySnapshot.status,
+      detail: displaySnapshot === null
+        ? "Refresh latest snapshot or issue from a paid invoice"
+        : `Valid offline until ${formatDate(displaySnapshot.offlineValidUntil)}`,
+      tone: displaySnapshot === null ? "warning" : "ready"
+    },
+    {
+      label: "Access limits",
+      status: displaySnapshot === null
+        ? "Pending"
+        : `${displaySnapshot.allowedDevices} devices / ${displaySnapshot.allowedBranches} branches`,
+      detail: displaySnapshot === null
+        ? "Limits appear after a snapshot is loaded"
+        : `${displaySnapshot.modules.filter((module) => module.isEnabled).length} enabled modules in snapshot`,
+      tone: displaySnapshot === null ? "neutral" : "ready"
+    },
+    {
+      label: "Source",
+      status: issuedSnapshot === null ? "Latest snapshot" : issuedSnapshot.invoiceNumber,
+      detail: issuedSnapshot === null
+        ? "Showing the latest loaded entitlement snapshot"
+        : "Showing the snapshot just issued from the invoice",
+      tone: "neutral"
+    }
+  ];
 }
 
 function formatDate(value: string): string {
