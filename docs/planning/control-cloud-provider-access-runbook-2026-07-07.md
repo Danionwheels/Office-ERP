@@ -212,6 +212,20 @@ Provider access smoke passed 8 checks:
 
 The smoke proves file-backed seed persistence, scoped operator session issuance, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
 
+Run the live Control Desk proxy proof:
+
+```powershell
+dotnet run --project tools\SafarSuite.ControlDesk.ProviderAccessProxyProof\SafarSuite.ControlDesk.ProviderAccessProxyProof.csproj --no-restore
+```
+
+Expected result:
+
+```text
+Control Desk provider-access proxy proof passed 13 checks:
+```
+
+The proxy proof applies Control Cloud PostgreSQL migrations, starts Control Cloud and Control Desk on temporary local ports, points Control Desk at the Control Cloud provider access gate, performs list/create/scope/status/password-reset operations through `/api/v1/control-cloud/provider-access/operators`, mints a provider bearer session with the reset password, and verifies the final provider operator row in PostgreSQL.
+
 For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBootstrapProof activate-app-runtime` defaults to `POST /api/v1/provider-access/operator-sessions` and then sends the returned bearer token to Control Cloud.
 
 ## Troubleshooting

@@ -45,6 +45,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlCloud.Pro
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlCloud.PostgresProof", "tools\SafarSuite.ControlCloud.PostgresProof\SafarSuite.ControlCloud.PostgresProof.csproj", "{ADCD18C8-AF91-48D3-AE09-1D24394BB3D0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlDesk.ProviderAccessProxyProof", "tools\SafarSuite.ControlDesk.ProviderAccessProxyProof\SafarSuite.ControlDesk.ProviderAccessProxyProof.csproj", "{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -283,6 +285,18 @@ Global
 		{ADCD18C8-AF91-48D3-AE09-1D24394BB3D0}.Release|x64.Build.0 = Release|Any CPU
 		{ADCD18C8-AF91-48D3-AE09-1D24394BB3D0}.Release|x86.ActiveCfg = Release|Any CPU
 		{ADCD18C8-AF91-48D3-AE09-1D24394BB3D0}.Release|x86.Build.0 = Release|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Debug|x64.Build.0 = Debug|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Debug|x86.Build.0 = Debug|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Release|x64.ActiveCfg = Release|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Release|x64.Build.0 = Release|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Release|x86.ActiveCfg = Release|Any CPU
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -307,5 +321,6 @@ Global
 		{421F596A-BE9B-4449-8F5A-272ADCD2B6B5} = {23687B85-ECA0-46D8-9B03-AB99D7205D07}
 		{F19126E5-CD90-44CA-B89D-06251218D136} = {23687B85-ECA0-46D8-9B03-AB99D7205D07}
 		{ADCD18C8-AF91-48D3-AE09-1D24394BB3D0} = {23687B85-ECA0-46D8-9B03-AB99D7205D07}
+		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9} = {23687B85-ECA0-46D8-9B03-AB99D7205D07}
 	EndGlobalSection
 EndGlobal
