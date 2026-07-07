@@ -1,5 +1,6 @@
 using SafarSuite.ControlDesk.Application.Common.Results;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
@@ -130,7 +131,7 @@ public sealed class GetLedgerAccountRepairPlanHandler
                 "Resolve hierarchy level mismatch",
                 "The account level controls posting and parent rules. Prefer a controlled replacement account or a later guided migration that moves balances deliberately.",
                 item.Level,
-                range is null ? null : DetermineExpectedLevel(range, item.IsPostingAccount).ToString()),
+                range is null ? null : DetermineExpectedLevel(range, item, accountsById).ToString()),
             "NonPostingLevelIsPosting" => BuildPostingFlagAction(
                 item,
                 issue,
@@ -147,47 +148,68 @@ public sealed class GetLedgerAccountRepairPlanHandler
                 "Non-posting",
                 "Posting",
                 true),
-            "StructureAccountHasParent" => BuildParentAction(
+            "StructuralParentMissing" => BuildParentAction(
                 issue,
-                "Remove structure parent link",
-                "Header, Total, Master, and Control accounts should not have a parent in this setup slice. Parent relinking needs a guided migration because the parent is part of the ledger structure.",
+                "Replace missing structural parent",
+                "The stored parent account no longer exists. Relink only through a guided hierarchy repair after checking ledger activity.",
                 item.ParentAccountId?.ToString(),
-                "No parent",
+                "Existing non-posting structural parent",
                 false),
-            "SubsidiaryMissingParent" => BuildParentAction(
+            "StructuralParentNotStructural" => BuildParentAction(
                 issue,
-                "Link subsidiary to control account",
-                "Subsidiary accounts must sit under an existing Control account. Use the configured parent code as the target, then run a guided relink later.",
+                "Use a structural parent",
+                "Header, Total, Master, and Control accounts can nest under another non-posting structural account. Posting accounts cannot own structural children.",
+                DescribeParent(item.ParentAccountId, accountsById),
+                "Header, Total, Master, or Control parent",
+                false),
+            "StructuralParentTypeBalanceMismatch" => BuildParentAction(
+                issue,
+                "Use a compatible structural parent",
+                "Nested structural accounts should stay inside the same account type and normal-balance family.",
+                DescribeParent(item.ParentAccountId, accountsById),
+                $"{item.Type} / {item.NormalBalance} structural parent",
+                false),
+            "PostingChildMissingParent" => BuildParentAction(
+                issue,
+                "Link posting child to parent",
+                "This account level is nested and should point to an existing parent account in the same accounting family.",
                 "No parent",
                 FindSuggestedParent(range, accountsById),
                 false),
-            "SubsidiaryParentMissing" => BuildParentAction(
+            "PostingChildParentMissing" => BuildParentAction(
                 issue,
                 "Replace missing parent link",
-                "The stored parent account no longer exists. Link the subsidiary to the configured Control parent after confirming historical postings.",
+                "The stored parent account no longer exists. Link the account to a valid parent after confirming historical postings.",
                 item.ParentAccountId?.ToString(),
                 FindSuggestedParent(range, accountsById),
                 false),
-            "SubsidiaryParentNotControl" => BuildParentAction(
+            "PostingChildParentInactive" => BuildParentAction(
                 issue,
-                "Relink subsidiary to control parent",
-                "The current parent is not a Control account. Relink only through a guided repair after checking ledger activity.",
+                "Review inactive parent",
+                "The parent exists but is inactive. Reactivate it only if this hierarchy is still valid, otherwise relink through a guided repair.",
+                DescribeParent(item.ParentAccountId, accountsById),
+                "Active parent in the same account family",
+                false),
+            "PostingChildParentTypeBalanceMismatch" => BuildParentAction(
+                issue,
+                "Use a compatible posting parent",
+                "Nested posting accounts should stay inside the same account type and normal-balance family.",
+                DescribeParent(item.ParentAccountId, accountsById),
+                $"{item.Type} / {item.NormalBalance} parent",
+                false),
+            "PostingChildParentCodeMismatch" => BuildParentAction(
+                issue,
+                "Relink inside configured parent family",
+                "The account is linked to a parent outside the parent-code family configured for this range. Relink only after reviewing activity.",
                 DescribeParent(item.ParentAccountId, accountsById),
                 FindSuggestedParent(range, accountsById),
                 false),
-            "SubsidiaryParentCodeMismatch" => BuildParentAction(
+            "PostingChildParentCodeScopeMismatch" => BuildParentAction(
                 issue,
-                "Relink subsidiary to configured parent code",
-                "The subsidiary is linked, but not to the parent code configured for this range. Relink only after reviewing activity.",
+                "Relink inside parent code scope",
+                "The account is linked to a parent that cannot own this code from the matched setup range.",
                 DescribeParent(item.ParentAccountId, accountsById),
-                FindSuggestedParent(range, accountsById),
-                false),
-            "DetailParentNotMaster" => BuildParentAction(
-                issue,
-                "Use a Master parent for detail account",
-                "Detail accounts may only link to Master accounts. Either clear the parent or relink to a valid Master in a guided migration.",
-                DescribeParent(item.ParentAccountId, accountsById),
-                "Master parent or no parent",
+                "Parent in the same code family",
                 false),
             _ => BuildReviewOnlyAction(issue)
         };
@@ -354,12 +376,9 @@ public sealed class GetLedgerAccountRepairPlanHandler
         LedgerAccountReconciliationItemResult item,
         bool suggestedPosting)
     {
-        if (suggestedPosting)
-        {
-            return item.Level is "Detail" or "Subsidiary";
-        }
-
-        return item.Level is "Header" or "Total" or "Master" or "Control";
+        return suggestedPosting
+            ? item.Level is "Detail" or "Subsidiary"
+            : item.Level is "Header" or "Total" or "Master" or "Control";
     }
 
     private static string? FindSuggestedParent(
@@ -368,15 +387,14 @@ public sealed class GetLedgerAccountRepairPlanHandler
     {
         if (string.IsNullOrWhiteSpace(range?.ParentCode))
         {
-            return "Control parent";
+            return "Parent in the same account family";
         }
 
         var parent = accountsById.Values.FirstOrDefault(account =>
-            string.Equals(account.Code.Value, range.ParentCode, StringComparison.Ordinal)
-            && account.Level == LedgerAccountLevel.Control);
+            LedgerAccountHierarchyPolicy.IsParentInsideRangeFamily(range, account.Code.Value));
 
         return parent is null
-            ? $"{range.ParentCode} Control account must be created first"
+            ? $"{range.ParentCode} parent family must be created first"
             : $"{parent.Code.Value} - {parent.Name}";
     }
 
@@ -396,41 +414,14 @@ public sealed class GetLedgerAccountRepairPlanHandler
 
     private static LedgerAccountLevel DetermineExpectedLevel(
         AccountCodeRange range,
-        bool isPostingAccount)
+        LedgerAccountReconciliationItemResult item,
+        IReadOnlyDictionary<Guid, LedgerAccount> accountsById)
     {
-        if (HasRangeIntent(range, "Header"))
-        {
-            return LedgerAccountLevel.Header;
-        }
+        accountsById.TryGetValue(item.ParentAccountId ?? Guid.Empty, out var parentAccount);
 
-        if (HasRangeIntent(range, "Total"))
-        {
-            return LedgerAccountLevel.Total;
-        }
-
-        if (HasRangeIntent(range, "Control"))
-        {
-            return LedgerAccountLevel.Control;
-        }
-
-        if (HasRangeIntent(range, "Master"))
-        {
-            return LedgerAccountLevel.Master;
-        }
-
-        if (!string.IsNullOrWhiteSpace(range.ParentCode))
-        {
-            return LedgerAccountLevel.Subsidiary;
-        }
-
-        return isPostingAccount
-            ? LedgerAccountLevel.Detail
-            : LedgerAccountLevel.Master;
-    }
-
-    private static bool HasRangeIntent(AccountCodeRange range, string intent)
-    {
-        return range.Role.Contains(intent, StringComparison.OrdinalIgnoreCase)
-            || range.DisplayName.Contains(intent, StringComparison.OrdinalIgnoreCase);
+        return LedgerAccountHierarchyPolicy.DetermineExpectedLevel(
+            range,
+            parentAccount,
+            item.IsPostingAccount);
     }
 }

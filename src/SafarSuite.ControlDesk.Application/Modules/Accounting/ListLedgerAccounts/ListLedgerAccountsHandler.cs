@@ -66,11 +66,12 @@ public sealed class ListLedgerAccountsHandler
         var companyCode = AccountingSetupDefaults.NormalizeCompanyCode(query.CompanyCode);
         await _defaults.EnsureSeededAsync(companyCode, cancellationToken);
 
+        var isParentTreeView = IsParentTreeView(query.ViewMode);
         var accounts = await _ledgerAccounts.ListAsync(
-            query.Search,
+            isParentTreeView ? null : query.Search,
             type,
             status,
-            query.IsPostingAccount,
+            isParentTreeView ? null : query.IsPostingAccount,
             cancellationToken);
         var ranges = (await _accountCodeRanges.ListByCompanyAsync(companyCode, cancellationToken))
             .Where(range => range.IsActive)
@@ -81,9 +82,18 @@ public sealed class ListLedgerAccountsHandler
 
         var summaries = accounts
             .Select(account => ToSummary(account, FindRange(account.Code.Value, ranges)))
-            .Where(account => normalizedRole is null
-                || string.Equals(account.RangeRole, normalizedRole, StringComparison.OrdinalIgnoreCase))
             .ToArray();
+
+        if (isParentTreeView)
+        {
+            summaries = FilterParentTreeSummaries(summaries, query.Search, normalizedRole);
+        }
+        else if (normalizedRole is not null)
+        {
+            summaries = summaries
+                .Where(account => string.Equals(account.RangeRole, normalizedRole, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
 
         return Result<ListLedgerAccountsResult>.Success(new ListLedgerAccountsResult(
             companyCode,
@@ -119,5 +129,108 @@ public sealed class ListLedgerAccountsHandler
             && code.StartsWith(range.SearchPrefix, StringComparison.Ordinal)
             && StringComparer.Ordinal.Compare(code, range.RangeStart) >= 0
             && StringComparer.Ordinal.Compare(code, range.RangeEnd) <= 0);
+    }
+
+    private static bool IsParentTreeView(string? viewMode)
+    {
+        return string.Equals(viewMode?.Trim(), "headerTotal", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(viewMode?.Trim(), "parentTree", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static LedgerAccountSummaryResult[] FilterParentTreeSummaries(
+        IReadOnlyCollection<LedgerAccountSummaryResult> summaries,
+        string? search,
+        string? role)
+    {
+        var roots = summaries
+            .Where(account => string.Equals(account.Level, "Total", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(account => account.Code, StringComparer.Ordinal)
+            .ThenBy(account => account.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (roots.Length == 0)
+        {
+            return summaries.ToArray();
+        }
+
+        var includedIds = new HashSet<Guid>();
+        var normalizedSearch = search?.Trim();
+        var normalizedRole = role?.Trim();
+
+        foreach (var root in roots)
+        {
+            var rootTree = summaries
+                .Where(candidate => BelongsToParentTreeRoot(candidate, root, summaries))
+                .ToArray();
+            var matchesSearch = string.IsNullOrWhiteSpace(normalizedSearch)
+                || rootTree.Any(candidate => MatchesSearch(candidate, normalizedSearch));
+            var matchesRole = string.IsNullOrWhiteSpace(normalizedRole)
+                || rootTree.Any(candidate => MatchesRole(candidate, normalizedRole));
+
+            if (!matchesSearch || !matchesRole)
+            {
+                continue;
+            }
+
+            foreach (var account in rootTree)
+            {
+                includedIds.Add(account.LedgerAccountId);
+            }
+        }
+
+        return summaries
+            .Where(account => includedIds.Contains(account.LedgerAccountId))
+            .ToArray();
+    }
+
+    private static bool BelongsToParentTreeRoot(
+        LedgerAccountSummaryResult account,
+        LedgerAccountSummaryResult root,
+        IReadOnlyCollection<LedgerAccountSummaryResult> summaries)
+    {
+        if (account.LedgerAccountId == root.LedgerAccountId)
+        {
+            return true;
+        }
+
+        var accountsById = summaries.ToDictionary(candidate => candidate.LedgerAccountId);
+        var nextParentId = account.ParentAccountId;
+        var guard = 0;
+
+        while (nextParentId.HasValue && guard < 24)
+        {
+            if (nextParentId.Value == root.LedgerAccountId)
+            {
+                return true;
+            }
+
+            nextParentId = accountsById.TryGetValue(nextParentId.Value, out var parent)
+                ? parent.ParentAccountId
+                : null;
+            guard++;
+        }
+
+        if (account.Code.StartsWith(root.Code, StringComparison.Ordinal)
+            && account.Code.Length > root.Code.Length)
+        {
+            return true;
+        }
+
+        return !string.Equals(account.Level, "Header", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(account.Level, "Total", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(account.Type, root.Type, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(account.NormalBalance, root.NormalBalance, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesSearch(LedgerAccountSummaryResult account, string search)
+    {
+        return account.Code.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || account.DisplayCode.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || account.Name.Contains(search, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesRole(LedgerAccountSummaryResult account, string role)
+    {
+        return string.Equals(account.RangeRole, role, StringComparison.OrdinalIgnoreCase);
     }
 }

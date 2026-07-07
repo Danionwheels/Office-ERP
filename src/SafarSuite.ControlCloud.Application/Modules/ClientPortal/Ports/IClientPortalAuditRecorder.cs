@@ -33,6 +33,14 @@ public static class ClientPortalAuditEventTypes
     public const string LocalServerRegistrationRejected = "LocalServerRegistrationRejected";
     public const string LocalServerDiagnosticsUploaded = "LocalServerDiagnosticsUploaded";
     public const string OfflineRenewalFileGenerated = "OfflineRenewalFileGenerated";
+    public const string AppActivationTokenIssued = "AppActivationTokenIssued";
+    public const string AppActivationTokenRevoked = "AppActivationTokenRevoked";
+    public const string ProviderOperatorCreated = "ProviderOperatorCreated";
+    public const string ProviderOperatorPasswordReset = "ProviderOperatorPasswordReset";
+    public const string ProviderOperatorScopesUpdated = "ProviderOperatorScopesUpdated";
+    public const string ProviderOperatorStatusUpdated = "ProviderOperatorStatusUpdated";
+    public const string ProviderOperatorSessionIssued = "ProviderOperatorSessionIssued";
+    public const string ProviderOperatorSessionRejected = "ProviderOperatorSessionRejected";
 }
 
 public static class ClientPortalAuditActors

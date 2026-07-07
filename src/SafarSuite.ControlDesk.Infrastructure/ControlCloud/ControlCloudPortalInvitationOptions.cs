@@ -8,4 +8,6 @@ public sealed class ControlCloudPortalInvitationOptions
 
     public string ProviderAccessSecret { get; set; } =
         "local-development-provider-access-secret-change-before-cloud";
+
+    public string ProviderAccessToken { get; set; } = "";
 }

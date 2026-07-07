@@ -14,6 +14,7 @@ using SafarSuite.ControlCloud.Infrastructure.ClientPortal;
 using SafarSuite.ControlCloud.Infrastructure.LocalServer;
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 using SafarSuite.LocalServer.Application.Commands;
+using SafarSuite.LocalServer.Application.Commands.GetAppActivationRevocationStatus;
 using SafarSuite.LocalServer.Application.Commands.Ports;
 using SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommands;
 using SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommandsFromBootstrapConfiguration;
@@ -48,6 +49,9 @@ var trustStatePath = Path.Combine(
 var importAuditPath = Path.Combine(
     Path.GetTempPath(),
     $"safarsuite-local-entitlement-import-audit-smoke-{Guid.NewGuid():N}.json");
+var appActivationRevocationPath = Path.Combine(
+    Path.GetTempPath(),
+    $"safarsuite-local-app-activation-revocations-smoke-{Guid.NewGuid():N}.json");
 var bootstrapConfigurationPath = Path.Combine(
     Path.GetTempPath(),
     $"safarsuite-local-bootstrap-configuration-smoke-{Guid.NewGuid():N}.json");
@@ -141,15 +145,51 @@ Require(bootstrapRuntimePlan.Services.Any(service =>
     service.ServiceName == "safarsuite-app"
     && service.ComposeProfile == "app-runtime"
     && !service.StartsByDefault), "Bootstrap package should include the optional SafarSuite app runtime slot.");
-Require(bootstrapPackage.Artifacts.Any(artifact =>
-    artifact.ArtifactType == "RuntimeServicesManifest"
-    && artifact.Content.Contains("safarsuite-app", StringComparison.Ordinal)), "Bootstrap package should include a runtime service manifest artifact.");
+var dockerComposeArtifact = RequireArtifact(bootstrapPackage, "DockerComposeTemplate");
+var environmentTemplateArtifact = RequireArtifact(bootstrapPackage, "EnvironmentTemplate");
+var runtimeManifestArtifact = RequireArtifact(bootstrapPackage, "RuntimeServicesManifest");
+Require(dockerComposeArtifact.FileName == "docker-compose.yml", "Bootstrap package should include the Docker Compose artifact filename.");
+Require(dockerComposeArtifact.TargetPath.EndsWith("/docker-compose.yml", StringComparison.Ordinal), "Bootstrap Docker Compose artifact should target the runtime config directory.");
+Require(dockerComposeArtifact.Content.Contains("safarsuite-app:", StringComparison.Ordinal), "Bootstrap Docker Compose template should include the SafarSuite app service.");
+Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_LOCAL_DB_IMAGE:-postgres:16-alpine}", StringComparison.Ordinal), "Bootstrap Docker Compose template should allow the local database image to be overridden.");
+Require(dockerComposeArtifact.Content.Contains("profiles:", StringComparison.Ordinal)
+    && dockerComposeArtifact.Content.Contains("- app-runtime", StringComparison.Ordinal), "Bootstrap Docker Compose template should keep the SafarSuite app behind the app-runtime profile.");
+Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_APP_IMAGE:?Set SAFARSUITE_APP_IMAGE}", StringComparison.Ordinal), "Bootstrap Docker Compose template should use the app image environment variable.");
+Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_APP_HTTP_PORT:-5280}:5280", StringComparison.Ordinal), "Bootstrap Docker Compose template should publish the app through the configured host port.");
+Require(dockerComposeArtifact.Content.Contains("SAFARSUITE_MODULE_GATEWAY_URL", StringComparison.Ordinal), "Bootstrap Docker Compose template should wire the app to the local module gateway.");
+Require(dockerComposeArtifact.Content.Contains("SAFARSUITE_LOCAL_API_BASE_URL:-https://local-api:8080", StringComparison.Ordinal), "Bootstrap Docker Compose template should default the app to the HTTPS Local API.");
+Require(dockerComposeArtifact.Content.Contains("SAFARSUITE_MODULE_GATEWAY_URL:-https://local-api:8080", StringComparison.Ordinal), "Bootstrap Docker Compose template should default module-gateway URL to the HTTPS Local API.");
+Require(dockerComposeArtifact.Content.Contains("./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro", StringComparison.Ordinal), "Bootstrap Docker Compose template should mount the runtime manifest into local services and app runtime.");
+Require(dockerComposeArtifact.Content.Contains("./certs/local-api:/etc/safarsuite/local-server/certs/local-api:ro", StringComparison.Ordinal), "Bootstrap Docker Compose template should mount local API server certificates only into the local API runtime.");
+Require(dockerComposeArtifact.Content.Contains("./certs/trust:/etc/safarsuite/local-server/certs/trust:ro", StringComparison.Ordinal), "Bootstrap Docker Compose template should mount trusted local API CA certificates into the app runtime.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_SITE_ID", StringComparison.Ordinal), "Bootstrap environment template should carry site identity placeholders.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_SERVER_CONFIG_DIR=/etc/safarsuite/local-server", StringComparison.Ordinal), "Bootstrap environment template should expose the local-server container config directory.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_SERVER_STATE_DIR=/var/lib/safarsuite/local-server", StringComparison.Ordinal), "Bootstrap environment template should expose the shared local-server state directory.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_DB_IMAGE=postgres:16-alpine", StringComparison.Ordinal), "Bootstrap environment template should default the local database image.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_APP_IMAGE=ghcr.io/danionwheels/localserver:{{SAFARSUITE_APP_VERSION}}", StringComparison.Ordinal), "Bootstrap environment template should default the app image to the verified SafarSuite runtime image.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_MODULE_GATEWAY_URL=https://local-api:8080", StringComparison.Ordinal), "Bootstrap environment template should default the app gateway to the HTTPS local API.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_ACCESS_KEY=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the local API access key placeholder.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_BASE_URL=https://local-api:8080", StringComparison.Ordinal), "Bootstrap environment template should default app-to-provider Local API traffic to HTTPS.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_TLS_MODE=GeneratedLocalCa", StringComparison.Ordinal), "Bootstrap environment template should default Local API TLS automation to generated local CA mode.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_ASPNETCORE_URLS=https://0.0.0.0:8080", StringComparison.Ordinal), "Bootstrap environment template should bind the local API over HTTPS by default.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_PATH=", StringComparison.Ordinal), "Bootstrap environment template should expose the local API TLS certificate path.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CA_CERTIFICATE_PATH=", StringComparison.Ordinal), "Bootstrap environment template should expose the trusted local API CA certificate path.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES=local-api,localhost", StringComparison.Ordinal), "Bootstrap environment template should expose local API certificate DNS names.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES=127.0.0.1", StringComparison.Ordinal), "Bootstrap environment template should expose local API certificate IP addresses.");
+Require(runtimeManifestArtifact.Content.Contains("\"serviceName\": \"safarsuite-app\"", StringComparison.Ordinal), "Bootstrap runtime manifest should include the SafarSuite app service.");
+Require(runtimeManifestArtifact.Content.Contains("\"internalBaseUrl\": \"https://local-api:8080\"", StringComparison.Ordinal), "Bootstrap runtime manifest should describe the Local API over HTTPS by default.");
+Require(runtimeManifestArtifact.Content.Contains("\"composeProfile\": \"app-runtime\"", StringComparison.Ordinal), "Bootstrap runtime manifest should describe the SafarSuite app profile.");
+Require(runtimeManifestArtifact.Content.Contains("\"publishedPortEnvironmentVariable\": \"SAFARSUITE_APP_HTTP_PORT\"", StringComparison.Ordinal), "Bootstrap runtime manifest should describe the app port variable.");
 Require(bootstrapPackage.Endpoints.DiagnosticsUrl?.EndsWith("/diagnostics", StringComparison.Ordinal) == true, "Bootstrap package should include the diagnostics endpoint.");
 Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_APP_VERSION", StringComparison.Ordinal), "Bootstrap install command should carry SafarSuite app version.");
 Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_CLIENT_DEPLOYMENT_MODE", StringComparison.Ordinal), "Bootstrap install command should carry client deployment mode.");
-Require(bootstrapPackage.Artifacts.Any(artifact =>
-    artifact.ArtifactType == "EnvironmentTemplate"
-    && artifact.Content.Contains("SAFARSUITE_SITE_ID", StringComparison.Ordinal)), "Bootstrap environment template should carry site identity placeholders.");
+Require(bootstrapPackage.BundleContentType == ControlCloudLocalServerBootstrapPackageFormat.BundleContentType, "Bootstrap package should expose the signed bundle content type.");
+Require(bootstrapPackage.BundleFileName.StartsWith("safarsuite-bootstrap-", StringComparison.Ordinal), "Bootstrap package should use a stable signed bundle filename prefix.");
+Require(bootstrapPackage.BundleSha256 == ComputeSha256(JsonSerializer.Serialize(
+    bootstrapPackage.SignedBundle,
+    new JsonSerializerOptions(JsonSerializerDefaults.Web))), "Bootstrap bundle checksum should match the downloadable signed bundle.");
+Require(bootstrapPackage.SignedBundle.Signature.PayloadSha256 == ComputeSha256(bootstrapPackage.SignedBundle.PayloadJson), "Bootstrap signature payload checksum should match the signed payload JSON.");
+RequireLocalServerRuntimeImageContract();
 
 var bootstrapRegistrationHandler = new RegisterInstallationFromBootstrapBundleHandler(
     bootstrapVerifier,
@@ -515,9 +555,32 @@ var refreshCommand = CreateCommandResponse(
         "Command entitlement refresh smoke",
         clock.UtcNow),
     clock.UtcNow.AddMinutes(1));
+var appActivationIssueId = Guid.NewGuid();
+var appServerInstallationId = Guid.NewGuid();
+var appActivationRevocationCommand = CreateCommandResponse(
+    commandSigner,
+    clientId,
+    installationId,
+    commandVersion: 3,
+    LocalServerInstallationCommandTypes.RevokeAppActivation,
+    CreateAppActivationRevocationCommandPayload(
+        clientId,
+        installationId,
+        appServerInstallationId,
+        appActivationIssueId,
+        activationRequestId: Guid.NewGuid(),
+        clock.UtcNow.AddMinutes(2),
+        "Smoke",
+        "Rotate app activation mapping"),
+    clock.UtcNow.AddMinutes(2));
 var commandClient = new StaticInstallationCommandClient(
     installationId,
-    [diagnosticCommand, refreshCommand]);
+    [diagnosticCommand, refreshCommand, appActivationRevocationCommand]);
+var appActivationRevocationStore = new FileLocalServerAppActivationRevocationStore(
+    new LocalServerCommandOptions
+    {
+        AppActivationRevocationStorePath = appActivationRevocationPath
+    });
 var commandDiagnosticsHttpHandler = new StaticDiagnosticsHttpMessageHandler();
 var commandDiagnosticsUploadHandler = new UploadDiagnosticsToControlCloudHandler(
     new HttpControlCloudDiagnosticsClient(
@@ -538,6 +601,8 @@ var commandPullHandler = new PullEntitlementFromControlCloudHandler(
 var commandProcessor = new ProcessInstallationCommandsHandler(
     commandClient,
     new HmacLocalServerInstallationCommandVerifier(trustOptions),
+    appActivationRevocationStore,
+    clock,
     commandPullHandler,
     diagnosticsBundleHandler,
     commandDiagnosticsUploadHandler);
@@ -548,8 +613,8 @@ var commandProcessingResult = await commandProcessorFromBootstrap.HandleAsync(
     new ProcessInstallationCommandsFromBootstrapConfigurationCommand());
 
 Require(commandProcessingResult.IsSuccess, "Local-server command processing should complete.");
-Require(commandProcessingResult.PendingCommandCount == 2, "Command processor should pull two pending commands.");
-Require(commandProcessingResult.AppliedCount == 2, "Diagnostics and refresh commands should be applied.");
+Require(commandProcessingResult.PendingCommandCount == 3, "Command processor should pull three pending commands.");
+Require(commandProcessingResult.AppliedCount == 3, "Diagnostics, refresh, and app activation revocation commands should be applied.");
 Require(commandProcessingResult.Commands.All(command => command.Acknowledged), "Processed commands should be acknowledged to Control Cloud.");
 Require(commandDiagnosticsHttpHandler.LastRequest?.Reason == "Command diagnostics smoke", "Diagnostics command should upload with the command reason.");
 Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Runtime?.RuntimeMode == "DockerCompose", "Command diagnostics should collect runtime mode from the bootstrap manifest.");
@@ -563,7 +628,10 @@ Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Any(service 
 Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Any(service =>
     service.ServiceName == "safarsuite-app"
     && service.ExpectedState == "ProfileDisabled"
-    && service.CurrentState == "ProfileDisabled") == true, "Command diagnostics should include the optional SafarSuite app runtime service slot.");
+    && service.CurrentState == "ProfileDisabled"
+    && service.Detail?.Contains("SAFARSUITE_APP_IMAGE", StringComparison.Ordinal) == true
+    && service.Detail?.Contains("SAFARSUITE_APP_HTTP_PORT", StringComparison.Ordinal) == true
+    && service.Detail?.Contains("http://safarsuite-app:5280/health", StringComparison.Ordinal) == true) == true, "Command diagnostics should include the optional SafarSuite app runtime service slot with manifest intent.");
 Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Any(error =>
     error.Source == "local-api"
     && error.Severity == "Error"
@@ -572,8 +640,53 @@ Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Any(erro
     error.Source == "local-worker"
     && error.Severity == "Warning"
     && error.Message.Contains("heartbeat delayed", StringComparison.OrdinalIgnoreCase)) == true, "Command diagnostics should include recent runtime log warnings.");
-Require(commandClient.Acknowledgements.Count == 2, "Command client should record both acknowledgements.");
+Require(commandClient.Acknowledgements.Count == 3, "Command client should record all three acknowledgements.");
 Require(commandClient.Acknowledgements.Any(ack => ack.Value.ResultStatus == LocalServerInstallationCommandAcknowledgementStatuses.Applied), "At least one command acknowledgement should be applied.");
+var recordedAppActivationRevocation = await appActivationRevocationStore.GetByActivationIssueIdAsync(appActivationIssueId);
+Require(recordedAppActivationRevocation is not null, "App activation revocation command should be recorded locally.");
+Require(recordedAppActivationRevocation?.AppServerInstallationId == appServerInstallationId, "App activation revocation should preserve the app server identity.");
+var appActivationRevocationStatusHandler = new GetAppActivationRevocationStatusHandler(
+    appActivationRevocationStore,
+    bootstrapConfigurationStore,
+    clock);
+var appActivationRevocationStatusResult = await appActivationRevocationStatusHandler.HandleAsync(
+    new GetAppActivationRevocationStatusQuery(
+        clientId,
+        installationId,
+        appServerInstallationId,
+        appActivationIssueId,
+        "fingerprint-smoke",
+        new string('a', 64),
+        "safarsuite-app-smoke"));
+Require(appActivationRevocationStatusResult.IsSuccess, "App activation revocation status should resolve from the local ledger.");
+Require(appActivationRevocationStatusResult.Status?.IsRevoked == true, "Recorded app activation revocation should block the app activation issue.");
+Require(appActivationRevocationStatusResult.Status?.IdentityMatched == true, "Recorded app activation revocation should match the app server identity.");
+Require(appActivationRevocationStatusResult.Status?.RevocationState == LocalServerAppActivationRevocationStates.Revoked, "Recorded app activation revocation should expose the revoked state.");
+var mismatchedAppActivationRevocationStatusResult = await appActivationRevocationStatusHandler.HandleAsync(
+    new GetAppActivationRevocationStatusQuery(
+        clientId,
+        installationId,
+        Guid.NewGuid(),
+        appActivationIssueId,
+        "fingerprint-smoke",
+        new string('a', 64),
+        "safarsuite-app-smoke"));
+Require(mismatchedAppActivationRevocationStatusResult.IsSuccess, "Mismatched app activation revocation status should still resolve.");
+Require(mismatchedAppActivationRevocationStatusResult.Status?.IsRevoked == true, "Mismatched app activation identity should fail closed.");
+Require(mismatchedAppActivationRevocationStatusResult.Status?.IdentityMatched == false, "Mismatched app activation identity should be marked explicitly.");
+Require(mismatchedAppActivationRevocationStatusResult.Status?.RevocationState == LocalServerAppActivationRevocationStates.RevokedIdentityMismatch, "Mismatched app activation identity should expose a stable mismatch state.");
+var unrevokedAppActivationStatusResult = await appActivationRevocationStatusHandler.HandleAsync(
+    new GetAppActivationRevocationStatusQuery(
+        clientId,
+        installationId,
+        appServerInstallationId,
+        Guid.NewGuid(),
+        "fingerprint-smoke",
+        new string('a', 64),
+        "safarsuite-app-smoke"));
+Require(unrevokedAppActivationStatusResult.IsSuccess, "Unrevoked app activation status should resolve from the local ledger.");
+Require(unrevokedAppActivationStatusResult.Status?.IsRevoked == false, "Unknown app activation issue should not be marked revoked locally.");
+Require(unrevokedAppActivationStatusResult.Status?.RevocationState == LocalServerAppActivationRevocationStates.NotRevoked, "Unknown app activation issue should expose the not-revoked state.");
 
 var cachedEntitlement = await cache.GetCurrentAsync();
 
@@ -622,6 +735,9 @@ Console.WriteLine(JsonSerializer.Serialize(
         commandProcessingAcknowledgements = commandClient.Acknowledgements.Count,
         commandDiagnosticsRuntimeServices = commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Count,
         commandDiagnosticsRuntimeErrors = commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Count,
+        appActivationRevocationState = appActivationRevocationStatusResult.Status?.RevocationState,
+        appActivationRevocationIdentityMismatchState = mismatchedAppActivationRevocationStatusResult.Status?.RevocationState,
+        appActivationNotRevokedState = unrevokedAppActivationStatusResult.Status?.RevocationState,
         moduleGatewayAccountingAllowed = moduleGatewayAllowedResult.Access.IsAllowed,
         moduleGatewayReportsState = moduleGatewayDisabledResult.Access.AccessState,
         moduleGatewayExpiredState = moduleGatewayExpiredResult.Access.AccessState,
@@ -736,6 +852,36 @@ static string CreateSupportCommandPayload(
             RequestedBy = requestedBy,
             Reason = reason,
             RequestedAtUtc = requestedAtUtc
+        },
+        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+}
+
+static string CreateAppActivationRevocationCommandPayload(
+    Guid clientId,
+    string installationId,
+    Guid appServerInstallationId,
+    Guid activationIssueId,
+    Guid activationRequestId,
+    DateTimeOffset revokedAtUtc,
+    string revokedBy,
+    string reason)
+{
+    return JsonSerializer.Serialize(
+        new
+        {
+            PayloadFormatVersion = "safarsuite-app-activation-revocation-command-v1",
+            CommandType = LocalServerInstallationCommandTypes.RevokeAppActivation,
+            ClientId = clientId,
+            InstallationId = installationId,
+            AppServerInstallationId = appServerInstallationId,
+            ActivationIssueId = activationIssueId,
+            ActivationRequestId = activationRequestId,
+            FingerprintHash = "fingerprint-smoke",
+            ServerPublicKeySha256 = new string('a', 64),
+            SigningKeyId = "app-activation-smoke",
+            RevokedAtUtc = revokedAtUtc,
+            RevokedBy = revokedBy,
+            Reason = reason
         },
         new JsonSerializerOptions(JsonSerializerDefaults.Web));
 }
@@ -896,6 +1042,72 @@ static void Require(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+static LocalServerBootstrapPackageArtifactResponse RequireArtifact(
+    LocalServerBootstrapPackageResponse bootstrapPackage,
+    string artifactType)
+{
+    return bootstrapPackage.Artifacts.SingleOrDefault(artifact => artifact.ArtifactType == artifactType)
+        ?? throw new InvalidOperationException($"Bootstrap package should include the {artifactType} artifact.");
+}
+
+static void RequireLocalServerRuntimeImageContract()
+{
+    var repoRoot = FindRepositoryRoot();
+    var dockerfile = Path.Combine(repoRoot, "src", "SafarSuite.LocalServer.Api", "Dockerfile");
+    var apiCommand = Path.Combine(repoRoot, "src", "SafarSuite.LocalServer.Api", "docker", "safarsuite-local-api");
+    var workerCommand = Path.Combine(repoRoot, "src", "SafarSuite.LocalServer.Api", "docker", "safarsuite-local-worker");
+    var agentCommand = Path.Combine(repoRoot, "src", "SafarSuite.LocalServer.Api", "docker", "safarsuite-local-agent");
+
+    Require(File.Exists(dockerfile), "Local-server Dockerfile should exist.");
+    Require(File.Exists(apiCommand), "Local-server API command shim should exist.");
+    Require(File.Exists(workerCommand), "Local-server worker command shim should exist.");
+    Require(File.Exists(agentCommand), "Local-server agent command shim should exist.");
+
+    var dockerfileContent = File.ReadAllText(dockerfile);
+    var apiCommandContent = File.ReadAllText(apiCommand);
+    var workerCommandContent = File.ReadAllText(workerCommand);
+    var agentCommandContent = File.ReadAllText(agentCommand);
+
+    Require(dockerfileContent.Contains("safarsuite-local-api", StringComparison.Ordinal), "Local-server Dockerfile should install the API command.");
+    Require(dockerfileContent.Contains("safarsuite-local-worker", StringComparison.Ordinal), "Local-server Dockerfile should install the worker command.");
+    Require(dockerfileContent.Contains("safarsuite-local-agent", StringComparison.Ordinal), "Local-server Dockerfile should install the agent command.");
+    Require(dockerfileContent.Contains("SAFARSUITE_LOCAL_SERVER_RUNTIME_BASE_IMAGE", StringComparison.Ordinal), "Local-server Dockerfile should allow the runtime base image to be overridden for local proof builds.");
+    Require(dockerfileContent.Contains("SAFARSUITE_LOCAL_API_ASPNETCORE_URLS=http://0.0.0.0:8080", StringComparison.Ordinal), "Local-server Dockerfile should keep the API bind URL explicit for HTTPS-ready deployments.");
+    Require(dockerfileContent.Contains("/etc/safarsuite/local-server/certs", StringComparison.Ordinal), "Local-server Dockerfile should create the local API certificate directory.");
+    Require(dockerfileContent.Contains("runtime-from-publish", StringComparison.Ordinal), "Local-server Dockerfile should expose a pre-published runtime build target.");
+    Require(dockerfileContent.Contains("ENTRYPOINT []", StringComparison.Ordinal), "Local-server Dockerfile should clear inherited base-image entrypoints.");
+    Require(dockerfileContent.Contains("HEALTHCHECK NONE", StringComparison.Ordinal), "Local-server Dockerfile should clear inherited base-image healthchecks.");
+    Require(dockerfileContent.Contains("USER app", StringComparison.Ordinal), "Local-server runtime image should run as the non-root app user.");
+    Require(apiCommandContent.Contains("LocalServer__Runtime__EnableBackgroundWorker", StringComparison.Ordinal)
+        && apiCommandContent.Contains("false", StringComparison.Ordinal), "Local-server API command should keep background automation disabled.");
+    Require(apiCommandContent.Contains("SAFARSUITE_LOCAL_API_ASPNETCORE_URLS", StringComparison.Ordinal)
+        && apiCommandContent.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_PATH", StringComparison.Ordinal), "Local-server API command should map HTTPS-ready Local API settings to Kestrel.");
+    Require(workerCommandContent.Contains("LocalServer__Runtime__EnableEntitlementPull", StringComparison.Ordinal)
+        && workerCommandContent.Contains("LocalServer__Runtime__EnableHeartbeat", StringComparison.Ordinal)
+        && workerCommandContent.Contains("LocalServer__Runtime__EnableCommandPolling", StringComparison.Ordinal)
+        && workerCommandContent.Contains("false", StringComparison.Ordinal), "Local-server worker command should run entitlement and heartbeat without command polling.");
+    Require(agentCommandContent.Contains("LocalServer__Runtime__EnableCommandPolling", StringComparison.Ordinal)
+        && agentCommandContent.Contains("LocalServer__Runtime__EnableEntitlementPull", StringComparison.Ordinal)
+        && agentCommandContent.Contains("false", StringComparison.Ordinal), "Local-server agent command should run command polling without entitlement pull.");
+}
+
+static string FindRepositoryRoot()
+{
+    var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
+
+    while (directory is not null)
+    {
+        if (File.Exists(Path.Combine(directory.FullName, "SafarSuite.ControlDesk.sln")))
+        {
+            return directory.FullName;
+        }
+
+        directory = directory.Parent;
+    }
+
+    throw new InvalidOperationException("Repository root could not be found.");
 }
 
 internal sealed class FixedLocalServerClock : ILocalServerClock

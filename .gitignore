@@ -12,6 +12,7 @@ dist/
 build/
 coverage/
 .vite/
+*.tsbuildinfo
 
 # Tauri
 desktop/tauri/target/
@@ -20,6 +21,12 @@ desktop/tauri/target/
 .env
 .env.*
 !.env.example
+.codex-run/
+artifacts/localserver-api-publish/
+
+# Generated proof/build artifacts
+artifacts/codex/
+**/artifacts/codex/
 
 # IDE
 .vs/

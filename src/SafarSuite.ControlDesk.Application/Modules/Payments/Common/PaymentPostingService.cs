@@ -52,6 +52,13 @@ public sealed class PaymentPostingService
                 $"{label} must be an asset account."));
         }
 
+        if (account.Status != LedgerAccountStatus.Active)
+        {
+            return Result<LedgerAccount>.Failure(ApplicationError.Validation(
+                target,
+                $"{label} must be active."));
+        }
+
         return Result<LedgerAccount>.Success(account);
     }
 

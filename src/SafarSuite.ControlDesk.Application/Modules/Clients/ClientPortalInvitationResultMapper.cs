@@ -50,11 +50,11 @@ internal static class ClientPortalInvitationResultMapper
             "InvitationNotUsable" => ApplicationError.Conflict(
                 "invitationId",
                 detail ?? "Portal invitation cannot be changed."),
-            "ControlCloudInvitationUnauthorized" => ApplicationError.Unexpected(
+            "ControlCloudInvitationUnauthorized" => ApplicationError.ServiceUnavailable(
                 detail ?? "Control Cloud rejected the provider invitation key."),
-            "ControlCloudInvitationNotConfigured" => ApplicationError.Unexpected(
+            "ControlCloudInvitationNotConfigured" => ApplicationError.ServiceUnavailable(
                 detail ?? "Control Cloud invitation endpoint is not configured."),
-            "ControlCloudInvitationUnavailable" => ApplicationError.Unexpected(
+            "ControlCloudInvitationUnavailable" => ApplicationError.ServiceUnavailable(
                 detail ?? "Control Cloud invitation endpoint is unavailable."),
             _ => ApplicationError.Unexpected(
                 detail ?? "Control Cloud could not process the portal invitation request.")

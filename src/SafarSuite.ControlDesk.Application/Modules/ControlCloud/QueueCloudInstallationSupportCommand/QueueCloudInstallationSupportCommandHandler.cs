@@ -180,9 +180,9 @@ public sealed class QueueCloudInstallationSupportCommandHandler
             "CommandPayloadInvalid" => ApplicationError.Validation("payload", detail),
             "CommandExpiryInvalid" => ApplicationError.Validation("expiresInHours", detail),
             "CommandInvalid" => ApplicationError.Validation("commandType", detail),
-            "ControlCloudCommandNotConfigured" => ApplicationError.Unexpected(detail),
-            "ControlCloudCommandUnavailable" => ApplicationError.Unexpected(detail),
-            "ControlCloudCommandResponseInvalid" => ApplicationError.Unexpected(detail),
+            "ControlCloudCommandNotConfigured" => ApplicationError.ServiceUnavailable(detail),
+            "ControlCloudCommandUnavailable" => ApplicationError.ServiceUnavailable(detail),
+            "ControlCloudCommandResponseInvalid" => ApplicationError.ServiceUnavailable(detail),
             _ => ApplicationError.Unexpected(detail)
         };
     }

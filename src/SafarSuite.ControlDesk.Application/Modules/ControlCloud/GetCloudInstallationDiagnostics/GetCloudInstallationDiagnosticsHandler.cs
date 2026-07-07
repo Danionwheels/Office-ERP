@@ -56,11 +56,11 @@ public sealed class GetCloudInstallationDiagnosticsHandler
             "InstallationClientMismatch" => ApplicationError.Conflict(
                 "installationId",
                 result.Detail ?? "Installation belongs to another Control Cloud client."),
-            "ControlCloudDiagnosticsNotConfigured" => ApplicationError.Unexpected(
+            "ControlCloudDiagnosticsNotConfigured" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud diagnostics endpoint is not configured."),
-            "ControlCloudDiagnosticsUnavailable" => ApplicationError.Unexpected(
+            "ControlCloudDiagnosticsUnavailable" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud diagnostics are unavailable."),
-            "ControlCloudDiagnosticsResponseInvalid" => ApplicationError.Unexpected(
+            "ControlCloudDiagnosticsResponseInvalid" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud returned an invalid diagnostics response."),
             _ => ApplicationError.Unexpected(
                 result.Detail ?? "Control Cloud diagnostics could not be loaded.")

@@ -12,6 +12,7 @@ public sealed class PostManualJournalEntryHandler
     private readonly IJournalEntryRepository _journalEntries;
     private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly AccountingPeriodPostingGuard _periodGuard;
+    private readonly JournalVoucherNumberService _voucherNumbers;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
     private readonly IClock _clock;
@@ -21,6 +22,7 @@ public sealed class PostManualJournalEntryHandler
         IJournalEntryRepository journalEntries,
         ILedgerAccountRepository ledgerAccounts,
         AccountingPeriodPostingGuard periodGuard,
+        JournalVoucherNumberService voucherNumbers,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
         IClock clock,
@@ -29,6 +31,7 @@ public sealed class PostManualJournalEntryHandler
         _journalEntries = journalEntries;
         _ledgerAccounts = ledgerAccounts;
         _periodGuard = periodGuard;
+        _voucherNumbers = voucherNumbers;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
         _clock = clock;
@@ -65,12 +68,19 @@ public sealed class PostManualJournalEntryHandler
                 return Result<PostManualJournalEntryResult>.Failure(accountErrors);
             }
 
+            var sourceReference = string.IsNullOrWhiteSpace(command.SourceReference)
+                ? (await _voucherNumbers.PreviewNextAsync(
+                    JournalSourceType.Manual,
+                    command.EntryDate,
+                    cancellationToken)).Reference
+                : command.SourceReference.Trim();
+
             var journalEntry = JournalEntry.Create(
                 JournalEntryId.Create(_idGenerator.NewGuid()),
                 command.EntryDate,
                 command.CurrencyCode,
                 JournalSourceType.Manual,
-                command.SourceReference,
+                sourceReference,
                 command.Memo,
                 _clock.UtcNow);
 

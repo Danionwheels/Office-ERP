@@ -3,8 +3,11 @@ using SafarSuite.ControlDesk.Application.Modules.Contracts;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.GetClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ListClientContracts;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.ListProductAccessCatalog;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ListProductModules;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.PublishProductAccessCatalogCommand;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ReplaceActiveClientContract;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.SaveProductAccessCatalog;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.SuspendClientContract;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Contracts;
 
@@ -24,8 +27,126 @@ public static class ContractEndpoints
         group.MapPost("/client-contracts/replace-active", ReplaceActiveClientContractAsync);
         group.MapGet("/clients/{clientId:guid}/client-contracts", ListClientContractsAsync);
         group.MapGet("/product-modules", ListProductModulesAsync);
+        group.MapGet("/product-access-catalog", ListProductAccessCatalogAsync);
+        group.MapPut("/product-access-catalog", SaveProductAccessCatalogAsync);
+        group.MapPost("/product-access-catalog/product-kernel-command", PublishProductAccessCatalogCommandAsync);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> SaveProductAccessCatalogAsync(
+        SaveProductAccessCatalogRequest request,
+        SaveProductAccessCatalogHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new SaveProductAccessCatalogCommand(
+                (request.ModuleGroups ?? []).Select(group => new SaveProductModuleGroupCommand(
+                        group.GroupId,
+                        group.DisplayName,
+                        group.AccessKind,
+                        (group.ModuleCodes ?? []).ToArray()))
+                    .ToArray(),
+                (request.Resources ?? []).Select(resource => new SaveProductResourceCommand(
+                        resource.ResourceId,
+                        resource.DisplayName,
+                        resource.AccessKind,
+                        (resource.RequiredGroupIds ?? []).ToArray(),
+                        (resource.RequiredModuleCodes ?? []).ToArray()))
+                    .ToArray(),
+                request.RequestedBy ?? string.Empty),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ProductAccessCatalogResponse(
+            result.Value.ModuleGroups.Select(group => new ProductModuleGroupResponse(
+                    group.GroupId,
+                    group.DisplayName,
+                    group.AccessKind,
+                    group.ModuleCodes.ToArray()))
+                .ToArray(),
+            result.Value.Resources.Select(resource => new ProductResourceResponse(
+                    resource.ResourceId,
+                    resource.DisplayName,
+                    resource.AccessKind,
+                    resource.RequiredGroupIds.ToArray(),
+                    resource.RequiredModuleCodes.ToArray(),
+                    resource.ResolvedModuleCodes.ToArray()))
+                .ToArray()));
+    }
+
+    private static async Task<IResult> PublishProductAccessCatalogCommandAsync(
+        PublishProductAccessCatalogCommandRequest request,
+        PublishProductAccessCatalogCommandHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new PublishProductAccessCatalogCommand(
+                request.ActivationRequestId,
+                request.ExpiresInHours ?? 2,
+                request.RequestedBy),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new PublishProductAccessCatalogCommandResponse(
+            result.Value.CommandId,
+            result.Value.ServerInstallationId,
+            result.Value.CommandType,
+            result.Value.ProductKernelCommand,
+            result.Value.Signature,
+            result.Value.SigningKeyId,
+            result.Value.ExpiresAt,
+            new ProductAccessCatalogResponse(
+                result.Value.ModuleGroups.Select(group => new ProductModuleGroupResponse(
+                        group.GroupId,
+                        group.DisplayName,
+                        group.AccessKind,
+                        group.ModuleCodes.ToArray()))
+                    .ToArray(),
+                result.Value.Resources.Select(resource => new ProductResourceResponse(
+                        resource.ResourceId,
+                        resource.DisplayName,
+                        resource.AccessKind,
+                        resource.RequiredGroupIds.ToArray(),
+                        resource.RequiredModuleCodes.ToArray(),
+                        resource.ResolvedModuleCodes.ToArray()))
+                    .ToArray())));
+    }
+
+    private static async Task<IResult> ListProductAccessCatalogAsync(
+        ListProductAccessCatalogHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ProductAccessCatalogResponse(
+            result.Value.ModuleGroups.Select(group => new ProductModuleGroupResponse(
+                    group.GroupId,
+                    group.DisplayName,
+                    group.AccessKind,
+                    group.ModuleCodes.ToArray()))
+                .ToArray(),
+            result.Value.Resources.Select(resource => new ProductResourceResponse(
+                    resource.ResourceId,
+                    resource.DisplayName,
+                    resource.AccessKind,
+                    resource.RequiredGroupIds.ToArray(),
+                    resource.RequiredModuleCodes.ToArray(),
+                    resource.ResolvedModuleCodes.ToArray()))
+                .ToArray()));
     }
 
     private static async Task<IResult> ListProductModulesAsync(

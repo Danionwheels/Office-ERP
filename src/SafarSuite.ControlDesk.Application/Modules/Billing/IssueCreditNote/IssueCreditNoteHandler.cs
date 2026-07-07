@@ -3,6 +3,7 @@ using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Billing.Common;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
@@ -18,6 +19,7 @@ public sealed class IssueCreditNoteHandler
     private readonly IInvoiceRepository _invoices;
     private readonly ICreditNoteRepository _creditNotes;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly IUnitOfWork _unitOfWork;
@@ -29,6 +31,7 @@ public sealed class IssueCreditNoteHandler
         IInvoiceRepository invoices,
         ICreditNoteRepository creditNotes,
         IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts,
         AccountingPeriodPostingGuard periodGuard,
         ICloudOutboxMessageRepository cloudOutboxMessages,
         IUnitOfWork unitOfWork,
@@ -39,6 +42,7 @@ public sealed class IssueCreditNoteHandler
         _invoices = invoices;
         _creditNotes = creditNotes;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
         _periodGuard = periodGuard;
         _cloudOutboxMessages = cloudOutboxMessages;
         _unitOfWork = unitOfWork;
@@ -138,7 +142,7 @@ public sealed class IssueCreditNoteHandler
                         CreateCreditNoteIssuedOutboxMessage(creditNote, invoice, journalEntry, originalJournal),
                         token);
 
-                    return ToResult(creditNote, invoice, journalEntry);
+                    return await ToResultAsync(creditNote, invoice, journalEntry, token);
                 },
                 cancellationToken);
 
@@ -239,29 +243,20 @@ public sealed class IssueCreditNoteHandler
             _clock.UtcNow);
     }
 
-    private static IssueCreditNoteResult ToResult(
+    private async Task<IssueCreditNoteResult> ToResultAsync(
         CreditNote creditNote,
         Invoice invoice,
-        JournalEntry journalEntry)
+        JournalEntry journalEntry,
+        CancellationToken cancellationToken)
     {
-        return new IssueCreditNoteResult(
-            creditNote.Id.Value,
-            invoice.Id.Value,
-            creditNote.Number.Value,
-            invoice.Number.Value,
-            creditNote.Status.ToString(),
-            creditNote.CreditDate,
-            creditNote.TotalAmount.Amount,
-            creditNote.CurrencyCode,
-            journalEntry.Id.Value,
-            journalEntry.Status.ToString(),
-            journalEntry.TotalDebit.Amount,
-            journalEntry.TotalCredit.Amount,
-            journalEntry.Lines.Select(line => new IssueCreditNoteJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
+
+        return BillingDocumentResultFactory.ToIssueCreditNoteResult(
+            creditNote,
+            invoice,
+            journalEntry,
+            ledgerAccountsById);
     }
 
     private sealed record CreditNoteIssuedCloudPayload(

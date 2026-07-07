@@ -17,6 +17,7 @@ public sealed class ApproveInvoicePaymentHandler
     private readonly IPaymentRepository _payments;
     private readonly IInvoiceRepository _invoices;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly PaymentPostingService _postingService;
@@ -29,6 +30,7 @@ public sealed class ApproveInvoicePaymentHandler
         IPaymentRepository payments,
         IInvoiceRepository invoices,
         IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts,
         ICloudOutboxMessageRepository cloudOutboxMessages,
         AccountingPeriodPostingGuard periodGuard,
         PaymentPostingService postingService,
@@ -40,6 +42,7 @@ public sealed class ApproveInvoicePaymentHandler
         _payments = payments;
         _invoices = invoices;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
         _cloudOutboxMessages = cloudOutboxMessages;
         _periodGuard = periodGuard;
         _postingService = postingService;
@@ -169,7 +172,7 @@ public sealed class ApproveInvoicePaymentHandler
                             token);
                     }
 
-                    return ToResult(payment, invoice, journalEntry);
+                    return await ToResultAsync(payment, invoice, journalEntry, token);
                 },
                 cancellationToken);
 
@@ -189,11 +192,15 @@ public sealed class ApproveInvoicePaymentHandler
         }
     }
 
-    private static ApproveInvoicePaymentResult ToResult(
+    private async Task<ApproveInvoicePaymentResult> ToResultAsync(
         Payment payment,
         Invoice invoice,
-        JournalEntry journalEntry)
+        JournalEntry journalEntry,
+        CancellationToken cancellationToken)
     {
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
+
         return new ApproveInvoicePaymentResult(
             payment.Id.Value,
             invoice.Id.Value,
@@ -208,10 +215,10 @@ public sealed class ApproveInvoicePaymentHandler
             journalEntry.EntryDate,
             journalEntry.TotalDebit.Amount,
             journalEntry.TotalCredit.Amount,
-            journalEntry.Lines.Select(line => new ApproveInvoicePaymentJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+            journalEntry.Lines
+                .Select(line => PaymentDocumentResultFactory.ToApproveInvoicePaymentJournalLineResult(
+                    line,
+                    ledgerAccountsById))
+                .ToArray());
     }
 }

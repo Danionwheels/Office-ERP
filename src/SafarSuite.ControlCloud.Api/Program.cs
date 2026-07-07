@@ -2,6 +2,7 @@ using SafarSuite.ControlCloud.Api.Modules.Audit;
 using SafarSuite.ControlCloud.Api.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Api.Modules.InboundControlDesk;
 using SafarSuite.ControlCloud.Api.Modules.LocalServer;
+using SafarSuite.ControlCloud.Api.Modules.ProviderAccess;
 using SafarSuite.ControlCloud.Application.Common;
 using SafarSuite.ControlCloud.Application.Modules.Audit.ListControlCloudAuditEvents;
 using SafarSuite.ControlCloud.Application.Modules.Audit.Ports;
@@ -16,11 +17,14 @@ using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateLocalServerB
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationStatus;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetLatestInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetPendingInstallationCommands;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueSafarSuiteAppActivationToken;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListSafarSuiteAppActivationIssues;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.QueueInstallationCommand;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ReceiveInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.RegisterLocalServerInstallation;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ReportInstallationHeartbeat;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.RevokeSafarSuiteAppActivationIssue;
 using SafarSuite.ControlCloud.Infrastructure;
 using SafarSuite.ControlCloud.Infrastructure.ClientPortal;
 using SafarSuite.ControlCloud.Infrastructure.InboundControlDesk;
@@ -47,6 +51,9 @@ var bootstrapPackageOptions =
 var diagnosticsOptions =
     builder.Configuration.GetSection(ControlCloudDiagnosticsOptions.SectionName).Get<ControlCloudDiagnosticsOptions>()
     ?? new ControlCloudDiagnosticsOptions();
+var appActivationSigningOptions =
+    builder.Configuration.GetSection(ControlCloudAppActivationSigningOptions.SectionName).Get<ControlCloudAppActivationSigningOptions>()
+    ?? new ControlCloudAppActivationSigningOptions();
 var clientPortalAccessOptions =
     builder.Configuration.GetSection(ClientPortalAccessOptions.SectionName).Get<ClientPortalAccessOptions>()
     ?? new ClientPortalAccessOptions();
@@ -66,6 +73,7 @@ builder.Services.AddSingleton(commandQueueOptions);
 builder.Services.AddSingleton(setupTokenOptions);
 builder.Services.AddSingleton(bootstrapPackageOptions);
 builder.Services.AddSingleton(diagnosticsOptions);
+builder.Services.AddSingleton(appActivationSigningOptions);
 builder.Services.AddSingleton(clientPortalAccessOptions);
 builder.Services.AddSingleton(clientPortalInvitationDeliveryOptions);
 builder.Services.AddSingleton(clientPortalAuditOptions);
@@ -78,8 +86,11 @@ builder.Services.AddSingleton<IControlCloudSigningKeyStore, ConfiguredControlClo
 builder.Services.AddSingleton<IControlCloudEntitlementBundleSigner, HmacControlCloudEntitlementBundleSigner>();
 builder.Services.AddSingleton<IControlCloudBootstrapPackageSigner, HmacControlCloudBootstrapPackageSigner>();
 builder.Services.AddSingleton<IControlCloudInstallationCommandSigner, HmacControlCloudInstallationCommandSigner>();
+builder.Services.AddSingleton<IControlCloudAppActivationTokenSigner, EcdsaControlCloudAppActivationTokenSigner>();
+builder.Services.AddSingleton<IControlCloudAppActivationIssueRepository, FileControlCloudAppActivationIssueRepository>();
 builder.Services.AddSingleton<IControlCloudInstallationSetupTokenService, RandomControlCloudInstallationSetupTokenService>();
 builder.Services.AddSingleton<IClientPortalCredentialService, HmacClientPortalCredentialService>();
+builder.Services.AddSingleton<IProviderAccessOperatorStore, FileProviderAccessOperatorStore>();
 AddClientPortalInvitationDelivery(builder.Services, clientPortalInvitationDeliveryOptions);
 builder.Services.AddSingleton<FileClientPortalAuditRecorder>();
 builder.Services.AddSingleton<IClientPortalAuditRecorder>(
@@ -87,6 +98,7 @@ builder.Services.AddSingleton<IClientPortalAuditRecorder>(
 builder.Services.AddSingleton<IControlCloudAuditEventReader>(
     services => services.GetRequiredService<FileClientPortalAuditRecorder>());
 builder.Services.AddSingleton<IClientPortalSessionService, HmacClientPortalSessionService>();
+builder.Services.AddSingleton<ProviderAccessSessionService>();
 builder.Services.AddSingleton<ControlCloudEnvelopeSignatureValidator>();
 AddPersistence(builder.Services, builder.Configuration);
 builder.Services.AddScoped<ControlDeskEnvelopeProjectionService>();
@@ -98,6 +110,7 @@ builder.Services.AddScoped<CreateClientPortalInvitationHandler>();
 builder.Services.AddScoped<CreateClientPortalSessionHandler>();
 builder.Services.AddScoped<ExportOfflineRenewalFileHandler>();
 builder.Services.AddScoped<ListControlCloudAuditEventsHandler>();
+builder.Services.AddScoped<ListSafarSuiteAppActivationIssuesHandler>();
 builder.Services.AddScoped<ListClientPortalInvitationsHandler>();
 builder.Services.AddScoped<ResendClientPortalInvitationHandler>();
 builder.Services.AddScoped<RevokeClientPortalInvitationHandler>();
@@ -106,10 +119,12 @@ builder.Services.AddScoped<GetLatestInstallationDiagnosticsHandler>();
 builder.Services.AddScoped<GetClientPortalCommercialSummaryHandler>();
 builder.Services.AddScoped<GetClientPortalSignedEntitlementBundleHandler>();
 builder.Services.AddScoped<GetPendingInstallationCommandsHandler>();
+builder.Services.AddScoped<IssueSafarSuiteAppActivationTokenHandler>();
 builder.Services.AddScoped<QueueInstallationCommandHandler>();
 builder.Services.AddScoped<ReceiveInstallationDiagnosticsHandler>();
 builder.Services.AddScoped<RegisterLocalServerInstallationHandler>();
 builder.Services.AddScoped<ReportInstallationHeartbeatHandler>();
+builder.Services.AddScoped<RevokeSafarSuiteAppActivationIssueHandler>();
 builder.Services.AddScoped<ReceiveControlDeskEnvelopeHandler>();
 
 var app = builder.Build();
@@ -124,6 +139,7 @@ app.MapGet("/health", () => Results.Ok(new
 
 app.MapInboundControlDeskEndpoints();
 app.MapControlCloudAuditEndpoints();
+app.MapProviderAccessEndpoints();
 app.MapClientPortalEndpoints();
 app.MapLocalServerCommandEndpoints();
 

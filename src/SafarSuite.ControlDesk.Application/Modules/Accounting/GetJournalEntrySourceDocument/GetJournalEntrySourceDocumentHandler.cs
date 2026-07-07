@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Ports;
@@ -11,6 +12,8 @@ namespace SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntryS
 public sealed class GetJournalEntrySourceDocumentHandler
 {
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly IOpeningBalanceProfileRepository _openingBalanceProfiles;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly IInvoiceRepository _invoices;
     private readonly ICreditNoteRepository _creditNotes;
     private readonly IPaymentRepository _payments;
@@ -18,12 +21,16 @@ public sealed class GetJournalEntrySourceDocumentHandler
 
     public GetJournalEntrySourceDocumentHandler(
         IJournalEntryRepository journalEntries,
+        IOpeningBalanceProfileRepository openingBalanceProfiles,
+        ILedgerAccountRepository ledgerAccounts,
         IInvoiceRepository invoices,
         ICreditNoteRepository creditNotes,
         IPaymentRepository payments,
         IClientRefundRepository refunds)
     {
         _journalEntries = journalEntries;
+        _openingBalanceProfiles = openingBalanceProfiles;
+        _ledgerAccounts = ledgerAccounts;
         _invoices = invoices;
         _creditNotes = creditNotes;
         _payments = payments;
@@ -73,10 +80,58 @@ public sealed class GetJournalEntrySourceDocumentHandler
                 await ResolvePaymentAsync(entry, isReversal: true, cancellationToken)),
             JournalSourceType.ClientRefund => Result<JournalEntrySourceDocumentResult>.Success(
                 await ResolveRefundAsync(entry, cancellationToken)),
+            JournalSourceType.OpeningBalance => Result<JournalEntrySourceDocumentResult>.Success(
+                await ResolveOpeningBalanceAsync(entry, cancellationToken)),
             _ => Result<JournalEntrySourceDocumentResult>.Success(Unresolved(
                 entry,
                 $"{entry.SourceType} journals do not have a linked source document."))
         };
+    }
+
+    private async Task<JournalEntrySourceDocumentResult> ResolveOpeningBalanceAsync(
+        JournalEntry entry,
+        CancellationToken cancellationToken)
+    {
+        var profile = await _openingBalanceProfiles.GetByCompanyAsync(
+            AccountingSetupDefaults.DefaultCompanyCode,
+            cancellationToken);
+        LedgerAccount? carryForwardAccount = null;
+
+        if (profile?.ProfitAndLossCarryForwardAccountId is not null)
+        {
+            carryForwardAccount = await _ledgerAccounts.GetByIdAsync(
+                profile.ProfitAndLossCarryForwardAccountId.Value,
+                cancellationToken);
+        }
+
+        return new JournalEntrySourceDocumentResult(
+            entry.Id.Value,
+            entry.SourceType.ToString(),
+            entry.SourceReference,
+            IsResolved: true,
+            DocumentKind: "OpeningBalance",
+            DocumentId: profile?.Id.Value,
+            ClientId: null,
+            RelatedInvoiceId: null,
+            Reference: entry.SourceReference,
+            Status: profile?.Status.ToString() ?? entry.Status.ToString(),
+            DocumentDate: entry.EntryDate,
+            CurrencyCode: entry.CurrencyCode,
+            Amount: entry.TotalDebit.Amount,
+            Label: string.IsNullOrWhiteSpace(entry.SourceReference)
+                ? "Opening balance"
+                : $"Opening balance {entry.SourceReference}",
+            DashboardModule: "accounting",
+            DashboardStep: "journal",
+            FiscalYearFrom: profile?.FiscalYearFrom,
+            FiscalYearTo: profile?.FiscalYearTo,
+            TransactionsAllowed: profile?.TransactionsAllowed,
+            ProfitAndLossCarryForwardAccountId: profile?.ProfitAndLossCarryForwardAccountId?.Value,
+            ProfitAndLossCarryForwardAccountCode: carryForwardAccount?.Code.Value,
+            ProfitAndLossCarryForwardAccountName: carryForwardAccount?.Name,
+            Message: profile is null
+                ? "Opening balance profile has not been saved yet."
+                : null);
     }
 
     private async Task<JournalEntrySourceDocumentResult> ResolveInvoiceAsync(
@@ -245,6 +300,12 @@ public sealed class GetJournalEntrySourceDocumentHandler
             label,
             dashboardModule,
             dashboardStep,
+            FiscalYearFrom: null,
+            FiscalYearTo: null,
+            TransactionsAllowed: null,
+            ProfitAndLossCarryForwardAccountId: null,
+            ProfitAndLossCarryForwardAccountCode: null,
+            ProfitAndLossCarryForwardAccountName: null,
             Message: null);
     }
 
@@ -267,6 +328,12 @@ public sealed class GetJournalEntrySourceDocumentHandler
             Label: null,
             DashboardModule: null,
             DashboardStep: null,
+            FiscalYearFrom: null,
+            FiscalYearTo: null,
+            TransactionsAllowed: null,
+            ProfitAndLossCarryForwardAccountId: null,
+            ProfitAndLossCarryForwardAccountCode: null,
+            ProfitAndLossCarryForwardAccountName: null,
             message);
     }
 

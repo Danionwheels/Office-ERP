@@ -242,6 +242,12 @@ public sealed record ClientStatementJournalPostingResponse(
 
 public sealed record ClientStatementJournalLineResponse(
     Guid LedgerAccountId,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus,
     decimal Debit,
     decimal Credit,
     string? Description);

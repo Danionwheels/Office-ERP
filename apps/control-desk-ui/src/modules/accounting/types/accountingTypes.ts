@@ -91,6 +91,9 @@ export type LedgerAccountCodeSuggestion = {
   rangeStart: string;
   rangeEnd: string;
   parentCode?: string | null;
+  parentAccountId?: string | null;
+  parentAccountCode?: string | null;
+  parentAccountName?: string | null;
 };
 
 export type LedgerAccountEditorInput = {
@@ -100,6 +103,85 @@ export type LedgerAccountEditorInput = {
   normalBalance: string;
   level: string;
   parentAccountId: string;
+  isPostingAccount: boolean;
+  status: string;
+};
+
+export type ChartOfAccountsImportTextPreview = {
+  companyCode: string;
+  format: string;
+  parsedLineCount: number;
+  ignoredLineCount: number;
+  canImport: boolean;
+  insertCount: number;
+  updateCount: number;
+  noChangeCount: number;
+  rejectCount: number;
+  warningCount: number;
+  issueCount: number;
+  parseIssues: ChartOfAccountsImportParseIssue[];
+  rows: ChartOfAccountsImportRow[];
+};
+
+export type ChartOfAccountsImportParseIssue = {
+  lineNumber: number;
+  column: string;
+  message: string;
+  rawValue?: string | null;
+};
+
+export type ChartOfAccountsImportRow = {
+  lineNumber: number;
+  action: string;
+  code: string;
+  displayCode: string;
+  name: string;
+  importedLevel?: string | null;
+  resolvedLevel: string;
+  type: string;
+  normalBalance: string;
+  isPostingAccount: boolean;
+  parentCode?: string | null;
+  parentAccountId?: string | null;
+  parentSource?: string | null;
+  currencyCode?: string | null;
+  existingLedgerAccountId?: string | null;
+  existingStatus?: string | null;
+  rangeRole?: string | null;
+  rangeDisplayName?: string | null;
+  issues: ChartOfAccountsImportIssue[];
+};
+
+export type ChartOfAccountsImportIssue = {
+  severity: string;
+  code: string;
+  message: string;
+};
+
+export type LedgerAccountCreateContext = {
+  rangeRole: string;
+  parentAccountId?: string;
+  level?: string;
+  isPostingAccount?: boolean;
+};
+
+export type StandardChartOfAccountsBootstrap = {
+  companyCode: string;
+  createdCount: number;
+  reusedCount: number;
+  accounts: StandardChartOfAccountsBootstrapItem[];
+};
+
+export type StandardChartOfAccountsBootstrapItem = {
+  ledgerAccountId: string;
+  role: string;
+  action: string;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  level: string;
+  parentAccountId?: string | null;
   isPostingAccount: boolean;
   status: string;
 };
@@ -118,6 +200,27 @@ export type AccountCodeRange = {
   isPostingAccount: boolean;
   parentCode?: string | null;
   isActive: boolean;
+};
+
+export type AccountCodeRangeValidation = {
+  companyCode: string;
+  rangeCount: number;
+  activeRangeCount: number;
+  isValid: boolean;
+  errorCount: number;
+  warningCount: number;
+  issueCount: number;
+  issues: AccountCodeRangeValidationIssue[];
+};
+
+export type AccountCodeRangeValidationIssue = {
+  severity: string;
+  code: string;
+  message: string;
+  rangeRole?: string | null;
+  relatedRangeRole?: string | null;
+  rangeStart?: string | null;
+  rangeEnd?: string | null;
 };
 
 export type AccountCodeRangeFormInput = {
@@ -156,12 +259,51 @@ export type AccountingControlAccount = {
   status: string;
 };
 
+export type OpeningBalanceProfile = {
+  companyCode: string;
+  fiscalYearFrom: string;
+  fiscalYearTo: string;
+  status: string;
+  transactionsAllowed: boolean;
+  profitAndLossCarryForwardAccountId?: string | null;
+  profitAndLossCarryForwardAccount?: OpeningBalanceProfileAccount | null;
+  isConfigured: boolean;
+  createdAtUtc?: string | null;
+  updatedAtUtc?: string | null;
+};
+
+export type OpeningBalanceProfileAccount = {
+  ledgerAccountId: string;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  status: string;
+};
+
 export type AccountingControlSettingsInput = {
   companyCode: string;
   baseCurrencyCode: string;
   retainedEarningsAccountId: string;
   incomeSummaryAccountId: string;
   roundingAccountId: string;
+};
+
+export type VoucherNumberingRule = {
+  companyCode: string;
+  sourceType: string;
+  prefix: string;
+  numberPaddingWidth: number;
+  isActive: boolean;
+  isConfigured: boolean;
+  createdAtUtc?: string | null;
+  updatedAtUtc?: string | null;
+};
+
+export type VoucherNumberingRuleInput = {
+  prefix: string;
+  numberPaddingWidth: string;
+  isActive: boolean;
 };
 
 export type AccountingPeriod = {
@@ -310,6 +452,12 @@ export type JournalEntrySourceDocument = {
   label?: string | null;
   dashboardModule?: string | null;
   dashboardStep?: string | null;
+  fiscalYearFrom?: string | null;
+  fiscalYearTo?: string | null;
+  transactionsAllowed?: boolean | null;
+  profitAndLossCarryForwardAccountId?: string | null;
+  profitAndLossCarryForwardAccountCode?: string | null;
+  profitAndLossCarryForwardAccountName?: string | null;
   message?: string | null;
 };
 
@@ -336,6 +484,16 @@ export type JournalEntryFilters = {
   sourceType: string;
 };
 
+export type JournalVoucherNumberPreview = {
+  sourceType: string;
+  entryDate: string;
+  prefix: string;
+  sequenceYear: number;
+  nextSequence: number;
+  numberPaddingWidth: number;
+  reference: string;
+};
+
 export type ManualJournalEntryInput = {
   entryDate: string;
   currencyCode: string;
@@ -351,6 +509,78 @@ export type ManualJournalEntryLineInput = {
   description: string;
 };
 
+export type OpeningBalanceImportInput = {
+  entryDate: string;
+  currencyCode: string;
+  sourceReference: string;
+  memo: string;
+  profileFromDate: string;
+  profileToDate: string;
+  profileStatus: OpeningBalanceProfileStatus;
+  transactionsAllowed: boolean;
+  profitAndLossCarryForwardAccountId: string;
+  lines: OpeningBalanceImportLineInput[];
+};
+
+export type OpeningBalanceProfileStatus = "open" | "closed";
+
+export type OpeningBalanceImportLineInput = {
+  accountCode: string;
+  debit: string;
+  credit: string;
+  description: string;
+};
+
+export type OpeningBalanceImportTemplateFormat =
+  | "standard"
+  | "legacy-access"
+  | "legacy-sql";
+
+export type OpeningBalanceImportPreview = {
+  entryDate: string;
+  currencyCode: string;
+  sourceReference: string;
+  memo?: string | null;
+  canPost: boolean;
+  totalDebit: number;
+  totalCredit: number;
+  difference: number;
+  importedLineCount: number;
+  validLineCount: number;
+  invalidLineCount: number;
+  blockers: string[];
+  lines: OpeningBalanceImportPreviewLine[];
+};
+
+export type OpeningBalanceImportTextPreview = {
+  format: string;
+  parsedLineCount: number;
+  ignoredLineCount: number;
+  parseIssues: OpeningBalanceImportTextParseIssue[];
+  preview: OpeningBalanceImportPreview;
+};
+
+export type OpeningBalanceImportTextParseIssue = {
+  lineNumber: number;
+  column: string;
+  message: string;
+  rawValue?: string | null;
+};
+
+export type OpeningBalanceImportPreviewLine = {
+  lineNumber: number;
+  accountCode: string;
+  ledgerAccountId?: string | null;
+  ledgerAccountName?: string | null;
+  accountType?: string | null;
+  normalBalance?: string | null;
+  debit: number;
+  credit: number;
+  description?: string | null;
+  isValid: boolean;
+  issues: string[];
+};
+
 export type LedgerAccountActivity = {
   ledgerAccountId: string;
   code: string;
@@ -360,6 +590,9 @@ export type LedgerAccountActivity = {
   fromDate?: string | null;
   toDate?: string | null;
   currencyCode?: string | null;
+  openingBalance: number;
+  periodDebit: number;
+  periodCredit: number;
   endingBalance: number;
   lines: LedgerAccountActivityLine[];
 };
@@ -379,10 +612,13 @@ export type LedgerAccountActivityLine = {
 };
 
 export type TrialBalance = {
+  fromDate?: string | null;
   asOfDate: string;
   currencyCode: string;
   totalDebit: number;
   totalCredit: number;
+  totalPeriodDebit: number;
+  totalPeriodCredit: number;
   difference: number;
   lines: TrialBalanceLine[];
 };
@@ -393,6 +629,9 @@ export type TrialBalanceLine = {
   name: string;
   type: string;
   normalBalance: string;
+  openingBalance: number;
+  periodDebit: number;
+  periodCredit: number;
   debitBalance: number;
   creditBalance: number;
   netBalance: number;
@@ -400,6 +639,84 @@ export type TrialBalanceLine = {
 };
 
 export type TrialBalanceFilters = {
+  fromDate: string;
   asOfDate: string;
+  currencyCode: string;
+};
+
+export type ProfitAndLossStatement = {
+  fromDate?: string | null;
+  toDate: string;
+  currencyCode: string;
+  totalRevenue: number;
+  totalExpense: number;
+  netIncome: number;
+  sections: ProfitAndLossStatementSection[];
+};
+
+export type ProfitAndLossStatementSection = {
+  type: string;
+  title: string;
+  total: number;
+  lines: ProfitAndLossStatementLine[];
+};
+
+export type ProfitAndLossStatementLine = {
+  ledgerAccountId: string;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  debit: number;
+  credit: number;
+  amount: number;
+  activityCount: number;
+};
+
+export type ProfitAndLossStatementFilters = {
+  fromDate: string;
+  toDate: string;
+  currencyCode: string;
+};
+
+export type BalanceSheet = {
+  asOfDate: string;
+  currencyCode: string;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  totalLiabilitiesAndEquity: number;
+  difference: number;
+  sections: BalanceSheetSection[];
+};
+
+export type BalanceSheetSection = {
+  type: string;
+  title: string;
+  total: number;
+  lines: BalanceSheetLine[];
+};
+
+export type BalanceSheetLine = {
+  ledgerAccountId?: string | null;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  debit: number;
+  credit: number;
+  amount: number;
+  activityCount: number;
+  isSystemLine: boolean;
+};
+
+export type BalanceSheetFilters = {
+  asOfDate: string;
+  currencyCode: string;
+};
+
+export type LedgerAccountActivityFilters = {
+  fromDate: string;
+  toDate: string;
   currencyCode: string;
 };

@@ -7,10 +7,19 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.InMemory;
 public sealed class InMemoryAccountCodeRangeRepository : IAccountCodeRangeRepository
 {
     private readonly ConcurrentDictionary<Guid, AccountCodeRange> _rangesById = new();
+    private readonly object _gate = new();
 
     public Task AddAsync(AccountCodeRange range, CancellationToken cancellationToken = default)
     {
-        _rangesById.TryAdd(range.Id.Value, range);
+        lock (_gate)
+        {
+            if (_rangesById.Values.Any(item => HasCompanyAndRole(item, range.CompanyCode, range.Role)))
+            {
+                return Task.CompletedTask;
+            }
+
+            _rangesById.TryAdd(range.Id.Value, range);
+        }
 
         return Task.CompletedTask;
     }
@@ -31,9 +40,11 @@ public sealed class InMemoryAccountCodeRangeRepository : IAccountCodeRangeReposi
     {
         var normalizedCompanyCode = NormalizeCompanyCode(companyCode);
         var normalizedRole = role.Trim();
-        var range = _rangesById.Values.SingleOrDefault(item =>
-            item.CompanyCode.Equals(normalizedCompanyCode, StringComparison.OrdinalIgnoreCase)
-            && item.Role.Equals(normalizedRole, StringComparison.OrdinalIgnoreCase));
+        var range = _rangesById.Values
+            .Where(item => HasCompanyAndRole(item, normalizedCompanyCode, normalizedRole))
+            .OrderBy(item => item.CreatedAtUtc)
+            .ThenBy(item => item.Id.Value)
+            .FirstOrDefault();
 
         return Task.FromResult(range);
     }
@@ -45,10 +56,21 @@ public sealed class InMemoryAccountCodeRangeRepository : IAccountCodeRangeReposi
         var normalizedCompanyCode = NormalizeCompanyCode(companyCode);
         IReadOnlyCollection<AccountCodeRange> ranges = _rangesById.Values
             .Where(range => range.CompanyCode.Equals(normalizedCompanyCode, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(range => range.Role, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group
+                .OrderBy(range => range.CreatedAtUtc)
+                .ThenBy(range => range.Id.Value)
+                .First())
             .OrderBy(range => range.Role, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         return Task.FromResult(ranges);
+    }
+
+    private static bool HasCompanyAndRole(AccountCodeRange range, string companyCode, string role)
+    {
+        return range.CompanyCode.Equals(NormalizeCompanyCode(companyCode), StringComparison.OrdinalIgnoreCase)
+            && range.Role.Equals(role.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeCompanyCode(string companyCode)

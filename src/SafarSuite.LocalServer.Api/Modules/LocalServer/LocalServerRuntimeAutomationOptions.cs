@@ -6,6 +6,12 @@ public sealed class LocalServerRuntimeAutomationOptions
 
     public bool EnableBackgroundWorker { get; set; }
 
+    public bool EnableEntitlementPull { get; set; } = true;
+
+    public bool EnableHeartbeat { get; set; } = true;
+
+    public bool EnableCommandPolling { get; set; } = true;
+
     public int EntitlementPullIntervalSeconds { get; set; } = 900;
 
     public int HeartbeatIntervalSeconds { get; set; } = 300;

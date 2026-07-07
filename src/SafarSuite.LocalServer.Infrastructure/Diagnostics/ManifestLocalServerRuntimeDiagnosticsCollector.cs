@@ -436,6 +436,8 @@ public sealed class ManifestLocalServerRuntimeDiagnosticsCollector
         ComposeProbe compose,
         bool optionalProfile)
     {
+        var manifestIntent = BuildExpectedServiceIntentDetail(expectedService);
+
         if (liveService is not null)
         {
             var state = NormalizeText(liveService.State) ?? "unknown";
@@ -443,25 +445,53 @@ public sealed class ManifestLocalServerRuntimeDiagnosticsCollector
             var healthDetail = health is null ? "" : $", health '{health}'";
             var container = NormalizeText(liveService.ContainerName) ?? "unknown container";
 
-            return $"Compose service '{expectedService.ServiceName}' is '{state}'{healthDetail} in '{container}'.";
+            return $"Compose service '{expectedService.ServiceName}' is '{state}'{healthDetail} in '{container}'. {manifestIntent}";
         }
 
         if (optionalProfile)
         {
-            return $"Optional Compose profile '{expectedService.ComposeProfile}' is present but not expected to start by default.";
+            return $"Optional Compose profile '{expectedService.ComposeProfile}' is present but not expected to start by default. {manifestIntent}";
         }
 
         if (!compose.IsAvailable)
         {
-            return $"Live Compose probing unavailable: {compose.FailureDetail ?? "Docker Compose is not available."}";
+            return $"Live Compose probing unavailable: {compose.FailureDetail ?? "Docker Compose is not available."} {manifestIntent}";
         }
 
         if (!string.IsNullOrWhiteSpace(compose.FailureDetail))
         {
-            return $"Live Compose service state could not be read: {compose.FailureDetail}";
+            return $"Live Compose service state could not be read: {compose.FailureDetail} {manifestIntent}";
         }
 
-        return "Service is declared in the signed runtime manifest but was not reported by Docker Compose.";
+        return $"Service is declared in the signed runtime manifest but was not reported by Docker Compose. {manifestIntent}";
+    }
+
+    private static string BuildExpectedServiceIntentDetail(
+        LocalServerBootstrapRuntimeService expectedService)
+    {
+        var role = NormalizeText(expectedService.ServiceRole) ?? "runtime service";
+        var profile = NormalizeText(expectedService.ComposeProfile);
+        var profileDetail = profile is null
+            ? "default Compose profile"
+            : $"Compose profile '{profile}'";
+        var imageEnvironmentVariable = NormalizeText(expectedService.ImageEnvironmentVariable)
+            ?? "unknown";
+        var publishedPortEnvironmentVariable = NormalizeText(expectedService.PublishedPortEnvironmentVariable);
+        var portDetail = publishedPortEnvironmentVariable is null
+            ? "no host port env"
+            : $"host port env '{publishedPortEnvironmentVariable}'";
+        var internalBaseUrl = NormalizeText(expectedService.InternalBaseUrl) ?? "n/a";
+        var healthUrl = NormalizeText(expectedService.HealthUrl) ?? "n/a";
+        var dependencies = expectedService.DependsOn
+            .Select(NormalizeText)
+            .Where(dependency => dependency is not null)
+            .Select(dependency => dependency!)
+            .ToArray();
+        var dependencyDetail = dependencies.Length == 0
+            ? "none"
+            : string.Join(", ", dependencies);
+
+        return $"Manifest intent: role '{role}', {profileDetail}, image env '{imageEnvironmentVariable}', {portDetail}, internal '{internalBaseUrl}', health '{healthUrl}', depends on '{dependencyDetail}'.";
     }
 
     private static IReadOnlyCollection<RuntimeLogEntry> ParseComposeLogEntries(

@@ -15,6 +15,146 @@ public interface IControlCloudInstallationProvisioningClient
         string installationId,
         CreateLocalServerBootstrapPackageRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<ControlCloudAppActivationTokenClientResult> IssueAppActivationTokenAsync(
+        Guid clientId,
+        string installationId,
+        IssueSafarSuiteAppActivationTokenRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<ControlCloudAppActivationIssuesClientResult> ListAppActivationIssuesAsync(
+        Guid clientId,
+        string? installationId,
+        Guid? appServerInstallationId,
+        string? query,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    Task<ControlCloudAppActivationIssueClientResult> RevokeAppActivationIssueAsync(
+        Guid clientId,
+        Guid activationIssueId,
+        RevokeSafarSuiteAppActivationIssueRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class ControlCloudAppActivationIssueClientResult
+{
+    private ControlCloudAppActivationIssueClientResult(
+        SafarSuiteAppActivationIssueResponse? issue,
+        string? failureCode,
+        string? detail)
+    {
+        Issue = issue;
+        FailureCode = failureCode;
+        Detail = detail;
+    }
+
+    public bool IsSuccess => Issue is not null;
+
+    public SafarSuiteAppActivationIssueResponse? Issue { get; }
+
+    public string? FailureCode { get; }
+
+    public string? Detail { get; }
+
+    public static ControlCloudAppActivationIssueClientResult Success(
+        SafarSuiteAppActivationIssueResponse issue)
+    {
+        return new ControlCloudAppActivationIssueClientResult(
+            issue,
+            failureCode: null,
+            detail: null);
+    }
+
+    public static ControlCloudAppActivationIssueClientResult Failure(
+        string failureCode,
+        string detail)
+    {
+        return new ControlCloudAppActivationIssueClientResult(
+            issue: null,
+            failureCode,
+            detail);
+    }
+}
+
+public sealed class ControlCloudAppActivationIssuesClientResult
+{
+    private ControlCloudAppActivationIssuesClientResult(
+        SafarSuiteAppActivationIssuesResponse? response,
+        string? failureCode,
+        string? detail)
+    {
+        Response = response;
+        FailureCode = failureCode;
+        Detail = detail;
+    }
+
+    public bool IsSuccess => Response is not null;
+
+    public SafarSuiteAppActivationIssuesResponse? Response { get; }
+
+    public string? FailureCode { get; }
+
+    public string? Detail { get; }
+
+    public static ControlCloudAppActivationIssuesClientResult Success(
+        SafarSuiteAppActivationIssuesResponse response)
+    {
+        return new ControlCloudAppActivationIssuesClientResult(
+            response,
+            failureCode: null,
+            detail: null);
+    }
+
+    public static ControlCloudAppActivationIssuesClientResult Failure(
+        string failureCode,
+        string detail)
+    {
+        return new ControlCloudAppActivationIssuesClientResult(
+            response: null,
+            failureCode,
+            detail);
+    }
+}
+
+public sealed class ControlCloudAppActivationTokenClientResult
+{
+    private ControlCloudAppActivationTokenClientResult(
+        IssueSafarSuiteAppActivationTokenResponse? response,
+        string? failureCode,
+        string? detail)
+    {
+        Response = response;
+        FailureCode = failureCode;
+        Detail = detail;
+    }
+
+    public bool IsSuccess => Response is not null;
+
+    public IssueSafarSuiteAppActivationTokenResponse? Response { get; }
+
+    public string? FailureCode { get; }
+
+    public string? Detail { get; }
+
+    public static ControlCloudAppActivationTokenClientResult Success(
+        IssueSafarSuiteAppActivationTokenResponse response)
+    {
+        return new ControlCloudAppActivationTokenClientResult(
+            response,
+            failureCode: null,
+            detail: null);
+    }
+
+    public static ControlCloudAppActivationTokenClientResult Failure(
+        string failureCode,
+        string detail)
+    {
+        return new ControlCloudAppActivationTokenClientResult(
+            response: null,
+            failureCode,
+            detail);
+    }
 }
 
 public sealed class ControlCloudSetupTokenClientResult

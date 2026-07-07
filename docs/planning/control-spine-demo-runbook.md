@@ -1,6 +1,6 @@
 # Control Spine Demo Runbook
 
-Purpose: make the current Control Desk -> Control Cloud -> Local Server spine repeatable before adding the real SafarSuite runtime image and deployed app enforcement.
+Purpose: make the current Control Desk -> Control Cloud -> Local Server spine repeatable before packaging and enabling the real SafarSuite runtime image.
 
 ## Local Ports
 
@@ -22,7 +22,21 @@ This runbook was executed successfully on 2026-07-03 against the local PostgreSQ
 - Live accounting smoke published `7` messages to the Control Cloud receiver.
 - Installation `codex-demo-20260702212826` registered through bootstrap, pulled an active entitlement, reported heartbeat, processed `request_diagnostics` and `refresh_entitlement`, uploaded diagnostics, and returned active `BILLING` module access.
 - The proof exposed and fixed command-signing round-trip issues caused by PostgreSQL `jsonb` payload ordering and timestamp precision.
-- The local-server command diagnostics smoke now verifies that command-triggered diagnostics collect `4` runtime services, Docker/Compose availability, live Compose state for local services, recent warning/error log-tail lines, and the optional `safarsuite-app` profile slot.
+- The local-server command diagnostics smoke now verifies that command-triggered diagnostics collect `4` runtime services, Docker/Compose availability, live Compose state for local services, recent warning/error log-tail lines, and the optional `safarsuite-app` profile slot with signed manifest intent for image env, host port env, and health URL.
+- The app runtime probe self-test now verifies the shared module-gateway v1 contract for an allowed module and a module-disabled response.
+
+The app workspace module-gateway enforcement slice was verified on 2026-07-04 in `C:\Users\Daniyal\Documents\Codex\2026-06-09\hello-there-2`:
+
+- `tests\ProductKernelGuardSmoke` passed 30 checks.
+- `tests\ReadOnlyEnforcementSmoke` passed 24 checks.
+- `tests\ReportExecutionSmoke` passed 28 checks.
+- Windows client production build passed.
+- Local-server Release publish passed into `artifacts\codex\localserver-publish`.
+- Runtime Compose config validation passed for `docker-compose.runtime.yml`.
+- Published LocalServer internal healthcheck passed against `http://127.0.0.1:5299/health`.
+- App local-server GET/POST module-gateway routes, Windows client menu/window access, and backend write enforcement all consume the gateway decision.
+- Reporting execution/audit consume the gateway decision for `reporting-core`, with explicit read-only `Restricted` access still allowed.
+- `Dockerfile.localserver`, `.dockerignore`, `docker-compose.runtime.yml`, and `docker/localserver.env.template` now define the first app runtime image wrapper. Docker build, pushed image `ghcr.io/danionwheels/localserver:0.1.0`, anonymous pull, Compose startup, container `/health`, 39 local migrations, and v1 module-gateway probes passed on 2026-07-04.
 
 ## Preflight
 
@@ -32,6 +46,7 @@ Run these checks sequentially. Parallel .NET builds/smokes can hit compiler file
 dotnet build --no-restore SafarSuite.ControlDesk.sln
 dotnet run --no-restore --project tools/SafarSuite.ControlDesk.AccountingSmoke/SafarSuite.ControlDesk.AccountingSmoke.csproj
 dotnet run --no-restore --project tools/SafarSuite.LocalServer.EntitlementSmoke/SafarSuite.LocalServer.EntitlementSmoke.csproj
+dotnet run --no-restore --project tools/SafarSuite.AppRuntimeProbe/SafarSuite.AppRuntimeProbe.csproj -- --self-test
 ```
 
 ```powershell
@@ -40,7 +55,17 @@ npm run build
 Pop-Location
 ```
 
-Expected: solution build passes, accounting smoke passes, local-server entitlement smoke reports command processing applied/acknowledged, and the UI build passes.
+Expected: solution build passes, accounting smoke passes, local-server entitlement smoke reports command processing applied/acknowledged, app runtime probe self-test passes, and the UI build passes.
+
+When validating app-workspace enforcement, run these in `C:\Users\Daniyal\Documents\Codex\2026-06-09\hello-there-2`:
+
+```powershell
+dotnet run --no-restore --project tests\ProductKernelGuardSmoke\ProductKernelGuardSmoke.csproj
+dotnet run --no-restore --project tests\ReadOnlyEnforcementSmoke\ReadOnlyEnforcementSmoke.csproj
+dotnet run --no-restore --project tests\ReportExecutionSmoke\ReportExecutionSmoke.csproj
+dotnet publish --no-restore -c Release src\LocalServer\LocalServer.csproj -o artifacts\codex\localserver-publish
+docker compose -f docker-compose.runtime.yml config
+```
 
 ## Database Setup
 
@@ -124,12 +149,16 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:51046/api/v1/local-server/
 - Control Desk outbox messages are accepted by Control Cloud, not only marked locally.
 - Control Cloud status shows installation identity, latest entitlement, heartbeat, pending command count, and latest acknowledgement summary.
 - Local Server can import or pull entitlement, evaluate module access, report heartbeat, upload diagnostics, and acknowledge both low-risk commands.
-- Command-triggered diagnostics include runtime/bootstrap/service facts from the signed bootstrap runtime manifest, Docker/Compose availability, live Compose service state, recent warning/error log-tail lines, and the dormant `safarsuite-app` profile slot.
+- Command-triggered diagnostics include runtime/bootstrap/service facts from the signed bootstrap runtime manifest, Docker/Compose availability, live Compose service state, each service's manifest intent, recent warning/error log-tail lines, and the dormant `safarsuite-app` profile slot.
+- The placeholder app runtime probe can consume the same local module-gateway v1 response shape that the real SafarSuite app workspace must use.
+- The real app workspace smokes prove menu/window access and backend writes fail closed on module-gateway denial.
+- The real app workspace smokes prove report execution/audit fail closed on `ModuleDisabled` while read-only report access survives `Restricted`.
+- The real app workspace runtime wrapper validates through publish, Compose config, and internal healthcheck before the Docker image is built/pushed.
 - Client Portal preview reads cloud-owned commercial/license/installation state.
 
 ## Known Limits During Demo
 
-- The SafarSuite app image/profile slot is still a placeholder until real image publication exists.
+- The SafarSuite app image/profile slot points at the pushed `ghcr.io/danionwheels/localserver:0.1.0` image, and the app now exposes runtime health/profile/log evidence; a production-shaped generated-bootstrap proof with the optional app profile is still pending.
 - Portal payment UI and real payment provider callbacks are still pending.
 - Provider/admin auth still uses the local provider-key boundary; real roles, MFA, password reset, and production mail retry remain pending.
 - The local-server background worker is disabled by default, so manual API calls or smoke tools are still useful during proof runs.

@@ -273,12 +273,12 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                     ComposeProfile: null,
                     ImageEnvironmentVariable: "SAFARSUITE_LOCAL_SERVER_IMAGE",
                     PublishedPortEnvironmentVariable: "SAFARSUITE_LOCAL_SERVER_HTTP_PORT",
-                    InternalBaseUrl: "http://local-api:8080",
-                    HealthUrl: "http://local-api:8080/health",
+                    InternalBaseUrl: "https://local-api:8080",
+                    HealthUrl: "https://local-api:8080/health",
                     DependsOn: ["local-db"]),
                 new ControlCloudBootstrapRuntimeService(
                     "local-worker",
-                    "Background cloud pull, heartbeat, and command processing",
+                    "Background entitlement pull and heartbeat reporting",
                     StartsByDefault: true,
                     ComposeProfile: null,
                     ImageEnvironmentVariable: "SAFARSUITE_LOCAL_SERVER_IMAGE",
@@ -288,7 +288,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                     DependsOn: ["local-db"]),
                 new ControlCloudBootstrapRuntimeService(
                     "local-agent",
-                    "Host/runtime diagnostics and support command bridge",
+                    "Support command polling, diagnostics, and acknowledgement bridge",
                     StartsByDefault: true,
                     ComposeProfile: null,
                     ImageEnvironmentVariable: "SAFARSUITE_LOCAL_SERVER_IMAGE",
@@ -303,8 +303,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                     ComposeProfile: "app-runtime",
                     ImageEnvironmentVariable: "SAFARSUITE_APP_IMAGE",
                     PublishedPortEnvironmentVariable: "SAFARSUITE_APP_HTTP_PORT",
-                    InternalBaseUrl: "http://safarsuite-app:8080",
-                    HealthUrl: "http://safarsuite-app:8080/health",
+                    InternalBaseUrl: "http://safarsuite-app:5280",
+                    HealthUrl: "http://safarsuite-app:5280/health",
                     DependsOn: ["local-api", "local-db"])
             ]);
     }
@@ -464,7 +464,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
 
         services:
           local-db:
-            image: postgres:16-alpine
+            image: ${SAFARSUITE_LOCAL_DB_IMAGE:-postgres:16-alpine}
             restart: unless-stopped
             environment:
               POSTGRES_DB: ${SAFARSUITE_LOCAL_DB_NAME:-safarsuite_local}
@@ -491,6 +491,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
               - "${SAFARSUITE_LOCAL_SERVER_HTTP_PORT:-8080}:8080"
             volumes:
               - safarsuite-local-data:/var/lib/safarsuite/local-server
+              - ./certs/local-api:/etc/safarsuite/local-server/certs/local-api:ro
+              - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
 
           local-worker:
             image: ${SAFARSUITE_LOCAL_SERVER_IMAGE:?Set SAFARSUITE_LOCAL_SERVER_IMAGE}
@@ -503,6 +505,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                 condition: service_healthy
             volumes:
               - safarsuite-local-data:/var/lib/safarsuite/local-server
+              - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
 
           local-agent:
             image: ${SAFARSUITE_LOCAL_SERVER_IMAGE:?Set SAFARSUITE_LOCAL_SERVER_IMAGE}
@@ -515,6 +518,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                 condition: service_healthy
             volumes:
               - safarsuite-local-data:/var/lib/safarsuite/local-server
+              - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
 
           safarsuite-app:
             image: ${SAFARSUITE_APP_IMAGE:?Set SAFARSUITE_APP_IMAGE}
@@ -529,13 +533,16 @@ public sealed class CreateLocalServerBootstrapPackageHandler
               local-api:
                 condition: service_started
             ports:
-              - "${SAFARSUITE_APP_HTTP_PORT:-8090}:8080"
+              - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280"
             environment:
-              SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-http://local-api:8080}
-              SAFARSUITE_MODULE_GATEWAY_URL: ${SAFARSUITE_MODULE_GATEWAY_URL:-http://local-api:8080}
+              ASPNETCORE_URLS: http://0.0.0.0:5280
+              SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-https://local-api:8080}
+              SAFARSUITE_MODULE_GATEWAY_URL: ${SAFARSUITE_MODULE_GATEWAY_URL:-https://local-api:8080}
               SAFARSUITE_RUNTIME_MANIFEST_PATH: ${SAFARSUITE_RUNTIME_MANIFEST_PATH:-/etc/safarsuite/local-server/runtime-services.manifest.json}
             volumes:
               - safarsuite-local-data:/var/lib/safarsuite/local-server
+              - ./certs/trust:/etc/safarsuite/local-server/certs/trust:ro
+              - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
               - safarsuite-app-data:/var/lib/safarsuite/app
 
         volumes:
@@ -559,12 +566,24 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         SAFARSUITE_LOCAL_SERVER_VERSION={{SAFARSUITE_LOCAL_SERVER_VERSION}}
         SAFARSUITE_LOCAL_SERVER_IMAGE=ghcr.io/safarsuite/local-server:{{SAFARSUITE_LOCAL_SERVER_VERSION}}
         SAFARSUITE_LOCAL_SERVER_HTTP_PORT=8080
+        SAFARSUITE_LOCAL_SERVER_CONFIG_DIR=/etc/safarsuite/local-server
+        SAFARSUITE_LOCAL_SERVER_STATE_DIR=/var/lib/safarsuite/local-server
         SAFARSUITE_APP_VERSION={{SAFARSUITE_APP_VERSION}}
-        SAFARSUITE_APP_IMAGE=ghcr.io/safarsuite/app:{{SAFARSUITE_APP_VERSION}}
-        SAFARSUITE_APP_HTTP_PORT=8090
-        SAFARSUITE_LOCAL_API_BASE_URL=http://local-api:8080
-        SAFARSUITE_MODULE_GATEWAY_URL=http://local-api:8080
+        SAFARSUITE_APP_IMAGE=ghcr.io/danionwheels/localserver:{{SAFARSUITE_APP_VERSION}}
+        SAFARSUITE_APP_HTTP_PORT=5280
+        SAFARSUITE_LOCAL_API_BASE_URL=https://local-api:8080
+        SAFARSUITE_LOCAL_API_ACCESS_KEY=change-me-before-start
+        SAFARSUITE_LOCAL_API_TLS_MODE=GeneratedLocalCa
+        SAFARSUITE_LOCAL_API_ASPNETCORE_URLS=https://0.0.0.0:8080
+        SAFARSUITE_LOCAL_API_CERTIFICATE_PATH=
+        SAFARSUITE_LOCAL_API_CERTIFICATE_PASSWORD=
+        SAFARSUITE_LOCAL_API_CA_CERTIFICATE_PATH=
+        SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES=local-api,localhost
+        SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES=127.0.0.1
+        SAFARSUITE_LOCAL_API_CERTIFICATE_DAYS=825
+        SAFARSUITE_MODULE_GATEWAY_URL=https://local-api:8080
         SAFARSUITE_RUNTIME_MANIFEST_PATH=/etc/safarsuite/local-server/runtime-services.manifest.json
+        SAFARSUITE_LOCAL_DB_IMAGE=postgres:16-alpine
         SAFARSUITE_LOCAL_DB_NAME=safarsuite_local
         SAFARSUITE_LOCAL_DB_USER=safarsuite
         SAFARSUITE_LOCAL_DB_PASSWORD=change-me-before-start

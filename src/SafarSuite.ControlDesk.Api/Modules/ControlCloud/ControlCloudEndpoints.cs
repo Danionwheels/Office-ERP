@@ -3,10 +3,13 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstall
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationDiagnostics;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudAppActivationIssues;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationAuditEvents;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.QueueCloudInstallationSupportCommand;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.RevokeCloudAppActivationIssue;
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.ControlCloud;
 
@@ -36,9 +39,18 @@ public static class ControlCloudEndpoints
         group.MapGet(
             "/clients/{clientId:guid}/installations/{installationId}/diagnostics/latest",
             GetLatestDiagnosticsAsync);
+        group.MapGet(
+            "/clients/{clientId:guid}/app-activation-issues",
+            ListAppActivationIssuesAsync);
+        group.MapPost(
+            "/clients/{clientId:guid}/app-activation-issues/{activationIssueId:guid}/revoke",
+            RevokeAppActivationIssueAsync);
         group.MapPost(
             "/clients/{clientId:guid}/installations/{installationId}/support-command",
             QueueSupportCommandAsync);
+        group.MapPost(
+            "/clients/{clientId:guid}/installations/{installationId}/app-activation-token",
+            IssueAppActivationTokenAsync);
         group.MapPost("/outbox-messages/publish", PublishOutboxMessagesAsync);
         group.MapPost("/outbox-messages/publish-local", PublishOutboxMessagesAsync);
 
@@ -152,6 +164,49 @@ public static class ControlCloudEndpoints
             : Results.Ok(result.Value);
     }
 
+    private static async Task<IResult> ListAppActivationIssuesAsync(
+        Guid clientId,
+        string? installationId,
+        Guid? appServerInstallationId,
+        string? query,
+        int? take,
+        ListCloudAppActivationIssuesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListCloudAppActivationIssuesQuery(
+                clientId,
+                installationId,
+                appServerInstallationId,
+                query,
+                take ?? 50),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(new SafarSuiteAppActivationIssuesResponse(result.Value.Issues));
+    }
+
+    private static async Task<IResult> RevokeAppActivationIssueAsync(
+        Guid clientId,
+        Guid activationIssueId,
+        RevokeSafarSuiteAppActivationIssueRequest request,
+        RevokeCloudAppActivationIssueHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new RevokeCloudAppActivationIssueCommand(
+                clientId,
+                activationIssueId,
+                request.RevokedBy,
+                request.Reason),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
     private static async Task<IResult> QueueSupportCommandAsync(
         Guid clientId,
         string installationId,
@@ -167,6 +222,30 @@ public static class ControlCloudEndpoints
                 request.Reason,
                 request.RequestedBy,
                 request.ExpiresInHours),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
+    private static async Task<IResult> IssueAppActivationTokenAsync(
+        Guid clientId,
+        string installationId,
+        IssueSafarSuiteAppActivationTokenRequest request,
+        IssueCloudAppActivationTokenHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new IssueCloudAppActivationTokenCommand(
+                clientId,
+                installationId,
+                request.ActivationRequestId,
+                request.ServerInstallationId,
+                request.FingerprintHash,
+                request.ServerPublicKey,
+                request.RequestedBy ?? "SafarSuite Control Desk",
+                request.ReplacesActivationIssueId),
             cancellationToken);
 
         return result.IsFailure

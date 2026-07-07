@@ -142,11 +142,11 @@ public sealed class InviteClientPortalContactHandler
             "PortalUserAlreadyExists" => ApplicationError.Conflict(
                 "email",
                 result.Detail ?? "A portal user already exists for this client contact."),
-            "ControlCloudInvitationUnauthorized" => ApplicationError.Unexpected(
+            "ControlCloudInvitationUnauthorized" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud rejected the provider invitation key."),
-            "ControlCloudInvitationNotConfigured" => ApplicationError.Unexpected(
+            "ControlCloudInvitationNotConfigured" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud invitation endpoint is not configured."),
-            "ControlCloudInvitationUnavailable" => ApplicationError.Unexpected(
+            "ControlCloudInvitationUnavailable" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud invitation endpoint is unavailable."),
             _ => ApplicationError.Unexpected(
                 result.Detail ?? "Control Cloud could not create the portal invitation.")
