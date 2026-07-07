@@ -1,39 +1,58 @@
 import {
-  BookOpen,
+  FileInput,
   ListTree,
-  Pencil,
+  PanelRightOpen,
   Plus,
-  Power,
   RefreshCw,
-  RotateCcw,
   Save,
   Search,
-  SlidersHorizontal,
   Wand2
 } from "lucide-react";
-import { type FormEvent } from "react";
-import {
-  accountTypeOptions,
-  legacyAccountLevels,
-  normalBalanceOptions
-} from "../constants/accountingConstants";
+import { type FormEvent, useEffect, useState } from "react";
+import type { ApiErrorItem } from "../../../shared/api/apiError";
 import type {
   AccountCodeRange,
   AccountCodeRangeFormInput,
+  AccountCodeRangeValidation,
+  ChartOfAccountsImportTextPreview,
   LedgerAccountActivity,
   LedgerAccountActivityLine,
+  LedgerAccountCreateContext,
   LedgerAccountEditorInput,
   LedgerAccountFilters,
+  LedgerAccountReconciliation,
+  LedgerAccountRepairPlan,
   JournalEntrySummary,
   LedgerAccountSummary
 } from "../types/accountingTypes";
 import {
+  getPersistedLegacyAccountLevel,
   getLedgerAccountLevelOptions,
-  getLegacyAccountLevel,
-  getVisibleAccounts,
-  isPostingLedgerAccountLevel
+  getVisibleAccounts
 } from "../utils/chartOfAccountsModel";
-import { formatMoney } from "../utils/journalModel";
+import {
+  buildAccountTreeRows,
+  buildRangeUsageByRole,
+  buildRangeValidationIssueMap,
+  formatRangeRule,
+  getAccountTreeLineageIds,
+  getInlineAccountNamePlaceholder,
+  getInlineCreateParentDisplay,
+  getInlineCreateRuleDisplay,
+  getInlineCreateStatusItems,
+  getRangeSetupFacts,
+  getRangeValidationIssueGroups,
+  getSelectedRangeFacts
+} from "../utils/chartOfAccountsWorkspaceModel";
+import { ChartOfAccountsActivityPanel } from "./shared/ChartOfAccountsActivityPanel";
+import { ChartOfAccountsDetailsPanel } from "./shared/ChartOfAccountsDetailsPanel";
+import { ChartOfAccountsImportPanel } from "./shared/ChartOfAccountsImportPanel";
+import { ChartOfAccountsListPanel } from "./shared/ChartOfAccountsListPanel";
+import { ChartOfAccountsRangePanel } from "./shared/ChartOfAccountsRangePanel";
+import {
+  ChartOfAccountsWorkWindow,
+  type ChartOfAccountsWorkWindowView
+} from "./shared/ChartOfAccountsWorkWindow";
 
 type ChartOfAccountsPanelProps = {
   accounts: LedgerAccountSummary[];
@@ -43,6 +62,13 @@ type ChartOfAccountsPanelProps = {
   rangeValue: AccountCodeRangeFormInput;
   accountMode: "create" | "edit";
   accountValue: LedgerAccountEditorInput;
+  accountSaveErrors: ApiErrorItem[];
+  reconciliation: LedgerAccountReconciliation | null;
+  repairPlan: LedgerAccountRepairPlan | null;
+  rangeValidation: AccountCodeRangeValidation | null;
+  importText: string;
+  importDelimiter: string;
+  importPreview: ChartOfAccountsImportTextPreview | null;
   activity: LedgerAccountActivity | null;
   journalEntries: JournalEntrySummary[];
   isBusy: boolean;
@@ -52,14 +78,22 @@ type ChartOfAccountsPanelProps = {
   onSaveRange: () => Promise<void>;
   onAccountChange: (value: LedgerAccountEditorInput) => void;
   onNewAccount: () => Promise<void>;
+  onBootstrapStandardChartOfAccounts: () => Promise<void>;
+  onStartAccountCreate: (context: LedgerAccountCreateContext) => Promise<void>;
   onEditAccount: (account: LedgerAccountSummary) => void;
   onSaveAccount: () => Promise<void>;
   onToggleAccountStatus: (account: LedgerAccountSummary) => Promise<void>;
+  onImportTextChange: (value: string) => void;
+  onImportDelimiterChange: (value: string) => void;
+  onPreviewImport: () => Promise<void>;
+  onUseImportTemplate: () => void;
   onViewAccountActivity: (account: LedgerAccountSummary) => Promise<void>;
   onViewJournalEntry: (line: LedgerAccountActivityLine) => Promise<void>;
   onSuggestAccountCode: () => Promise<void>;
   onRefresh: () => Promise<void>;
 };
+
+const selectedRangeInlineAnchorId = "__selected-range-create__";
 
 export function ChartOfAccountsPanel({
   accounts,
@@ -69,6 +103,13 @@ export function ChartOfAccountsPanel({
   rangeValue,
   accountMode,
   accountValue,
+  accountSaveErrors,
+  reconciliation,
+  repairPlan,
+  rangeValidation,
+  importText,
+  importDelimiter,
+  importPreview,
   activity,
   journalEntries,
   isBusy,
@@ -78,14 +119,26 @@ export function ChartOfAccountsPanel({
   onSaveRange,
   onAccountChange,
   onNewAccount,
+  onBootstrapStandardChartOfAccounts,
+  onStartAccountCreate,
   onEditAccount,
   onSaveAccount,
   onToggleAccountStatus,
+  onImportTextChange,
+  onImportDelimiterChange,
+  onPreviewImport,
+  onUseImportTemplate,
   onViewAccountActivity,
   onViewJournalEntry,
   onSuggestAccountCode,
   onRefresh
 }: ChartOfAccountsPanelProps) {
+  const [collapsedAccountIds, setCollapsedAccountIds] = useState<Set<string>>(() => new Set());
+  const [inlineCreateAnchorId, setInlineCreateAnchorId] = useState<string | null>(null);
+  const [inlineCreateLabel, setInlineCreateLabel] = useState("New ledger account");
+  const [isWorkbenchOpen, setIsWorkbenchOpen] = useState(false);
+  const [activeWorkView, setActiveWorkView] =
+    useState<ChartOfAccountsWorkWindowView>("account");
   const activeRanges = ranges.filter((range) => range.isActive);
   const selectedRange = ranges.find((range) => range.role === selectedRangeRole) ?? null;
   const accountLevelOptions = getLedgerAccountLevelOptions(
@@ -93,9 +146,78 @@ export function ChartOfAccountsPanel({
     accountMode,
     accountValue.level
   );
-  const visibleAccounts = getVisibleAccounts(accounts, ranges, filters);
+  const isParentTreeView = filters.viewMode === "headerTotal";
+  const visibleAccounts = getVisibleAccounts(
+    accounts,
+    ranges,
+    isParentTreeView ? { ...filters, posting: "" } : filters
+  );
+  const accountTreeRows = buildAccountTreeRows(
+    accounts,
+    visibleAccounts,
+    ranges,
+    collapsedAccountIds,
+    isParentTreeView
+  );
+  const expandedAccountTreeRows = buildAccountTreeRows(
+    accounts,
+    visibleAccounts,
+    ranges,
+    new Set(),
+    isParentTreeView
+  );
+  const collapsibleAccountIds = expandedAccountTreeRows
+    .filter((row) => row.hasChildren)
+    .map((row) => row.account.ledgerAccountId);
+  const collapsedVisibleParentCount = collapsibleAccountIds.filter((accountId) =>
+    collapsedAccountIds.has(accountId)
+  ).length;
+  const openVisibleParentCount = Math.max(collapsibleAccountIds.length - collapsedVisibleParentCount, 0);
+  const rangeValidationIssues = rangeValidation?.issues ?? [];
+  const rangeValidationIssuesByRole = buildRangeValidationIssueMap(rangeValidationIssues);
+  const selectedRangeIssues = selectedRange === null
+    ? []
+    : rangeValidationIssuesByRole.get(selectedRange.role) ?? [];
+  const displayedRangeValidationIssues =
+    selectedRangeIssues.length > 0 ? selectedRangeIssues : rangeValidationIssues;
+  const rangeUsageByRole = buildRangeUsageByRole(accounts, ranges);
+  const selectedRangeUsage = selectedRange === null
+    ? 0
+    : rangeUsageByRole.get(selectedRange.role) ?? 0;
+  const rangeSetupFacts = getRangeSetupFacts(
+    ranges,
+    rangeValidation,
+    selectedRange,
+    selectedRangeIssues,
+    selectedRangeUsage
+  );
+  const selectedRangeFacts = selectedRange === null
+    ? []
+    : getSelectedRangeFacts(selectedRange, selectedRangeIssues, selectedRangeUsage);
+  const displayedRangeIssueGroups = getRangeValidationIssueGroups(displayedRangeValidationIssues);
   const postingCount = visibleAccounts.filter((account) => account.isPostingAccount).length;
-  const nonPostingCount = visibleAccounts.length - postingCount;
+  const coaIssueCount = reconciliation?.issueCount ?? 0;
+  const coaActionCount = repairPlan?.actionCount ?? 0;
+  const affectedAccountCount = reconciliation?.items.length ?? 0;
+  const importPreviewStatus = importPreview === null
+    ? "No preview"
+    : importPreview.rejectCount === 0
+      ? "Ready"
+      : `${importPreview.rejectCount} reject${importPreview.rejectCount === 1 ? "" : "s"}`;
+  const coaHealthText =
+    reconciliation === null
+      ? "Not checked"
+      : coaIssueCount === 0
+        ? "Clean"
+        : `${coaIssueCount} issue${coaIssueCount === 1 ? "" : "s"}`;
+  const rangeValidationText =
+    rangeValidation === null
+      ? "Not checked"
+      : rangeValidation.errorCount > 0
+        ? `${rangeValidation.errorCount} error${rangeValidation.errorCount === 1 ? "" : "s"}`
+        : rangeValidation.warningCount > 0
+          ? `${rangeValidation.warningCount} warning${rangeValidation.warningCount === 1 ? "" : "s"}`
+          : "Clean";
   const canSaveRange =
     selectedRange !== null
     && rangeValue.displayName.trim() !== ""
@@ -106,23 +228,86 @@ export function ChartOfAccountsPanel({
     && rangeValue.accountType.trim() !== ""
     && rangeValue.normalBalance.trim() !== "";
   const canSuggestAccountCode = accountMode === "create" && selectedRangeRole !== "";
+  const createLevel = getPersistedLegacyAccountLevel(accountValue.level);
+  const canUseCreateLevel =
+    accountMode === "edit"
+    || (createLevel !== null && createLevel.code !== "D");
   const canSaveAccount =
     accountValue.name.trim() !== ""
     && accountValue.status.trim() !== ""
     && (accountMode === "edit"
       || (accountValue.code.trim() !== ""
         && accountValue.type.trim() !== ""
-        && accountValue.normalBalance.trim() !== ""));
+        && accountValue.normalBalance.trim() !== ""
+        && accountValue.level.trim() !== ""
+        && canUseCreateLevel));
+  const accountFormId = "coa-account-maintenance-form";
+  const activityAccount = activity === null
+    ? undefined
+    : accounts.find((account) => account.ledgerAccountId === activity.ledgerAccountId);
+  const isInlineCreating = accountMode === "create" && inlineCreateAnchorId !== null;
+  const canSubmitAccountForm =
+    accountMode === "edit" || isInlineCreating;
+  const companyCode = filters.companyCode.trim() === "" ? "MAIN" : filters.companyCode;
+  const inlineParentAccountId = accountValue.parentAccountId.trim();
+  const parentAccountForEditor =
+    inlineParentAccountId === ""
+      ? null
+      : accounts.find((account) => account.ledgerAccountId === inlineParentAccountId) ?? null;
+  const inlineParentRow =
+    inlineParentAccountId === ""
+      ? null
+      : expandedAccountTreeRows.find((row) => row.account.ledgerAccountId === inlineParentAccountId)
+        ?? accountTreeRows.find((row) => row.account.ledgerAccountId === inlineParentAccountId)
+        ?? null;
+  const inlineCreateDepth = Math.max(Math.min((inlineParentRow?.depth ?? -1) + 1, 5), 0);
+  const inlineCreateDepthLabel = inlineCreateDepth === 0 ? "Top level" : `Depth ${inlineCreateDepth}`;
+  const inlineCreateReady = canSaveAccount && accountValue.name.trim() !== "";
+  const parentAccountDisplay =
+    parentAccountForEditor === null
+      ? accountMode === "edit"
+        ? inlineParentAccountId
+        : selectedRange?.parentCode ?? ""
+      : `${parentAccountForEditor.displayCode} / ${parentAccountForEditor.name}`;
+  const inlineCreateParentDisplay = getInlineCreateParentDisplay(
+    parentAccountForEditor,
+    inlineParentAccountId,
+    selectedRange
+  );
+  const inlineCreateRuleDisplay = getInlineCreateRuleDisplay(selectedRange, accountValue);
+  const inlineNamePlaceholder = getInlineAccountNamePlaceholder(
+    accountValue.level,
+    parentAccountForEditor,
+    selectedRange
+  );
+  const inlineCodePlaceholder = selectedRange === null
+    ? "Account code"
+    : `${selectedRange.rangeStart}-${selectedRange.rangeEnd}`;
+  const inlineCreateStatusItems = getInlineCreateStatusItems({
+    accountSaveErrors,
+    accountValue,
+    canSaveAccount,
+    depthLabel: inlineCreateDepthLabel,
+    parentAccount: parentAccountForEditor,
+    selectedRange
+  });
 
-  async function handleSaveRange(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await onSaveRange();
-  }
+  useEffect(() => {
+    if (accountMode !== "edit") {
+      return;
+    }
 
-  async function handleSaveAccount(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await onSaveAccount();
-  }
+    setInlineCreateAnchorId(null);
+    setInlineCreateLabel("New ledger account");
+
+    const parentAccountId = accountValue.parentAccountId.trim();
+
+    if (parentAccountId === "") {
+      return;
+    }
+
+    openAccountLineage(parentAccountId);
+  }, [accountMode, accountValue.code, accountValue.parentAccountId, accounts, ranges, isParentTreeView]);
 
   function handleSelectRange(range: AccountCodeRange) {
     onRangeSelect(range);
@@ -132,28 +317,164 @@ export function ChartOfAccountsPanel({
     });
   }
 
-  return (
-    <section className="coa-workspace">
-      <header className="coa-header client-panel">
-        <div>
-          <span>{filters.companyCode.trim() === "" ? "MAIN" : filters.companyCode}</span>
-          <h2>Chart of accounts</h2>
-        </div>
-        <button
-          className="icon-button"
-          type="button"
-          onClick={onRefresh}
-          disabled={isBusy}
-          title="Refresh chart of accounts"
-        >
-          <RefreshCw size={16} />
-          Refresh
-        </button>
-      </header>
+  function handleSelectRangeRole(role: string) {
+    const nextRange = activeRanges.find((range) => range.role === role) ?? null;
 
-      <div className="coa-filter-panel client-panel">
-        <label className="form-field">
-          <span>Search</span>
+    if (nextRange !== null) {
+      onRangeSelect(nextRange);
+    }
+
+    onFiltersChange({
+      ...filters,
+      role
+    });
+  }
+
+  async function handleStartRangeAccountCreate() {
+    setInlineCreateAnchorId(selectedRangeInlineAnchorId);
+    setInlineCreateLabel(
+      selectedRange === null
+        ? "New ledger account"
+        : `New account / ${selectedRange.displayName}`
+    );
+    setActiveWorkView("account");
+    setIsWorkbenchOpen(true);
+
+    await onNewAccount();
+  }
+
+  async function handleStartInlineCreate(
+    account: LedgerAccountSummary,
+    context: LedgerAccountCreateContext,
+    label: string
+  ) {
+    setInlineCreateAnchorId(account.ledgerAccountId);
+    setInlineCreateLabel(label);
+
+    if (context.parentAccountId === account.ledgerAccountId) {
+      openAccountLineage(account.ledgerAccountId);
+    }
+
+    await onStartAccountCreate(context);
+  }
+
+  async function handleInlineAccountFormSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!canSaveAccount || isBusy || !isInlineCreating) {
+      return;
+    }
+
+    await onSaveAccount();
+  }
+
+  function openAccountLineage(accountId: string) {
+    const lineageIds = getAccountTreeLineageIds(accountId, accounts, ranges, isParentTreeView);
+
+    if (lineageIds.length === 0) {
+      return;
+    }
+
+    setCollapsedAccountIds((current) => {
+      const next = new Set(current);
+      let changed = false;
+
+      lineageIds.forEach((lineageId) => {
+        if (next.delete(lineageId)) {
+          changed = true;
+        }
+      });
+
+      return changed ? next : current;
+    });
+  }
+
+  function toggleAccountCollapse(accountId: string) {
+    setCollapsedAccountIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(accountId)) {
+        next.delete(accountId);
+      } else {
+        next.add(accountId);
+      }
+
+      return next;
+    });
+  }
+
+  function handleExpandAllTree() {
+    setCollapsedAccountIds(new Set());
+  }
+
+  function handleCollapseAllTree() {
+    setCollapsedAccountIds(new Set(collapsibleAccountIds));
+  }
+
+  function handleToggleRangeSetup() {
+    if (isWorkbenchOpen && activeWorkView === "ranges") {
+      setIsWorkbenchOpen(false);
+      return;
+    }
+
+    setActiveWorkView("ranges");
+    setIsWorkbenchOpen(true);
+  }
+
+  function handleOpenImport() {
+    setActiveWorkView("import");
+    setIsWorkbenchOpen(true);
+  }
+
+  function handleEditAccount(account: LedgerAccountSummary) {
+    setInlineCreateAnchorId(null);
+    setInlineCreateLabel("New ledger account");
+    setActiveWorkView("account");
+    setIsWorkbenchOpen(true);
+    onEditAccount(account);
+  }
+
+  async function handleViewAccountActivity(account: LedgerAccountSummary) {
+    setInlineCreateAnchorId(null);
+    setInlineCreateLabel("New ledger account");
+    setActiveWorkView("activity");
+    setIsWorkbenchOpen(true);
+    await onViewAccountActivity(account);
+  }
+
+  function handleCancelAccountCreate() {
+    setInlineCreateAnchorId(null);
+    setInlineCreateLabel("New ledger account");
+    setIsWorkbenchOpen(false);
+  }
+
+  function handleCloseWorkbench() {
+    if (accountMode === "create") {
+      setInlineCreateAnchorId(null);
+      setInlineCreateLabel("New ledger account");
+    }
+
+    setIsWorkbenchOpen(false);
+  }
+
+  function handleWorkWindowViewChange(view: ChartOfAccountsWorkWindowView) {
+    if (view === "activity" && activity === null) {
+      return;
+    }
+
+    setActiveWorkView(view);
+  }
+
+  return (
+    <section className="coa-workspace coa-maintain-workspace">
+      <header className="coa-maintain-toolbar">
+        <div className="toolbar-title">
+          <span>{companyCode} / Maintain</span>
+          <strong>Chart of Accounts</strong>
+        </div>
+
+        <label className="toolbar-field coa-toolbar-search">
+          <span>Find Account</span>
           <span className="coa-search-input">
             <Search size={15} />
             <input
@@ -168,7 +489,8 @@ export function ChartOfAccountsPanel({
             />
           </span>
         </label>
-        <label className="form-field">
+
+        <label className="toolbar-field short">
           <span>Type</span>
           <select
             value={filters.type}
@@ -188,7 +510,8 @@ export function ChartOfAccountsPanel({
             <option value="Expense">Expense</option>
           </select>
         </label>
-        <label className="form-field">
+
+        <label className="toolbar-field short">
           <span>Status</span>
           <select
             value={filters.status}
@@ -205,728 +528,345 @@ export function ChartOfAccountsPanel({
             <option value="Inactive">Inactive</option>
           </select>
         </label>
-        <label className="form-field">
-          <span>Posting</span>
-          <select
-            value={filters.posting}
-            onChange={(event) =>
-              onFiltersChange({
-                ...filters,
-                posting: event.target.value
-              })
-            }
-            disabled={isBusy}
-          >
-            <option value="">All</option>
-            <option value="posting">Posting</option>
-            <option value="control">Control</option>
-          </select>
-        </label>
-        <label className="form-field">
-          <span>View</span>
-          <select
-            value={filters.viewMode}
-            onChange={(event) =>
-              onFiltersChange({
-                ...filters,
-                viewMode: event.target.value
-              })
-            }
-            disabled={isBusy}
-          >
-            <option value="default">Default</option>
-            <option value="all">All</option>
-            <option value="headerTotal">Header+Total</option>
-          </select>
-        </label>
-        <label className="form-field">
-          <span>Level</span>
-          <select
-            value={filters.level}
-            onChange={(event) =>
-              onFiltersChange({
-                ...filters,
-                level: event.target.value
-              })
-            }
-            disabled={isBusy}
-          >
-            <option value="">All levels</option>
-            {legacyAccountLevels.map((level) => (
-              <option key={level.code} value={level.code}>
-                {level.code} {level.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="form-field">
+
+        <label className="toolbar-field short">
           <span>Role</span>
           <select
             value={filters.role}
             onChange={(event) =>
-              onFiltersChange({
-                ...filters,
-                role: event.target.value
-              })
+              handleSelectRangeRole(event.target.value)
             }
             disabled={isBusy}
           >
             <option value="">All</option>
             {activeRanges.map((range) => (
-              <option key={range.accountCodeRangeId} value={range.role}>
+              <option key={range.role} value={range.role}>
                 {range.role}
               </option>
             ))}
           </select>
         </label>
-      </div>
 
-      <div className="coa-level-legend client-panel" aria-label="Legacy account levels">
-        {legacyAccountLevels.map((level) => (
-          <button
-            aria-pressed={filters.level === level.code}
-            className={`coa-level-chip${filters.level === level.code ? " active" : ""}`}
-            key={level.code}
-            type="button"
-            onClick={() =>
-              onFiltersChange({
-                ...filters,
-                level: filters.level === level.code ? "" : level.code
-              })
-            }
-            disabled={isBusy}
-            title={`${level.code} ${level.label}`}
-          >
-            <strong>{level.code}</strong>
-            <span>{level.label}</span>
-          </button>
-        ))}
-      </div>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={onRefresh}
+          disabled={isBusy}
+          title="Refresh chart of accounts"
+        >
+          <RefreshCw size={16} />
+          Refresh
+        </button>
 
-      <div className="coa-summary-row">
-        <article className="client-panel coa-summary-card">
-          <span>Shown</span>
-          <strong>{visibleAccounts.length}</strong>
-        </article>
-        <article className="client-panel coa-summary-card">
-          <span>Posting</span>
-          <strong>{postingCount}</strong>
-        </article>
-        <article className="client-panel coa-summary-card">
-          <span>Non-posting</span>
-          <strong>{nonPostingCount}</strong>
-        </article>
-        <article className="client-panel coa-summary-card">
-          <span>Ranges</span>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => void onBootstrapStandardChartOfAccounts()}
+          disabled={isBusy}
+          title="Load the standard provider-office chart of accounts"
+        >
+          <ListTree size={16} />
+          Load COA
+        </button>
+
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => void handleStartRangeAccountCreate()}
+          disabled={isBusy}
+          title="Start a new ledger account"
+        >
+          <Plus size={16} />
+          New
+        </button>
+
+        <button
+          className="icon-button"
+          type="button"
+          onClick={onSuggestAccountCode}
+          disabled={isBusy || !canSuggestAccountCode}
+          title="Suggest the next code for the selected range"
+        >
+          <Wand2 size={16} />
+          Suggest
+        </button>
+
+        <button
+          className={`icon-button${isWorkbenchOpen ? " primary" : ""}`}
+          type="button"
+          onClick={() => {
+            setActiveWorkView("account");
+            setIsWorkbenchOpen(true);
+          }}
+          disabled={isBusy}
+          title="Open COA work window"
+        >
+          <PanelRightOpen size={16} />
+          Window
+        </button>
+
+        <button
+          className={`icon-button${isWorkbenchOpen && activeWorkView === "import" ? " primary" : ""}`}
+          type="button"
+          onClick={handleOpenImport}
+          disabled={isBusy}
+          title="Open COA import preview"
+        >
+          <FileInput size={16} />
+          Import
+        </button>
+
+        <button
+          className="icon-button primary"
+          form={accountFormId}
+          type="submit"
+          disabled={
+            isBusy
+            || (!isWorkbenchOpen && !isInlineCreating)
+            || (!isInlineCreating && activeWorkView !== "account")
+            || !canSaveAccount
+            || !canSubmitAccountForm
+          }
+          title={accountMode === "edit" ? "Save ledger account" : "Create ledger account"}
+        >
+          <Save size={16} />
+          Save
+        </button>
+      </header>
+
+      <div className="coa-health-strip" aria-label="Chart of accounts health">
+        <span className={reconciliation === null ? "" : coaIssueCount === 0 ? "ok" : "attention"}>
+          <small>COA health</small>
+          <strong>{coaHealthText}</strong>
+        </span>
+        <span>
+          <small>Checked accounts</small>
+          <strong>{reconciliation?.accountCount ?? accounts.length}</strong>
+        </span>
+        <span>
+          <small>Affected</small>
+          <strong>{affectedAccountCount}</strong>
+        </span>
+        <span>
+          <small>Repair actions</small>
+          <strong>{coaActionCount}</strong>
+        </span>
+        <span className={
+          rangeValidation === null
+            ? ""
+            : rangeValidation.issueCount === 0
+              ? "ok"
+              : "attention"
+        }>
+          <small>Range setup</small>
+          <strong>{rangeValidationText}</strong>
+        </span>
+        <span>
+          <small>Active ranges</small>
           <strong>{activeRanges.length}</strong>
-        </article>
+        </span>
+        <span className="wide" title={selectedRange === null ? "" : formatRangeRule(selectedRange)}>
+          <small>Selected range</small>
+          <strong>{selectedRange === null ? "None" : formatRangeRule(selectedRange)}</strong>
+        </span>
       </div>
 
-      <div className="coa-layout">
-        <section className="client-panel coa-range-panel">
-          <div className="client-panel-heading">
-            <div>
-              <span>Accounting Setup</span>
-              <strong>Ranges</strong>
-            </div>
-            <ListTree size={18} />
-          </div>
-          <div className="coa-range-list">
-            {ranges.length === 0 ? (
-              <div className="client-empty-state">No ranges loaded</div>
-            ) : (
-              ranges.map((range) => (
-                <button
-                  className={`coa-range-item${
-                    selectedRangeRole === range.role || filters.role === range.role ? " active" : ""
-                  }`}
-                  key={range.accountCodeRangeId}
-                  type="button"
-                  onClick={() => handleSelectRange(range)}
-                  disabled={isBusy}
-                >
-                  <span>
-                    <strong>{range.role}</strong>
-                    <small>{range.displayName}</small>
-                  </span>
-                  <em>{formatRange(range)}</em>
-                </button>
-              ))
-            )}
-          </div>
+      <div className={`coa-classic-layout${isWorkbenchOpen ? " with-workbench" : ""}`}>
+        {isInlineCreating && !isWorkbenchOpen && (
+          <form
+            className="hidden-submit-form"
+            id={accountFormId}
+            onSubmit={(event) => void handleInlineAccountFormSubmit(event)}
+          />
+        )}
 
-          <form className="coa-range-form" onSubmit={handleSaveRange}>
-            <div className="billing-subform-heading">
-              <SlidersHorizontal size={16} />
-              <strong>Range rule</strong>
-            </div>
-            <div className="billing-form-grid coa-range-fields">
-              <label className="form-field">
-                <span>Role</span>
-                <input value={selectedRange?.role ?? ""} disabled={isBusy} readOnly />
-              </label>
-              <label className="form-field">
-                <span>Name</span>
-                <input
-                  value={rangeValue.displayName}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      displayName: event.target.value
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
+        <ChartOfAccountsListPanel
+          accountMode={accountMode}
+          accountFormId={accountFormId}
+          accountSaveErrors={accountSaveErrors}
+          accountTreeRows={accountTreeRows}
+          accountValue={accountValue}
+          accounts={accounts}
+          activeRanges={activeRanges}
+          canSaveAccount={canSaveAccount}
+          collapsedAccountIds={collapsedAccountIds}
+          collapsedVisibleParentCount={collapsedVisibleParentCount}
+          collapsibleAccountIds={collapsibleAccountIds}
+          filters={filters}
+          inlineCreateAnchorId={inlineCreateAnchorId}
+          isBusy={isBusy}
+          isParentTreeView={isParentTreeView}
+          onCollapseAllTree={handleCollapseAllTree}
+          onAccountChange={onAccountChange}
+          onCancelInlineCreate={handleCancelAccountCreate}
+          onEditAccount={handleEditAccount}
+          onExpandAllTree={handleExpandAllTree}
+          onFiltersChange={onFiltersChange}
+          onRangeRoleSelect={handleSelectRangeRole}
+          onSaveAccount={onSaveAccount}
+          onStartInlineCreate={handleStartInlineCreate}
+          onToggleAccountCollapse={toggleAccountCollapse}
+          onToggleAccountStatus={onToggleAccountStatus}
+          onToggleRangeSetup={handleToggleRangeSetup}
+          onViewAccountActivity={handleViewAccountActivity}
+          openVisibleParentCount={openVisibleParentCount}
+          postingCount={postingCount}
+          reconciliation={reconciliation}
+          repairPlan={repairPlan}
+          selectedRangeFacts={selectedRangeFacts}
+          selectedRangeRole={selectedRangeRole}
+          showRangeSetup={isWorkbenchOpen && activeWorkView === "ranges"}
+          visibleAccounts={visibleAccounts}
+        />
+
+        {isWorkbenchOpen && (
+          <ChartOfAccountsWorkWindow
+            activeView={activeWorkView}
+            activityDisabled={activity === null}
+            title={getChartOfAccountsWorkWindowTitle(activeWorkView, accountMode, isInlineCreating)}
+            subtitle={getChartOfAccountsWorkWindowSubtitle(
+              activeWorkView,
+              accountValue,
+              selectedRange,
+              activityAccount
+            )}
+            onViewChange={handleWorkWindowViewChange}
+            onClose={handleCloseWorkbench}
+          >
+            <div className="coa-maintain-stack">
+              {activeWorkView === "account" && (
+                <ChartOfAccountsDetailsPanel
+                  accountFormId={accountFormId}
+                  accountLevelOptions={accountLevelOptions}
+                  accountMode={accountMode}
+                  accountSaveErrors={accountSaveErrors}
+                  accountValue={accountValue}
+                  canSaveAccount={canSaveAccount}
+                  inlineCodePlaceholder={inlineCodePlaceholder}
+                  inlineCreateParentDisplay={inlineCreateParentDisplay}
+                  inlineCreateReady={inlineCreateReady}
+                  inlineCreateStatusItems={inlineCreateStatusItems}
+                  inlineNamePlaceholder={inlineNamePlaceholder}
+                  isBusy={isBusy}
+                  isInlineCreating={isInlineCreating}
+                  onAccountChange={onAccountChange}
+                  onCancelCreate={handleCancelAccountCreate}
+                  onSaveAccount={onSaveAccount}
+                  onSuggestAccountCode={onSuggestAccountCode}
+                  parentAccountDisplay={parentAccountDisplay}
+                  selectedRange={selectedRange}
                 />
-              </label>
-              <label className="form-field">
-                <span>Prefix</span>
-                <input
-                  value={rangeValue.searchPrefix}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      searchPrefix: event.target.value
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
+              )}
+
+              {activeWorkView === "ranges" && (
+                <ChartOfAccountsRangePanel
+                  activeRangeCount={activeRanges.length}
+                  canSaveRange={canSaveRange}
+                  displayedRangeIssueGroups={displayedRangeIssueGroups}
+                  displayedRangeValidationIssues={displayedRangeValidationIssues}
+                  filtersRole={filters.role}
+                  isBusy={isBusy}
+                  onRangeChange={onRangeChange}
+                  onRangeSelect={handleSelectRange}
+                  onSaveRange={onSaveRange}
+                  rangeSetupFacts={rangeSetupFacts}
+                  rangeUsageByRole={rangeUsageByRole}
+                  rangeValidation={rangeValidation}
+                  rangeValidationIssuesByRole={rangeValidationIssuesByRole}
+                  rangeValidationText={rangeValidationText}
+                  rangeValue={rangeValue}
+                  ranges={ranges}
+                  selectedRange={selectedRange}
+                  selectedRangeFacts={selectedRangeFacts}
+                  selectedRangeIssues={selectedRangeIssues}
+                  selectedRangeRole={selectedRangeRole}
                 />
-              </label>
-              <label className="form-field">
-                <span>Start</span>
-                <input
-                  value={rangeValue.rangeStart}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      rangeStart: event.target.value
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
+              )}
+
+              {activeWorkView === "import" && (
+                <ChartOfAccountsImportPanel
+                  importDelimiter={importDelimiter}
+                  importPreview={importPreview}
+                  importPreviewStatus={importPreviewStatus}
+                  importText={importText}
+                  isBusy={isBusy}
+                  onImportDelimiterChange={onImportDelimiterChange}
+                  onImportTextChange={onImportTextChange}
+                  onPreviewImport={onPreviewImport}
+                  onUseImportTemplate={onUseImportTemplate}
                 />
-              </label>
-              <label className="form-field">
-                <span>End</span>
-                <input
-                  value={rangeValue.rangeEnd}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      rangeEnd: event.target.value
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
+              )}
+
+              {activeWorkView === "activity" && activity !== null && (
+                <ChartOfAccountsActivityPanel
+                  account={activityAccount}
+                  activity={activity}
+                  journalEntries={journalEntries}
+                  onViewJournalEntry={onViewJournalEntry}
                 />
-              </label>
-              <label className="form-field">
-                <span>Length</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="32"
-                  value={rangeValue.codeLength}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      codeLength: event.target.value
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
-                />
-              </label>
-              <label className="form-field">
-                <span>Type</span>
-                <select
-                  value={rangeValue.accountType}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      accountType: event.target.value
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
-                >
-                  {accountTypeOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>Balance</span>
-                <select
-                  value={rangeValue.normalBalance}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      normalBalance: event.target.value
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
-                >
-                  {normalBalanceOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                <span>Parent</span>
-                <input
-                  value={rangeValue.parentCode}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      parentCode: event.target.value
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
-                />
-              </label>
-            </div>
-            <div className="coa-range-flags">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={rangeValue.isPostingAccount}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      isPostingAccount: event.target.checked
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
-                />
-                Posting
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={rangeValue.isActive}
-                  onChange={(event) =>
-                    onRangeChange({
-                      ...rangeValue,
-                      isActive: event.target.checked
-                    })
-                  }
-                  disabled={isBusy || selectedRange === null}
-                />
-                Active
-              </label>
-            </div>
-            <div className="billing-action-row">
-              <button
-                className="icon-button primary"
-                type="submit"
-                disabled={isBusy || !canSaveRange}
-                title="Save range rule"
-              >
-                <Save size={16} />
-                Save range
-              </button>
-              {selectedRange !== null && (
-                <span className="billing-small-fact">
-                  {formatRange(selectedRange)}
-                </span>
               )}
             </div>
-          </form>
-        </section>
-
-        <div className="coa-register-stack">
-          <section className="client-panel coa-account-panel">
-            <div className="client-panel-heading">
-              <div>
-                <span>{accountMode === "edit" ? "Account Maintenance" : "Account Setup"}</span>
-                <strong>{accountMode === "edit" ? "Edit ledger account" : "New ledger account"}</strong>
-              </div>
-              <div className="coa-inline-actions">
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={() => void onNewAccount()}
-                  disabled={isBusy}
-                  title="Start a new ledger account"
-                >
-                  <Plus size={16} />
-                  New
-                </button>
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={onSuggestAccountCode}
-                  disabled={isBusy || !canSuggestAccountCode}
-                  title="Suggest the next code for the selected range"
-                >
-                  <Wand2 size={16} />
-                  Suggest
-                </button>
-              </div>
-            </div>
-            <form className="coa-account-form" onSubmit={handleSaveAccount}>
-              <div className="billing-form-grid coa-account-fields">
-                <label className="form-field">
-                  <span>Code</span>
-                  <input
-                    value={accountValue.code}
-                    onChange={(event) =>
-                      onAccountChange({
-                        ...accountValue,
-                        code: event.target.value
-                      })
-                    }
-                    disabled={isBusy || accountMode === "edit"}
-                  />
-                </label>
-                <label className="form-field wide">
-                  <span>Name</span>
-                  <input
-                    value={accountValue.name}
-                    onChange={(event) =>
-                      onAccountChange({
-                        ...accountValue,
-                        name: event.target.value
-                      })
-                    }
-                    disabled={isBusy}
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Type</span>
-                  <select
-                    value={accountValue.type}
-                    onChange={(event) =>
-                      onAccountChange({
-                        ...accountValue,
-                        type: event.target.value
-                      })
-                    }
-                    disabled={isBusy || accountMode === "edit"}
-                  >
-                    {accountTypeOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Balance</span>
-                  <select
-                    value={accountValue.normalBalance}
-                    onChange={(event) =>
-                      onAccountChange({
-                        ...accountValue,
-                        normalBalance: event.target.value
-                      })
-                    }
-                    disabled={isBusy || accountMode === "edit"}
-                  >
-                    {normalBalanceOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>Level</span>
-                  <select
-                    value={accountValue.level}
-                    onChange={(event) => {
-                      const level = event.target.value;
-
-                      onAccountChange({
-                        ...accountValue,
-                        level,
-                        isPostingAccount: isPostingLedgerAccountLevel(level)
-                      });
-                    }}
-                    disabled={isBusy || accountMode === "edit"}
-                  >
-                    {accountLevelOptions.map((level) => (
-                      <option key={level.code} value={level.label}>
-                        {level.code} {level.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <span>{accountMode === "edit" ? "Parent account" : "Parent code"}</span>
-                  <input
-                    value={
-                      accountMode === "edit"
-                        ? accountValue.parentAccountId
-                        : selectedRange?.parentCode ?? ""
-                    }
-                    disabled={isBusy}
-                    readOnly
-                  />
-                </label>
-                <label className="form-field">
-                  <span>Status</span>
-                  <select
-                    value={accountValue.status}
-                    onChange={(event) =>
-                      onAccountChange({
-                        ...accountValue,
-                        status: event.target.value
-                      })
-                    }
-                    disabled={isBusy || accountMode === "create"}
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
-                </label>
-              </div>
-              <div className="coa-range-flags">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={accountValue.isPostingAccount}
-                    onChange={(event) =>
-                      onAccountChange({
-                        ...accountValue,
-                        isPostingAccount: event.target.checked
-                      })
-                    }
-                    disabled
-                  />
-                  Posting account
-                </label>
-              </div>
-              <div className="billing-action-row">
-                <button
-                  className="icon-button primary"
-                  type="submit"
-                  disabled={isBusy || !canSaveAccount}
-                  title={accountMode === "edit" ? "Save ledger account" : "Create ledger account"}
-                >
-                  <Save size={16} />
-                  {accountMode === "edit" ? "Save account" : "Create account"}
-                </button>
-                {selectedRange !== null && accountMode === "create" && (
-                  <span className="billing-small-fact">
-                    {selectedRange.displayName}
-                  </span>
-                )}
-              </div>
-            </form>
-          </section>
-
-          <section className="client-panel coa-table-panel">
-            <div className="client-panel-heading">
-              <div>
-                <span>Register</span>
-                <strong>Ledger accounts</strong>
-              </div>
-              <span className="billing-small-fact">{visibleAccounts.length} of {accounts.length}</span>
-            </div>
-            <table className="coa-table">
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Name</th>
-                  <th>Level</th>
-                  <th>Role</th>
-                  <th>Type</th>
-                  <th>Balance</th>
-                  <th>Posting</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleAccounts.length === 0 ? (
-                  <tr>
-                    <td colSpan={9}>No ledger accounts for the current filters</td>
-                  </tr>
-                ) : (
-                  visibleAccounts.map((account) => {
-                    const level = getLegacyAccountLevel(account, ranges);
-
-                    return (
-                      <tr key={account.ledgerAccountId}>
-                        <td>
-                          <strong>{account.displayCode}</strong>
-                        </td>
-                        <td>{account.name}</td>
-                        <td>
-                          <span className={`coa-level-badge ${level.code.toLowerCase()}`}>
-                            {level.code}
-                          </span>
-                          <small className="coa-level-label">{level.label}</small>
-                        </td>
-                        <td>{account.rangeRole ?? "-"}</td>
-                        <td>{account.type}</td>
-                        <td>{account.normalBalance}</td>
-                        <td>{account.isPostingAccount ? "Posting" : "Non-posting"}</td>
-                        <td>
-                          <span className={`status-pill ${account.status.toLowerCase()}`}>
-                            {account.status}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="coa-row-actions">
-                            <button
-                              className="table-icon-button"
-                              type="button"
-                              onClick={() => onEditAccount(account)}
-                              disabled={isBusy}
-                              title="Edit ledger account"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              className="table-icon-button"
-                              type="button"
-                              onClick={() => void onViewAccountActivity(account)}
-                              disabled={isBusy}
-                              title="View account activity"
-                            >
-                              <BookOpen size={14} />
-                            </button>
-                            <button
-                              className="table-icon-button"
-                              type="button"
-                              onClick={() => void onToggleAccountStatus(account)}
-                              disabled={isBusy}
-                              title={
-                                account.status === "Active"
-                                  ? "Deactivate ledger account"
-                                  : "Reactivate ledger account"
-                              }
-                            >
-                              {account.status === "Active" ? (
-                                <Power size={14} />
-                              ) : (
-                                <RotateCcw size={14} />
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </section>
-
-          {activity !== null && (
-            <section className="client-panel coa-activity-panel">
-              <div className="client-panel-heading">
-                <div>
-                  <span>{activity.code}</span>
-                  <strong>{activity.name}</strong>
-                </div>
-                <span className="billing-small-fact">
-                  {formatActivityWindow(activity)} - {activity.currencyCode ?? "No currency"}
-                </span>
-              </div>
-              <div className="coa-activity-summary">
-                <ActivityFact label="Opening" value={formatMoney(activity.openingBalance)} />
-                <ActivityFact label="Debit" value={formatMoney(activity.periodDebit)} />
-                <ActivityFact label="Credit" value={formatMoney(activity.periodCredit)} />
-                <ActivityFact label="Ending" value={formatMoney(activity.endingBalance)} />
-              </div>
-              <table className="coa-activity-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Source</th>
-                    <th>Reference</th>
-                    <th>Status</th>
-                    <th>Debit</th>
-                    <th>Credit</th>
-                    <th>Balance</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activity.lines.length === 0 ? (
-                    <tr>
-                      <td colSpan={8}>No account activity</td>
-                    </tr>
-                  ) : (
-                    activity.lines.map((line) => (
-                      <tr key={`${line.journalEntryId}-${line.entryDate}-${line.runningBalance}`}>
-                        <td>{line.entryDate}</td>
-                        <td>{line.sourceType}</td>
-                        <td>{line.sourceReference ?? "-"}</td>
-                        <td>
-                          <span className={`status-pill ${line.status.toLowerCase()}`}>
-                            {line.status}
-                          </span>
-                        </td>
-                        <td>{formatMoney(line.debit)}</td>
-                        <td>{formatMoney(line.credit)}</td>
-                        <td>{formatMoney(line.runningBalance)}</td>
-                        <td>
-                          <button
-                            className={`table-icon-button${
-                              hasJournalEntry(line.journalEntryId, journalEntries) ? "" : " muted"
-                            }`}
-                            type="button"
-                            onClick={() => void onViewJournalEntry(line)}
-                            title="View journal lines"
-                          >
-                            <BookOpen size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </section>
-          )}
-        </div>
+          </ChartOfAccountsWorkWindow>
+        )}
       </div>
     </section>
   );
 }
 
-function formatRange(range: AccountCodeRange): string {
-  return `${range.rangeStart}-${range.rangeEnd}`;
-}
-
-function ActivityFact({
-  label,
-  value
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <span>
-      <small>{label}</small>
-      <strong>{value}</strong>
-    </span>
-  );
-}
-
-function formatActivityWindow(activity: LedgerAccountActivity): string {
-  if ((activity.fromDate ?? "").trim() === "" && (activity.toDate ?? "").trim() === "") {
-    return "All dates";
+function getChartOfAccountsWorkWindowTitle(
+  view: ChartOfAccountsWorkWindowView,
+  accountMode: "create" | "edit",
+  isCreatingAccount: boolean
+): string {
+  if (view === "ranges") {
+    return "COA Range Setup";
   }
 
-  if ((activity.fromDate ?? "").trim() === "") {
-    return `Through ${activity.toDate}`;
+  if (view === "import") {
+    return "COA Import Preview";
   }
 
-  if ((activity.toDate ?? "").trim() === "") {
-    return `From ${activity.fromDate}`;
+  if (view === "activity") {
+    return "Account Activity";
   }
 
-  return `${activity.fromDate} to ${activity.toDate}`;
+  if (accountMode === "edit") {
+    return "Account Details";
+  }
+
+  return isCreatingAccount ? "New Account" : "Account Details";
 }
 
-function hasJournalEntry(
-  journalEntryId: string,
-  journalEntries: JournalEntrySummary[]
-): boolean {
-  return journalEntries.some((entry) => entry.journalEntryId === journalEntryId);
+function getChartOfAccountsWorkWindowSubtitle(
+  view: ChartOfAccountsWorkWindowView,
+  accountValue: LedgerAccountEditorInput,
+  selectedRange: AccountCodeRange | null,
+  activityAccount: LedgerAccountSummary | undefined
+): string {
+  if (view === "ranges") {
+    return selectedRange === null
+      ? "Select and maintain controlled code ranges"
+      : `${selectedRange.displayName} / ${selectedRange.rangeStart}-${selectedRange.rangeEnd}`;
+  }
+
+  if (view === "import") {
+    return "Paste, preview, and validate chart of accounts rows";
+  }
+
+  if (view === "activity") {
+    return activityAccount === undefined
+      ? "Open account activity from the list"
+      : `${activityAccount.displayCode} / ${activityAccount.name}`;
+  }
+
+  const code = accountValue.code.trim();
+  const name = accountValue.name.trim();
+
+  if (code !== "" && name !== "") {
+    return `${code} / ${name}`;
+  }
+
+  return selectedRange === null
+    ? "Select a range or child action to begin"
+    : `${selectedRange.displayName} / code generated automatically`;
 }

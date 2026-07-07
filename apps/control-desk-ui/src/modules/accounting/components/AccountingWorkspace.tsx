@@ -1,15 +1,7 @@
 import {
-  BookOpenCheck,
-  Calculator,
-  CalendarDays,
-  ClipboardList,
   FileBarChart,
-  FileSpreadsheet,
-  ListChecks,
-  RefreshCw,
-  Settings2
+  RefreshCw
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { accountingCompanyCode } from "../constants/accountingConstants";
 import {
   useAccountingWorkspace,
@@ -27,7 +19,6 @@ import { ChartOfAccountsPanel } from "./ChartOfAccountsPanel";
 import { JournalWorkbenchPanel } from "./JournalWorkbenchPanel";
 import { LedgerAccountReconciliationPanel } from "./LedgerAccountReconciliationPanel";
 import { ProfitAndLossPanel } from "./ProfitAndLossPanel";
-import { AccountingKpiCard } from "./shared/AccountingKpiCard";
 import { TrialBalancePanel } from "./TrialBalancePanel";
 
 type AccountingWorkspaceProps = {
@@ -41,14 +32,13 @@ type AccountingWorkspaceProps = {
 const workspaceAreas: Array<{
   key: AccountingWorkspaceArea;
   label: string;
-  icon: LucideIcon;
 }> = [
-  { key: "setup", label: "Chart", icon: Calculator },
-  { key: "controls", label: "Controls", icon: Settings2 },
-  { key: "periods", label: "Periods", icon: CalendarDays },
-  { key: "journal", label: "Journal", icon: BookOpenCheck },
-  { key: "reports", label: "Reports", icon: FileSpreadsheet },
-  { key: "reconcile", label: "Reconcile", icon: ListChecks }
+  { key: "setup", label: "Chart of Accounts" },
+  { key: "controls", label: "Controls" },
+  { key: "periods", label: "Periods" },
+  { key: "journal", label: "Journal" },
+  { key: "reports", label: "Reports" },
+  { key: "reconcile", label: "Reconcile" }
 ];
 
 const reportAreas: Array<{
@@ -67,71 +57,33 @@ export function AccountingWorkspace({
   getSourceDocumentLabel,
   getSourceDocumentClientLabel
 }: AccountingWorkspaceProps) {
-  const trialBalanceTone = workspace.trialBalance === null || workspace.trialBalance.difference === 0
-    ? "good"
-    : "attention";
+  const headerStatus = getAccountingHeaderStatus(workspace);
 
   return (
     <section className="accounting-workspace">
       <header className="accounting-workspace-header">
         <div>
           <span>{accountingCompanyCode}</span>
-          <h2>General ledger control</h2>
+          <h2>General Ledger</h2>
+          <small>{headerStatus}</small>
         </div>
-        <div className="accounting-workspace-status">
-          <ClipboardList size={18} />
-          <span>{workspace.accountCodeRanges.length} ranges</span>
-        </div>
+        <label className="toolbar-field accounting-area-picker">
+          <span>Section</span>
+          <select
+            value={workspace.activeArea}
+            onChange={(event) =>
+              workspace.setActiveArea(event.target.value as AccountingWorkspaceArea)
+            }
+            disabled={isBusy}
+          >
+            {workspaceAreas.map((area) => (
+              <option key={area.key} value={area.key}>
+                {area.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </header>
-
-      <div className="accounting-kpi-grid">
-        <AccountingKpiCard
-          icon={Calculator}
-          label="Ledger accounts"
-          value={workspace.ledgerAccounts.length}
-          detail={`${workspace.postingAccountCount} active posting`}
-        />
-        <AccountingKpiCard
-          icon={CalendarDays}
-          label="Open periods"
-          value={workspace.openPeriodCount}
-          detail={`${workspace.accountingPeriods.length} total periods`}
-          tone={workspace.openPeriodCount > 0 ? "good" : "attention"}
-        />
-        <AccountingKpiCard
-          icon={BookOpenCheck}
-          label="Journal entries"
-          value={workspace.journalEntries.length}
-          detail={workspace.focusedJournalEntry === null ? "No focused journal" : "Journal focused"}
-        />
-        <AccountingKpiCard
-          icon={FileSpreadsheet}
-          label="Trial balance"
-          value={workspace.trialBalance === null ? "-" : workspace.trialBalance.difference.toFixed(2)}
-          detail={workspace.trialBalance === null ? "Awaiting balance" : workspace.trialBalance.currencyCode}
-          tone={trialBalanceTone}
-        />
-      </div>
-
-      <nav className="accounting-workspace-nav" aria-label="Accounting workspace">
-        {workspaceAreas.map((area) => {
-          const Icon = area.icon;
-
-          return (
-            <button
-              aria-pressed={workspace.activeArea === area.key}
-              className={workspace.activeArea === area.key ? "active" : ""}
-              disabled={isBusy}
-              key={area.key}
-              onClick={() => workspace.setActiveArea(area.key)}
-              type="button"
-            >
-              <Icon size={16} />
-              <span>{area.label}</span>
-            </button>
-          );
-        })}
-      </nav>
 
       <div className="accounting-workspace-body">
         {workspace.activeArea === "setup" && (
@@ -143,6 +95,13 @@ export function AccountingWorkspace({
             rangeValue={workspace.accountCodeRangeForm}
             accountMode={workspace.selectedLedgerAccountId === "" ? "create" : "edit"}
             accountValue={workspace.ledgerAccountEditorForm}
+            accountSaveErrors={workspace.ledgerAccountSaveErrors}
+            reconciliation={workspace.ledgerAccountReconciliation}
+            repairPlan={workspace.ledgerAccountRepairPlan}
+            rangeValidation={workspace.accountCodeRangeValidation}
+            importText={workspace.chartOfAccountsImportText}
+            importDelimiter={workspace.chartOfAccountsImportDelimiter}
+            importPreview={workspace.chartOfAccountsImportPreview}
             activity={workspace.ledgerAccountActivity}
             journalEntries={workspace.journalEntries}
             isBusy={isBusy}
@@ -150,11 +109,17 @@ export function AccountingWorkspace({
             onRangeSelect={workspace.handleSelectAccountCodeRange}
             onRangeChange={workspace.setAccountCodeRangeForm}
             onSaveRange={workspace.handleSaveAccountCodeRange}
-            onAccountChange={workspace.setLedgerAccountEditorForm}
+            onAccountChange={workspace.handleLedgerAccountEditorFormChange}
             onNewAccount={workspace.handleNewLedgerAccount}
+            onBootstrapStandardChartOfAccounts={workspace.handleBootstrapStandardChartOfAccounts}
+            onStartAccountCreate={workspace.handleStartLedgerAccountCreate}
             onEditAccount={workspace.handleEditLedgerAccount}
             onSaveAccount={workspace.handleSaveLedgerAccount}
             onToggleAccountStatus={workspace.handleToggleLedgerAccountStatus}
+            onImportTextChange={workspace.setChartOfAccountsImportText}
+            onImportDelimiterChange={workspace.setChartOfAccountsImportDelimiter}
+            onPreviewImport={workspace.handlePreviewChartOfAccountsImport}
+            onUseImportTemplate={workspace.handleUseChartOfAccountsImportTemplate}
             onViewAccountActivity={workspace.handleViewLedgerAccountActivity}
             onViewJournalEntry={workspace.handleViewJournalEntryFromActivity}
             onSuggestAccountCode={workspace.handleSuggestAccountingLedgerAccountCode}
@@ -224,6 +189,7 @@ export function AccountingWorkspace({
             onOpeningBalanceImportDelimiterChange={workspace.setOpeningBalanceImportDelimiter}
             onPreviewOpeningBalanceText={workspace.handlePreviewOpeningBalanceImportText}
             onUseOpeningBalanceTemplate={workspace.handleUseOpeningBalanceImportTemplate}
+            onSaveOpeningBalanceProfile={workspace.handleSaveOpeningBalanceProfile}
             onPostOpeningBalance={workspace.handlePostOpeningBalanceImport}
             onFocusJournalEntry={workspace.handleFocusJournalEntry}
             onPost={workspace.handlePostManualJournalEntry}
@@ -266,6 +232,7 @@ export function AccountingWorkspace({
             {workspace.activeReportArea === "trialBalance" && (
               <TrialBalancePanel
                 balance={workspace.trialBalance}
+                accounts={workspace.ledgerAccounts}
                 filters={workspace.trialBalanceFilters}
                 isBusy={isBusy}
                 onFiltersChange={workspace.setTrialBalanceFilters}
@@ -277,6 +244,7 @@ export function AccountingWorkspace({
             {workspace.activeReportArea === "profitAndLoss" && (
               <ProfitAndLossPanel
                 statement={workspace.profitAndLossStatement}
+                accounts={workspace.ledgerAccounts}
                 filters={workspace.profitAndLossFilters}
                 isBusy={isBusy}
                 onFiltersChange={workspace.setProfitAndLossFilters}
@@ -288,6 +256,7 @@ export function AccountingWorkspace({
             {workspace.activeReportArea === "balanceSheet" && (
               <BalanceSheetPanel
                 balanceSheet={workspace.balanceSheet}
+                accounts={workspace.ledgerAccounts}
                 filters={workspace.balanceSheetFilters}
                 isBusy={isBusy}
                 onFiltersChange={workspace.setBalanceSheetFilters}
@@ -309,4 +278,20 @@ export function AccountingWorkspace({
       </div>
     </section>
   );
+}
+
+function getAccountingHeaderStatus(workspace: AccountingWorkspaceProps["workspace"]): string {
+  if (workspace.ledgerAccountReconciliation !== null && workspace.ledgerAccountReconciliation.issueCount > 0) {
+    return `${workspace.ledgerAccountReconciliation.issueCount} COA issues`;
+  }
+
+  if (workspace.accountingControlSettings?.isConfigured === true) {
+    return "Controls configured";
+  }
+
+  if (workspace.ledgerAccounts.length > 0) {
+    return `${workspace.ledgerAccounts.length} ledger accounts`;
+  }
+
+  return "Not loaded";
 }

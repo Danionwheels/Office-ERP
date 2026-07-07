@@ -22,6 +22,8 @@ export function getJournalSourceDocumentFallbackLabel(
       return `payment reversal ${reference}`;
     case "ClientRefund":
       return `refund ${reference}`;
+    case "OpeningBalance":
+      return `opening balance ${reference}`;
     default:
       return null;
   }

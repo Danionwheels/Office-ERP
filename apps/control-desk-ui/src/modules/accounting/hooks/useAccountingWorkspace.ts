@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
+import { ApiError, type ApiErrorItem } from "../../../shared/api/apiError";
 import {
+  bootstrapStandardChartOfAccounts,
   closeAccountingPeriod,
   configureAccountingControlSettings,
   configureAccountCodeRange,
   configureDefaultAccountingControlSettings,
+  configureOpeningBalanceProfile,
   configureVoucherNumberingRule,
   createAccountingPeriod,
   createLedgerAccount,
   getAccountingControlSettings,
+  getAccountCodeRangeValidation,
   getAccountingPeriodCloseJournalPreview,
   getAccountingPeriodCloseReadiness,
   getBalanceSheet,
@@ -16,6 +20,7 @@ import {
   getLedgerAccountActivity,
   getLedgerAccountReconciliation,
   getLedgerAccountRepairPlan,
+  getOpeningBalanceProfile,
   getProfitAndLossStatement,
   getTrialBalance,
   listAccountCodeRanges,
@@ -25,6 +30,7 @@ import {
   listVoucherNumberingRules,
   postManualJournalEntry,
   postOpeningBalanceImport,
+  previewChartOfAccountsImportText,
   previewJournalVoucherNumber,
   previewOpeningBalanceImport,
   previewOpeningBalanceImportText,
@@ -39,6 +45,7 @@ import {
 } from "../constants/accountingConstants";
 import type {
   AccountCodeRange,
+  AccountCodeRangeValidation,
   AccountingPeriod,
   AccountingControlSettings,
   AccountingPeriodCloseJournalPreview,
@@ -46,18 +53,25 @@ import type {
   BalanceSheet,
   BalanceSheetFilters,
   BalanceSheetLine,
+  ChartOfAccountsImportTextPreview,
   JournalEntryFilters,
   JournalEntrySourceDocument,
   JournalEntrySummary,
   JournalVoucherNumberPreview,
   LedgerAccountActivity,
   LedgerAccountActivityLine,
+  LedgerAccountCodeSuggestion,
+  LedgerAccountCreateContext,
+  LedgerAccountEditorInput,
   LedgerAccountFilters,
   LedgerAccountReconciliation,
   LedgerAccountRepairPlan,
   LedgerAccountSummary,
+  OpeningBalanceImportInput,
   OpeningBalanceImportPreview,
+  OpeningBalanceImportTemplateFormat,
   OpeningBalanceImportTextPreview,
+  OpeningBalanceProfile,
   ProfitAndLossStatement,
   ProfitAndLossStatementFilters,
   ProfitAndLossStatementLine,
@@ -116,6 +130,20 @@ type AccountingReportRefreshFilters = {
   balanceSheetFilters: BalanceSheetFilters;
 };
 
+const openingBalanceProfileStorageKey =
+  "safarsuite:accounting:opening-balance-profile:v1";
+
+type OpeningBalanceProfileSnapshot = Pick<
+  OpeningBalanceImportInput,
+  | "entryDate"
+  | "currencyCode"
+  | "profileFromDate"
+  | "profileToDate"
+  | "profileStatus"
+  | "transactionsAllowed"
+  | "profitAndLossCarryForwardAccountId"
+>;
+
 export function useAccountingWorkspace({
   runAction,
   setMessage,
@@ -131,6 +159,8 @@ export function useAccountingWorkspace({
   const [ledgerAccountRepairPlan, setLedgerAccountRepairPlan] =
     useState<LedgerAccountRepairPlan | null>(null);
   const [accountCodeRanges, setAccountCodeRanges] = useState<AccountCodeRange[]>([]);
+  const [accountCodeRangeValidation, setAccountCodeRangeValidation] =
+    useState<AccountCodeRangeValidation | null>(null);
   const [accountingControlSettings, setAccountingControlSettings] =
     useState<AccountingControlSettings | null>(null);
   const [voucherNumberingRules, setVoucherNumberingRules] =
@@ -159,7 +189,13 @@ export function useAccountingWorkspace({
   const [selectedLedgerAccountId, setSelectedLedgerAccountId] = useState("");
   const [ledgerAccountEditorForm, setLedgerAccountEditorForm] =
     useState(createDefaultLedgerAccountEditorForm());
+  const [ledgerAccountSaveErrors, setLedgerAccountSaveErrors] = useState<ApiErrorItem[]>([]);
   const [ledgerAccountFilters, setLedgerAccountFilters] = useState(defaultLedgerAccountFilters);
+  const [chartOfAccountsImportText, setChartOfAccountsImportText] = useState("");
+  const [chartOfAccountsImportDelimiter, setChartOfAccountsImportDelimiter] =
+    useState("comma");
+  const [chartOfAccountsImportPreview, setChartOfAccountsImportPreview] =
+    useState<ChartOfAccountsImportTextPreview | null>(null);
   const [journalEntryFilters, setJournalEntryFilters] = useState(defaultJournalEntryFilters);
   const [trialBalanceFilters, setTrialBalanceFilters] = useState(
     createDefaultTrialBalanceFilters()
@@ -180,7 +216,7 @@ export function useAccountingWorkspace({
   const [manualJournalEntryForm, setManualJournalEntryForm] =
     useState(createDefaultManualJournalEntryForm());
   const [openingBalanceImportForm, setOpeningBalanceImportForm] =
-    useState(createDefaultOpeningBalanceImportForm());
+    useState(createOpeningBalanceImportFormWithSavedProfile);
   const [openingBalanceImportPreview, setOpeningBalanceImportPreview] =
     useState<OpeningBalanceImportPreview | null>(null);
   const [openingBalanceImportText, setOpeningBalanceImportText] = useState("");
@@ -214,18 +250,36 @@ export function useAccountingWorkspace({
     void refreshBalanceSheet(balanceSheetFilters);
   }, [balanceSheetFilters]);
 
+  useEffect(() => {
+    saveOpeningBalanceProfileSnapshot(openingBalanceImportForm);
+  }, [
+    openingBalanceImportForm.entryDate,
+    openingBalanceImportForm.currencyCode,
+    openingBalanceImportForm.profileFromDate,
+    openingBalanceImportForm.profileToDate,
+    openingBalanceImportForm.profileStatus,
+    openingBalanceImportForm.transactionsAllowed,
+    openingBalanceImportForm.profitAndLossCarryForwardAccountId
+  ]);
+
   function handleLedgerAccountFiltersChange(filters: LedgerAccountFilters) {
     setLedgerAccountFilters(withAccountingCompanyCode(filters));
+  }
+
+  function handleLedgerAccountEditorFormChange(value: LedgerAccountEditorInput) {
+    setLedgerAccountSaveErrors([]);
+    setLedgerAccountEditorForm(value);
   }
 
   async function refreshAccountingSetup(filters = ledgerAccountFilters) {
     await runAction(async () => {
       const accountingFilters = withAccountingCompanyCode(filters);
-      const [accounts, ranges, reconciliation, repairPlan] = await Promise.all([
+      const [accounts, ranges, reconciliation, repairPlan, rangeValidation] = await Promise.all([
         listLedgerAccounts(accountingFilters),
         listAccountCodeRanges(accountingCompanyCode),
         getLedgerAccountReconciliation(accountingCompanyCode),
-        getLedgerAccountRepairPlan(accountingCompanyCode)
+        getLedgerAccountRepairPlan(accountingCompanyCode),
+        getAccountCodeRangeValidation(accountingCompanyCode)
       ]);
       const sortedRanges = sortAccountCodeRanges(ranges);
       const selectedRange =
@@ -237,6 +291,7 @@ export function useAccountingWorkspace({
       setLedgerAccountReconciliation(reconciliation);
       setLedgerAccountRepairPlan(repairPlan);
       setAccountCodeRanges(sortedRanges);
+      setAccountCodeRangeValidation(rangeValidation);
       setSelectedAccountCodeRangeRole(selectedRange?.role ?? "");
       setAccountCodeRangeForm(
         selectedRange === null ? emptyAccountCodeRangeForm : toAccountCodeRangeForm(selectedRange)
@@ -253,15 +308,19 @@ export function useAccountingWorkspace({
 
   async function refreshAccountingControls() {
     await runAction(async () => {
-      const [settings, voucherRules] = await Promise.all([
+      const [settings, voucherRules, openingBalanceProfile] = await Promise.all([
         getAccountingControlSettings(accountingCompanyCode),
-        listVoucherNumberingRules(accountingCompanyCode)
+        listVoucherNumberingRules(accountingCompanyCode),
+        getOpeningBalanceProfile(accountingCompanyCode)
       ]);
 
       setAccountingControlSettings(settings);
       setAccountingControlSettingsForm(toAccountingControlSettingsForm(settings));
       setVoucherNumberingRules(voucherRules);
       setVoucherNumberingRuleForms(toVoucherNumberingRuleForms(voucherRules));
+      setOpeningBalanceImportForm((current) =>
+        applyOpeningBalanceProfileToForm(current, openingBalanceProfile)
+      );
     });
   }
 
@@ -284,11 +343,12 @@ export function useAccountingWorkspace({
     await runAction(async () => {
       const accountingFilters = withAccountingCompanyCode(ledgerAccountFilters);
       const settings = await configureDefaultAccountingControlSettings(accountingCompanyCode);
-      const [accounts, ranges, reconciliation, repairPlan] = await Promise.all([
+      const [accounts, ranges, reconciliation, repairPlan, rangeValidation] = await Promise.all([
         listLedgerAccounts(accountingFilters),
         listAccountCodeRanges(accountingCompanyCode),
         getLedgerAccountReconciliation(accountingCompanyCode),
-        getLedgerAccountRepairPlan(accountingCompanyCode)
+        getLedgerAccountRepairPlan(accountingCompanyCode),
+        getAccountCodeRangeValidation(accountingCompanyCode)
       ]);
       const sortedRanges = sortAccountCodeRanges(ranges);
       const selectedRange =
@@ -302,12 +362,48 @@ export function useAccountingWorkspace({
       setLedgerAccountReconciliation(reconciliation);
       setLedgerAccountRepairPlan(repairPlan);
       setAccountCodeRanges(sortedRanges);
+      setAccountCodeRangeValidation(rangeValidation);
       setSelectedAccountCodeRangeRole(selectedRange?.role ?? "");
       setAccountCodeRangeForm(
         selectedRange === null ? emptyAccountCodeRangeForm : toAccountCodeRangeForm(selectedRange)
       );
       await onLedgerSetupChanged?.();
       setMessage("Default MAIN GL controls configured.");
+    });
+  }
+
+  async function handleBootstrapStandardChartOfAccounts() {
+    await runAction(async () => {
+      const accountingFilters = withAccountingCompanyCode(ledgerAccountFilters);
+      const bootstrap = await bootstrapStandardChartOfAccounts(accountingCompanyCode);
+      const [accounts, ranges, reconciliation, repairPlan, rangeValidation] = await Promise.all([
+        listLedgerAccounts(accountingFilters),
+        listAccountCodeRanges(accountingCompanyCode),
+        getLedgerAccountReconciliation(accountingCompanyCode),
+        getLedgerAccountRepairPlan(accountingCompanyCode),
+        getAccountCodeRangeValidation(accountingCompanyCode)
+      ]);
+      const sortedRanges = sortAccountCodeRanges(ranges);
+      const selectedRange =
+        sortedRanges.find((range) => range.role === selectedAccountCodeRangeRole)
+        ?? sortedRanges[0]
+        ?? null;
+
+      setLedgerAccounts(accounts);
+      setLedgerAccountReconciliation(reconciliation);
+      setLedgerAccountRepairPlan(repairPlan);
+      setAccountCodeRanges(sortedRanges);
+      setAccountCodeRangeValidation(rangeValidation);
+      setSelectedAccountCodeRangeRole(selectedRange?.role ?? "");
+      setAccountCodeRangeForm(
+        selectedRange === null ? emptyAccountCodeRangeForm : toAccountCodeRangeForm(selectedRange)
+      );
+      setSelectedLedgerAccountId("");
+      setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(selectedRange));
+      await onLedgerSetupChanged?.();
+      setMessage(
+        `Standard COA loaded: ${bootstrap.createdCount} created, ${bootstrap.reusedCount} reused.`
+      );
     });
   }
 
@@ -375,13 +471,15 @@ export function useAccountingWorkspace({
 
   async function refreshLedgerAccountReconciliation() {
     await runAction(async () => {
-      const [reconciliation, repairPlan] = await Promise.all([
+      const [reconciliation, repairPlan, rangeValidation] = await Promise.all([
         getLedgerAccountReconciliation(accountingCompanyCode),
-        getLedgerAccountRepairPlan(accountingCompanyCode)
+        getLedgerAccountRepairPlan(accountingCompanyCode),
+        getAccountCodeRangeValidation(accountingCompanyCode)
       ]);
 
       setLedgerAccountReconciliation(reconciliation);
       setLedgerAccountRepairPlan(repairPlan);
+      setAccountCodeRangeValidation(rangeValidation);
       setMessage(
         reconciliation.issueCount === 0
           ? "COA reconciliation passed."
@@ -487,6 +585,7 @@ export function useAccountingWorkspace({
     setAccountCodeRangeForm(toAccountCodeRangeForm(range));
 
     if (selectedLedgerAccountId === "") {
+      setLedgerAccountSaveErrors([]);
       setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(range));
     }
   }
@@ -607,10 +706,12 @@ export function useAccountingWorkspace({
         selectedAccountCodeRangeRole,
         accountCodeRangeForm
       );
-      const [accounts, ranges, reconciliation] = await Promise.all([
+      const [accounts, ranges, reconciliation, repairPlan, rangeValidation] = await Promise.all([
         listLedgerAccounts(accountingFilters),
         listAccountCodeRanges(accountingCompanyCode),
-        getLedgerAccountReconciliation(accountingCompanyCode)
+        getLedgerAccountReconciliation(accountingCompanyCode),
+        getLedgerAccountRepairPlan(accountingCompanyCode),
+        getAccountCodeRangeValidation(accountingCompanyCode)
       ]);
       const sortedRanges = sortAccountCodeRanges(ranges);
       const selectedRange =
@@ -618,7 +719,9 @@ export function useAccountingWorkspace({
 
       setLedgerAccounts(accounts);
       setLedgerAccountReconciliation(reconciliation);
+      setLedgerAccountRepairPlan(repairPlan);
       setAccountCodeRanges(sortedRanges);
+      setAccountCodeRangeValidation(rangeValidation);
       setSelectedAccountCodeRangeRole(selectedRange.role);
       setAccountCodeRangeForm(toAccountCodeRangeForm(selectedRange));
       await onLedgerSetupChanged?.();
@@ -630,6 +733,7 @@ export function useAccountingWorkspace({
     const selectedRange =
       accountCodeRanges.find((range) => range.role === selectedAccountCodeRangeRole) ?? null;
 
+    setLedgerAccountSaveErrors([]);
     setSelectedLedgerAccountId("");
     setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(selectedRange));
 
@@ -653,11 +757,61 @@ export function useAccountingWorkspace({
         isPostingAccount: suggestion.isPostingAccount,
         status: "Active"
       }));
-      setMessage(`Prepared ${suggestion.displayCode}.`);
+      setMessage(formatLedgerAccountCodeSuggestionMessage("Prepared", suggestion));
+    });
+  }
+
+  async function handleStartLedgerAccountCreate(context: LedgerAccountCreateContext) {
+    const selectedRange =
+      accountCodeRanges.find((range) => range.role === context.rangeRole) ?? null;
+    const parentAccountId = context.parentAccountId?.trim() ?? "";
+
+    if (selectedRange === null) {
+      setMessage("Select an account range before adding a ledger account.");
+      return;
+    }
+
+    setLedgerAccountSaveErrors([]);
+    setSelectedLedgerAccountId("");
+    setSelectedAccountCodeRangeRole(selectedRange.role);
+    setAccountCodeRangeForm(toAccountCodeRangeForm(selectedRange));
+    const defaultForm = createDefaultLedgerAccountEditorForm(selectedRange);
+
+    setLedgerAccountEditorForm({
+      ...defaultForm,
+      parentAccountId,
+      level: context.level ?? defaultForm.level,
+      isPostingAccount: context.isPostingAccount ?? defaultForm.isPostingAccount,
+      status: "Active"
+    });
+
+    await runAction(async () => {
+      const suggestion = await suggestLedgerAccountCode(
+        selectedRange.role,
+        accountingCompanyCode,
+        parentAccountId === "" ? undefined : parentAccountId
+      );
+      const defaultForm = createDefaultLedgerAccountEditorForm(selectedRange);
+
+      setSelectedLedgerAccountId("");
+      setSelectedAccountCodeRangeRole(selectedRange.role);
+      setAccountCodeRangeForm(toAccountCodeRangeForm(selectedRange));
+      setLedgerAccountEditorForm({
+        ...defaultForm,
+        code: suggestion.suggestedCode,
+        type: suggestion.type,
+        normalBalance: suggestion.normalBalance,
+        parentAccountId: suggestion.parentAccountId ?? parentAccountId,
+        level: context.level ?? getDefaultLedgerAccountLevel(selectedRange, suggestion.isPostingAccount),
+        isPostingAccount: context.isPostingAccount ?? suggestion.isPostingAccount,
+        status: "Active"
+      });
+      setMessage(formatLedgerAccountCodeSuggestionMessage("Prepared", suggestion));
     });
   }
 
   function handleEditLedgerAccount(account: LedgerAccountSummary) {
+    setLedgerAccountSaveErrors([]);
     setSelectedLedgerAccountId(account.ledgerAccountId);
     setLedgerAccountEditorForm(toLedgerAccountEditorForm(account));
   }
@@ -668,11 +822,14 @@ export function useAccountingWorkspace({
     }
 
     await runAction(async () => {
+      setLedgerAccountSaveErrors([]);
       const selectedRange =
         accountCodeRanges.find((range) => range.role === selectedAccountCodeRangeRole) ?? null;
+      const parentAccountId = ledgerAccountEditorForm.parentAccountId.trim();
       const suggestion = await suggestLedgerAccountCode(
         selectedAccountCodeRangeRole,
-        accountingCompanyCode
+        accountingCompanyCode,
+        parentAccountId === "" ? undefined : parentAccountId
       );
 
       setLedgerAccountEditorForm((current) => ({
@@ -680,60 +837,117 @@ export function useAccountingWorkspace({
         code: suggestion.suggestedCode,
         type: suggestion.type,
         normalBalance: suggestion.normalBalance,
-        level: getDefaultLedgerAccountLevel(selectedRange, suggestion.isPostingAccount),
+        parentAccountId: suggestion.parentAccountId ?? current.parentAccountId,
+        level: current.parentAccountId.trim() !== "" && current.level.trim() !== ""
+          ? current.level
+          : getDefaultLedgerAccountLevel(selectedRange, suggestion.isPostingAccount),
         isPostingAccount: suggestion.isPostingAccount,
         status: "Active"
       }));
-      setMessage(`Suggested ${suggestion.displayCode}.`);
+      setMessage(formatLedgerAccountCodeSuggestionMessage("Suggested", suggestion));
     });
   }
 
   async function handleSaveLedgerAccount() {
+    setLedgerAccountSaveErrors([]);
+
     await runAction(async () => {
-      if (selectedLedgerAccountId === "") {
-        await createLedgerAccount(ledgerAccountEditorForm);
-      } else {
-        await updateLedgerAccount(selectedLedgerAccountId, ledgerAccountEditorForm);
+      const wasCreate = selectedLedgerAccountId === "";
+      let savedLedgerAccountId = selectedLedgerAccountId;
+
+      try {
+        if (wasCreate) {
+          const createdAccount = await createLedgerAccount(ledgerAccountEditorForm);
+          savedLedgerAccountId = createdAccount.ledgerAccountId;
+        } else {
+          await updateLedgerAccount(selectedLedgerAccountId, ledgerAccountEditorForm);
+        }
+      } catch (caughtError) {
+        setLedgerAccountSaveErrors(toLedgerAccountSaveErrors(caughtError));
+        throw caughtError;
       }
 
       const accountingFilters = withAccountingCompanyCode(ledgerAccountFilters);
-      const [accounts, ranges, reconciliation] = await Promise.all([
+      const allAccountingFilters = withAccountingCompanyCode(defaultLedgerAccountFilters);
+      const [filteredAccounts, allAccounts, ranges, reconciliation, repairPlan, rangeValidation] = await Promise.all([
         listLedgerAccounts(accountingFilters),
+        listLedgerAccounts(allAccountingFilters),
         listAccountCodeRanges(accountingCompanyCode),
-        getLedgerAccountReconciliation(accountingCompanyCode)
+        getLedgerAccountReconciliation(accountingCompanyCode),
+        getLedgerAccountRepairPlan(accountingCompanyCode),
+        getAccountCodeRangeValidation(accountingCompanyCode)
       ]);
+      const savedAccount =
+        allAccounts.find((account) => account.ledgerAccountId === savedLedgerAccountId) ?? null;
+      const shouldShowAllAccounts =
+        savedAccount !== null
+        && !filteredAccounts.some((account) => account.ledgerAccountId === savedAccount.ledgerAccountId);
+      const accounts = shouldShowAllAccounts ? allAccounts : filteredAccounts;
+      const savedAccountVisibilityFilters = withAccountingCompanyCode({
+        ...defaultLedgerAccountFilters,
+        companyCode: ledgerAccountFilters.companyCode,
+        viewMode: ledgerAccountFilters.viewMode
+      });
       const sortedRanges = sortAccountCodeRanges(ranges);
+      const savedAccountRangeRole = savedAccount?.rangeRole ?? "";
       const selectedRange =
-        sortedRanges.find((range) => range.role === selectedAccountCodeRangeRole)
+        sortedRanges.find((range) => savedAccountRangeRole !== "" && range.role === savedAccountRangeRole)
+        ?? sortedRanges.find((range) => range.role === selectedAccountCodeRangeRole)
         ?? sortedRanges[0]
         ?? null;
 
       setLedgerAccounts(accounts);
       setLedgerAccountReconciliation(reconciliation);
+      setLedgerAccountRepairPlan(repairPlan);
       setAccountCodeRanges(sortedRanges);
+      setAccountCodeRangeValidation(rangeValidation);
       setSelectedAccountCodeRangeRole(selectedRange?.role ?? "");
       setAccountCodeRangeForm(
         selectedRange === null ? emptyAccountCodeRangeForm : toAccountCodeRangeForm(selectedRange)
       );
 
-      if (selectedLedgerAccountId === "") {
+      if (shouldShowAllAccounts) {
+        setLedgerAccountFilters(savedAccountVisibilityFilters);
+      }
+
+      if (savedAccount === null) {
+        setSelectedLedgerAccountId("");
         setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(selectedRange));
       } else {
-        const updatedAccount = accounts.find((account) =>
-          account.ledgerAccountId === selectedLedgerAccountId
-        );
-
-        if (updatedAccount === undefined) {
-          setSelectedLedgerAccountId("");
-          setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(selectedRange));
-        } else {
-          setLedgerAccountEditorForm(toLedgerAccountEditorForm(updatedAccount));
-        }
+        setSelectedLedgerAccountId(savedAccount.ledgerAccountId);
+        setLedgerAccountEditorForm(toLedgerAccountEditorForm(savedAccount));
       }
 
       await onLedgerSetupChanged?.();
-      setMessage(selectedLedgerAccountId === "" ? "Ledger account created." : "Ledger account saved.");
+      setLedgerAccountSaveErrors([]);
+      setMessage(wasCreate ? "Ledger account created and selected." : "Ledger account saved.");
     });
+  }
+
+  async function handlePreviewChartOfAccountsImport() {
+    await runAction(async () => {
+      const preview = await previewChartOfAccountsImportText(
+        accountingCompanyCode,
+        chartOfAccountsImportText,
+        chartOfAccountsImportDelimiter);
+
+      setChartOfAccountsImportPreview(preview);
+      setMessage(
+        `COA preview: ${preview.insertCount} insert, ${preview.updateCount} update, ${preview.rejectCount} reject.`
+      );
+    });
+  }
+
+  function handleUseChartOfAccountsImportTemplate() {
+    setChartOfAccountsImportDelimiter("comma");
+    setChartOfAccountsImportPreview(null);
+    setChartOfAccountsImportText([
+      "Acc Type,Account Code,Parent Code,Account Name,CUR",
+      "Header,10000,,ASSETS,PKR",
+      "Control,15100,10000,ACCOUNTS RECEIVABLE,PKR",
+      "Subsidiary,15100-0001,15100,Demo Client Receivable,PKR",
+      "Total,19999,10000,TOTAL ASSETS,PKR"
+    ].join("\n"));
   }
 
   async function handleToggleLedgerAccountStatus(account: LedgerAccountSummary) {
@@ -745,12 +959,16 @@ export function useAccountingWorkspace({
         status: nextStatus
       });
 
-      const [accounts, reconciliation] = await Promise.all([
+      const [accounts, reconciliation, repairPlan, rangeValidation] = await Promise.all([
         listLedgerAccounts(withAccountingCompanyCode(ledgerAccountFilters)),
-        getLedgerAccountReconciliation(accountingCompanyCode)
+        getLedgerAccountReconciliation(accountingCompanyCode),
+        getLedgerAccountRepairPlan(accountingCompanyCode),
+        getAccountCodeRangeValidation(accountingCompanyCode)
       ]);
       setLedgerAccounts(accounts);
       setLedgerAccountReconciliation(reconciliation);
+      setLedgerAccountRepairPlan(repairPlan);
+      setAccountCodeRangeValidation(rangeValidation);
 
       if (selectedLedgerAccountId === account.ledgerAccountId) {
         const updatedAccount = accounts.find((item) =>
@@ -983,10 +1201,24 @@ export function useAccountingWorkspace({
     });
   }
 
-  function handleUseOpeningBalanceImportTemplate() {
+  function handleUseOpeningBalanceImportTemplate(format: OpeningBalanceImportTemplateFormat = "standard") {
     setOpeningBalanceImportDelimiter("comma");
-    setOpeningBalanceImportText("accountCode,debit,credit,description\n");
+    setOpeningBalanceImportText(createOpeningBalanceImportTemplate(format));
+    setOpeningBalanceImportPreview(null);
     setOpeningBalanceImportTextPreview(null);
+  }
+
+  async function handleSaveOpeningBalanceProfile() {
+    await runAction(async () => {
+      const profile = await configureOpeningBalanceProfile(
+        accountingCompanyCode,
+        openingBalanceImportForm);
+
+      setOpeningBalanceImportForm((current) =>
+        applyOpeningBalanceProfileToForm(current, profile)
+      );
+      setMessage("Opening balance profile saved.");
+    });
   }
 
   async function handlePostOpeningBalanceImport() {
@@ -1003,12 +1235,15 @@ export function useAccountingWorkspace({
       setTrialBalance(balance);
       setProfitAndLossStatement(profitAndLoss);
       setBalanceSheet(position);
-      setOpeningBalanceImportForm(createDefaultOpeningBalanceImportForm());
+      setOpeningBalanceImportForm((current) =>
+        createOpeningBalanceImportFormAfterPost(current)
+      );
       setOpeningBalanceImportPreview(null);
       setOpeningBalanceImportText("");
       setOpeningBalanceImportTextPreview(null);
       setFocusedJournalEntryId(postedEntry.journalEntryId);
       setFocusedJournalEntry(postedEntry);
+      await loadJournalSourceDocument(postedEntry);
       await refreshSelectedLedgerAccountActivity();
       setMessage(`Opening balance journal ${postedEntry.sourceReference ?? postedEntry.journalEntryId} posted.`);
     });
@@ -1067,6 +1302,7 @@ export function useAccountingWorkspace({
     ledgerAccountReconciliation,
     ledgerAccountRepairPlan,
     accountCodeRanges,
+    accountCodeRangeValidation,
     accountingControlSettings,
     voucherNumberingRules,
     accountingPeriods,
@@ -1085,7 +1321,11 @@ export function useAccountingWorkspace({
     accountCodeRangeForm,
     selectedLedgerAccountId,
     ledgerAccountEditorForm,
+    ledgerAccountSaveErrors,
     ledgerAccountFilters,
+    chartOfAccountsImportText,
+    chartOfAccountsImportDelimiter,
+    chartOfAccountsImportPreview,
     journalEntryFilters,
     trialBalanceFilters,
     profitAndLossFilters,
@@ -1103,7 +1343,9 @@ export function useAccountingWorkspace({
     postingAccountCount,
     handleLedgerAccountFiltersChange,
     setAccountCodeRangeForm,
-    setLedgerAccountEditorForm,
+    handleLedgerAccountEditorFormChange,
+    setChartOfAccountsImportText,
+    setChartOfAccountsImportDelimiter,
     setJournalEntryFilters,
     setTrialBalanceFilters,
     setProfitAndLossFilters,
@@ -1126,6 +1368,7 @@ export function useAccountingWorkspace({
     refreshBalanceSheet,
     handleSaveAccountingControls,
     handleUseDefaultAccountingControls,
+    handleBootstrapStandardChartOfAccounts,
     handleSaveVoucherNumberingRule,
     handlePrepareNextAccountingPeriod,
     handleCreateAccountingPeriod,
@@ -1136,9 +1379,12 @@ export function useAccountingWorkspace({
     handleSelectAccountCodeRange,
     handleSaveAccountCodeRange,
     handleNewLedgerAccount,
+    handleStartLedgerAccountCreate,
     handleEditLedgerAccount,
     handleSuggestAccountingLedgerAccountCode,
     handleSaveLedgerAccount,
+    handlePreviewChartOfAccountsImport,
+    handleUseChartOfAccountsImportTemplate,
     handleToggleLedgerAccountStatus,
     handleViewLedgerAccountActivity,
     handleViewTrialBalanceAccountActivity,
@@ -1152,11 +1398,178 @@ export function useAccountingWorkspace({
     handlePreviewOpeningBalanceImport,
     handlePreviewOpeningBalanceImportText,
     handleUseOpeningBalanceImportTemplate,
+    handleSaveOpeningBalanceProfile,
     handlePostOpeningBalanceImport,
     handleVoidManualJournalEntry,
     rememberJournalSourceDocument,
     loadJournalSourceDocument
   };
+}
+
+function createOpeningBalanceImportFormWithSavedProfile(): OpeningBalanceImportInput {
+  const defaultForm = createDefaultOpeningBalanceImportForm();
+  const savedProfile = readOpeningBalanceProfileSnapshot(defaultForm);
+
+  return savedProfile === null
+    ? defaultForm
+    : {
+        ...defaultForm,
+        ...savedProfile
+      };
+}
+
+function createOpeningBalanceImportFormAfterPost(
+  current: OpeningBalanceImportInput
+): OpeningBalanceImportInput {
+  const defaultForm = createDefaultOpeningBalanceImportForm();
+
+  return {
+    ...defaultForm,
+    entryDate: current.entryDate,
+    currencyCode: current.currencyCode,
+    memo: current.memo,
+    profileFromDate: current.profileFromDate,
+    profileToDate: current.profileToDate,
+    profileStatus: current.profileStatus,
+    transactionsAllowed: current.transactionsAllowed,
+    profitAndLossCarryForwardAccountId: current.profitAndLossCarryForwardAccountId
+  };
+}
+
+function applyOpeningBalanceProfileToForm(
+  current: OpeningBalanceImportInput,
+  profile: OpeningBalanceProfile
+): OpeningBalanceImportInput {
+  return {
+    ...current,
+    profileFromDate: profile.fiscalYearFrom,
+    profileToDate: profile.fiscalYearTo,
+    profileStatus: normalizeOpeningBalanceProfileStatus(profile.status),
+    transactionsAllowed: profile.transactionsAllowed,
+    profitAndLossCarryForwardAccountId: profile.profitAndLossCarryForwardAccountId ?? ""
+  };
+}
+
+function normalizeOpeningBalanceProfileStatus(value: string): "open" | "closed" {
+  return value.trim().toLowerCase() === "closed" ? "closed" : "open";
+}
+
+function saveOpeningBalanceProfileSnapshot(value: OpeningBalanceImportInput) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const snapshot: OpeningBalanceProfileSnapshot = {
+    entryDate: value.entryDate,
+    currencyCode: value.currencyCode,
+    profileFromDate: value.profileFromDate,
+    profileToDate: value.profileToDate,
+    profileStatus: value.profileStatus,
+    transactionsAllowed: value.transactionsAllowed,
+    profitAndLossCarryForwardAccountId: value.profitAndLossCarryForwardAccountId
+  };
+
+  try {
+    window.localStorage.setItem(
+      openingBalanceProfileStorageKey,
+      JSON.stringify(snapshot)
+    );
+  } catch {
+    // Browser storage is a convenience here; posting should not depend on it.
+  }
+}
+
+function readOpeningBalanceProfileSnapshot(
+  fallback: OpeningBalanceImportInput
+): OpeningBalanceProfileSnapshot | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(openingBalanceProfileStorageKey);
+
+    if (rawValue === null) {
+      return null;
+    }
+
+    const parsedValue = JSON.parse(rawValue) as Partial<OpeningBalanceProfileSnapshot>;
+
+    return {
+      entryDate: normalizeDateSnapshotValue(parsedValue.entryDate, fallback.entryDate),
+      currencyCode: normalizeTextSnapshotValue(parsedValue.currencyCode, fallback.currencyCode),
+      profileFromDate: normalizeDateSnapshotValue(
+        parsedValue.profileFromDate,
+        fallback.profileFromDate
+      ),
+      profileToDate: normalizeDateSnapshotValue(
+        parsedValue.profileToDate,
+        fallback.profileToDate
+      ),
+      profileStatus: parsedValue.profileStatus === "closed" ? "closed" : "open",
+      transactionsAllowed: typeof parsedValue.transactionsAllowed === "boolean"
+        ? parsedValue.transactionsAllowed
+        : fallback.transactionsAllowed,
+      profitAndLossCarryForwardAccountId: normalizeTextSnapshotValue(
+        parsedValue.profitAndLossCarryForwardAccountId,
+        fallback.profitAndLossCarryForwardAccountId
+      )
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeDateSnapshotValue(value: unknown, fallback: string): string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? value
+    : fallback;
+}
+
+function normalizeTextSnapshotValue(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function createOpeningBalanceImportTemplate(format: OpeningBalanceImportTemplateFormat): string {
+  switch (format) {
+    case "legacy-access":
+      return "ACC_CODE,DAMT,CAMT,REMARKS,CUR\n";
+    case "legacy-sql":
+      return "DCO_COA3_CODE,DCO_DBT_AMT,DCO_CRD_AMT,DCO_CUR_CODE,DCO_DP_CODE\n";
+    case "standard":
+    default:
+      return "accountCode,debit,credit,description\n";
+  }
+}
+
+function formatLedgerAccountCodeSuggestionMessage(
+  verb: string,
+  suggestion: LedgerAccountCodeSuggestion
+): string {
+  const parentCode = suggestion.parentAccountCode?.trim() ?? suggestion.parentCode?.trim() ?? "";
+  const parentName = suggestion.parentAccountName?.trim() ?? "";
+
+  if (parentCode === "") {
+    return `${verb} ${suggestion.displayCode}.`;
+  }
+
+  return parentName === ""
+    ? `${verb} ${suggestion.displayCode} under ${parentCode}.`
+    : `${verb} ${suggestion.displayCode} under ${parentCode} / ${parentName}.`;
+}
+
+function toLedgerAccountSaveErrors(caughtError: unknown): ApiErrorItem[] {
+  if (caughtError instanceof ApiError) {
+    return caughtError.errors.length > 0
+      ? caughtError.errors
+      : [{ code: "error", message: caughtError.message, target: null }];
+  }
+
+  if (caughtError instanceof Error) {
+    return [{ code: "error", message: caughtError.message, target: null }];
+  }
+
+  return [{ code: "error", message: "Ledger account could not be saved.", target: null }];
 }
 
 function toVoucherNumberingRuleForms(

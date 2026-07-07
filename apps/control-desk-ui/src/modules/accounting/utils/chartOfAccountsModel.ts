@@ -17,15 +17,6 @@ export function getVisibleAccounts(
   const search = filters.search.trim().toLowerCase();
 
   return accounts.filter((account) => {
-    if (
-      search !== ""
-      && !account.code.toLowerCase().includes(search)
-      && !account.displayCode.toLowerCase().includes(search)
-      && !account.name.toLowerCase().includes(search)
-    ) {
-      return false;
-    }
-
     if (filters.type !== "" && account.type !== filters.type) {
       return false;
     }
@@ -43,12 +34,13 @@ export function getVisibleAccounts(
     }
 
     if (filters.role !== "") {
-      const matchedRange = ranges.find((range) => range.role === filters.role);
+      const matchesRole = accountMatchesRole(account, filters.role, ranges);
+      const descendantMatchesRole = filters.viewMode === "headerTotal"
+        && accounts.some((candidate) =>
+          accountMatchesRole(candidate, filters.role, ranges)
+          && belongsToParentTreeRoot(candidate, account, accounts, ranges));
 
-      if (
-        account.rangeRole !== filters.role
-        && (matchedRange === undefined || !account.code.startsWith(matchedRange.searchPrefix))
-      ) {
+      if (!matchesRole && !descendantMatchesRole) {
         return false;
       }
     }
@@ -60,7 +52,19 @@ export function getVisibleAccounts(
     }
 
     if (filters.viewMode === "headerTotal") {
-      return level.code === "H" || level.code === "T";
+      if (level.code !== "T") {
+        return false;
+      }
+
+      return search === ""
+        || accountMatchesSearch(account, search)
+        || accounts.some((candidate) =>
+          accountMatchesSearch(candidate, search)
+          && belongsToParentTreeRoot(candidate, account, accounts, ranges));
+    }
+
+    if (search !== "" && !accountMatchesSearch(account, search)) {
+      return false;
     }
 
     if (filters.viewMode === "default") {
@@ -130,35 +134,35 @@ export function getLedgerAccountLevelOptions(
   }
 
   if (hasRangeIntent(range, "Header")) {
-    return [getLegacyAccountLevelDefinition("H")];
+    return ensureCurrentLevelOption([getLegacyAccountLevelDefinition("H")], currentLevel);
   }
 
   if (hasRangeIntent(range, "Total")) {
-    return [getLegacyAccountLevelDefinition("T")];
+    return ensureCurrentLevelOption([getLegacyAccountLevelDefinition("T")], currentLevel);
   }
 
   if (isControlRange(range)) {
-    return [getLegacyAccountLevelDefinition("C")];
+    return ensureCurrentLevelOption([getLegacyAccountLevelDefinition("C")], currentLevel);
   }
 
   if (hasRangeIntent(range, "Master")) {
-    return [getLegacyAccountLevelDefinition("M")];
+    return ensureCurrentLevelOption([getLegacyAccountLevelDefinition("M")], currentLevel);
   }
 
   if ((range.parentCode ?? "").trim() !== "") {
-    return [getLegacyAccountLevelDefinition("S")];
+    return ensureCurrentLevelOption([getLegacyAccountLevelDefinition("S")], currentLevel);
   }
 
   if (range.isPostingAccount) {
-    return [getLegacyAccountLevelDefinition("D")];
+    return ensureCurrentLevelOption([getLegacyAccountLevelDefinition("D")], currentLevel);
   }
 
-  return [
+  return ensureCurrentLevelOption([
     getLegacyAccountLevelDefinition("H"),
     getLegacyAccountLevelDefinition("T"),
     getLegacyAccountLevelDefinition("M"),
     getLegacyAccountLevelDefinition("C")
-  ];
+  ], currentLevel);
 }
 
 export function isPostingLedgerAccountLevel(level: string): boolean {
@@ -195,6 +199,58 @@ function getAccountRange(
     && account.code.startsWith(range.searchPrefix)
     && account.code >= range.rangeStart
     && account.code <= range.rangeEnd) ?? null;
+}
+
+function accountMatchesSearch(account: LedgerAccountSummary, search: string): boolean {
+  return account.code.toLowerCase().includes(search)
+    || account.displayCode.toLowerCase().includes(search)
+    || account.name.toLowerCase().includes(search);
+}
+
+function accountMatchesRole(
+  account: LedgerAccountSummary,
+  role: string,
+  ranges: AccountCodeRange[]
+): boolean {
+  const matchedRange = ranges.find((range) => range.role === role);
+
+  return account.rangeRole === role
+    || (matchedRange !== undefined && account.code.startsWith(matchedRange.searchPrefix));
+}
+
+function belongsToParentTreeRoot(
+  account: LedgerAccountSummary,
+  root: LedgerAccountSummary,
+  accounts: LedgerAccountSummary[],
+  ranges: AccountCodeRange[]
+): boolean {
+  if (account.ledgerAccountId === root.ledgerAccountId) {
+    return true;
+  }
+
+  const accountsById = new Map(accounts.map((candidate) => [candidate.ledgerAccountId, candidate]));
+  let nextParentId = account.parentAccountId ?? null;
+  let guard = 0;
+
+  while (nextParentId !== null && guard < 24) {
+    if (nextParentId === root.ledgerAccountId) {
+      return true;
+    }
+
+    nextParentId = accountsById.get(nextParentId)?.parentAccountId ?? null;
+    guard += 1;
+  }
+
+  if (account.code.startsWith(root.code) && account.code.length > root.code.length) {
+    return true;
+  }
+
+  const accountLevel = getLegacyAccountLevel(account, ranges);
+
+  return accountLevel.code !== "H"
+    && accountLevel.code !== "T"
+    && account.type === root.type
+    && account.normalBalance === root.normalBalance;
 }
 
 function isControlRange(range: AccountCodeRange): boolean {
