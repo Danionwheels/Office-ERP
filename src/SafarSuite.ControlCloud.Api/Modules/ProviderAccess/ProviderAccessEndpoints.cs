@@ -259,6 +259,13 @@ public static class ProviderAccessEndpoints
             });
         }
 
+        var unsupportedScopes = ProviderAccessScopes.FindUnsupported(scopes);
+
+        if (unsupportedScopes.Count > 0)
+        {
+            return UnsupportedScopes(unsupportedScopes);
+        }
+
         var providerOperator = await operators.GetByUserIdAsync(userId, cancellationToken);
 
         if (providerOperator is null)
@@ -375,6 +382,13 @@ public static class ProviderAccessEndpoints
             });
         }
 
+        var unsupportedScopes = ProviderAccessScopes.FindUnsupported(request.Scopes);
+
+        if (unsupportedScopes.Count > 0)
+        {
+            return UnsupportedScopes(unsupportedScopes);
+        }
+
         return null;
     }
 
@@ -391,6 +405,15 @@ public static class ProviderAccessEndpoints
         {
             code = "ProviderOperatorNotFound",
             detail = "Provider operator was not found."
+        });
+    }
+
+    private static IResult UnsupportedScopes(IReadOnlyCollection<string> scopes)
+    {
+        return Results.BadRequest(new
+        {
+            code = "ProviderOperatorScopesUnsupported",
+            detail = FormatUnsupportedScopes(scopes)
         });
     }
 
@@ -460,6 +483,11 @@ public static class ProviderAccessEndpoints
             .Where(scope => !string.IsNullOrWhiteSpace(scope))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static string FormatUnsupportedScopes(IReadOnlyCollection<string> scopes)
+    {
+        return $"Unsupported provider operator scope(s): {string.Join(", ", scopes)}.";
     }
 
     private static string NormalizeEmail(string? email)

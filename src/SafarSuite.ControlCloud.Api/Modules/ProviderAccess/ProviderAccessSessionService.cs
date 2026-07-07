@@ -63,9 +63,20 @@ public sealed class ProviderAccessSessionService
                 StatusCodes.Status401Unauthorized);
         }
 
+        var requestedScopes = ProviderAccessScopes.Normalize(scopes, _options.DefaultScopes);
+        var unsupportedScopes = ProviderAccessScopes.FindUnsupported(requestedScopes);
+
+        if (unsupportedScopes.Count > 0)
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderAccessScopeUnsupported",
+                FormatUnsupportedScopes(unsupportedScopes),
+                StatusCodes.Status400BadRequest);
+        }
+
         return CreateSignedSession(
             NormalizeActor(actor),
-            ProviderAccessScopes.Normalize(scopes, _options.DefaultScopes),
+            requestedScopes,
             expiresInMinutes);
     }
 
@@ -101,6 +112,25 @@ public sealed class ProviderAccessSessionService
 
         var assignedScopes = ProviderAccessScopes.Normalize(user.Scopes, _options.DefaultScopes);
         var requestedScopes = ProviderAccessScopes.Normalize(scopes, assignedScopes);
+        var unsupportedAssignedScopes = ProviderAccessScopes.FindUnsupported(assignedScopes);
+
+        if (unsupportedAssignedScopes.Count > 0)
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderAccessOperatorScopesUnsupported",
+                "Provider operator has unsupported assigned scopes.",
+                StatusCodes.Status403Forbidden);
+        }
+
+        var unsupportedRequestedScopes = ProviderAccessScopes.FindUnsupported(requestedScopes);
+
+        if (unsupportedRequestedScopes.Count > 0)
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderAccessScopeUnsupported",
+                FormatUnsupportedScopes(unsupportedRequestedScopes),
+                StatusCodes.Status400BadRequest);
+        }
 
         if (!requestedScopes.All(scope => HasScope(assignedScopes, scope)))
         {
@@ -341,6 +371,11 @@ public sealed class ProviderAccessSessionService
         return string.IsNullOrWhiteSpace(fullName)
             ? NormalizeEmail(user.Email)
             : fullName;
+    }
+
+    private static string FormatUnsupportedScopes(IReadOnlyCollection<string> scopes)
+    {
+        return $"Unsupported provider access scope(s): {string.Join(", ", scopes)}.";
     }
 
     private static string Base64UrlEncode(byte[] value)

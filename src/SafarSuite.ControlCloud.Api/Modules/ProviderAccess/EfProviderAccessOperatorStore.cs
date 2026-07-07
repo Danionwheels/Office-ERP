@@ -70,6 +70,8 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
         ProviderAccessOperator providerOperator,
         CancellationToken cancellationToken = default)
     {
+        EnsureSupportedScopes(providerOperator.Scopes, providerOperator.Email);
+
         await EnsureSeededAsync(cancellationToken);
 
         var normalizedEmail = NormalizeEmail(providerOperator.Email);
@@ -158,7 +160,7 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
                     Status = ProviderAccessOperatorStatuses.IsSupported(user.Status)
                         ? user.Status.Trim()
                         : ProviderAccessOperatorStatuses.Suspended,
-                    Scopes = ProviderAccessScopes.Normalize(user.Scopes, _options.DefaultScopes).ToArray(),
+                    Scopes = NormalizeSeedScopes(user).ToArray(),
                     CreatedAtUtc = now,
                     CreatedBy = "configuration-seed"
                 };
@@ -231,5 +233,28 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
         return string.IsNullOrWhiteSpace(email)
             ? ""
             : email.Trim().ToLowerInvariant();
+    }
+
+    private IReadOnlyCollection<string> NormalizeSeedScopes(ProviderAccessUserOptions user)
+    {
+        var scopes = ProviderAccessScopes.Normalize(user.Scopes, _options.DefaultScopes);
+        EnsureSupportedScopes(scopes, user.Email);
+
+        return scopes;
+    }
+
+    private static void EnsureSupportedScopes(
+        IEnumerable<string>? scopes,
+        string operatorEmail)
+    {
+        var unsupportedScopes = ProviderAccessScopes.FindUnsupported(scopes);
+
+        if (unsupportedScopes.Count == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Provider access operator '{NormalizeEmail(operatorEmail)}' has unsupported scope(s): {string.Join(", ", unsupportedScopes)}.");
     }
 }
