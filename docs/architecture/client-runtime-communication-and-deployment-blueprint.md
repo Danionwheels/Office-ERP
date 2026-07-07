@@ -327,7 +327,7 @@ Basic pieces already exist:
 
 Known remaining gaps:
 
-- Production hardening for the app revocation hook and broader control lane: PostgreSQL-backed provider-operator persistence, real provider-user MFA/password reset UX, richer manager UI for operator administration, production secret custody/rotation, and customer-facing clean setup UX.
+- Production hardening for the app revocation hook and broader control lane: real provider-user MFA/password reset UX, richer manager UI for operator administration, production secret custody/rotation, and customer-facing clean setup UX. Provider-operator file/PostgreSQL persistence and the provider-access smoke proof now exist; see `docs/planning/control-cloud-provider-access-runbook-2026-07-07.md`.
 - Production install proof for the generated bootstrap package with real secret custody/rotation, not proof-local values.
 - PostgreSQL-backed Control Cloud proof for the same package flow; the current real-cloud proof uses disposable file persistence.
 - Successful build/push of the LocalServer image to the chosen registry; the first Dockerfile exists, has a pre-published local build target, and has passed a local container `/health` proof using a cached ASP.NET-derived base override, but the production-default base still depends on .NET runtime image access from MCR.
