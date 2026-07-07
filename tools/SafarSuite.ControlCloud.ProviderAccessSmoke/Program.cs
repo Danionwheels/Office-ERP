@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlCloud.Api.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Api.Modules.ProviderAccess;
@@ -127,6 +128,26 @@ try
     Require(retiredAuthorization.FailureCode == "ProviderAccessDenied", "retired signing key should return a denied authorization failure.");
     checks.Add("rejected provider session after previous signing key removal");
 
+    var fileSourcedProviderOptions = CreateFileSourcedOptions(workDirectory, providerOptions.OperatorStorePath);
+    var fileSourcedSessionService = new ProviderAccessSessionService(
+        fileSourcedProviderOptions,
+        clock,
+        credentials,
+        fileStore);
+    var fileSourcedSession = fileSourcedSessionService.CreateSession(
+        "provider-access-smoke-file-shared-secret",
+        "provider-access-smoke-file-custody",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10);
+    var fileSourcedAuthorization = AuthorizeBearerToken(
+        fileSourcedSessionService,
+        fileSourcedSession.AccessToken!,
+        ProviderAccessScopes.ProviderOperatorsManage);
+
+    Require(fileSourcedSession.IsSuccess, "file-sourced provider access secrets should issue a shared-secret session.");
+    Require(fileSourcedAuthorization.IsSuccess, "file-sourced provider signing key should authorize the issued session.");
+    checks.Add("loaded provider access shared secret and signing key ring from secret files");
+
     var deniedSession = await sessionService.CreateSessionFromCredentialsAsync(
         "seed.provider@safarsuite.local",
         "SeedProviderPass123!",
@@ -241,6 +262,36 @@ static ProviderAccessOperator CopyOperatorWithScopes(
     };
 }
 
+static ClientPortalProviderAccessOptions CreateFileSourcedOptions(
+    string workDirectory,
+    string operatorStorePath)
+{
+    var sharedSecretFile = Path.Combine(workDirectory, "provider-access-shared-secret.txt");
+    var activeSigningKeyFile = Path.Combine(workDirectory, "provider-access-session-signing-key-v2.txt");
+    var previousSigningKeyFile = Path.Combine(workDirectory, "provider-access-session-signing-key-v1.txt");
+
+    File.WriteAllText(sharedSecretFile, "provider-access-smoke-file-shared-secret");
+    File.WriteAllText(activeSigningKeyFile, "provider-access-smoke-file-session-signing-secret-v2");
+    File.WriteAllText(previousSigningKeyFile, "provider-access-smoke-file-session-signing-secret-v1");
+
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ClientPortal:ProviderAccess:SharedSecret"] = "inline-provider-secret-should-not-be-used",
+            ["ClientPortal:ProviderAccess:SharedSecretFile"] = sharedSecretFile,
+            ["ClientPortal:ProviderAccess:ActiveSessionSigningKeyId"] = "provider-access-smoke-file-key-v2",
+            ["ClientPortal:ProviderAccess:SessionSigningKeys:0:KeyId"] = "provider-access-smoke-file-key-v2",
+            ["ClientPortal:ProviderAccess:SessionSigningKeys:0:SecretFile"] = activeSigningKeyFile,
+            ["ClientPortal:ProviderAccess:SessionSigningKeys:1:KeyId"] = "provider-access-smoke-file-key-v1",
+            ["ClientPortal:ProviderAccess:SessionSigningKeys:1:SecretFile"] = previousSigningKeyFile,
+            ["ClientPortal:ProviderAccess:SessionMinutes"] = "30",
+            ["ClientPortal:ProviderAccess:OperatorStorePath"] = operatorStorePath
+        })
+        .Build();
+
+    return ClientPortalProviderAccessOptions.FromConfiguration(configuration, workDirectory);
+}
+
 static ClientPortalProviderAccessOptions CopyOptionsWithSessionSigningKeys(
     ClientPortalProviderAccessOptions source,
     string activeKeyId,
@@ -249,7 +300,9 @@ static ClientPortalProviderAccessOptions CopyOptionsWithSessionSigningKeys(
     return new ClientPortalProviderAccessOptions
     {
         SharedSecret = source.SharedSecret,
+        SharedSecretFile = source.SharedSecretFile,
         SessionSigningSecret = "",
+        SessionSigningSecretFile = "",
         ActiveSessionSigningKeyId = activeKeyId,
         SessionSigningKeys = sessionSigningKeys,
         SessionMinutes = source.SessionMinutes,

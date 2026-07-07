@@ -63,9 +63,9 @@ var clientPortalInvitationDeliveryOptions =
 var clientPortalAuditOptions =
     builder.Configuration.GetSection(ClientPortalAuditOptions.SectionName).Get<ClientPortalAuditOptions>()
     ?? new ClientPortalAuditOptions();
-var clientPortalProviderAccessOptions =
-    builder.Configuration.GetSection(ClientPortalProviderAccessOptions.SectionName).Get<ClientPortalProviderAccessOptions>()
-    ?? new ClientPortalProviderAccessOptions();
+var clientPortalProviderAccessOptions = ClientPortalProviderAccessOptions.FromConfiguration(
+    builder.Configuration,
+    builder.Environment.ContentRootPath);
 
 builder.Services.AddSingleton(receiverOptions);
 builder.Services.AddSingleton(entitlementSigningOptions);
