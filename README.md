@@ -34,6 +34,7 @@ SafarSuite Client Systems
 - `docs/architecture/product-direction.md`
 - `docs/architecture/product-naming.md`
 - `docs/architecture/layered-architecture.md`
+- `docs/architecture/client-runtime-communication-and-deployment-blueprint.md`
 - `docs/architecture/cloud-local-communication-map.md`
 - `docs/architecture/product-module-catalog-boundary.md`
 - `docs/architecture/why-and-cloud-portal-link.md`
@@ -81,3 +82,13 @@ For local development, pending cloud outbox messages can be marked sent through:
 ```powershell
 Invoke-RestMethod -Method Post -Uri "http://localhost:5188/api/v1/control-cloud/outbox-messages/publish-local?batchSize=20"
 ```
+
+## Local Verification
+
+Run the fast local verification pass from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/Verify-Local.ps1
+```
+
+The script builds the three API hosts into `.codex-run/verify` so existing Visual Studio or running API processes do not lock the normal `bin` output. It also runs the Control Desk UI production build, the in-memory accounting smoke, and the LocalServer entitlement smoke.
