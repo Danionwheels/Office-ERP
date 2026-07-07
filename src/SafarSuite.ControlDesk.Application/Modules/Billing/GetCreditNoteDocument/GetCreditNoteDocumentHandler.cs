@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Common;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
@@ -12,15 +13,18 @@ public sealed class GetCreditNoteDocumentHandler
     private readonly ICreditNoteRepository _creditNotes;
     private readonly IInvoiceRepository _invoices;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
 
     public GetCreditNoteDocumentHandler(
         ICreditNoteRepository creditNotes,
         IInvoiceRepository invoices,
-        IJournalEntryRepository journalEntries)
+        IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts)
     {
         _creditNotes = creditNotes;
         _invoices = invoices;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
     }
 
     public async Task<Result<CreditNoteDocumentResult>> HandleAsync(
@@ -62,10 +66,16 @@ public sealed class GetCreditNoteDocumentHandler
                 nameof(query.CreditNoteId),
                 "Credit note journal entry was not found."));
         }
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
 
         return Result<CreditNoteDocumentResult>.Success(new CreditNoteDocumentResult(
             BillingDocumentResultFactory.ToInvoiceDraftResult(invoice),
-            BillingDocumentResultFactory.ToIssueCreditNoteResult(creditNote, invoice, journalEntry)));
+            BillingDocumentResultFactory.ToIssueCreditNoteResult(
+                creditNote,
+                invoice,
+                journalEntry,
+                ledgerAccountsById)));
     }
 
     private async Task<JournalEntry?> FindJournalAsync(

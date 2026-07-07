@@ -1,3 +1,4 @@
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueCreditNote;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
@@ -32,7 +33,10 @@ public static class BillingDocumentResultFactory
                 line.Amount.CurrencyCode)).ToArray());
     }
 
-    public static IssueInvoiceResult ToIssueInvoiceResult(Invoice invoice, JournalEntry journalEntry)
+    public static IssueInvoiceResult ToIssueInvoiceResult(
+        Invoice invoice,
+        JournalEntry journalEntry,
+        IReadOnlyDictionary<Guid, LedgerAccount>? ledgerAccountsById = null)
     {
         return new IssueInvoiceResult(
             invoice.Id.Value,
@@ -44,17 +48,16 @@ public static class BillingDocumentResultFactory
             journalEntry.TotalDebit.Amount,
             journalEntry.TotalCredit.Amount,
             journalEntry.CurrencyCode,
-            journalEntry.Lines.Select(line => new IssueInvoiceJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+            journalEntry.Lines
+                .Select(line => ToIssueInvoiceJournalLineResult(line, ledgerAccountsById))
+                .ToArray());
     }
 
     public static VoidInvoiceResult ToVoidInvoiceResult(
         Invoice invoice,
         JournalEntry originalJournalEntry,
-        JournalEntry reversalJournalEntry)
+        JournalEntry reversalJournalEntry,
+        IReadOnlyDictionary<Guid, LedgerAccount>? ledgerAccountsById = null)
     {
         return new VoidInvoiceResult(
             invoice.Id.Value,
@@ -67,17 +70,16 @@ public static class BillingDocumentResultFactory
             reversalJournalEntry.TotalDebit.Amount,
             reversalJournalEntry.TotalCredit.Amount,
             reversalJournalEntry.CurrencyCode,
-            reversalJournalEntry.Lines.Select(line => new VoidInvoiceJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+            reversalJournalEntry.Lines
+                .Select(line => ToVoidInvoiceJournalLineResult(line, ledgerAccountsById))
+                .ToArray());
     }
 
     public static IssueCreditNoteResult ToIssueCreditNoteResult(
         CreditNote creditNote,
         Invoice invoice,
-        JournalEntry journalEntry)
+        JournalEntry journalEntry,
+        IReadOnlyDictionary<Guid, LedgerAccount>? ledgerAccountsById = null)
     {
         return new IssueCreditNoteResult(
             creditNote.Id.Value,
@@ -92,10 +94,68 @@ public static class BillingDocumentResultFactory
             journalEntry.Status.ToString(),
             journalEntry.TotalDebit.Amount,
             journalEntry.TotalCredit.Amount,
-            journalEntry.Lines.Select(line => new IssueCreditNoteJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+            journalEntry.Lines
+                .Select(line => ToIssueCreditNoteJournalLineResult(line, ledgerAccountsById))
+                .ToArray());
+    }
+
+    private static IssueInvoiceJournalLineResult ToIssueInvoiceJournalLineResult(
+        JournalLine line,
+        IReadOnlyDictionary<Guid, LedgerAccount>? ledgerAccountsById)
+    {
+        var metadata = JournalLineLedgerAccountMetadataFactory.From(line.LedgerAccountId, ledgerAccountsById);
+
+        return new IssueInvoiceJournalLineResult(
+            line.LedgerAccountId.Value,
+            line.Debit.Amount,
+            line.Credit.Amount,
+            line.Description,
+            metadata.LedgerAccountCode,
+            metadata.LedgerAccountName,
+            metadata.LedgerAccountType,
+            metadata.LedgerAccountNormalBalance,
+            metadata.LedgerAccountLevel,
+            metadata.IsPostingAccount,
+            metadata.LedgerAccountStatus);
+    }
+
+    private static VoidInvoiceJournalLineResult ToVoidInvoiceJournalLineResult(
+        JournalLine line,
+        IReadOnlyDictionary<Guid, LedgerAccount>? ledgerAccountsById)
+    {
+        var metadata = JournalLineLedgerAccountMetadataFactory.From(line.LedgerAccountId, ledgerAccountsById);
+
+        return new VoidInvoiceJournalLineResult(
+            line.LedgerAccountId.Value,
+            line.Debit.Amount,
+            line.Credit.Amount,
+            line.Description,
+            metadata.LedgerAccountCode,
+            metadata.LedgerAccountName,
+            metadata.LedgerAccountType,
+            metadata.LedgerAccountNormalBalance,
+            metadata.LedgerAccountLevel,
+            metadata.IsPostingAccount,
+            metadata.LedgerAccountStatus);
+    }
+
+    private static IssueCreditNoteJournalLineResult ToIssueCreditNoteJournalLineResult(
+        JournalLine line,
+        IReadOnlyDictionary<Guid, LedgerAccount>? ledgerAccountsById)
+    {
+        var metadata = JournalLineLedgerAccountMetadataFactory.From(line.LedgerAccountId, ledgerAccountsById);
+
+        return new IssueCreditNoteJournalLineResult(
+            line.LedgerAccountId.Value,
+            line.Debit.Amount,
+            line.Credit.Amount,
+            line.Description,
+            metadata.LedgerAccountCode,
+            metadata.LedgerAccountName,
+            metadata.LedgerAccountType,
+            metadata.LedgerAccountNormalBalance,
+            metadata.LedgerAccountLevel,
+            metadata.IsPostingAccount,
+            metadata.LedgerAccountStatus);
     }
 }

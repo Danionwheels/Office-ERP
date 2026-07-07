@@ -1,4 +1,5 @@
 using SafarSuite.LocalServer.Api.Modules.LocalServer;
+using SafarSuite.LocalServer.Application.Commands.GetAppActivationRevocationStatus;
 using SafarSuite.LocalServer.Application.Commands.Ports;
 using SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommands;
 using SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommandsFromBootstrapConfiguration;
@@ -37,14 +38,20 @@ var entitlementTrustOptions =
 var bootstrapTrustOptions =
     builder.Configuration.GetSection(LocalServerBootstrapTrustOptions.SectionName).Get<LocalServerBootstrapTrustOptions>()
     ?? new LocalServerBootstrapTrustOptions();
+var commandOptions =
+    builder.Configuration.GetSection(LocalServerCommandOptions.SectionName).Get<LocalServerCommandOptions>()
+    ?? new LocalServerCommandOptions();
 var automationOptions =
     builder.Configuration.GetSection(LocalServerRuntimeAutomationOptions.SectionName).Get<LocalServerRuntimeAutomationOptions>()
     ?? new LocalServerRuntimeAutomationOptions();
+var runtimeAccessOptions = LocalServerRuntimeAccessOptions.FromConfiguration(builder.Configuration);
 
 builder.Services.AddSingleton(controlCloudOptions);
 builder.Services.AddSingleton(entitlementTrustOptions);
 builder.Services.AddSingleton(bootstrapTrustOptions);
+builder.Services.AddSingleton(commandOptions);
 builder.Services.AddSingleton(automationOptions);
+builder.Services.AddSingleton(runtimeAccessOptions);
 builder.Services.AddSingleton<ILocalServerClock, SystemLocalServerClock>();
 builder.Services.AddSingleton<LocalServerEntitlementPolicy>();
 builder.Services.AddSingleton<ILocalServerEntitlementCache, FileLocalServerEntitlementCache>();
@@ -52,6 +59,7 @@ builder.Services.AddSingleton<ILocalServerEntitlementTrustStateStore, FileLocalS
 builder.Services.AddSingleton<ILocalServerEntitlementImportAuditStore, FileLocalServerEntitlementImportAuditStore>();
 builder.Services.AddSingleton<ILocalServerEntitlementBundleVerifier, HmacLocalServerEntitlementBundleVerifier>();
 builder.Services.AddSingleton<ILocalServerInstallationCommandVerifier, HmacLocalServerInstallationCommandVerifier>();
+builder.Services.AddSingleton<ILocalServerAppActivationRevocationStore, FileLocalServerAppActivationRevocationStore>();
 builder.Services.AddSingleton<ILocalServerBootstrapBundleVerifier, HmacLocalServerBootstrapBundleVerifier>();
 builder.Services.AddSingleton<ILocalServerBootstrapConfigurationStore, FileLocalServerBootstrapConfigurationStore>();
 builder.Services.AddSingleton<ILocalServerRuntimeCommandRunner, SystemLocalServerRuntimeCommandRunner>();
@@ -71,6 +79,7 @@ builder.Services.AddScoped<PullEntitlementFromControlCloudHandler>();
 builder.Services.AddScoped<PullEntitlementFromBootstrapConfigurationHandler>();
 builder.Services.AddScoped<EvaluateFeatureAccessHandler>();
 builder.Services.AddScoped<EvaluateModuleAccessGatewayHandler>();
+builder.Services.AddScoped<GetAppActivationRevocationStatusHandler>();
 builder.Services.AddScoped<CreateLocalServerDiagnosticsBundleHandler>();
 builder.Services.AddScoped<UploadDiagnosticsToControlCloudHandler>();
 builder.Services.AddScoped<ProcessInstallationCommandsHandler>();

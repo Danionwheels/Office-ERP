@@ -3,6 +3,7 @@ using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Billing.Common;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
@@ -143,7 +144,7 @@ public sealed class IssueInvoiceHandler
                         CreateInvoiceIssuedOutboxMessage(invoice, journalEntry, receivableAccountId),
                         token);
 
-                    return ToResult(invoice, journalEntry);
+                    return await ToResultAsync(invoice, journalEntry, token);
                 },
                 cancellationToken);
 
@@ -421,23 +422,15 @@ public sealed class IssueInvoiceHandler
             _clock.UtcNow);
     }
 
-    private static IssueInvoiceResult ToResult(Invoice invoice, JournalEntry journalEntry)
+    private async Task<IssueInvoiceResult> ToResultAsync(
+        Invoice invoice,
+        JournalEntry journalEntry,
+        CancellationToken cancellationToken)
     {
-        return new IssueInvoiceResult(
-            invoice.Id.Value,
-            invoice.Number.Value,
-            invoice.Status.ToString(),
-            journalEntry.Id.Value,
-            journalEntry.Status.ToString(),
-            journalEntry.EntryDate,
-            journalEntry.TotalDebit.Amount,
-            journalEntry.TotalCredit.Amount,
-            journalEntry.CurrencyCode,
-            journalEntry.Lines.Select(line => new IssueInvoiceJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
+
+        return BillingDocumentResultFactory.ToIssueInvoiceResult(invoice, journalEntry, ledgerAccountsById);
     }
 
     private sealed record InvoicePostingLines(

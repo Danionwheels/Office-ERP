@@ -20,6 +20,14 @@ export const legacyAccountLevels: LegacyAccountLevel[] = [
   { code: "S", label: "Subsidiary" }
 ];
 
+export const legacyAccountCreateLevels: LegacyAccountLevel[] = [
+  { code: "H", label: "Header" },
+  { code: "M", label: "Master" },
+  { code: "C", label: "Control" },
+  { code: "S", label: "Subsidiary" },
+  { code: "T", label: "Total" }
+];
+
 export const journalSourceTypeOptions = [
   "Manual",
   "BillingInvoice",

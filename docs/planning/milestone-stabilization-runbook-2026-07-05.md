@@ -121,13 +121,15 @@ Control Desk workspace:
 
 Open cleanup lanes:
 
-- Decide whether the Control Desk client-register/profile UI redesign belongs in the same checkpoint or should be split into a separate review path.
-- Run the full live three-service golden path again when app CloudServer (`5281`) and app LocalServer smoke instance (`5290`) are intentionally started.
+- None currently open for the platform-spine stabilization pass. The remaining UI work is tracked separately.
 
 Completed cleanup:
 
 - Restored the tracked app `.vs/SafarSuite/DesignTimeBuild/.dtbcache.v2` cache file and confirmed app `.vs` status is clean.
 - Re-ran app `git diff --check`; it passed after the cache cleanup.
+- Ran the full live three-service golden path with Control Desk API (`5188`), app CloudServer (`5281`), and app LocalServer smoke instance (`5290`).
+- Control Desk published signed `SetProductAccessCatalog` command `44ff965f-b934-4ba1-8677-0f0b59a7cb1f`; app LocalServer applied it, read back 7 groups and 6 resources, returned `Reports` as `Active`/allowed, and exposed `safarsuite-local-runtime-profile-v1`.
+- Split the Control Desk operator-register UI work into `docs/planning/control-desk-operator-register-ui-review-2026-07-05.md`; its UI build and targeted `git diff --check` passed.
 
 ## Next Product Path After Stabilization
 

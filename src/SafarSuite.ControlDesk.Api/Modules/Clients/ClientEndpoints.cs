@@ -521,6 +521,12 @@ public static class ClientEndpoints
                 posting.CurrencyCode,
                 posting.Lines.Select(line => new ClientStatementJournalLineResponse(
                     line.LedgerAccountId,
+                    line.LedgerAccountCode,
+                    line.LedgerAccountName,
+                    line.LedgerAccountType,
+                    line.LedgerAccountLevel,
+                    line.IsPostingAccount,
+                    line.LedgerAccountStatus,
                     line.Debit,
                     line.Credit,
                     line.Description)).ToArray())).ToArray()));

@@ -14,6 +14,7 @@ Already available in this workspace:
 - local-server API host with bootstrap, entitlement pull/import, heartbeat, command processing, diagnostics, and module-gateway endpoints
 - signed entitlement bundle import/cache rules with replay, version, signature, and clock-rollback protection
 - module access decisions for active, warning, grace, restricted, expired, missing, disabled, and installation mismatch states
+- local app-activation revocation status endpoint backed by signed Control Cloud revoke commands and the durable LocalServer revocation ledger
 - repeatable smoke proof in `tools/SafarSuite.LocalServer.EntitlementSmoke`
 - placeholder app-runtime gateway probe in `tools/SafarSuite.AppRuntimeProbe`
 
@@ -38,6 +39,8 @@ Verified in the app workspace:
 - Docker image build completed after MCR access recovered, the pushed GHCR image `ghcr.io/danionwheels/localserver:0.1.0` was produced, and the Compose runtime now runs `local-db` plus `safarsuite-app` with container health and v1 module-gateway probes verified
 - Control-side command diagnostics now report each runtime service's signed manifest intent, including the optional app profile's `SAFARSUITE_APP_IMAGE`, `SAFARSUITE_APP_HTTP_PORT`, and `http://safarsuite-app:5280/health` wiring even when the profile is disabled
 - app LocalServer now exposes runtime deployment context through `GET /health` and `GET /api/v1/local-server/runtime/profile`, and module-gateway decisions log deployment mode, site id, and site role for Control-side log-tail diagnostics
+- app LocalServer now preserves Control Cloud app activation issue metadata from the Control Desk import, calls the provider LocalServer revocation-status LAN endpoint through `SAFARSUITE_LOCAL_API_BASE_URL`, blocks login/writes when the app activation issue is revoked, and fails closed with `CheckUnavailable` when the LAN authority cannot confirm status
+- Windows client activation import now carries activation issue/client/provider metadata and the activation summary shows revocation state/check time for installer diagnostics
 
 ## Workspace Boundary
 
@@ -79,14 +82,32 @@ The app container should accept these environment variables from the generated l
 | `SAFARSUITE_APP_VERSION` | Yes | Selected app/runtime version |
 | `SAFARSUITE_APP_IMAGE` | Yes | Full container image reference used by Compose |
 | `SAFARSUITE_APP_HTTP_PORT` | Yes | Host-exposed app port; container should document its internal port |
-| `SAFARSUITE_LOCAL_API_BASE_URL` | Yes | Internal local-server API URL, default `http://local-api:8080` |
-| `SAFARSUITE_MODULE_GATEWAY_URL` | Yes | Internal module-gateway base URL, default `http://local-api:8080` |
+| `SAFARSUITE_LOCAL_API_BASE_URL` | Yes | Internal local-server API URL, default `https://local-api:8080` |
+| `SAFARSUITE_LOCAL_API_ACCESS_KEY` | Yes | Shared local API access key sent as `X-SafarSuite-Local-Api-Key` for protected app-to-provider LocalServer checks |
+| `SAFARSUITE_LOCAL_API_CA_CERTIFICATE_PATH` | Optional | Trusted local CA certificate path for HTTPS provider LocalServer checks; the app still rejects name mismatch and untrusted chains |
+| `SAFARSUITE_MODULE_GATEWAY_URL` | Yes | Internal module-gateway base URL, default `https://local-api:8080` |
 | `SAFARSUITE_RUNTIME_MANIFEST_PATH` | Yes | Path to deployed `runtime-services.manifest.json` |
 | `SAFARSUITE_CLIENT_DEPLOYMENT_MODE` | Yes | `OfflineLocal`, `BranchToHqSync`, `CloudSyncMultiBranch`, or `HostedSaas` |
 | `SAFARSUITE_SITE_ID` | Yes | Stable site/runtime identity |
 | `SAFARSUITE_SITE_ROLE` | Yes | `Standalone`, `Hq`, `Branch`, or `Hosted` |
 
 The app image should expose `GET /health` and emit logs that make module-denial and local-server connectivity failures visible to local-server diagnostics.
+
+## App Activation Revocation Contract
+
+Shared app-side contract source:
+
+```text
+src/Shared/Contracts/ProductKernelContracts.cs
+```
+
+Provider LAN authority endpoint:
+
+```text
+POST /api/v1/local-server/app-activations/revocation-status
+```
+
+The SafarSuite app stores `activationIssueId`, `clientId`, and `providerInstallationId` from the Control Desk activation import. Once those fields exist, `GET /api/local-server/activation-state` checks the provider LocalServer revocation authority with `X-SafarSuite-Local-Api-Key`, persists a blocked local activation state for `Revoked` or `RevokedIdentityMismatch`, and returns a transient blocked `CheckUnavailable` state when the provider LocalServer cannot be reached, authorized, or verified.
 
 ## Module Gateway Contract
 
@@ -175,6 +196,42 @@ If the local-server module gateway is unreachable, the app should fail closed fo
 
 The app should not calculate warning, grace, expiry, offline validity, replay, or signature rules. Those stay in the local server.
 
+## App Activation Revocation Status Contract
+
+Shared contract source:
+
+```text
+src/SafarSuite.ControlDesk.Contracts/ControlCloud/V1/LocalServerAppActivationRevocationContracts.cs
+```
+
+App-facing endpoint:
+
+```text
+POST /api/v1/local-server/app-activations/revocation-status
+```
+
+Request body:
+
+```json
+{
+  "clientId": "66666666-6666-6666-6666-666666666666",
+  "installationId": "office-main",
+  "appServerInstallationId": "9c7a6ff9-0b00-4fe8-a23e-01e8489a701d",
+  "activationIssueId": "c250ff3f-a054-4fb2-ba39-4f076436d87a",
+  "fingerprintHash": "fingerprint-from-app-activation-state",
+  "serverPublicKeySha256": "hex-or-stable-hash-from-app-activation-state",
+  "requestedBy": "safarsuite-app"
+}
+```
+
+Response states:
+
+- `Revoked`: the activation issue is recorded as revoked and the supplied app identity matches the recorded issue.
+- `RevokedIdentityMismatch`: a revocation exists for the activation issue, but app server id, fingerprint, or public-key hash does not match. The app must fail closed.
+- `NotRevoked`: no local revocation command has been recorded for that activation issue.
+
+The SafarSuite app should call this endpoint when loading an imported activation token, before allowing normal runtime access, and after LocalServer command processing if the app stays open. If the endpoint is unreachable, the app should fail closed for activation refresh/deactivation checks after a small retry and show a local diagnostics state.
+
 ## Placeholder App Runtime Probe
 
 This workspace now includes a small app-like probe:
@@ -212,14 +269,16 @@ When we open the SafarSuite app workspace:
 
 1. Find the real app's module menu, route, and backend endpoint boundaries.
 2. Create a module-code map that aligns app modules to Control Desk product-module catalog codes.
-3. Add a small module-gateway client using `SAFARSUITE_MODULE_GATEWAY_URL`.
+3. Completed on 2026-07-04: expose module-gateway access through the app LocalServer and let the Windows client/backend policies call that local surface.
 4. Gate module navigation and backend entry points with the gateway result.
 5. Add denied-state UI for `Expired`, `Restricted`, `ModuleDisabled`, and local-server-unreachable cases.
 6. Add renewal warning/grace banners for `Warning` and `Grace`.
 7. Add `GET /health` if missing.
 8. Emit structured logs for module checks, denials, and local-server connectivity failures.
-9. Build/publish the real SafarSuite app image or a controlled placeholder image.
-10. Return to this workspace to update bootstrap defaults for app image, version, port, diagnostics, and any new module catalog codes.
+9. Completed on 2026-07-06: add a revocation-status client using `SAFARSUITE_LOCAL_API_BASE_URL` and reject/deactivate imported activation tokens when LocalServer returns `Revoked` or `RevokedIdentityMismatch`.
+10. Completed on 2026-07-07: move the HTTPS trusted-CA client setup into shared app Local API infrastructure; the current app backend has no separate outbound module-gateway client.
+11. Build/publish the real SafarSuite app image or a controlled placeholder image.
+12. Return to this workspace to update bootstrap defaults for app image, version, port, diagnostics, and any new module catalog codes.
 
 ## First App-Side Slice
 
@@ -352,4 +411,26 @@ The first workspace switch gate was met and verified on 2026-07-04:
 - the app workspace path is known
 - app menu/window access and backend write behavior now consume the module gateway
 
-Return to the Control Desk workspace next for a generated-bootstrap app-profile proof when ready. The app workspace now has the health/profile/log diagnostics needed by the Control-side runtime diagnostics path.
+The generated-bootstrap app-profile proof was met on 2026-07-05 from the Control Desk workspace. LocalServer and `safarsuite-app` started together from a real Control Cloud-generated package, LocalServer registered/pulled/heartbeated as `Active`, and the app activation bridge imported an activation token so the app's own `Accounting` module endpoint returned `Active`/allowed.
+
+The first Control Cloud-owned issuer slice is now wired in this workspace. The proof tool requests activation issuance from `POST /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/app-activation-token`, and Control Cloud derives module grants from the latest signed entitlement issue, signs the app import payload, and records `AppActivationTokenIssued` audit. The endpoint now requires scoped provider access (`app-activation:write` for issue/revoke and `app-activation:read` for register list), Control Desk can send a bearer provider access token or the legacy key fallback, and the Cloud tab exposes the action to issue and download the signed app activation import for a selected installation.
+
+Return to the app workspace next when productionizing the UX around this bridge. The remaining work is not another boot proof, another pre-login setup surface, raw setup-token paste flow, or a duplicate outbound module-gateway client. The current Control Desk Cloud tab now covers the operator-facing import/mapping step for the latest app activation request, a searchable app activation mapping register, revoke actions over issued mappings, and replacement preparation from a revoked mapping. The provider workspace now also syncs Cloud revokes to LocalServer through a signed `revoke_app_activation` command and durable local revocation ledger. The app workspace now consumes that LocalServer revocation status over the protected Local API lane, centralizes HTTPS CA validation for future outbound local API clients, and blocks revoked app activations. Generated deployment artifacts now default that Local API lane to HTTPS with generated local CA material. Remaining work is real provider-user login/MFA and manager UX for scoped provider sessions, production key custody/rotation, and full clean-machine app deployment proof with real deployment secrets.
+
+App workspace activation UX update completed on 2026-07-05. The Windows pre-login surface now shows activation status, server installation id, and fingerprint; downloads `safarsuite-app-activation-request-v1` JSON for Control Desk; and imports the signed app activation JSON back through `POST /api/local-server/activation-token`.
+
+App workspace first-manager setup UX update completed on 2026-07-05. The Windows pre-login activation panel now opens the shared Device Manager screen through `Manager Setup`, so activation can continue into first-device bootstrap, first-admin creation, manager login, and device approval before normal sign-in. A pending pairing response from sign-in opens the same setup panel, and a successful first-admin or manager session transitions into the normal authenticated workspace. The remaining app-side work is setup-token authority polish after activation, clearer identity mapping diagnostics, and production key/provider-user hardening.
+
+App workspace setup-token authority UX update completed on 2026-07-06. Device Manager signed-token bootstrap now imports first-manager setup-token JSON, decodes the token claims locally for diagnostics, shows whether the token matches the current LocalServer installation id and pending device id, and adds short LocalServer id/fingerprint values to the activation summary. The remaining work is clearer provider-installation to app-server identity mapping in Control Desk/Cloud plus production key/provider-user hardening.
+
+Control Desk identity mapping UX update completed on 2026-07-06. The Client Desk Cloud tab can import `safarsuite-app-activation-request-v1` JSON from the SafarSuite app, auto-fill app server id, fingerprint, public key, and requested-by values, show the provider LocalServer installation id beside the app LocalServer identity before issuing, and show the issued provider-installation -> app-server mapping in the Cloud control register and activation import result.
+
+Control Cloud app activation register update completed on 2026-07-06. Activation issuance now records structured issue metadata with provider installation id, app server id, activation request id, fingerprint hash, public key hash, entitlement version, signing key, requester, issued/expiry time, and future revocation fields. Control Cloud exposes the provider-gated searchable list through `GET /api/v1/control-cloud/clients/{clientId}/app-activation-issues`, Control Desk proxies it, and the Client Desk Cloud tab shows the searchable activation register beside import/issue/download.
+
+Control Cloud app activation revoke update completed on 2026-07-06. Control Cloud exposes provider-gated `POST /api/v1/control-cloud/clients/{clientId}/app-activation-issues/{activationIssueId}/revoke`, marks the mapping revoked with actor/reason/time, records `AppActivationTokenRevoked` audit, and returns the updated issue. Control Desk proxies the command and the Client Desk Cloud tab lets a manager provide revoked-by/reason values and revoke active rows from the activation register.
+
+Control Cloud app activation replacement update completed on 2026-07-06. Issuance can now carry the revoked issue it replaces; Control Cloud verifies that target is same-client, same-provider-installation, and revoked before issuing. The lineage is stored in the activation issue record, returned through issue/list/revoke responses, visible in Control Desk, and the Cloud tab can prepare replacement from a revoked row while still requiring a fresh app request/public key import so Cloud does not store reusable raw app public keys.
+
+Control Cloud app activation revocation command update completed on 2026-07-06. Cloud-side revoke now signs and queues a `revoke_app_activation` installation command with the activation issue id, app server id, activation request id, fingerprint hash, app public-key hash, signing key id, actor, reason, and revoked time. LocalServer verifies the command through the existing HMAC command lane, stores it in `LocalServer:Commands:AppActivationRevocationStorePath`, acknowledges it, and exposes `POST /api/v1/local-server/app-activations/revocation-status` for the SafarSuite app.
+
+App workspace activation revocation enforcement update completed on 2026-07-06. The SafarSuite app now imports and persists activation issue/client/provider metadata, calls the provider LocalServer revocation-status endpoint through `SAFARSUITE_LOCAL_API_BASE_URL`, blocks login/writes for `Revoked` and `RevokedIdentityMismatch`, and fails closed with `CheckUnavailable` when the LAN authority cannot confirm status.

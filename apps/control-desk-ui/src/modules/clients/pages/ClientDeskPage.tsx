@@ -1,14 +1,10 @@
 import {
-  AlertCircle,
-  ArrowRight,
   Banknote,
   CheckCircle2,
-  Cloud,
   Download,
   FilePlus2,
   FileText,
   KeyRound,
-  LayoutDashboard,
   ListTree,
   Plus,
   Printer,
@@ -17,9 +13,7 @@ import {
   ScrollText,
   Save,
   Send,
-  UserRound,
-  Users,
-  type LucideIcon
+  Users
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../../../shared/api/apiError";
@@ -85,20 +79,31 @@ import {
   createCloudInstallationSetupToken,
   getLatestCloudInstallationDiagnostics,
   getCloudInstallationStatus,
+  issueCloudAppActivationToken,
+  listCloudAppActivationIssues,
   listCloudInstallationAuditEvents,
-  queueCloudInstallationSupportCommand
+  listCloudOutboxMessages,
+  publishCloudOutboxMessages,
+  queueCloudInstallationSupportCommand,
+  revokeCloudAppActivationIssue
 } from "../../control-cloud/api/controlCloudApi";
 import { CloudInstallationStatusPanel } from "../../control-cloud/components/CloudInstallationStatusPanel";
 import type {
+  CloudAppActivationTokenFormInput,
+  CloudAppActivationRevocationFormInput,
+  CloudOutboxMessage,
   ControlCloudAuditEvent,
+  ControlCloudConnectionState,
   CreateCloudInstallationProvisioningInput,
   CloudInstallationSupportCommandFormInput,
   ControlCloudInstallationStatus,
+  IssuedSafarSuiteAppActivationToken,
   LocalServerBootstrapPackage,
   LocalServerDiagnosticReport,
-  LocalServerDeploymentProfile,
   LocalServerSetupToken,
-  QueuedCloudInstallationSupportCommand
+  PublishCloudOutboxMessagesResult,
+  QueuedCloudInstallationSupportCommand,
+  SafarSuiteAppActivationIssue
 } from "../../control-cloud/types/controlCloudTypes";
 import {
   getLatestEntitlementSnapshot,
@@ -150,9 +155,18 @@ import {
   suspendClient,
   updateClient
 } from "../api/clientApi";
+import { ClientDashboardHome } from "../components/ClientDashboardHome";
 import { ClientCreateForm } from "../components/ClientCreateForm";
+import { ClientDeskShell } from "../components/ClientDeskShell";
 import { ClientDetailPanel } from "../components/ClientDetailPanel";
 import { ClientListPanel } from "../components/ClientListPanel";
+import type {
+  BillingDashboardStep,
+  DashboardModule,
+  JournalSourceDocumentTarget,
+  ModuleCommandItem,
+  PaymentDashboardStep
+} from "../types/clientDashboardTypes";
 import type {
   AddClientContactInput,
   AddClientSupportNoteInput,
@@ -166,6 +180,13 @@ import type {
   CreateClientInput,
   UpdateClientInput
 } from "../types/clientTypes";
+import {
+  getCloudDeploymentProfile,
+  getDashboardMetrics,
+  getDashboardNavigation,
+  getDashboardNavigationItem,
+  getDashboardWorkQueueItems
+} from "../utils/clientDashboardModel";
 
 const emptyCreateForm: CreateClientInput = {
   code: "",
@@ -192,45 +213,21 @@ const emptyContactForm: AddClientContactInput = {
   isPrimary: true
 };
 
-type DashboardModule =
-  | "dashboard"
-  | "clients"
-  | "profile"
-  | "contracts"
-  | "accounting"
-  | "billing"
-  | "payments"
-  | "entitlements"
-  | "cloud"
-  | "statement";
-
-type BillingDashboardStep = "accounting" | "rules" | "draft" | "issue";
-
-type PaymentDashboardStep = "readiness" | "cash" | "receipt" | "settlement" | "refund" | "result";
-
-type JournalSourceDocumentTarget =
-  | { module: "billing"; step: BillingDashboardStep; label: string }
-  | { module: "payments"; step: PaymentDashboardStep; label: string };
-
 type PendingJournalSourceOpen = {
   sourceDocument: JournalEntrySourceDocument;
   target: JournalSourceDocumentTarget;
-};
-
-type ModuleCommandItem = {
-  key: string;
-  label: string;
-  title: string;
-  Icon: LucideIcon;
-  onClick?: () => void | Promise<void>;
-  disabled?: boolean;
-  variant?: "primary" | "default";
 };
 
 type JournalSourceHydrationContext = {
   client?: ClientDetails | null;
   accountingProfile?: ClientAccountingProfile | null;
   clientStatement?: ClientStatement | null;
+};
+
+const defaultCloudConnectionState: ControlCloudConnectionState = {
+  status: "notChecked",
+  detail: "Control Cloud connection has not been checked for this deployment.",
+  checkedAtUtc: null
 };
 
 export function ClientDeskPage() {
@@ -306,6 +303,8 @@ export function ClientDeskPage() {
   const [cloudInstallationId, setCloudInstallationId] = useState("");
   const [cloudInstallationStatus, setCloudInstallationStatus] =
     useState<ControlCloudInstallationStatus | null>(null);
+  const [cloudConnectionState, setCloudConnectionState] =
+    useState<ControlCloudConnectionState>(defaultCloudConnectionState);
   const [clientDeployments, setClientDeployments] = useState<ClientDeployment[]>([]);
   const [deploymentForm, setDeploymentForm] = useState<ConfigureClientDeploymentInput>(
     createDefaultDeploymentForm()
@@ -318,6 +317,18 @@ export function ClientDeskPage() {
     useState<CloudInstallationSupportCommandFormInput>(createDefaultSupportCommandForm());
   const [queuedSupportCommand, setQueuedSupportCommand] =
     useState<QueuedCloudInstallationSupportCommand | null>(null);
+  const [appActivationForm, setAppActivationForm] =
+    useState<CloudAppActivationTokenFormInput>(createDefaultAppActivationForm());
+  const [issuedAppActivation, setIssuedAppActivation] =
+    useState<IssuedSafarSuiteAppActivationToken | null>(null);
+  const [appActivationIssues, setAppActivationIssues] =
+    useState<SafarSuiteAppActivationIssue[]>([]);
+  const [appActivationIssueSearch, setAppActivationIssueSearch] = useState("");
+  const [appActivationRevocationForm, setAppActivationRevocationForm] =
+    useState<CloudAppActivationRevocationFormInput>(createDefaultAppActivationRevocationForm());
+  const [cloudOutboxMessages, setCloudOutboxMessages] = useState<CloudOutboxMessage[]>([]);
+  const [latestCloudOutboxPublish, setLatestCloudOutboxPublish] =
+    useState<PublishCloudOutboxMessagesResult | null>(null);
   const [cloudAuditEvents, setCloudAuditEvents] = useState<ControlCloudAuditEvent[]>([]);
   const [cloudDiagnosticsReport, setCloudDiagnosticsReport] =
     useState<LocalServerDiagnosticReport | null>(null);
@@ -440,6 +451,12 @@ export function ClientDeskPage() {
       const resolvedTarget = getJournalSourceDocumentTargetFromResolved(sourceDocument);
 
       if (resolvedTarget === null) {
+        if (sourceDocument.documentKind === "OpeningBalance") {
+          setActiveDashboardModule("accounting");
+          setMessage(sourceDocument.message ?? `Opened ${sourceDocument.label ?? "opening balance"}.`);
+          return;
+        }
+
         setMessage(sourceDocument.message ?? "That journal source could not be resolved.");
         return;
       }
@@ -766,6 +783,7 @@ export function ClientDeskPage() {
       setContracts([]);
       setCloudInstallationId("");
       setCloudInstallationStatus(null);
+      setCloudConnectionState(defaultCloudConnectionState);
       setClientDeployments([]);
       setDeploymentForm(createDefaultDeploymentForm());
       clearCloudProvisioningArtifacts();
@@ -799,6 +817,7 @@ export function ClientDeskPage() {
       await loadClientChargeRules(clientId, getActiveContract(clientContracts)?.contractId);
       const loadedAccountingProfile = await loadAccountingProfile(clientId);
       await loadLatestEntitlementSnapshot(clientId);
+      await loadCloudOutboxMessages();
       await loadClientPortalInvitations(clientId, true);
       await hydratePendingJournalSourceOpen(
         clientId,
@@ -969,15 +988,37 @@ export function ClientDeskPage() {
       return false;
     }
 
+    setCloudConnectionState(createCloudConnectionState(
+      "checking",
+      "Checking Control Cloud status..."
+    ));
+
     try {
       const status = await getCloudInstallationStatus(clientId, normalizedInstallationId);
       setCloudInstallationStatus(status);
       setDeploymentForm((current) => mergeDeploymentStatus(current, status));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud."
+      ));
 
       return true;
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
         setCloudInstallationStatus(null);
+        setCloudConnectionState(createCloudConnectionState(
+          "connected",
+          "Connected to Control Cloud; this installation was not found."
+        ));
+
+        return false;
+      }
+
+      const cloudIssue = toCloudConnectionIssue(caughtError);
+
+      if (cloudIssue !== null) {
+        setCloudInstallationStatus(null);
+        setCloudConnectionState(cloudIssue);
 
         return false;
       }
@@ -998,11 +1039,58 @@ export function ClientDeskPage() {
       return false;
     }
 
-    const auditEvents = await listCloudInstallationAuditEvents(
+    try {
+      const auditEvents = await listCloudInstallationAuditEvents(
+        clientId,
+        normalizedInstallationId,
+        50);
+      setCloudAuditEvents(auditEvents);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud history."
+      ));
+    } catch (caughtError) {
+      const cloudIssue = toCloudConnectionIssue(caughtError);
+
+      if (cloudIssue !== null) {
+        setCloudAuditEvents([]);
+        setCloudConnectionState(cloudIssue);
+
+        return false;
+      }
+
+      throw caughtError;
+    }
+
+    return true;
+  }
+
+  async function loadCloudAppActivationIssues(
+    clientId = selectedClient?.clientId,
+    installationId = cloudInstallationId,
+    query = appActivationIssueSearch
+  ): Promise<boolean> {
+    if (clientId === undefined) {
+      setAppActivationIssues([]);
+
+      return false;
+    }
+
+    const activationIssues = await listCloudAppActivationIssues(
       clientId,
-      normalizedInstallationId,
-      50);
-    setCloudAuditEvents(auditEvents);
+      {
+        installationId: installationId.trim() || undefined,
+        query: query.trim() || undefined,
+        take: 50
+      });
+    setAppActivationIssues(activationIssues);
+
+    return true;
+  }
+
+  async function loadCloudOutboxMessages(): Promise<boolean> {
+    const messages = await listCloudOutboxMessages();
+    setCloudOutboxMessages(messages);
 
     return true;
   }
@@ -1019,16 +1107,38 @@ export function ClientDeskPage() {
       return false;
     }
 
+    setCloudConnectionState(createCloudConnectionState(
+      "checking",
+      "Checking Control Cloud diagnostics..."
+    ));
+
     try {
       const diagnostics = await getLatestCloudInstallationDiagnostics(
         clientId,
         normalizedInstallationId);
       setCloudDiagnosticsReport(diagnostics);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud diagnostics."
+      ));
 
       return true;
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
         setCloudDiagnosticsReport(null);
+        setCloudConnectionState(createCloudConnectionState(
+          "connected",
+          "Connected to Control Cloud; no diagnostics report was found."
+        ));
+
+        return false;
+      }
+
+      const cloudIssue = toCloudConnectionIssue(caughtError);
+
+      if (cloudIssue !== null) {
+        setCloudDiagnosticsReport(null);
+        setCloudConnectionState(cloudIssue);
 
         return false;
       }
@@ -1050,6 +1160,10 @@ export function ClientDeskPage() {
     try {
       const invitations = await listClientPortalInvitations(clientId);
       setPortalInvitations(invitations);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud portal invitations."
+      ));
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
         setPortalInvitations([]);
@@ -1059,6 +1173,12 @@ export function ClientDeskPage() {
 
       if (suppressUnavailable && caughtError instanceof ApiError && caughtError.statusCode >= 500) {
         setPortalInvitations([]);
+        setCloudConnectionState(
+          toCloudConnectionIssue(caughtError)
+          ?? createCloudConnectionState(
+            "unavailable",
+            "Control Cloud portal invitations are unavailable."
+          ));
 
         return;
       }
@@ -1141,11 +1261,15 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const invitation = await inviteClientPortalContact(
         selectedClient.clientId,
         clientContactId
       );
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud portal invitations."
+      ));
       setLatestPortalInvitation(invitation);
       upsertPortalInvitation(invitation);
       setMessage(`Portal invite created for ${invitation.email}.`);
@@ -1157,7 +1281,7 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       await loadClientPortalInvitations(selectedClient.clientId);
       setMessage("Portal invitations refreshed.");
     });
@@ -1168,8 +1292,12 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const invitation = await resendClientPortalInvitation(selectedClient.clientId, invitationId);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud portal invitations."
+      ));
       setLatestPortalInvitation(invitation);
       upsertPortalInvitation(invitation);
       setMessage(`Portal invite resent to ${invitation.email}.`);
@@ -1185,8 +1313,12 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const invitation = await revokeClientPortalInvitation(selectedClient.clientId, invitationId);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud portal invitations."
+      ));
       upsertPortalInvitation(invitation);
       setMessage(`Portal invite revoked for ${invitation.email}.`);
     });
@@ -1484,6 +1616,7 @@ export function ClientDeskPage() {
         nextInvoiceDraft,
         statement ?? clientStatement
       ));
+      await loadCloudOutboxMessages();
       setMessage("Invoice issued.");
     });
   }
@@ -1519,6 +1652,7 @@ export function ClientDeskPage() {
       setRecordedPayment(null);
       setAppliedCredit(null);
       await refreshClientStatement(selectedClient?.clientId);
+      await loadCloudOutboxMessages();
       setMessage("Invoice voided.");
     });
   }
@@ -1556,6 +1690,7 @@ export function ClientDeskPage() {
         invoiceDraft,
         statement ?? clientStatement
       ));
+      await loadCloudOutboxMessages();
       setMessage("Credit note issued.");
     });
   }
@@ -1604,6 +1739,7 @@ export function ClientDeskPage() {
         ...current,
         amount: getStatementCredit(refreshedStatement, application.currencyCode).availableCredit.toFixed(2)
       }));
+      await loadCloudOutboxMessages();
       setMessage("Client credit applied.");
     });
   }
@@ -1644,6 +1780,7 @@ export function ClientDeskPage() {
         invoiceDraft,
         refreshedStatement
       ));
+      await loadCloudOutboxMessages();
       setMessage("Client refund issued.");
     });
   }
@@ -1683,6 +1820,7 @@ export function ClientDeskPage() {
       setIssuedCreditNote(null);
       setAppliedCredit(null);
       await refreshClientStatement(selectedClient?.clientId);
+      await loadCloudOutboxMessages();
       setMessage(payment.paymentStatus === "PendingReview" ? "Payment recorded for review." : "Payment recorded.");
     });
   }
@@ -1727,6 +1865,7 @@ export function ClientDeskPage() {
       setIssuedEntitlementSnapshot(null);
       setAppliedCredit(null);
       await refreshClientStatement(selectedClient?.clientId);
+      await loadCloudOutboxMessages();
       setMessage("Payment approved and posted.");
     });
   }
@@ -1800,6 +1939,7 @@ export function ClientDeskPage() {
       setIssuedEntitlementSnapshot(null);
       setAppliedCredit(null);
       await refreshClientStatement(selectedClient?.clientId);
+      await loadCloudOutboxMessages();
       setMessage("Payment reversed.");
     });
   }
@@ -1831,9 +1971,11 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const found = await loadCloudInstallationStatus();
       await loadCloudInstallationAuditEvents();
+      await loadCloudAppActivationIssues();
+      await loadCloudOutboxMessages();
       setMessage(found
         ? "Cloud installation status refreshed."
         : "No cloud installation status found.");
@@ -1845,11 +1987,58 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const found = await loadCloudInstallationAuditEvents();
+      await loadCloudAppActivationIssues();
       setMessage(found
         ? "Cloud installation history refreshed."
         : "Select an installation before refreshing cloud history.");
+    });
+  }
+
+  async function handleRefreshCloudAppActivationIssues() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      await loadCloudAppActivationIssues();
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud app activation register."
+      ));
+      setMessage("App activation register refreshed.");
+    });
+  }
+
+  async function handleRefreshCloudOutboxMessages() {
+    await runClientAction(async () => {
+      await loadCloudOutboxMessages();
+      setMessage("Local cloud outbox refreshed.");
+    });
+  }
+
+  async function handlePublishCloudOutboxMessages() {
+    await runCloudAction(async () => {
+      const publishResult = await publishCloudOutboxMessages(20);
+      setLatestCloudOutboxPublish(publishResult);
+      applyCloudOutboxPublishConnectionState(publishResult);
+      await loadCloudOutboxMessages();
+
+      if (publishResult.messages.length === 0) {
+        setMessage("No local outbox messages are ready to publish.");
+        return;
+      }
+
+      const summary =
+        `Cloud outbox publish attempted: ${publishResult.publishedCount} sent, ${publishResult.failedCount} failed.`;
+
+      if (publishResult.failedCount > 0) {
+        setError(summary);
+        return;
+      }
+
+      setMessage(summary);
     });
   }
 
@@ -1858,7 +2047,7 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const found = await loadCloudInstallationDiagnostics();
       setMessage(found
         ? "Cloud diagnostics refreshed."
@@ -1886,6 +2075,11 @@ export function ClientDeskPage() {
     setQueuedSupportCommand(null);
   }
 
+  function handleAppActivationValueChange(value: CloudAppActivationTokenFormInput) {
+    setAppActivationForm(value);
+    setIssuedAppActivation(null);
+  }
+
   function handleSelectClientDeployment(clientDeploymentId: string) {
     if (selectedClient === null) {
       return;
@@ -1899,6 +2093,7 @@ export function ClientDeskPage() {
     setDeploymentForm(nextForm);
     setCloudInstallationId(nextForm.installationId);
     setCloudInstallationStatus(null);
+    setCloudConnectionState(defaultCloudConnectionState);
     clearCloudProvisioningArtifacts();
   }
 
@@ -1918,12 +2113,16 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
       const setupToken = await createCloudInstallationSetupToken(
         selectedClient.clientId,
         savedDeployment.installationId,
         toCloudProvisioningInput(toDeploymentForm(savedDeployment), setupTokenHours));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; setup token was created."
+      ));
       setCloudSetupToken(setupToken);
       setCloudBootstrapPackage(null);
       await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
@@ -1936,12 +2135,16 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
       const bootstrapPackage = await createCloudInstallationBootstrapPackage(
         selectedClient.clientId,
         savedDeployment.installationId,
         toCloudProvisioningInput(toDeploymentForm(savedDeployment), setupTokenHours));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; bootstrap package was created."
+      ));
       setCloudBootstrapPackage(bootstrapPackage);
       setCloudSetupToken(null);
       await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
@@ -1954,7 +2157,7 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
       const queuedCommand = await queueCloudInstallationSupportCommand(
         selectedClient.clientId,
@@ -1965,11 +2168,76 @@ export function ClientDeskPage() {
           requestedBy: supportCommandForm.requestedBy,
           expiresInHours: parseSupportCommandHours(supportCommandForm.expiresInHours)
         });
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; support command was queued."
+      ));
       setQueuedSupportCommand(queuedCommand);
       await loadCloudInstallationStatus(selectedClient.clientId, savedDeployment.installationId);
       await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
       setMessage(`${formatSupportCommandType(queuedCommand.commandType)} command queued.`);
     });
+  }
+
+  async function handleIssueCloudAppActivationToken() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
+      const issuedActivation = await issueCloudAppActivationToken(
+        selectedClient.clientId,
+        savedDeployment.installationId,
+        toCloudAppActivationTokenInput(appActivationForm));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; app activation token was issued."
+      ));
+      setIssuedAppActivation(issuedActivation);
+      await loadCloudInstallationStatus(selectedClient.clientId, savedDeployment.installationId);
+      await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
+      await loadCloudAppActivationIssues(selectedClient.clientId, savedDeployment.installationId);
+      setMessage("SafarSuite app activation token issued.");
+    });
+  }
+
+  async function handleRevokeCloudAppActivationIssue(activationIssueId: string) {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      await revokeCloudAppActivationIssue(
+        selectedClient.clientId,
+        activationIssueId,
+        {
+          revokedBy: appActivationRevocationForm.revokedBy,
+          reason: appActivationRevocationForm.reason
+        });
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; app activation mapping was revoked."
+      ));
+      await loadCloudAppActivationIssues();
+      await loadCloudInstallationAuditEvents();
+      setIssuedAppActivation((current) =>
+        current?.activationIssueId === activationIssueId ? null : current);
+      setMessage("App activation mapping revoked. Import a fresh app request before issuing a replacement.");
+    });
+  }
+
+  function handlePrepareReplacementAppActivationIssue(issue: SafarSuiteAppActivationIssue) {
+    setAppActivationForm((current) => ({
+      ...current,
+      activationRequestId: "",
+      replacesActivationIssueId: issue.activationIssueId,
+      serverInstallationId: "",
+      fingerprintHash: "",
+      serverPublicKey: ""
+    }));
+    setIssuedAppActivation(null);
+    setMessage("Replacement prepared. Import a fresh SafarSuite app request before issuing.");
   }
 
   async function saveDeploymentForClient(clientId: string): Promise<ClientDeployment> {
@@ -1993,6 +2261,7 @@ export function ClientDeskPage() {
       setIssuedEntitlementSnapshot(snapshot);
       setLatestEntitlementSnapshot(snapshot);
       setLatestEntitlementSnapshotMissing(false);
+      await loadCloudOutboxMessages();
       setMessage("Entitlement snapshot issued.");
     });
   }
@@ -2027,10 +2296,54 @@ export function ClientDeskPage() {
     }
   }
 
+  async function runCloudAction(action: () => Promise<void>) {
+    await runClientAction(async () => {
+      setCloudConnectionState(createCloudConnectionState(
+        "checking",
+        "Contacting Control Cloud..."
+      ));
+
+      try {
+        await action();
+      } catch (caughtError) {
+        const cloudIssue = toCloudConnectionIssue(caughtError);
+
+        if (cloudIssue !== null) {
+          setCloudConnectionState(cloudIssue);
+        }
+
+        throw caughtError;
+      }
+    });
+  }
+
+  function applyCloudOutboxPublishConnectionState(result: PublishCloudOutboxMessagesResult) {
+    const failedMessage = result.messages.find((item) => item.status.toLowerCase() === "failed");
+
+    if (failedMessage !== undefined) {
+      const detail = failedMessage.failureReason?.trim() || "Control Cloud publish failed.";
+      const normalized = detail.toLowerCase();
+      const status = normalized.includes("not configured") || normalized.includes("notconfigured")
+        ? "notConfigured"
+        : "unavailable";
+
+      setCloudConnectionState(createCloudConnectionState(status, detail));
+      return;
+    }
+
+    if (result.publishedCount > 0) {
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        `${result.publishedCount} local outbox message(s) published to Control Cloud.`
+      ));
+    }
+  }
+
   function applyLoadedClient(client: ClientDetails) {
     setSelectedClient(client);
     setLatestPortalInvitation(null);
     setPortalInvitations([]);
+    setCloudConnectionState(defaultCloudConnectionState);
     setEditForm({
       legalName: client.legalName,
       displayName: client.displayName
@@ -2048,6 +2361,7 @@ export function ClientDeskPage() {
     setDeploymentForm(nextForm);
     setCloudInstallationId(nextForm.installationId);
     setCloudInstallationStatus(null);
+    setCloudConnectionState(defaultCloudConnectionState);
     clearCloudProvisioningArtifacts();
   }
 
@@ -2125,6 +2439,9 @@ export function ClientDeskPage() {
     setCloudInstallationStatus(null);
     setClientDeployments([]);
     setDeploymentForm(createDefaultDeploymentForm(client));
+    setAppActivationForm(createDefaultAppActivationForm());
+    setAppActivationRevocationForm(createDefaultAppActivationRevocationForm());
+    setIssuedAppActivation(null);
     clearCloudProvisioningArtifacts();
     setClientStatement(null);
   }
@@ -2133,8 +2450,11 @@ export function ClientDeskPage() {
     setCloudSetupToken(null);
     setCloudBootstrapPackage(null);
     setQueuedSupportCommand(null);
+    setIssuedAppActivation(null);
+    setAppActivationIssues([]);
     setCloudAuditEvents([]);
     setCloudDiagnosticsReport(null);
+    setCloudConnectionState(defaultCloudConnectionState);
   }
 
   function applyBillingContractDefaults(
@@ -2250,6 +2570,8 @@ export function ClientDeskPage() {
 
   function getModuleCommandItems(): ModuleCommandItem[] {
     const clientCommandDisabled = isBusy || selectedClient === null;
+    const cloudWriteDisabled =
+      clientCommandDisabled || isCloudConnectionBlockingWrites(cloudConnectionState);
     const canGenerateInvoiceDraft =
       selectedClient !== null
       && invoiceDraftForm.contractId.trim() !== ""
@@ -2455,7 +2777,7 @@ export function ClientDeskPage() {
             title: "Create setup token",
             Icon: KeyRound,
             onClick: handleCreateCloudSetupToken,
-            disabled: clientCommandDisabled
+            disabled: cloudWriteDisabled
           },
           {
             key: "bootstrap",
@@ -2463,7 +2785,7 @@ export function ClientDeskPage() {
             title: "Create bootstrap package",
             Icon: Download,
             onClick: handleCreateCloudBootstrapPackage,
-            disabled: clientCommandDisabled
+            disabled: cloudWriteDisabled
           }
         ];
       case "statement":
@@ -2537,6 +2859,14 @@ export function ClientDeskPage() {
           ? "Snapshot available"
           : "Snapshot not loaded";
       case "cloud":
+        if (cloudConnectionState.status === "notConfigured") {
+          return "Cloud not configured";
+        }
+
+        if (cloudConnectionState.status === "unavailable") {
+          return "Cloud unavailable";
+        }
+
         return cloudInstallationStatus?.installationStatus ?? "Cloud status not loaded";
       case "statement":
         return clientStatement === null ? "Statement not loaded" : "Statement loaded";
@@ -2588,81 +2918,18 @@ export function ClientDeskPage() {
   const moduleCommandStatus = getModuleCommandStatus();
 
   return (
-    <div className="client-desk control-desk-shell">
-      <aside className="control-sidebar" aria-label="Client control navigation">
-        <div className="sidebar-brand">
-          <div>
-            <span>SafarSuite</span>
-            <h1>Control Desk</h1>
-          </div>
-          {selectedClient !== null && (
-            <span className={`status-pill ${selectedClient.status.toLowerCase()}`}>
-              {selectedClient.status}
-            </span>
-          )}
-        </div>
-
-        <nav className="module-sidebar-nav" aria-label="Client modules">
-          {dashboardNavigation.map((item) => (
-            <button
-              aria-current={activeDashboardModule === item.module ? "page" : undefined}
-              className={`module-nav-item ${item.tone}${
-                activeDashboardModule === item.module ? " active" : ""
-              }`}
-              key={item.module}
-              type="button"
-              onClick={() => setActiveDashboardModule(item.module)}
-            >
-              <item.Icon size={18} />
-              <span>
-                <strong>{item.label}</strong>
-                <small>{item.summary}</small>
-              </span>
-            </button>
-          ))}
-        </nav>
-
-      </aside>
-
-      <main className="control-main-window">
-        <div className="status-line" aria-live="polite">
-          {error !== "" && (
-            <span className="status-error">
-              <AlertCircle size={16} />
-              {error}
-            </span>
-          )}
-          {message !== "" && (
-            <span className="status-success">
-              <CheckCircle2 size={16} />
-              {message}
-            </span>
-          )}
-        </div>
-
-        <section className="module-window">
-          <header className="module-window-header">
-            <div>
-              <span>{selectedClient?.code ?? "No client selected"}</span>
-              <h1>{activeNavigationItem.label}</h1>
-              <p>{activeNavigationItem.description}</p>
-            </div>
-            {selectedClient !== null && (
-              <div className="module-window-client">
-                <span>{selectedClient.displayName}</span>
-                <strong>{selectedClient.legalName}</strong>
-              </div>
-            )}
-          </header>
-
-          <ModuleCommandBar
-            label={activeNavigationItem.label}
-            items={moduleCommandItems}
-            outputItems={moduleOutputCommandItems}
-            status={moduleCommandStatus}
-          />
-
-          <div className="module-window-body">
+    <ClientDeskShell
+      activeModule={activeDashboardModule}
+      activeNavigationItem={activeNavigationItem}
+      commandItems={moduleCommandItems}
+      commandStatus={moduleCommandStatus}
+      error={error}
+      message={message}
+      navigationItems={dashboardNavigation}
+      outputCommandItems={moduleOutputCommandItems}
+      selectedClient={selectedClient}
+      onModuleChange={setActiveDashboardModule}
+    >
             {activeDashboardModule === "clients" && (
               <section className="client-window-strip client-window-module" aria-label="Client workspace">
                 <ClientListPanel
@@ -2689,43 +2956,12 @@ export function ClientDeskPage() {
             )}
 
             {activeDashboardModule === "dashboard" && (
-              <section className="client-stat-window">
-                <div className="client-dashboard-heading">
-                  <div>
-                    <span>{selectedClient?.code ?? "No client selected"}</span>
-                    <h2>{selectedClient?.displayName ?? "Select a client"}</h2>
-                  </div>
-                  {selectedClient !== null && (
-                    <span className={`status-pill large ${selectedClient.status.toLowerCase()}`}>
-                      {selectedClient.status}
-                    </span>
-                  )}
-                </div>
-
-                <div className="dashboard-metrics stat-action-grid">
-                  {dashboardMetrics.map((metric) => (
-                    <button
-                      className={`dashboard-metric stat-action ${metric.tone}`}
-                      key={metric.label}
-                      type="button"
-                      onClick={() => setActiveDashboardModule(metric.module)}
-                    >
-                      <metric.Icon size={20} />
-                      <div>
-                        <span>{metric.label}</span>
-                        <strong>{metric.value}</strong>
-                        <small>{metric.summary}</small>
-                      </div>
-                      <ArrowRight className="stat-action-arrow" size={16} />
-                    </button>
-                  ))}
-                </div>
-
-                <DashboardWorkQueue
-                  items={dashboardWorkQueueItems}
-                  onNavigate={setActiveDashboardModule}
-                />
-              </section>
+              <ClientDashboardHome
+                metrics={dashboardMetrics}
+                selectedClient={selectedClient}
+                workQueueItems={dashboardWorkQueueItems}
+                onNavigate={setActiveDashboardModule}
+              />
             )}
 
             {activeDashboardModule === "profile" && (
@@ -2885,11 +3121,19 @@ export function ClientDeskPage() {
                 selectedDeploymentId={getSelectedDeploymentId(clientDeployments, cloudInstallationId)}
                 deploymentValue={deploymentForm}
                 setupTokenHours={setupTokenHours}
+                connectionState={cloudConnectionState}
                 status={cloudInstallationStatus}
                 setupToken={cloudSetupToken}
                 bootstrapPackage={cloudBootstrapPackage}
                 supportCommandValue={supportCommandForm}
                 queuedSupportCommand={queuedSupportCommand}
+                appActivationValue={appActivationForm}
+                issuedAppActivation={issuedAppActivation}
+                appActivationIssues={appActivationIssues}
+                appActivationIssueSearch={appActivationIssueSearch}
+                appActivationRevocationValue={appActivationRevocationForm}
+                outboxMessages={cloudOutboxMessages}
+                latestOutboxPublish={latestCloudOutboxPublish}
                 auditEvents={cloudAuditEvents}
                 diagnosticsReport={cloudDiagnosticsReport}
                 isBusy={isBusy || selectedClient === null}
@@ -2902,6 +3146,15 @@ export function ClientDeskPage() {
                 onCreateBootstrapPackage={handleCreateCloudBootstrapPackage}
                 onSupportCommandValueChange={handleSupportCommandValueChange}
                 onQueueSupportCommand={handleQueueCloudSupportCommand}
+                onAppActivationValueChange={handleAppActivationValueChange}
+                onIssueAppActivationToken={handleIssueCloudAppActivationToken}
+                onAppActivationIssueSearchChange={setAppActivationIssueSearch}
+                onRefreshAppActivationIssues={handleRefreshCloudAppActivationIssues}
+                onAppActivationRevocationValueChange={setAppActivationRevocationForm}
+                onRevokeAppActivationIssue={handleRevokeCloudAppActivationIssue}
+                onPrepareReplacementAppActivationIssue={handlePrepareReplacementAppActivationIssue}
+                onRefreshOutboxMessages={handleRefreshCloudOutboxMessages}
+                onPublishOutboxMessages={handlePublishCloudOutboxMessages}
                 onRefreshAuditEvents={handleRefreshCloudAuditEvents}
                 onRefreshDiagnostics={handleRefreshCloudDiagnostics}
                 onRefresh={handleRefreshCloudInstallationStatus}
@@ -2916,772 +3169,8 @@ export function ClientDeskPage() {
                 onRefresh={handleRefreshClientStatement}
               />
             )}
-          </div>
-        </section>
-      </main>
-    </div>
+    </ClientDeskShell>
   );
-}
-
-function ModuleCommandBar({
-  label,
-  items,
-  outputItems,
-  status
-}: {
-  label: string;
-  items: ModuleCommandItem[];
-  outputItems: ModuleCommandItem[];
-  status: string;
-}) {
-  return (
-    <section className="module-command-bar" aria-label={`${label} commands`}>
-      <div className="module-command-group" role="toolbar" aria-label="Module commands">
-        {items.map((item) => (
-          <button
-            className={`module-command-button ${
-              item.variant === "primary" ? "primary" : ""
-            }`}
-            disabled={item.disabled === true || item.onClick === undefined}
-            key={item.key}
-            onClick={() => {
-              void item.onClick?.();
-            }}
-            title={item.title}
-            type="button"
-          >
-            <item.Icon size={15} />
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="module-command-group module-command-output" role="toolbar" aria-label="Output commands">
-        {outputItems.map((item) => (
-          <button
-            className="module-command-button"
-            disabled
-            key={item.key}
-            title={item.title}
-            type="button"
-          >
-            <item.Icon size={15} />
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <span className="module-command-status">{status}</span>
-    </section>
-  );
-}
-
-function DashboardWorkQueue({
-  items,
-  onNavigate
-}: {
-  items: DashboardWorkQueueItem[];
-  onNavigate: (module: DashboardModule) => void;
-}) {
-  const openItemCount = items.filter((item) => item.priority !== "done").length;
-
-  return (
-    <section className="dashboard-work-queue" aria-label="Dashboard work queue">
-      <div className="dashboard-work-queue-heading">
-        <div>
-          <span>Daily desk</span>
-          <strong>Work queue</strong>
-        </div>
-        <em>{openItemCount === 0 ? "Clear" : `${openItemCount} open`}</em>
-      </div>
-
-      <div className="dashboard-work-queue-frame">
-        <table className="dashboard-work-queue-table">
-          <thead>
-            <tr>
-              <th scope="col">Priority</th>
-              <th scope="col">Area</th>
-              <th scope="col">Work item</th>
-              <th scope="col">Status</th>
-              <th scope="col">Next step</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr className={item.priority} key={item.key}>
-                <td>
-                  <span className={`dashboard-queue-priority ${item.priority}`}>
-                    {formatDashboardQueuePriority(item.priority)}
-                  </span>
-                </td>
-                <td>
-                  <span className="dashboard-queue-area">
-                    <item.Icon size={15} />
-                    {item.area}
-                  </span>
-                </td>
-                <td>
-                  <strong>{item.label}</strong>
-                  <small>{item.detail}</small>
-                </td>
-                <td>{item.status}</td>
-                <td>
-                  <button
-                    className="dashboard-queue-action"
-                    type="button"
-                    onClick={() => onNavigate(item.module)}
-                    title={item.actionLabel}
-                  >
-                    <ArrowRight size={14} />
-                    <span>{item.actionLabel}</span>
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-type DashboardMetric = {
-  label: string;
-  value: string;
-  summary: string;
-  tone: "neutral" | "ready" | "warning";
-  Icon: LucideIcon;
-  module: DashboardModule;
-};
-
-type DashboardNavigationItem = {
-  module: DashboardModule;
-  label: string;
-  summary: string;
-  description: string;
-  tone: DashboardMetric["tone"];
-  Icon: LucideIcon;
-};
-
-type DashboardWorkQueuePriority = "high" | "medium" | "low" | "done";
-
-type DashboardWorkQueueItem = {
-  key: string;
-  priority: DashboardWorkQueuePriority;
-  area: string;
-  label: string;
-  detail: string;
-  status: string;
-  actionLabel: string;
-  module: DashboardModule;
-  Icon: LucideIcon;
-};
-
-type DashboardMetricInput = {
-  activeContract: ClientContract | null;
-  accountCodeRangeCount: number;
-  invoiceDraft: InvoiceDraft | null;
-  recordedPayment: RecordedInvoicePayment | null;
-  issuedEntitlementSnapshot: IssuedEntitlementSnapshot | null;
-  latestEntitlementSnapshot: EntitlementSnapshot | null;
-  cloudInstallationStatus: ControlCloudInstallationStatus | null;
-  clientStatement: ClientStatement | null;
-};
-
-type DashboardWorkQueueInput = {
-  clientCount: number;
-  selectedClient: ClientDetails | null;
-  activeContract: ClientContract | null;
-  accountingProfile: ClientAccountingProfile | null;
-  productModules: ProductModule[];
-  chargeRules: ClientChargeRule[];
-  invoiceDraft: InvoiceDraft | null;
-  issuedInvoice: IssuedInvoice | null;
-  recordedPayment: RecordedInvoicePayment | null;
-  issuedEntitlementSnapshot: IssuedEntitlementSnapshot | null;
-  latestEntitlementSnapshot: EntitlementSnapshot | null;
-  latestEntitlementSnapshotMissing: boolean;
-  cloudInstallationStatus: ControlCloudInstallationStatus | null;
-  latestPortalInvitation: ClientPortalInvitation | null;
-  portalInvitations: ClientPortalInvitation[];
-  clientStatement: ClientStatement | null;
-};
-
-function getDashboardWorkQueueItems({
-  clientCount,
-  selectedClient,
-  activeContract,
-  accountingProfile,
-  productModules,
-  chargeRules,
-  invoiceDraft,
-  issuedInvoice,
-  recordedPayment,
-  issuedEntitlementSnapshot,
-  latestEntitlementSnapshot,
-  latestEntitlementSnapshotMissing,
-  cloudInstallationStatus,
-  latestPortalInvitation,
-  portalInvitations,
-  clientStatement
-}: DashboardWorkQueueInput): DashboardWorkQueueItem[] {
-  if (selectedClient === null) {
-    return [
-      {
-        key: "select-client",
-        priority: "high",
-        area: "Clients",
-        label: "Select a client",
-        detail: "Open the register before reviewing contracts, billing, payments, or cloud status.",
-        status: `${clientCount} clients`,
-        actionLabel: "Open register",
-        module: "clients",
-        Icon: Users
-      }
-    ];
-  }
-
-  const items: DashboardWorkQueueItem[] = [];
-  const invoiceStatus = invoiceDraft?.status.toLowerCase() ?? "";
-  const hasEntitlementSnapshot = issuedEntitlementSnapshot !== null || latestEntitlementSnapshot !== null;
-  const statementBalance = getPrimaryStatementBalance(clientStatement);
-
-  if (selectedClient.status.toLowerCase() !== "active") {
-    items.push({
-      key: "client-status",
-      priority: "medium",
-      area: "Profile",
-      label: "Review client status",
-      detail: "The client is not active, so lifecycle and access should be checked before billing work.",
-      status: selectedClient.status,
-      actionLabel: "Open profile",
-      module: "profile",
-      Icon: UserRound
-    });
-  }
-
-  if (activeContract === null) {
-    items.push({
-      key: "contract-missing",
-      priority: "high",
-      area: "Contracts",
-      label: "Create active contract",
-      detail: "Billing, entitlements, and device limits need an active agreement.",
-      status: "Missing",
-      actionLabel: "Open contracts",
-      module: "contracts",
-      Icon: FileText
-    });
-  } else if (activeContract.status.toLowerCase() !== "active") {
-    items.push({
-      key: "contract-review",
-      priority: "high",
-      area: "Contracts",
-      label: "Review contract status",
-      detail: "The current agreement is not active, so downstream billing and access may be blocked.",
-      status: activeContract.status,
-      actionLabel: "Open contracts",
-      module: "contracts",
-      Icon: FileText
-    });
-  }
-
-  if (accountingProfile === null) {
-    items.push({
-      key: "accounting-profile",
-      priority: "high",
-      area: "Billing",
-      label: "Link accounting profile",
-      detail: "Invoices need receivable account, currency, and cloud customer identity.",
-      status: "Not linked",
-      actionLabel: "Open billing",
-      module: "billing",
-      Icon: ReceiptText
-    });
-  }
-
-  if (activeContract !== null && accountingProfile !== null) {
-    const missingRuleCount = getMissingPaidAddOnRuleCount(activeContract, productModules, chargeRules);
-
-    if (missingRuleCount > 0) {
-      items.push({
-        key: "billing-rules",
-        priority: "medium",
-        area: "Billing",
-        label: "Complete paid add-on rules",
-        detail: "Paid modules should have charge rules before invoice drafting.",
-        status: `${missingRuleCount} missing`,
-        actionLabel: "Open billing",
-        module: "billing",
-        Icon: ReceiptText
-      });
-    }
-
-    if (invoiceDraft === null) {
-      items.push({
-        key: "invoice-draft",
-        priority: "medium",
-        area: "Billing",
-        label: "Prepare invoice draft",
-        detail: "The client has setup context but no current invoice draft loaded.",
-        status: "No draft",
-        actionLabel: "Open billing",
-        module: "billing",
-        Icon: ReceiptText
-      });
-    }
-  }
-
-  if (invoiceDraft !== null && invoiceStatus === "draft" && issuedInvoice === null) {
-    items.push({
-      key: "invoice-issue",
-      priority: "high",
-      area: "Billing",
-      label: "Issue invoice",
-      detail: "Draft is ready for posting once the invoice issue fields are complete.",
-      status: invoiceDraft.invoiceNumber,
-      actionLabel: "Open billing",
-      module: "billing",
-      Icon: ReceiptText
-    });
-  }
-
-  if (recordedPayment?.paymentStatus === "PendingReview") {
-    items.push({
-      key: "payment-review",
-      priority: "high",
-      area: "Payments",
-      label: "Review pending payment",
-      detail: "Bank transfer receipts should be approved or rejected from payments.",
-      status: recordedPayment.invoiceNumber,
-      actionLabel: "Open payments",
-      module: "payments",
-      Icon: Banknote
-    });
-  } else if (
-    invoiceDraft !== null
-    && ["issued", "partiallypaid"].includes(invoiceStatus)
-    && invoiceDraft.balanceDue > 0
-  ) {
-    items.push({
-      key: "payment-due",
-      priority: "medium",
-      area: "Payments",
-      label: "Record invoice payment",
-      detail: "The issued invoice still has receivable balance outstanding.",
-      status: `${invoiceDraft.balanceDue.toFixed(2)} ${invoiceDraft.currencyCode}`,
-      actionLabel: "Open payments",
-      module: "payments",
-      Icon: Banknote
-    });
-  }
-
-  if (invoiceStatus === "paid" && recordedPayment !== null && !hasEntitlementSnapshot) {
-    items.push({
-      key: "entitlement-issue",
-      priority: "high",
-      area: "Entitlements",
-      label: "Issue entitlement snapshot",
-      detail: "Paid invoice is available; cloud access should be synchronized.",
-      status: "Not issued",
-      actionLabel: "Open entitlements",
-      module: "entitlements",
-      Icon: KeyRound
-    });
-  } else if (latestEntitlementSnapshotMissing) {
-    items.push({
-      key: "entitlement-missing",
-      priority: "medium",
-      area: "Entitlements",
-      label: "Refresh entitlement snapshot",
-      detail: "The latest entitlement snapshot could not be found for this client.",
-      status: "Missing",
-      actionLabel: "Open entitlements",
-      module: "entitlements",
-      Icon: KeyRound
-    });
-  }
-
-  if (cloudInstallationStatus === null) {
-    items.push({
-      key: "cloud-status",
-      priority: "low",
-      area: "Cloud",
-      label: "Load cloud installation status",
-      detail: "Heartbeat, license state, and command status have not been refreshed.",
-      status: "Not loaded",
-      actionLabel: "Open cloud",
-      module: "cloud",
-      Icon: Cloud
-    });
-  } else if (!isDashboardCloudStatusReady(cloudInstallationStatus)) {
-    items.push({
-      key: "cloud-review",
-      priority: "medium",
-      area: "Cloud",
-      label: "Review cloud status",
-      detail: "The latest installation state is not active, healthy, or registered.",
-      status: cloudInstallationStatus.installationStatus,
-      actionLabel: "Open cloud",
-      module: "cloud",
-      Icon: Cloud
-    });
-  }
-
-  if (latestPortalInvitation === null && portalInvitations.length === 0) {
-    items.push({
-      key: "portal-invite",
-      priority: "low",
-      area: "Profile",
-      label: "Invite portal contact",
-      detail: "No client portal invitation is loaded for this client.",
-      status: "No invite",
-      actionLabel: "Open profile",
-      module: "profile",
-      Icon: UserRound
-    });
-  }
-
-  if (statementBalance !== null && statementBalance.balanceDue > 0) {
-    items.push({
-      key: "statement-balance",
-      priority: "low",
-      area: "Statement",
-      label: "Review receivable balance",
-      detail: "Statement shows an outstanding client balance.",
-      status: `${statementBalance.balanceDue.toFixed(2)} ${statementBalance.currencyCode}`,
-      actionLabel: "Open statement",
-      module: "statement",
-      Icon: ScrollText
-    });
-  }
-
-  if (items.length === 0) {
-    return [
-      {
-        key: "client-clear",
-        priority: "done",
-        area: "Client",
-        label: "No open control items",
-        detail: "The selected client has no dashboard-level work requiring attention.",
-        status: selectedClient.code,
-        actionLabel: "View statement",
-        module: "statement",
-        Icon: CheckCircle2
-      }
-    ];
-  }
-
-  return items.sort(compareDashboardWorkQueueItems);
-}
-
-function getDashboardMetrics({
-  activeContract,
-  accountCodeRangeCount,
-  invoiceDraft,
-  recordedPayment,
-  issuedEntitlementSnapshot,
-  latestEntitlementSnapshot,
-  cloudInstallationStatus,
-  clientStatement
-}: DashboardMetricInput): DashboardMetric[] {
-  const entitlementSnapshot = issuedEntitlementSnapshot ?? latestEntitlementSnapshot;
-  const cloudHeartbeat = cloudInstallationStatus?.latestHeartbeat ?? null;
-  const deploymentProfile = getCloudDeploymentProfile(cloudInstallationStatus);
-  const deploymentSummary = formatCloudDeploymentSummary(deploymentProfile);
-  const cloudStatus = cloudHeartbeat?.licenseStatus
-    ?? cloudInstallationStatus?.installationStatus
-    ?? "Not loaded";
-  const normalizedCloudStatus = cloudStatus.toLowerCase();
-  const primaryStatementSummary = clientStatement?.currencySummaries[0] ?? null;
-
-  return [
-    {
-      label: "Contract",
-      value: activeContract === null ? "Missing" : activeContract.status,
-      summary: "Agreement, pricing, and allowances",
-      tone: activeContract?.status.toLowerCase() === "active" ? "ready" : "warning",
-      Icon: FileText,
-      module: "contracts"
-    },
-    {
-      label: "Accounting",
-      value: accountCodeRangeCount === 0 ? "Not loaded" : `${accountCodeRangeCount} ranges`,
-      summary: "COA setup and ledger register",
-      tone: accountCodeRangeCount === 0 ? "warning" : "ready",
-      Icon: Banknote,
-      module: "accounting"
-    },
-    {
-      label: "Invoice",
-      value: invoiceDraft === null
-        ? "No draft"
-        : `${invoiceDraft.status} ${invoiceDraft.balanceDue.toFixed(2)} ${invoiceDraft.currencyCode}`,
-      summary: "Draft, issue, and receivable state",
-      tone: invoiceDraft?.status.toLowerCase() === "paid" ? "ready" : "neutral",
-      Icon: ReceiptText,
-      module: "billing"
-    },
-    {
-      label: "Payment",
-      value: recordedPayment === null ? "Pending" : recordedPayment.paymentStatus,
-      summary: "Receipt posting and balance",
-      tone: recordedPayment?.paymentStatus.toLowerCase() === "approved" ? "ready" : "neutral",
-      Icon: CheckCircle2,
-      module: "payments"
-    },
-    {
-      label: "Entitlement",
-      value: entitlementSnapshot === null ? "Not issued" : entitlementSnapshot.status,
-      summary: "Cloud access snapshot",
-      tone: entitlementSnapshot?.status.toLowerCase() === "active" ? "ready" : "neutral",
-      Icon: KeyRound,
-      module: "entitlements"
-    },
-    {
-      label: "Cloud",
-      value: cloudStatus,
-      summary: cloudHeartbeat === null
-        ? deploymentSummary
-        : `${deploymentSummary} / ${formatDashboardDateTime(cloudHeartbeat.receivedAtUtc)}`,
-      tone:
-        normalizedCloudStatus === "active"
-          || normalizedCloudStatus === "healthy"
-          || normalizedCloudStatus === "registered"
-          ? "ready"
-          : cloudInstallationStatus === null
-            ? "neutral"
-            : "warning",
-      Icon: Cloud,
-      module: "cloud"
-    },
-    {
-      label: "Statement",
-      value: primaryStatementSummary === null
-        ? "No balance"
-        : `${primaryStatementSummary.balanceDue.toFixed(2)} ${primaryStatementSummary.currencyCode}`,
-      summary: "Invoices, receipts, and GL trail",
-      tone: primaryStatementSummary !== null && primaryStatementSummary.balanceDue === 0 ? "ready" : "neutral",
-      Icon: ScrollText,
-      module: "statement"
-    }
-  ];
-}
-
-function getDashboardNavigation(
-  metrics: DashboardMetric[],
-  clientCount: number,
-  selectedClient: ClientDetails | null
-): DashboardNavigationItem[] {
-  const contractMetric = findDashboardMetric(metrics, "Contract");
-  const accountingMetric = findDashboardMetric(metrics, "Accounting");
-  const invoiceMetric = findDashboardMetric(metrics, "Invoice");
-  const paymentMetric = findDashboardMetric(metrics, "Payment");
-  const entitlementMetric = findDashboardMetric(metrics, "Entitlement");
-  const cloudMetric = findDashboardMetric(metrics, "Cloud");
-  const statementMetric = findDashboardMetric(metrics, "Statement");
-  const selectedClientStatus = selectedClient?.status ?? "No client";
-
-  return [
-    {
-      module: "dashboard",
-      label: "Dashboard",
-      summary: "Current stats",
-      description: "Current operational status for the selected client.",
-      tone: "neutral",
-      Icon: LayoutDashboard
-    },
-    {
-      module: "clients",
-      label: "Clients",
-      summary: `${clientCount} total`,
-      description: "Select, refresh, and quick add clients.",
-      tone: selectedClient === null ? "warning" : "neutral",
-      Icon: Users
-    },
-    {
-      module: "profile",
-      label: "Profile",
-      summary: selectedClientStatus,
-      description: "Client profile, contacts, support notes, and lifecycle actions.",
-      tone: selectedClient?.status.toLowerCase() === "active" ? "ready" : "neutral",
-      Icon: UserRound
-    },
-    {
-      module: "contracts",
-      label: "Contracts",
-      summary: contractMetric.value,
-      description: "Agreement terms, allowed modules, devices, branches, and contract replacement.",
-      tone: contractMetric.tone,
-      Icon: FileText
-    },
-    {
-      module: "accounting",
-      label: "Accounting",
-      summary: accountingMetric.value,
-      description: "Chart of accounts, code ranges, and ledger setup.",
-      tone: accountingMetric.tone,
-      Icon: ListTree
-    },
-    {
-      module: "billing",
-      label: "Billing",
-      summary: invoiceMetric.value,
-      description: "Accounting profile, charge rules, invoice drafts, and invoice issue.",
-      tone: invoiceMetric.tone,
-      Icon: ReceiptText
-    },
-    {
-      module: "payments",
-      label: "Payments",
-      summary: paymentMetric.value,
-      description: "Cash or bank account setup and invoice payment receipt.",
-      tone: paymentMetric.tone,
-      Icon: Banknote
-    },
-    {
-      module: "entitlements",
-      label: "Entitlements",
-      summary: entitlementMetric.value,
-      description: "Issue and refresh the latest cloud entitlement snapshot.",
-      tone: entitlementMetric.tone,
-      Icon: KeyRound
-    },
-    {
-      module: "cloud",
-      label: "Cloud",
-      summary: cloudMetric.value,
-      description: "Control Cloud heartbeat, license, entitlement, and command status.",
-      tone: cloudMetric.tone,
-      Icon: Cloud
-    },
-    {
-      module: "statement",
-      label: "Statement",
-      summary: statementMetric.value,
-      description: "Client invoices, payments, receivable balance, and journal postings.",
-      tone: statementMetric.tone,
-      Icon: ScrollText
-    }
-  ];
-}
-
-function getDashboardNavigationItem(
-  items: DashboardNavigationItem[],
-  module: DashboardModule
-): DashboardNavigationItem {
-  return items.find((item) => item.module === module) ?? items[0] ?? {
-    module: "dashboard",
-    label: "Dashboard",
-    summary: "Current stats",
-    description: "Current operational status for the selected client.",
-    tone: "neutral",
-    Icon: LayoutDashboard
-  };
-}
-
-function findDashboardMetric(metrics: DashboardMetric[], label: string): DashboardMetric {
-  return metrics.find((metric) => metric.label === label) ?? {
-    label,
-    value: "Unknown",
-    summary: "No signal",
-    tone: "neutral",
-    Icon: LayoutDashboard,
-    module: "dashboard"
-  };
-}
-
-function compareDashboardWorkQueueItems(
-  left: DashboardWorkQueueItem,
-  right: DashboardWorkQueueItem
-): number {
-  const priorityOrder: Record<DashboardWorkQueuePriority, number> = {
-    high: 0,
-    medium: 1,
-    low: 2,
-    done: 3
-  };
-  const priorityDifference = priorityOrder[left.priority] - priorityOrder[right.priority];
-
-  return priorityDifference !== 0
-    ? priorityDifference
-    : left.area.localeCompare(right.area);
-}
-
-function formatDashboardQueuePriority(priority: DashboardWorkQueuePriority): string {
-  switch (priority) {
-    case "high":
-      return "High";
-    case "medium":
-      return "Medium";
-    case "low":
-      return "Low";
-    case "done":
-      return "Clear";
-    default:
-      return "Review";
-  }
-}
-
-function getMissingPaidAddOnRuleCount(
-  contract: ClientContract,
-  productModules: ProductModule[],
-  chargeRules: ClientChargeRule[]
-): number {
-  const enabledModuleCodes = getDashboardEnabledModuleCodes(contract.modules);
-  const paidAddOnCodes = enabledModuleCodes.filter((moduleCode) =>
-    findProductModule(productModules, moduleCode)?.commercialMode === "PaidAddOn"
-  );
-  const billedModuleCodes = new Set(
-    chargeRules
-      .filter((rule) => rule.status.toLowerCase() === "active")
-      .filter((rule) => rule.contractId === undefined
-        || rule.contractId === null
-        || rule.contractId === contract.contractId)
-      .map((rule) => normalizeDashboardModuleCode(rule.productModuleCode ?? ""))
-      .filter((moduleCode) => moduleCode !== "")
-  );
-
-  return paidAddOnCodes.filter((moduleCode) => !billedModuleCodes.has(moduleCode)).length;
-}
-
-function getDashboardEnabledModuleCodes(
-  modules: Array<{ moduleCode: string; isEnabled: boolean }>
-): string[] {
-  const seen = new Set<string>();
-
-  return modules
-    .filter((module) => module.isEnabled)
-    .map((module) => normalizeDashboardModuleCode(module.moduleCode))
-    .filter((moduleCode) => {
-      if (moduleCode === "" || seen.has(moduleCode)) {
-        return false;
-      }
-
-      seen.add(moduleCode);
-      return true;
-    });
-}
-
-function normalizeDashboardModuleCode(value: string): string {
-  return value.trim().toUpperCase();
-}
-
-function isDashboardCloudStatusReady(status: ControlCloudInstallationStatus): boolean {
-  const latestStatus = (
-    status.latestHeartbeat?.licenseStatus
-    ?? status.installationStatus
-  ).toLowerCase();
-
-  return latestStatus === "active"
-    || latestStatus === "healthy"
-    || latestStatus === "registered";
-}
-
-function getPrimaryStatementBalance(
-  statement: ClientStatement | null
-): ClientStatement["currencySummaries"][number] | null {
-  return statement?.currencySummaries[0] ?? null;
 }
 
 function createDefaultReceivableAccountForm(client?: ClientDetails): LedgerAccountFormInput {
@@ -3757,6 +3246,24 @@ function createDefaultSupportCommandForm(): CloudInstallationSupportCommandFormI
     reason: "Support review",
     requestedBy: "SafarSuite Control Desk",
     expiresInHours: "72"
+  };
+}
+
+function createDefaultAppActivationForm(): CloudAppActivationTokenFormInput {
+  return {
+    activationRequestId: "",
+    replacesActivationIssueId: "",
+    serverInstallationId: "",
+    fingerprintHash: "",
+    serverPublicKey: "",
+    requestedBy: "SafarSuite Control Desk"
+  };
+}
+
+function createDefaultAppActivationRevocationForm(): CloudAppActivationRevocationFormInput {
+  return {
+    revokedBy: "SafarSuite Control Desk",
+    reason: "Rotate app activation mapping"
   };
 }
 
@@ -4021,6 +3528,22 @@ function toCloudProvisioningInput(
   };
 }
 
+function toCloudAppActivationTokenInput(
+  value: CloudAppActivationTokenFormInput
+) {
+  const activationRequestId = value.activationRequestId.trim();
+  const replacesActivationIssueId = value.replacesActivationIssueId.trim();
+
+  return {
+    activationRequestId: activationRequestId === "" ? null : activationRequestId,
+    replacesActivationIssueId: replacesActivationIssueId === "" ? null : replacesActivationIssueId,
+    serverInstallationId: value.serverInstallationId.trim(),
+    fingerprintHash: value.fingerprintHash.trim(),
+    serverPublicKey: value.serverPublicKey.trim(),
+    requestedBy: value.requestedBy.trim()
+  };
+}
+
 function parseSetupTokenHours(value: string): number {
   const parsed = Number.parseInt(value, 10);
 
@@ -4198,19 +3721,6 @@ function formatAccountingAmount(amount: number, currencyCode: string): string {
   return `${safeAmount.toFixed(2)} ${normalizedCurrency}`;
 }
 
-function formatDashboardDateTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(value));
-}
-
-function getCloudDeploymentProfile(
-  status: ControlCloudInstallationStatus | null
-): LocalServerDeploymentProfile | null {
-  return status?.deploymentProfile ?? status?.latestHeartbeat?.deploymentProfile ?? null;
-}
-
 function mergeDeploymentStatus(
   current: ConfigureClientDeploymentInput,
   status: ControlCloudInstallationStatus
@@ -4233,22 +3743,6 @@ function mergeDeploymentStatus(
     syncTopologyId: deploymentProfile.syncTopologyId ?? "",
     localServerVersion: status.latestHeartbeat?.localServerVersion ?? current.localServerVersion
   };
-}
-
-function formatCloudDeploymentSummary(profile: LocalServerDeploymentProfile | null): string {
-  if (profile === null) {
-    return "Install status";
-  }
-
-  const role = profile.siteRole.trim();
-  const site = profile.branchCode?.trim() || profile.siteId.trim();
-  const mode = profile.clientDeploymentMode.trim();
-
-  if (role !== "" && site !== "") {
-    return `${role} ${site}`;
-  }
-
-  return mode === "" ? "Install status" : mode;
 }
 
 function formatSupportCommandType(commandType: string): string {
@@ -4354,6 +3848,46 @@ function canIssueEntitlementSnapshot(
   return invoiceDraft !== null
     && invoiceDraft.status.toLowerCase() === "paid"
     && recordedPayment !== null;
+}
+
+function createCloudConnectionState(
+  status: ControlCloudConnectionState["status"],
+  detail: string
+): ControlCloudConnectionState {
+  return {
+    status,
+    detail,
+    checkedAtUtc: status === "notChecked" ? null : new Date().toISOString()
+  };
+}
+
+function toCloudConnectionIssue(caughtError: unknown): ControlCloudConnectionState | null {
+  if (!(caughtError instanceof ApiError)) {
+    return null;
+  }
+
+  const detail = formatError(caughtError);
+  const normalized = `${caughtError.message} ${detail}`.toLowerCase();
+  const isCloudDependencyError =
+    caughtError.statusCode === 503
+    || (caughtError.statusCode >= 500 && normalized.includes("control cloud"));
+
+  if (!isCloudDependencyError) {
+    return null;
+  }
+
+  const status = normalized.includes("not configured") || normalized.includes("notconfigured")
+    ? "notConfigured"
+    : "unavailable";
+  const fallbackDetail = status === "notConfigured"
+    ? "Control Cloud endpoint is not configured."
+    : "Control Cloud is unavailable.";
+
+  return createCloudConnectionState(status, detail.trim() || fallbackDetail);
+}
+
+function isCloudConnectionBlockingWrites(state: ControlCloudConnectionState): boolean {
+  return state.status === "unavailable" || state.status === "notConfigured";
 }
 
 function getActiveContract(contracts: ClientContract[]): ClientContract | null {

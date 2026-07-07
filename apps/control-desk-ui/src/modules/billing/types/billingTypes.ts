@@ -164,6 +164,13 @@ export type IssuedInvoiceJournalLine = {
   debit: number;
   credit: number;
   description?: string | null;
+  ledgerAccountCode?: string | null;
+  ledgerAccountName?: string | null;
+  ledgerAccountType?: string | null;
+  ledgerAccountNormalBalance?: string | null;
+  ledgerAccountLevel?: string | null;
+  isPostingAccount?: boolean | null;
+  ledgerAccountStatus?: string | null;
 };
 
 export type VoidInvoiceInput = {
@@ -190,6 +197,13 @@ export type VoidedInvoiceJournalLine = {
   debit: number;
   credit: number;
   description?: string | null;
+  ledgerAccountCode?: string | null;
+  ledgerAccountName?: string | null;
+  ledgerAccountType?: string | null;
+  ledgerAccountNormalBalance?: string | null;
+  ledgerAccountLevel?: string | null;
+  isPostingAccount?: boolean | null;
+  ledgerAccountStatus?: string | null;
 };
 
 export type IssueCreditNoteInput = {
@@ -219,4 +233,11 @@ export type IssuedCreditNoteJournalLine = {
   debit: number;
   credit: number;
   description?: string | null;
+  ledgerAccountCode?: string | null;
+  ledgerAccountName?: string | null;
+  ledgerAccountType?: string | null;
+  ledgerAccountNormalBalance?: string | null;
+  ledgerAccountLevel?: string | null;
+  isPostingAccount?: boolean | null;
+  ledgerAccountStatus?: string | null;
 };

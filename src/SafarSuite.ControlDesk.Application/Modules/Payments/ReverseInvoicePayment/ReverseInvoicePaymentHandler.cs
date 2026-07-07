@@ -17,6 +17,7 @@ public sealed class ReverseInvoicePaymentHandler
     private readonly IPaymentRepository _payments;
     private readonly IInvoiceRepository _invoices;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly PaymentPostingService _postingService;
@@ -29,6 +30,7 @@ public sealed class ReverseInvoicePaymentHandler
         IPaymentRepository payments,
         IInvoiceRepository invoices,
         IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts,
         ICloudOutboxMessageRepository cloudOutboxMessages,
         AccountingPeriodPostingGuard periodGuard,
         PaymentPostingService postingService,
@@ -40,6 +42,7 @@ public sealed class ReverseInvoicePaymentHandler
         _payments = payments;
         _invoices = invoices;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
         _cloudOutboxMessages = cloudOutboxMessages;
         _periodGuard = periodGuard;
         _postingService = postingService;
@@ -133,7 +136,7 @@ public sealed class ReverseInvoicePaymentHandler
                             token);
                     }
 
-                    return ToResult(payment, invoice, reversalJournalEntry, originalReceiptJournal);
+                    return await ToResultAsync(payment, invoice, reversalJournalEntry, originalReceiptJournal, token);
                 },
                 cancellationToken);
 
@@ -171,31 +174,21 @@ public sealed class ReverseInvoicePaymentHandler
             .FirstOrDefault();
     }
 
-    private static ReverseInvoicePaymentResult ToResult(
+    private async Task<ReverseInvoicePaymentResult> ToResultAsync(
         Payment payment,
         Invoice invoice,
         JournalEntry reversalJournalEntry,
-        JournalEntry originalReceiptJournal)
+        JournalEntry originalReceiptJournal,
+        CancellationToken cancellationToken)
     {
-        return new ReverseInvoicePaymentResult(
-            payment.Id.Value,
-            invoice.Id.Value,
-            invoice.Number.Value,
-            invoice.Status.ToString(),
-            payment.Status.ToString(),
-            payment.Amount.Amount,
-            invoice.BalanceDue.Amount,
-            payment.Amount.CurrencyCode,
-            reversalJournalEntry.Id.Value,
-            reversalJournalEntry.Status.ToString(),
-            reversalJournalEntry.EntryDate,
-            originalReceiptJournal.Id.Value,
-            reversalJournalEntry.TotalDebit.Amount,
-            reversalJournalEntry.TotalCredit.Amount,
-            reversalJournalEntry.Lines.Select(line => new ReverseInvoicePaymentJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
+
+        return PaymentDocumentResultFactory.ToReverseInvoicePaymentResult(
+            payment,
+            invoice,
+            reversalJournalEntry,
+            originalReceiptJournal,
+            ledgerAccountsById);
     }
 }

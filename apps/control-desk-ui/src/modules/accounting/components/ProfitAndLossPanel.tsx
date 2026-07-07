@@ -1,12 +1,20 @@
 import { BookOpen, RefreshCw, TrendingUp } from "lucide-react";
 import type {
+  LedgerAccountSummary,
   ProfitAndLossStatement,
   ProfitAndLossStatementFilters,
   ProfitAndLossStatementLine
 } from "../types/accountingTypes";
 
+type ProfitAndLossStatusItem = {
+  label: string;
+  value: string;
+  tone: "ready" | "warning";
+};
+
 type ProfitAndLossPanelProps = {
   statement: ProfitAndLossStatement | null;
+  accounts: LedgerAccountSummary[];
   filters: ProfitAndLossStatementFilters;
   isBusy: boolean;
   onFiltersChange: (value: ProfitAndLossStatementFilters) => void;
@@ -16,6 +24,7 @@ type ProfitAndLossPanelProps = {
 
 export function ProfitAndLossPanel({
   statement,
+  accounts,
   filters,
   isBusy,
   onFiltersChange,
@@ -23,13 +32,15 @@ export function ProfitAndLossPanel({
   onRefresh
 }: ProfitAndLossPanelProps) {
   const netIncome = statement?.netIncome ?? 0;
+  const accountsById = new Map(accounts.map((account) => [account.ledgerAccountId, account]));
+  const statusItems = getProfitAndLossStatusItems(statement, filters);
 
   return (
     <section className="profit-loss-workbench">
       <header className="client-panel profit-loss-header">
         <div>
           <span>{filters.currencyCode.trim() === "" ? "PKR" : filters.currencyCode}</span>
-          <h2>Profit and loss</h2>
+          <h2>Profit and Loss</h2>
         </div>
         <button
           className="icon-button"
@@ -102,6 +113,15 @@ export function ProfitAndLossPanel({
         </article>
       </div>
 
+      <div className="client-panel profit-loss-readiness-row" aria-label="Profit and loss status">
+        {statusItems.map((item) => (
+          <span className={item.tone} key={item.label}>
+            <small>{item.label}</small>
+            <strong>{item.value}</strong>
+          </span>
+        ))}
+      </div>
+
       <section className="client-panel profit-loss-table-panel">
         <div className="client-panel-heading">
           <div>
@@ -122,8 +142,8 @@ export function ProfitAndLossPanel({
               <table className="profit-loss-table">
                 <thead>
                   <tr>
-                    <th>Code</th>
-                    <th>Name</th>
+                    <th>Account</th>
+                    <th>Class</th>
                     <th>Debit</th>
                     <th>Credit</th>
                     <th>Amount</th>
@@ -137,29 +157,43 @@ export function ProfitAndLossPanel({
                       <td colSpan={7}>No lines</td>
                     </tr>
                   ) : (
-                    section.lines.map((line) => (
-                      <tr key={line.ledgerAccountId}>
-                        <td>
-                          <strong>{line.code}</strong>
-                        </td>
-                        <td>{line.name}</td>
-                        <td>{formatMoney(line.debit)}</td>
-                        <td>{formatMoney(line.credit)}</td>
-                        <td>{formatMoney(line.amount)}</td>
-                        <td>{line.activityCount}</td>
-                        <td>
-                          <button
-                            className="table-icon-button"
-                            type="button"
-                            onClick={() => void onViewAccountActivity(line)}
-                            disabled={isBusy || line.activityCount === 0}
-                            title="View account activity"
-                          >
-                            <BookOpen size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    section.lines.map((line) => {
+                      const account = accountsById.get(line.ledgerAccountId);
+
+                      return (
+                        <tr key={line.ledgerAccountId}>
+                          <td>
+                            <div className="financial-report-account-ref">
+                              <strong>{account?.displayCode ?? line.code}</strong>
+                              <span>{line.name}</span>
+                              {formatRangeLabel(account) !== "" ? <small>{formatRangeLabel(account)}</small> : null}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="financial-report-account-class">
+                              <strong>{line.type}</strong>
+                              <span>{formatNormalBalance(line.normalBalance)}</span>
+                              <small>{formatAccountRole(account)}</small>
+                            </div>
+                          </td>
+                          <td className="numeric">{formatMoney(line.debit)}</td>
+                          <td className="numeric">{formatMoney(line.credit)}</td>
+                          <td className="numeric">{formatMoney(line.amount)}</td>
+                          <td className="numeric">{line.activityCount}</td>
+                          <td>
+                            <button
+                              className="table-icon-button"
+                              type="button"
+                              onClick={() => void onViewAccountActivity(line)}
+                              disabled={isBusy || line.activityCount === 0}
+                              title={line.activityCount === 0 ? "No posted activity" : `View ${line.code} activity`}
+                            >
+                              <BookOpen size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -172,11 +206,94 @@ export function ProfitAndLossPanel({
 }
 
 function formatMoney(value: number): string {
-  return value.toFixed(2);
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
 }
 
 function formatWindow(fromDate: string | null | undefined, toDate: string): string {
   return fromDate === null || fromDate === undefined || fromDate.trim() === ""
     ? `Through ${toDate}`
     : `${fromDate} to ${toDate}`;
+}
+
+function getProfitAndLossStatusItems(
+  statement: ProfitAndLossStatement | null,
+  filters: ProfitAndLossStatementFilters
+): ProfitAndLossStatusItem[] {
+  const lines = statement?.sections.flatMap((section) => section.lines) ?? [];
+  const activeRows = lines.filter((line) => line.activityCount > 0 || !isZeroAmount(line.amount)).length;
+  const currencyCode = statement?.currencyCode.trim() || filters.currencyCode.trim() || "PKR";
+  const netIncome = statement?.netIncome ?? 0;
+
+  return [
+    {
+      label: "Period",
+      value: formatWindow(statement?.fromDate ?? filters.fromDate, statement?.toDate ?? filters.toDate),
+      tone: filters.toDate.trim() === "" ? "warning" : "ready"
+    },
+    {
+      label: "Rows",
+      value: lines.length === 0 ? "No lines" : `${activeRows}/${lines.length} active`,
+      tone: lines.length === 0 ? "warning" : "ready"
+    },
+    {
+      label: "Revenue",
+      value: formatMoney(statement?.totalRevenue ?? 0),
+      tone: "ready"
+    },
+    {
+      label: "Expense",
+      value: formatMoney(statement?.totalExpense ?? 0),
+      tone: "ready"
+    },
+    {
+      label: "Result",
+      value: netIncome >= 0 ? "Income" : "Loss",
+      tone: netIncome >= 0 ? "ready" : "warning"
+    },
+    {
+      label: "Currency",
+      value: currencyCode,
+      tone: "ready"
+    }
+  ];
+}
+
+function formatNormalBalance(normalBalance: string): string {
+  const normalized = normalBalance.trim().toLowerCase();
+
+  if (normalized.includes("debit")) {
+    return "Dr normal";
+  }
+
+  if (normalized.includes("credit")) {
+    return "Cr normal";
+  }
+
+  return normalBalance.trim() === "" ? "Normal n/a" : `${normalBalance} normal`;
+}
+
+function formatAccountRole(account: LedgerAccountSummary | undefined): string {
+  if (account === undefined) {
+    return "Ledger account";
+  }
+
+  const level = account.level?.trim();
+  const role = account.isPostingAccount ? "Posting" : "Control";
+
+  return level === undefined || level === "" ? `${role} account` : `${level} / ${role}`;
+}
+
+function formatRangeLabel(account: LedgerAccountSummary | undefined): string {
+  if (account === undefined) {
+    return "";
+  }
+
+  return account.rangeDisplayName?.trim() || account.rangeRole?.trim() || "";
+}
+
+function isZeroAmount(value: number): boolean {
+  return Math.abs(value) < 0.005;
 }

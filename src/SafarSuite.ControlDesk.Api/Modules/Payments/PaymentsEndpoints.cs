@@ -69,11 +69,7 @@ public static class PaymentsEndpoints
             result.Value.PostingDate,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
-            result.Value.JournalLines.Select(line => new RecordInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Created($"/api/v1/payments/invoice-payments/{response.PaymentId}", response);
     }
@@ -130,11 +126,7 @@ public static class PaymentsEndpoints
             result.Value.PostingDate,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
-            result.Value.JournalLines.Select(line => new ApproveInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Ok(response);
     }
@@ -191,11 +183,7 @@ public static class PaymentsEndpoints
             result.Value.OriginalJournalEntryId,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
-            result.Value.JournalLines.Select(line => new ReverseInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Ok(response);
     }
@@ -240,11 +228,7 @@ public static class PaymentsEndpoints
             result.Value.PostingDate,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
-            result.Value.JournalLines.Select(line => new IssueClientRefundJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Created($"/api/v1/payments/client-refunds/{response.RefundId}", response);
     }
@@ -346,11 +330,7 @@ public static class PaymentsEndpoints
             result.PostingDate,
             result.TotalDebit,
             result.TotalCredit,
-            result.JournalLines.Select(line => new RecordInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.JournalLines.Select(line => ToResponse(line)).ToArray());
     }
 
     private static ReverseInvoicePaymentResponse ToResponse(ReverseInvoicePaymentResult result)
@@ -370,11 +350,7 @@ public static class PaymentsEndpoints
             result.OriginalJournalEntryId,
             result.TotalDebit,
             result.TotalCredit,
-            result.JournalLines.Select(line => new ReverseInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.JournalLines.Select(line => ToResponse(line)).ToArray());
     }
 
     private static IssueClientRefundResponse ToResponse(IssueClientRefundResult result)
@@ -395,10 +371,70 @@ public static class PaymentsEndpoints
             result.PostingDate,
             result.TotalDebit,
             result.TotalCredit,
-            result.JournalLines.Select(line => new IssueClientRefundJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.JournalLines.Select(line => ToResponse(line)).ToArray());
+    }
+
+    private static RecordInvoicePaymentJournalLineResponse ToResponse(RecordInvoicePaymentJournalLineResult line)
+    {
+        return new RecordInvoicePaymentJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
+    }
+
+    private static ApproveInvoicePaymentJournalLineResponse ToResponse(ApproveInvoicePaymentJournalLineResult line)
+    {
+        return new ApproveInvoicePaymentJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
+    }
+
+    private static ReverseInvoicePaymentJournalLineResponse ToResponse(ReverseInvoicePaymentJournalLineResult line)
+    {
+        return new ReverseInvoicePaymentJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
+    }
+
+    private static IssueClientRefundJournalLineResponse ToResponse(IssueClientRefundJournalLineResult line)
+    {
+        return new IssueClientRefundJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
     }
 }

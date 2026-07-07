@@ -1,18 +1,4 @@
-import {
-  CalendarCheck2,
-  ClipboardList,
-  ExternalLink,
-  FileCheck2,
-  Hash,
-  ListTree,
-  Plus,
-  RefreshCw,
-  Send,
-  Trash2,
-  Undo2,
-  X
-} from "lucide-react";
-import { Fragment, type FormEvent } from "react";
+import { useState } from "react";
 import type {
   AccountingPeriod,
   JournalEntryFilters,
@@ -21,24 +7,22 @@ import type {
   JournalVoucherNumberPreview,
   LedgerAccountSummary,
   ManualJournalEntryInput,
-  ManualJournalEntryLineInput,
   OpeningBalanceImportInput,
-  OpeningBalanceImportLineInput,
   OpeningBalanceImportPreview,
+  OpeningBalanceImportTemplateFormat,
   OpeningBalanceImportTextPreview
 } from "../types/accountingTypes";
-import { journalSourceTypeOptions } from "../constants/accountingConstants";
 import { toDateInputValue } from "../utils/accountingDates";
+import { getPostingPeriodState } from "../utils/journalModel";
+import { sourceDocumentClientLabel } from "../utils/journalWorkbenchModel";
+import { JournalEntryDetailPanel } from "./shared/JournalEntryDetailPanel";
+import { JournalEntryEditorPanel } from "./shared/JournalEntryEditorPanel";
+import { JournalRegisterPanel } from "./shared/JournalRegisterPanel";
 import {
-  amount,
-  formatAccount,
-  formatMoney,
-  formatSourceAmount,
-  getPostingPeriodState,
-  roundMoney,
-  sourceDocumentTitle,
-  voidManualJournalTitle
-} from "../utils/journalModel";
+  JournalWorkWindow,
+  type JournalWorkWindowView
+} from "./shared/JournalWorkWindow";
+import { OpeningBalanceImportPanel } from "./shared/OpeningBalanceImportPanel";
 
 type JournalWorkbenchPanelProps = {
   accounts: LedgerAccountSummary[];
@@ -64,7 +48,8 @@ type JournalWorkbenchPanelProps = {
   onOpeningBalanceImportTextChange: (value: string) => void;
   onOpeningBalanceImportDelimiterChange: (value: string) => void;
   onPreviewOpeningBalanceText: () => Promise<void>;
-  onUseOpeningBalanceTemplate: () => void;
+  onUseOpeningBalanceTemplate: (format?: OpeningBalanceImportTemplateFormat) => void;
+  onSaveOpeningBalanceProfile: () => Promise<void>;
   onPostOpeningBalance: () => Promise<void>;
   onFocusJournalEntry: (journalEntryId: string) => Promise<void>;
   onPost: () => Promise<void>;
@@ -100,6 +85,7 @@ export function JournalWorkbenchPanel({
   onOpeningBalanceImportDelimiterChange,
   onPreviewOpeningBalanceText,
   onUseOpeningBalanceTemplate,
+  onSaveOpeningBalanceProfile,
   onPostOpeningBalance,
   onFocusJournalEntry,
   onPost,
@@ -109,992 +95,149 @@ export function JournalWorkbenchPanel({
   getSourceDocumentClientLabel,
   onRefresh
 }: JournalWorkbenchPanelProps) {
-  const postingAccounts = accounts.filter(
-    (account) => account.status === "Active" && account.isPostingAccount
-  );
-  const focusedEntryInRegister = focusedJournalEntryId !== ""
-    && entries.some((entry) => entry.journalEntryId === focusedJournalEntryId);
-  const focusedSourceDocumentLabel = focusedJournalEntry === null
-    ? null
-    : getSourceDocumentLabel(focusedJournalEntry);
-  const totalDebit = value.lines.reduce((total, line) => total + amount(line.debit), 0);
-  const totalCredit = value.lines.reduce((total, line) => total + amount(line.credit), 0);
-  const difference = roundMoney(totalDebit - totalCredit);
-  const openingTotalDebit = openingBalanceValue.lines.reduce(
-    (total, line) => total + amount(line.debit),
-    0
-  );
-  const openingTotalCredit = openingBalanceValue.lines.reduce(
-    (total, line) => total + amount(line.credit),
-    0
-  );
-  const openingDifference = roundMoney(openingTotalDebit - openingTotalCredit);
-  const hasDebit = totalDebit > 0;
-  const hasCredit = totalCredit > 0;
-  const hasAccounts = value.lines.every((line) => line.ledgerAccountId.trim() !== "");
-  const postingPeriodState = getPostingPeriodState(value.entryDate, periods);
+  const [isWorkWindowOpen, setIsWorkWindowOpen] = useState(false);
+  const [activeWorkView, setActiveWorkView] = useState<JournalWorkWindowView>("voucher");
   const reversalPeriodState = getPostingPeriodState(toDateInputValue(new Date()), periods);
-  const canPost =
-    value.entryDate.trim() !== ""
-    && value.currencyCode.trim() !== ""
-    && value.lines.length >= 2
-    && hasDebit
-    && hasCredit
-    && hasAccounts
-    && difference === 0
-    && !postingPeriodState.blocksPosting;
+  const focusedSourceDocument = focusedJournalEntry === null
+    ? null
+    : sourceDocumentsByJournalEntryId[focusedJournalEntry.journalEntryId] ?? null;
+  const focusedSourceDocumentClientLabel = focusedJournalEntry === null
+    ? "-"
+    : sourceDocumentClientLabel(
+      sourceDocumentsByJournalEntryId[focusedJournalEntry.journalEntryId],
+      getSourceDocumentClientLabel
+    );
 
-  async function handlePost(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await onPost();
+  function openWorkWindow(view: JournalWorkWindowView) {
+    setActiveWorkView(view);
+    setIsWorkWindowOpen(true);
   }
 
-  async function handlePreviewOpeningBalance(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await onPreviewOpeningBalance();
+  function handleWorkWindowViewChange(view: JournalWorkWindowView) {
+    if (view === "detail" && focusedJournalEntryId === "") {
+      return;
+    }
+
+    setActiveWorkView(view);
   }
 
-  function updateLine(index: number, patch: Partial<ManualJournalEntryLineInput>) {
-    onValueChange({
-      ...value,
-      lines: value.lines.map((line, lineIndex) =>
-        lineIndex === index ? { ...line, ...patch } : line)
-    });
+  async function handleOpenJournalDetail(journalEntryId: string) {
+    if (journalEntryId !== focusedJournalEntryId) {
+      await onFocusJournalEntry(journalEntryId);
+    }
+
+    openWorkWindow("detail");
   }
 
-  function addLine() {
-    onValueChange({
-      ...value,
-      lines: [
-        ...value.lines,
-        {
-          ledgerAccountId: "",
-          debit: "",
-          credit: "",
-          description: ""
-        }
-      ]
-    });
-  }
+  async function handleClearFocusedJournal() {
+    await onFocusJournalEntry("");
 
-  function removeLine(index: number) {
-    onValueChange({
-      ...value,
-      lines: value.lines.filter((_, lineIndex) => lineIndex !== index)
-    });
-  }
-
-  function updateOpeningBalanceLine(
-    index: number,
-    patch: Partial<OpeningBalanceImportLineInput>
-  ) {
-    onOpeningBalanceValueChange({
-      ...openingBalanceValue,
-      lines: openingBalanceValue.lines.map((line, lineIndex) =>
-        lineIndex === index ? { ...line, ...patch } : line)
-    });
-  }
-
-  function addOpeningBalanceLine() {
-    onOpeningBalanceValueChange({
-      ...openingBalanceValue,
-      lines: [
-        ...openingBalanceValue.lines,
-        {
-          accountCode: "",
-          debit: "",
-          credit: "",
-          description: ""
-        }
-      ]
-    });
-  }
-
-  function removeOpeningBalanceLine(index: number) {
-    onOpeningBalanceValueChange({
-      ...openingBalanceValue,
-      lines: openingBalanceValue.lines.filter((_, lineIndex) => lineIndex !== index)
-    });
+    if (activeWorkView === "detail") {
+      setIsWorkWindowOpen(false);
+      setActiveWorkView("voucher");
+    }
   }
 
   return (
     <section className="journal-workbench">
-      <header className="client-panel journal-header">
-        <div>
-          <span>{value.currencyCode.trim() === "" ? "PKR" : value.currencyCode}</span>
-          <h2>Manual journal</h2>
-        </div>
-        <button
-          className="icon-button"
-          type="button"
-          onClick={onRefresh}
-          disabled={isBusy}
-          title="Refresh journal entries"
+      <JournalRegisterPanel
+        entries={entries}
+        filters={filters}
+        focusedJournalEntryId={focusedJournalEntryId}
+        focusedJournalEntry={focusedJournalEntry}
+        isBusy={isBusy}
+        reversalPeriodState={reversalPeriodState}
+        onFiltersChange={onFiltersChange}
+        onRefresh={onRefresh}
+        onOpenVoucherEntry={() => openWorkWindow("voucher")}
+        onOpenOpeningBalance={() => openWorkWindow("opening")}
+        onOpenJournalDetail={handleOpenJournalDetail}
+        onClearFocusedJournal={handleClearFocusedJournal}
+        onVoidEntry={onVoidEntry}
+        onOpenSourceDocument={onOpenSourceDocument}
+        getSourceDocumentLabel={getSourceDocumentLabel}
+      />
+
+      {isWorkWindowOpen && (
+        <JournalWorkWindow
+          activeView={activeWorkView}
+          detailDisabled={focusedJournalEntryId === ""}
+          title={getJournalWorkWindowTitle(activeWorkView)}
+          subtitle={getJournalWorkWindowSubtitle(activeWorkView, focusedJournalEntry)}
+          onViewChange={handleWorkWindowViewChange}
+          onClose={() => setIsWorkWindowOpen(false)}
         >
-          <RefreshCw size={16} />
-          Refresh
-        </button>
-      </header>
-
-      <section className="client-panel journal-editor-panel">
-        <form className="journal-form" onSubmit={handlePost}>
-          <div className="billing-form-grid journal-header-fields">
-            <label className="form-field">
-              <span>Date</span>
-              <input
-                type="date"
-                value={value.entryDate}
-                onChange={(event) =>
-                  onValueChange({
-                    ...value,
-                    entryDate: event.target.value
-                  })
-                }
-                disabled={isBusy}
-              />
-            </label>
-            <label className="form-field">
-              <span>Currency</span>
-              <input
-                value={value.currencyCode}
-                onChange={(event) =>
-                  onValueChange({
-                    ...value,
-                    currencyCode: event.target.value.toUpperCase()
-                  })
-                }
-                disabled={isBusy}
-              />
-            </label>
-            <label className="form-field">
-              <span>Reference</span>
-              <div className="journal-inline-field">
-                <input
-                  value={value.sourceReference}
-                  onChange={(event) =>
-                    onValueChange({
-                      ...value,
-                      sourceReference: event.target.value
-                    })
-                  }
-                  disabled={isBusy}
-                />
-                <button
-                  className="table-icon-button"
-                  type="button"
-                  onClick={() => void onSuggestVoucherNumber()}
-                  disabled={isBusy || value.entryDate.trim() === ""}
-                  title="Suggest next voucher number"
-                >
-                  <Hash size={14} />
-                </button>
-              </div>
-              {manualVoucherPreview !== null && (
-                <small className="journal-reference-hint">
-                  {manualVoucherPreview.reference}
-                </small>
-              )}
-            </label>
-            <label className="form-field wide">
-              <span>Memo</span>
-              <input
-                value={value.memo}
-                onChange={(event) =>
-                  onValueChange({
-                    ...value,
-                    memo: event.target.value
-                  })
-                }
-                disabled={isBusy}
-              />
-            </label>
-            <div className={`journal-period-status ${postingPeriodState.tone}`}>
-              <CalendarCheck2 size={16} />
-              <span>
-                <small>{postingPeriodState.label}</small>
-                <strong>{postingPeriodState.status}</strong>
-                <em>{postingPeriodState.detail}</em>
-              </span>
-            </div>
-          </div>
-
-          <div className="journal-line-grid">
-            <div className="journal-line-head">Account</div>
-            <div className="journal-line-head">Debit</div>
-            <div className="journal-line-head">Credit</div>
-            <div className="journal-line-head">Description</div>
-            <div className="journal-line-head"> </div>
-            {value.lines.map((line, index) => (
-              <div className="journal-line-row" key={`${index}-${line.ledgerAccountId}`}>
-                <label className="form-field journal-account-select">
-                  <select
-                    value={line.ledgerAccountId}
-                    onChange={(event) =>
-                      updateLine(index, {
-                        ledgerAccountId: event.target.value
-                      })
-                    }
-                    disabled={isBusy}
-                  >
-                    <option value="">Select account</option>
-                    {postingAccounts.map((account) => (
-                      <option key={account.ledgerAccountId} value={account.ledgerAccountId}>
-                        {account.displayCode} - {account.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.debit}
-                    onChange={(event) =>
-                      updateLine(index, {
-                        debit: event.target.value,
-                        credit: event.target.value.trim() === "" ? line.credit : ""
-                      })
-                    }
-                    disabled={isBusy}
-                  />
-                </label>
-                <label className="form-field">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.credit}
-                    onChange={(event) =>
-                      updateLine(index, {
-                        credit: event.target.value,
-                        debit: event.target.value.trim() === "" ? line.debit : ""
-                      })
-                    }
-                    disabled={isBusy}
-                  />
-                </label>
-                <label className="form-field">
-                  <input
-                    value={line.description}
-                    onChange={(event) =>
-                      updateLine(index, {
-                        description: event.target.value
-                      })
-                    }
-                    disabled={isBusy}
-                  />
-                </label>
-                <button
-                  className="table-icon-button"
-                  type="button"
-                  onClick={() => removeLine(index)}
-                  disabled={isBusy || value.lines.length <= 2}
-                  title="Remove journal line"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div className="journal-total-row">
-            <div>
-              <span>Debit</span>
-              <strong>{formatMoney(totalDebit)}</strong>
-            </div>
-            <div>
-              <span>Credit</span>
-              <strong>{formatMoney(totalCredit)}</strong>
-            </div>
-            <div>
-              <span>Difference</span>
-              <strong>{formatMoney(difference)}</strong>
-            </div>
-            <div className="journal-actions">
-              <button
-                className="icon-button"
-                type="button"
-                onClick={addLine}
-                disabled={isBusy}
-                title="Add journal line"
-              >
-                <Plus size={16} />
-                Line
-              </button>
-              <button
-                className="icon-button primary"
-                type="submit"
-                disabled={isBusy || !canPost}
-                title={postingPeriodState.blocksPosting
-                  ? postingPeriodState.detail
-                  : "Post manual journal"}
-              >
-                <Send size={16} />
-                Post
-              </button>
-            </div>
-          </div>
-        </form>
-      </section>
-
-      <section className="client-panel opening-balance-panel">
-        <div className="client-panel-heading">
-          <div>
-            <span>Legacy import</span>
-            <strong>Opening balance dry-run</strong>
-          </div>
-          <span className={`status-pill ${openingBalancePreview?.canPost ? "open" : "draft"}`}>
-            {openingBalancePreview === null ? "Ready" : openingBalancePreview.canPost ? "Balanced" : "Blocked"}
-          </span>
-        </div>
-        <form className="journal-form" onSubmit={handlePreviewOpeningBalance}>
-          <div className="billing-form-grid journal-header-fields">
-            <label className="form-field">
-              <span>Date</span>
-              <input
-                type="date"
-                value={openingBalanceValue.entryDate}
-                onChange={(event) =>
-                  onOpeningBalanceValueChange({
-                    ...openingBalanceValue,
-                    entryDate: event.target.value
-                  })
-                }
-                disabled={isBusy}
-              />
-            </label>
-            <label className="form-field">
-              <span>Currency</span>
-              <input
-                value={openingBalanceValue.currencyCode}
-                onChange={(event) =>
-                  onOpeningBalanceValueChange({
-                    ...openingBalanceValue,
-                    currencyCode: event.target.value.toUpperCase()
-                  })
-                }
-                disabled={isBusy}
-              />
-            </label>
-            <label className="form-field">
-              <span>Reference</span>
-              <input
-                value={openingBalanceValue.sourceReference}
-                onChange={(event) =>
-                  onOpeningBalanceValueChange({
-                    ...openingBalanceValue,
-                    sourceReference: event.target.value
-                  })
-                }
-                disabled={isBusy}
-              />
-            </label>
-            <label className="form-field wide">
-              <span>Memo</span>
-              <input
-                value={openingBalanceValue.memo}
-                onChange={(event) =>
-                  onOpeningBalanceValueChange({
-                    ...openingBalanceValue,
-                    memo: event.target.value
-                  })
-                }
-                disabled={isBusy}
-              />
-            </label>
-          </div>
-
-          <div className="opening-balance-text-import">
-            <label className="form-field wide">
-              <span>Import text</span>
-              <textarea
-                value={openingBalanceImportText}
-                onChange={(event) => onOpeningBalanceImportTextChange(event.target.value)}
-                disabled={isBusy}
-                rows={5}
-              />
-            </label>
-            <div className="opening-balance-import-actions">
-              <label className="form-field">
-                <span>Delimiter</span>
-                <select
-                  value={openingBalanceImportDelimiter}
-                  onChange={(event) => onOpeningBalanceImportDelimiterChange(event.target.value)}
-                  disabled={isBusy}
-                >
-                  <option value="comma">Comma</option>
-                  <option value="tab">Tab</option>
-                  <option value="pipe">Pipe</option>
-                </select>
-              </label>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={onUseOpeningBalanceTemplate}
-                disabled={isBusy}
-                title="Load opening balance import template"
-              >
-                <ClipboardList size={16} />
-                Template
-              </button>
-              <button
-                className="icon-button primary"
-                type="button"
-                onClick={() => void onPreviewOpeningBalanceText()}
-                disabled={isBusy || openingBalanceImportText.trim() === ""}
-                title="Parse opening balance import text"
-              >
-                <FileCheck2 size={16} />
-                Parse
-              </button>
-            </div>
-          </div>
-
-          <div className="journal-line-grid opening-balance-line-grid">
-            <div className="journal-line-head">Account code</div>
-            <div className="journal-line-head">Debit</div>
-            <div className="journal-line-head">Credit</div>
-            <div className="journal-line-head">Description</div>
-            <div className="journal-line-head"> </div>
-            {openingBalanceValue.lines.map((line, index) => (
-              <div className="journal-line-row" key={`${index}-${line.accountCode}`}>
-                <label className="form-field journal-account-select">
-                  <input
-                    value={line.accountCode}
-                    onChange={(event) =>
-                      updateOpeningBalanceLine(index, {
-                        accountCode: event.target.value.toUpperCase()
-                      })
-                    }
-                    disabled={isBusy}
-                  />
-                </label>
-                <label className="form-field">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.debit}
-                    onChange={(event) =>
-                      updateOpeningBalanceLine(index, {
-                        debit: event.target.value,
-                        credit: event.target.value.trim() === "" ? line.credit : ""
-                      })
-                    }
-                    disabled={isBusy}
-                  />
-                </label>
-                <label className="form-field">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.credit}
-                    onChange={(event) =>
-                      updateOpeningBalanceLine(index, {
-                        credit: event.target.value,
-                        debit: event.target.value.trim() === "" ? line.debit : ""
-                      })
-                    }
-                    disabled={isBusy}
-                  />
-                </label>
-                <label className="form-field">
-                  <input
-                    value={line.description}
-                    onChange={(event) =>
-                      updateOpeningBalanceLine(index, {
-                        description: event.target.value
-                      })
-                    }
-                    disabled={isBusy}
-                  />
-                </label>
-                <button
-                  className="table-icon-button"
-                  type="button"
-                  onClick={() => removeOpeningBalanceLine(index)}
-                  disabled={isBusy || openingBalanceValue.lines.length <= 2}
-                  title="Remove opening balance line"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div className="journal-total-row">
-            <div>
-              <span>Debit</span>
-              <strong>{formatMoney(openingTotalDebit)}</strong>
-            </div>
-            <div>
-              <span>Credit</span>
-              <strong>{formatMoney(openingTotalCredit)}</strong>
-            </div>
-            <div>
-              <span>Difference</span>
-              <strong>{formatMoney(openingDifference)}</strong>
-            </div>
-            <div className="journal-actions">
-              <button
-                className="icon-button"
-                type="button"
-                onClick={addOpeningBalanceLine}
-                disabled={isBusy}
-                title="Add opening balance line"
-              >
-                <Plus size={16} />
-                Line
-              </button>
-              <button
-                className="icon-button primary"
-                type="submit"
-                disabled={
-                  isBusy
-                  || openingBalanceValue.entryDate.trim() === ""
-                  || openingBalanceValue.currencyCode.trim() === ""
-                }
-                title="Preview opening balance import"
-              >
-                <FileCheck2 size={16} />
-                Dry-run
-              </button>
-              <button
-                className="icon-button primary"
-                type="button"
-                onClick={() => void onPostOpeningBalance()}
-                disabled={isBusy || openingBalancePreview?.canPost !== true}
-                title="Post opening balance journal"
-              >
-                <Send size={16} />
-                Post
-              </button>
-            </div>
-          </div>
-        </form>
-        {openingBalancePreview !== null && (
-          <OpeningBalancePreviewDetail
-            preview={openingBalancePreview}
-            textPreview={openingBalanceImportTextPreview}
-          />
-        )}
-      </section>
-
-      <section className="client-panel journal-register-panel">
-        <div className="client-panel-heading">
-          <div>
-            <span>Register</span>
-            <strong>Journal entries</strong>
-          </div>
-          <span className="billing-small-fact">{entries.length}</span>
-        </div>
-        <div className="coa-filter-panel journal-filter-panel">
-          <label className="form-field">
-            <span>From</span>
-            <input
-              type="date"
-              value={filters.fromDate}
-              onChange={(event) =>
-                onFiltersChange({
-                  ...filters,
-                  fromDate: event.target.value
-                })
-              }
-              disabled={isBusy}
+          {activeWorkView === "voucher" && (
+            <JournalEntryEditorPanel
+              accounts={accounts}
+              periods={periods}
+              value={value}
+              manualVoucherPreview={manualVoucherPreview}
+              isBusy={isBusy}
+              onValueChange={onValueChange}
+              onSuggestVoucherNumber={onSuggestVoucherNumber}
+              onPost={onPost}
             />
-          </label>
-          <label className="form-field">
-            <span>To</span>
-            <input
-              type="date"
-              value={filters.toDate}
-              onChange={(event) =>
-                onFiltersChange({
-                  ...filters,
-                  toDate: event.target.value
-                })
-              }
-              disabled={isBusy}
+          )}
+
+          {activeWorkView === "opening" && (
+            <OpeningBalanceImportPanel
+              accounts={accounts}
+              value={openingBalanceValue}
+              preview={openingBalancePreview}
+              importText={openingBalanceImportText}
+              importDelimiter={openingBalanceImportDelimiter}
+              textPreview={openingBalanceImportTextPreview}
+              isBusy={isBusy}
+              onValueChange={onOpeningBalanceValueChange}
+              onPreviewOpeningBalance={onPreviewOpeningBalance}
+              onImportTextChange={onOpeningBalanceImportTextChange}
+              onImportDelimiterChange={onOpeningBalanceImportDelimiterChange}
+              onPreviewImportText={onPreviewOpeningBalanceText}
+              onUseTemplate={onUseOpeningBalanceTemplate}
+              onSaveProfile={onSaveOpeningBalanceProfile}
+              onPostOpeningBalance={onPostOpeningBalance}
             />
-          </label>
-          <label className="form-field">
-            <span>Source</span>
-            <select
-              value={filters.sourceType}
-              onChange={(event) =>
-                onFiltersChange({
-                  ...filters,
-                  sourceType: event.target.value
-                })
-              }
-              disabled={isBusy}
-            >
-              <option value="">All</option>
-              {journalSourceTypeOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {focusedJournalEntry !== null && !focusedEntryInRegister && (
-          <div className="journal-focused-entry">
-            <div className="journal-focused-entry-heading">
-              <div>
-                <span>Focused journal</span>
-                <strong>{focusedJournalEntry.sourceReference ?? focusedJournalEntry.journalEntryId}</strong>
-                <small>
-                  {focusedJournalEntry.entryDate} {focusedJournalEntry.sourceType} {focusedJournalEntry.status}
-                </small>
-              </div>
-              <div className="journal-focused-entry-actions">
-                <button
-                  className="table-icon-button"
-                  type="button"
-                  onClick={() => void onOpenSourceDocument(focusedJournalEntry)}
-                  disabled={isBusy || focusedSourceDocumentLabel === null}
-                  title={sourceDocumentTitle(focusedSourceDocumentLabel)}
-                >
-                  <ExternalLink size={14} />
-                </button>
-                <button
-                  className="table-icon-button"
-                  type="button"
-                  onClick={() => void onFocusJournalEntry("")}
-                  disabled={isBusy}
-                  title="Clear focused journal"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-            <JournalLineDetail
+          )}
+
+          {activeWorkView === "detail" && (
+            <JournalEntryDetailPanel
               entry={focusedJournalEntry}
               accounts={accounts}
-              sourceDocument={sourceDocumentsByJournalEntryId[focusedJournalEntry.journalEntryId] ?? null}
-              sourceDocumentClientLabel={sourceDocumentClientLabel(
-                sourceDocumentsByJournalEntryId[focusedJournalEntry.journalEntryId],
-                getSourceDocumentClientLabel
-              )}
+              sourceDocument={focusedSourceDocument}
+              sourceDocumentClientLabel={focusedSourceDocumentClientLabel}
             />
-          </div>
-        )}
-        <table className="journal-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Source</th>
-              <th>Reference</th>
-              <th>Memo</th>
-              <th>Status</th>
-              <th>Debit</th>
-              <th>Credit</th>
-              <th>Lines</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.length === 0 ? (
-              <tr>
-                <td colSpan={9}>No journal entries</td>
-              </tr>
-            ) : (
-              entries.map((entry) => {
-                const sourceDocumentLabel = getSourceDocumentLabel(entry);
-
-                return (
-                  <Fragment key={entry.journalEntryId}>
-                    <tr className={focusedJournalEntryId === entry.journalEntryId ? "selected" : ""}>
-                      <td>{entry.entryDate}</td>
-                      <td>{entry.sourceType}</td>
-                      <td>{entry.sourceReference ?? "-"}</td>
-                      <td>{entry.memo ?? "-"}</td>
-                      <td>
-                        <span className={`status-pill ${entry.status.toLowerCase()}`}>
-                          {entry.status}
-                        </span>
-                      </td>
-                      <td>{formatMoney(entry.totalDebit)}</td>
-                      <td>{formatMoney(entry.totalCredit)}</td>
-                      <td>{entry.lines.length}</td>
-                      <td>
-                        <div className="journal-row-actions">
-                          <button
-                            className={`table-icon-button${
-                              focusedJournalEntryId === entry.journalEntryId ? " active" : ""
-                            }`}
-                            type="button"
-                            onClick={() => void onFocusJournalEntry(entry.journalEntryId)}
-                            disabled={isBusy}
-                            title="View journal lines"
-                          >
-                            <ListTree size={14} />
-                          </button>
-                          <button
-                            className="table-icon-button"
-                            type="button"
-                            onClick={() => void onOpenSourceDocument(entry)}
-                            disabled={isBusy || sourceDocumentLabel === null}
-                            title={sourceDocumentTitle(sourceDocumentLabel)}
-                          >
-                            <ExternalLink size={14} />
-                          </button>
-                          <button
-                            className="table-icon-button"
-                            type="button"
-                            onClick={() => void onVoidEntry(entry)}
-                            disabled={
-                              isBusy
-                              || entry.sourceType !== "Manual"
-                              || entry.status !== "Posted"
-                              || reversalPeriodState.blocksPosting
-                            }
-                            title={voidManualJournalTitle(entry, reversalPeriodState)}
-                          >
-                            <Undo2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {focusedJournalEntryId === entry.journalEntryId && (
-                      <tr className="journal-line-detail-row">
-                        <td colSpan={9}>
-                          <JournalLineDetail
-                            entry={entry}
-                            accounts={accounts}
-                            sourceDocument={sourceDocumentsByJournalEntryId[entry.journalEntryId] ?? null}
-                            sourceDocumentClientLabel={sourceDocumentClientLabel(
-                              sourceDocumentsByJournalEntryId[entry.journalEntryId],
-                              getSourceDocumentClientLabel
-                            )}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </section>
+          )}
+        </JournalWorkWindow>
+      )}
     </section>
   );
 }
 
-function OpeningBalancePreviewDetail({
-  preview,
-  textPreview
-}: {
-  preview: OpeningBalanceImportPreview;
-  textPreview: OpeningBalanceImportTextPreview | null;
-}) {
-  return (
-    <div className={`opening-balance-preview ${preview.canPost ? "ready" : "blocked"}`}>
-      <div className="opening-balance-summary">
-        <span>
-          <small>Reference</small>
-          <strong>{preview.sourceReference || "-"}</strong>
-        </span>
-        <span>
-          <small>Valid lines</small>
-          <strong>{preview.validLineCount}/{preview.importedLineCount}</strong>
-        </span>
-        <span>
-          <small>Debit</small>
-          <strong>{formatMoney(preview.totalDebit)}</strong>
-        </span>
-        <span>
-          <small>Credit</small>
-          <strong>{formatMoney(preview.totalCredit)}</strong>
-        </span>
-        <span>
-          <small>Difference</small>
-          <strong>{formatMoney(preview.difference)}</strong>
-        </span>
-      </div>
-      {preview.blockers.length > 0 && (
-        <div className="opening-balance-blockers">
-          {preview.blockers.map((blocker) => (
-            <span key={blocker}>{blocker}</span>
-          ))}
-        </div>
-      )}
-      {textPreview !== null && (
-        <div className="opening-balance-text-summary">
-          <span>
-            <small>Format</small>
-            <strong>{textPreview.format}</strong>
-          </span>
-          <span>
-            <small>Parsed</small>
-            <strong>{textPreview.parsedLineCount}</strong>
-          </span>
-          <span>
-            <small>Ignored</small>
-            <strong>{textPreview.ignoredLineCount}</strong>
-          </span>
-          <span>
-            <small>Issues</small>
-            <strong>{textPreview.parseIssues.length}</strong>
-          </span>
-        </div>
-      )}
-      {textPreview !== null && textPreview.parseIssues.length > 0 && (
-        <table className="opening-balance-table">
-          <thead>
-            <tr>
-              <th>Line</th>
-              <th>Column</th>
-              <th>Value</th>
-              <th>Issue</th>
-            </tr>
-          </thead>
-          <tbody>
-            {textPreview.parseIssues.map((issue) => (
-              <tr key={`${issue.lineNumber}-${issue.column}-${issue.message}`}>
-                <td>{issue.lineNumber}</td>
-                <td>{issue.column}</td>
-                <td>{issue.rawValue ?? "-"}</td>
-                <td>{issue.message}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <table className="opening-balance-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Account</th>
-            <th>Name</th>
-            <th>Debit</th>
-            <th>Credit</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {preview.lines.map((line) => (
-            <tr key={`${line.lineNumber}-${line.accountCode}`}>
-              <td>{line.lineNumber}</td>
-              <td>{line.accountCode || "-"}</td>
-              <td>{line.ledgerAccountName ?? "-"}</td>
-              <td>{formatMoney(line.debit)}</td>
-              <td>{formatMoney(line.credit)}</td>
-              <td>
-                {line.isValid ? (
-                  <span className="status-pill open">Valid</span>
-                ) : (
-                  <span className="opening-balance-line-issues">
-                    {line.issues.join(" ")}
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+function getJournalWorkWindowTitle(view: JournalWorkWindowView): string {
+  switch (view) {
+    case "opening":
+      return "Opening Balance Window";
+    case "detail":
+      return "Journal Detail Window";
+    default:
+      return "Voucher Entry Window";
+  }
 }
 
-function JournalLineDetail({
-  entry,
-  accounts,
-  sourceDocument,
-  sourceDocumentClientLabel
-}: {
-  entry: JournalEntrySummary;
-  accounts: LedgerAccountSummary[];
-  sourceDocument: JournalEntrySourceDocument | null;
-  sourceDocumentClientLabel: string;
-}) {
-  return (
-    <div className="journal-line-detail">
-      <div className="journal-line-detail-heading">
-        <span>{entry.journalEntryId}</span>
-        <strong>{entry.sourceReference ?? entry.sourceType}</strong>
-      </div>
-      {sourceDocument !== null && (
-        <SourceDocumentSummary
-          sourceDocument={sourceDocument}
-          clientLabel={sourceDocumentClientLabel}
-        />
-      )}
-      <table>
-        <thead>
-          <tr>
-            <th>Account</th>
-            <th>Description</th>
-            <th>Debit</th>
-            <th>Credit</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entry.lines.map((line, index) => (
-            <tr key={`${entry.journalEntryId}-${line.ledgerAccountId}-${index}`}>
-              <td>{formatAccount(line.ledgerAccountId, accounts)}</td>
-              <td>{line.description ?? "-"}</td>
-              <td>{formatMoney(line.debit)}</td>
-              <td>{formatMoney(line.credit)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function SourceDocumentSummary({
-  sourceDocument,
-  clientLabel
-}: {
-  sourceDocument: JournalEntrySourceDocument;
-  clientLabel: string;
-}) {
-  if (!sourceDocument.isResolved) {
-    return (
-      <div className="journal-source-summary unresolved">
-        <span>
-          <small>Source document</small>
-          <strong>{sourceDocument.message ?? "Not resolved"}</strong>
-        </span>
-      </div>
-    );
+function getJournalWorkWindowSubtitle(
+  view: JournalWorkWindowView,
+  focusedJournalEntry: JournalEntrySummary | null
+): string {
+  if (view === "opening") {
+    return "Setup utility and legacy import";
   }
 
-  return (
-    <div className="journal-source-summary">
-      <span>
-        <small>Source document</small>
-        <strong>{sourceDocument.label ?? sourceDocument.reference ?? sourceDocument.documentKind ?? "Resolved"}</strong>
-      </span>
-      <span>
-        <small>Status</small>
-        <strong>{sourceDocument.status ?? "-"}</strong>
-      </span>
-      <span>
-        <small>Date</small>
-        <strong>{sourceDocument.documentDate ?? "-"}</strong>
-      </span>
-      <span>
-        <small>Amount</small>
-        <strong>{formatSourceAmount(sourceDocument)}</strong>
-      </span>
-      <span>
-        <small>Client</small>
-        <strong>{clientLabel}</strong>
-      </span>
-    </div>
-  );
-}
+  if (view === "detail") {
+    return focusedJournalEntry === null
+      ? "Select a journal from the register"
+      : `${focusedJournalEntry.entryDate} / ${focusedJournalEntry.sourceReference ?? focusedJournalEntry.journalEntryId}`;
+  }
 
-function sourceDocumentClientLabel(
-  sourceDocument: JournalEntrySourceDocument | undefined,
-  getSourceDocumentClientLabel: (sourceDocument: JournalEntrySourceDocument) => string
-): string {
-  return sourceDocument === undefined ? "-" : getSourceDocumentClientLabel(sourceDocument);
+  return "Manual voucher master and lines";
 }

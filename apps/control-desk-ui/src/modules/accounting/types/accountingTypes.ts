@@ -91,6 +91,9 @@ export type LedgerAccountCodeSuggestion = {
   rangeStart: string;
   rangeEnd: string;
   parentCode?: string | null;
+  parentAccountId?: string | null;
+  parentAccountCode?: string | null;
+  parentAccountName?: string | null;
 };
 
 export type LedgerAccountEditorInput = {
@@ -100,6 +103,85 @@ export type LedgerAccountEditorInput = {
   normalBalance: string;
   level: string;
   parentAccountId: string;
+  isPostingAccount: boolean;
+  status: string;
+};
+
+export type ChartOfAccountsImportTextPreview = {
+  companyCode: string;
+  format: string;
+  parsedLineCount: number;
+  ignoredLineCount: number;
+  canImport: boolean;
+  insertCount: number;
+  updateCount: number;
+  noChangeCount: number;
+  rejectCount: number;
+  warningCount: number;
+  issueCount: number;
+  parseIssues: ChartOfAccountsImportParseIssue[];
+  rows: ChartOfAccountsImportRow[];
+};
+
+export type ChartOfAccountsImportParseIssue = {
+  lineNumber: number;
+  column: string;
+  message: string;
+  rawValue?: string | null;
+};
+
+export type ChartOfAccountsImportRow = {
+  lineNumber: number;
+  action: string;
+  code: string;
+  displayCode: string;
+  name: string;
+  importedLevel?: string | null;
+  resolvedLevel: string;
+  type: string;
+  normalBalance: string;
+  isPostingAccount: boolean;
+  parentCode?: string | null;
+  parentAccountId?: string | null;
+  parentSource?: string | null;
+  currencyCode?: string | null;
+  existingLedgerAccountId?: string | null;
+  existingStatus?: string | null;
+  rangeRole?: string | null;
+  rangeDisplayName?: string | null;
+  issues: ChartOfAccountsImportIssue[];
+};
+
+export type ChartOfAccountsImportIssue = {
+  severity: string;
+  code: string;
+  message: string;
+};
+
+export type LedgerAccountCreateContext = {
+  rangeRole: string;
+  parentAccountId?: string;
+  level?: string;
+  isPostingAccount?: boolean;
+};
+
+export type StandardChartOfAccountsBootstrap = {
+  companyCode: string;
+  createdCount: number;
+  reusedCount: number;
+  accounts: StandardChartOfAccountsBootstrapItem[];
+};
+
+export type StandardChartOfAccountsBootstrapItem = {
+  ledgerAccountId: string;
+  role: string;
+  action: string;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  level: string;
+  parentAccountId?: string | null;
   isPostingAccount: boolean;
   status: string;
 };
@@ -118,6 +200,27 @@ export type AccountCodeRange = {
   isPostingAccount: boolean;
   parentCode?: string | null;
   isActive: boolean;
+};
+
+export type AccountCodeRangeValidation = {
+  companyCode: string;
+  rangeCount: number;
+  activeRangeCount: number;
+  isValid: boolean;
+  errorCount: number;
+  warningCount: number;
+  issueCount: number;
+  issues: AccountCodeRangeValidationIssue[];
+};
+
+export type AccountCodeRangeValidationIssue = {
+  severity: string;
+  code: string;
+  message: string;
+  rangeRole?: string | null;
+  relatedRangeRole?: string | null;
+  rangeStart?: string | null;
+  rangeEnd?: string | null;
 };
 
 export type AccountCodeRangeFormInput = {
@@ -148,6 +251,28 @@ export type AccountingControlSettings = {
 };
 
 export type AccountingControlAccount = {
+  ledgerAccountId: string;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  status: string;
+};
+
+export type OpeningBalanceProfile = {
+  companyCode: string;
+  fiscalYearFrom: string;
+  fiscalYearTo: string;
+  status: string;
+  transactionsAllowed: boolean;
+  profitAndLossCarryForwardAccountId?: string | null;
+  profitAndLossCarryForwardAccount?: OpeningBalanceProfileAccount | null;
+  isConfigured: boolean;
+  createdAtUtc?: string | null;
+  updatedAtUtc?: string | null;
+};
+
+export type OpeningBalanceProfileAccount = {
   ledgerAccountId: string;
   code: string;
   name: string;
@@ -327,6 +452,12 @@ export type JournalEntrySourceDocument = {
   label?: string | null;
   dashboardModule?: string | null;
   dashboardStep?: string | null;
+  fiscalYearFrom?: string | null;
+  fiscalYearTo?: string | null;
+  transactionsAllowed?: boolean | null;
+  profitAndLossCarryForwardAccountId?: string | null;
+  profitAndLossCarryForwardAccountCode?: string | null;
+  profitAndLossCarryForwardAccountName?: string | null;
   message?: string | null;
 };
 
@@ -383,8 +514,15 @@ export type OpeningBalanceImportInput = {
   currencyCode: string;
   sourceReference: string;
   memo: string;
+  profileFromDate: string;
+  profileToDate: string;
+  profileStatus: OpeningBalanceProfileStatus;
+  transactionsAllowed: boolean;
+  profitAndLossCarryForwardAccountId: string;
   lines: OpeningBalanceImportLineInput[];
 };
+
+export type OpeningBalanceProfileStatus = "open" | "closed";
 
 export type OpeningBalanceImportLineInput = {
   accountCode: string;
@@ -392,6 +530,11 @@ export type OpeningBalanceImportLineInput = {
   credit: string;
   description: string;
 };
+
+export type OpeningBalanceImportTemplateFormat =
+  | "standard"
+  | "legacy-access"
+  | "legacy-sql";
 
 export type OpeningBalanceImportPreview = {
   entryDate: string;

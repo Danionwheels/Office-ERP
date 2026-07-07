@@ -240,11 +240,19 @@ export function createDefaultManualJournalEntryForm(
 export function createDefaultOpeningBalanceImportForm(
   value = new Date()
 ): OpeningBalanceImportInput {
+  const profileFromDate = new Date(value.getFullYear(), 0, 1);
+  const profileToDate = new Date(value.getFullYear(), 11, 31);
+
   return {
     entryDate: toDateInputValue(value),
     currencyCode: accountingCurrencyCode,
     sourceReference: "",
     memo: "Opening balance import",
+    profileFromDate: toDateInputValue(profileFromDate),
+    profileToDate: toDateInputValue(profileToDate),
+    profileStatus: "open",
+    transactionsAllowed: true,
+    profitAndLossCarryForwardAccountId: "",
     lines: [
       {
         accountCode: "",

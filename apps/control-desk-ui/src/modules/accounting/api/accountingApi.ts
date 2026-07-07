@@ -2,6 +2,7 @@ import { apiRequest } from "../../../shared/api/httpClient";
 import type {
   AccountCodeRange,
   AccountCodeRangeFormInput,
+  AccountCodeRangeValidation,
   AccountingControlSettings,
   AccountingControlSettingsInput,
   AccountingPeriod,
@@ -10,6 +11,7 @@ import type {
   AccountingPeriodFormInput,
   BalanceSheet,
   BalanceSheetFilters,
+  ChartOfAccountsImportTextPreview,
   JournalEntryFilters,
   JournalEntrySourceDocument,
   JournalEntrySummary,
@@ -26,8 +28,10 @@ import type {
   OpeningBalanceImportInput,
   OpeningBalanceImportPreview,
   OpeningBalanceImportTextPreview,
+  OpeningBalanceProfile,
   ProfitAndLossStatement,
   ProfitAndLossStatementFilters,
+  StandardChartOfAccountsBootstrap,
   TrialBalance,
   TrialBalanceFilters,
   VoucherNumberingRule,
@@ -45,10 +49,14 @@ type LedgerAccountReconciliationResponse = LedgerAccountReconciliation;
 
 type LedgerAccountRepairPlanResponse = LedgerAccountRepairPlan;
 
+type AccountCodeRangeValidationResponse = AccountCodeRangeValidation;
+
 type ListAccountCodeRangesResponse = {
   companyCode: string;
   ranges: AccountCodeRange[];
 };
+
+type BootstrapStandardChartOfAccountsResponse = StandardChartOfAccountsBootstrap;
 
 type ListAccountingPeriodsResponse = {
   companyCode: string;
@@ -77,6 +85,8 @@ type LedgerAccountWriteResponse = {
   createdAtUtc?: string;
 };
 
+type PreviewChartOfAccountsImportTextResponse = ChartOfAccountsImportTextPreview;
+
 export async function listLedgerAccounts(
   filters: LedgerAccountFilters
 ): Promise<LedgerAccountSummary[]> {
@@ -86,6 +96,7 @@ export async function listLedgerAccounts(
   setQuery(query, "type", filters.type);
   setQuery(query, "status", filters.status);
   setQuery(query, "role", filters.role);
+  setQuery(query, "viewMode", filters.viewMode);
 
   if (filters.posting === "posting") {
     query.set("isPostingAccount", "true");
@@ -165,13 +176,33 @@ export async function updateLedgerAccount(
 
 export async function suggestLedgerAccountCode(
   role: string,
-  companyCode: string
+  companyCode: string,
+  parentAccountId?: string
 ): Promise<LedgerAccountCodeSuggestion> {
   const query = new URLSearchParams({ role });
   setQuery(query, "companyCode", companyCode);
+  setQuery(query, "parentAccountId", parentAccountId);
 
   return apiRequest<LedgerAccountCodeSuggestion>(
     `/api/v1/accounting/ledger-accounts/suggest-code?${query.toString()}`
+  );
+}
+
+export async function previewChartOfAccountsImportText(
+  companyCode: string,
+  importText: string,
+  delimiter: string
+): Promise<ChartOfAccountsImportTextPreview> {
+  return apiRequest<PreviewChartOfAccountsImportTextResponse>(
+    "/api/v1/accounting/ledger-accounts/import-preview",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        companyCode: optionalText(companyCode),
+        importText,
+        delimiter: optionalText(delimiter)
+      })
+    }
   );
 }
 
@@ -185,6 +216,33 @@ export async function listAccountCodeRanges(companyCode: string): Promise<Accoun
   );
 
   return response.ranges;
+}
+
+export async function getAccountCodeRangeValidation(
+  companyCode: string
+): Promise<AccountCodeRangeValidation> {
+  const query = new URLSearchParams();
+  setQuery(query, "companyCode", companyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
+  return apiRequest<AccountCodeRangeValidationResponse>(
+    `/api/v1/accounting/accounting-setup/account-code-ranges/validation${suffix}`
+  );
+}
+
+export async function bootstrapStandardChartOfAccounts(
+  companyCode: string
+): Promise<StandardChartOfAccountsBootstrap> {
+  return apiRequest<BootstrapStandardChartOfAccountsResponse>(
+    "/api/v1/accounting/accounting-setup/standard-chart-of-accounts",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        companyCode: optionalText(companyCode)
+      })
+    }
+  );
 }
 
 export async function getAccountingControlSettings(
@@ -211,6 +269,41 @@ export async function configureAccountingControlSettings(
       roundingAccountId: optionalText(input.roundingAccountId)
     })
   });
+}
+
+export async function getOpeningBalanceProfile(
+  companyCode: string
+): Promise<OpeningBalanceProfile> {
+  const query = new URLSearchParams();
+  setQuery(query, "companyCode", companyCode);
+
+  const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
+
+  return apiRequest<OpeningBalanceProfile>(
+    `/api/v1/accounting/accounting-setup/opening-balance-profile${suffix}`
+  );
+}
+
+export async function configureOpeningBalanceProfile(
+  companyCode: string,
+  input: OpeningBalanceImportInput
+): Promise<OpeningBalanceProfile> {
+  return apiRequest<OpeningBalanceProfile>(
+    "/api/v1/accounting/accounting-setup/opening-balance-profile",
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        companyCode: optionalText(companyCode),
+        fiscalYearFrom: input.profileFromDate,
+        fiscalYearTo: input.profileToDate,
+        status: input.profileStatus,
+        transactionsAllowed: input.transactionsAllowed,
+        profitAndLossCarryForwardAccountId: optionalText(
+          input.profitAndLossCarryForwardAccountId
+        )
+      })
+    }
+  );
 }
 
 export async function configureDefaultAccountingControlSettings(
@@ -398,6 +491,13 @@ export async function previewOpeningBalanceImport(
         currencyCode: input.currencyCode,
         sourceReference: optionalText(input.sourceReference),
         memo: optionalText(input.memo),
+        profileFromDate: input.profileFromDate,
+        profileToDate: input.profileToDate,
+        profileStatus: input.profileStatus,
+        transactionsAllowed: input.transactionsAllowed,
+        profitAndLossCarryForwardAccountId: optionalText(
+          input.profitAndLossCarryForwardAccountId
+        ),
         lines: input.lines.map((line) => ({
           accountCode: line.accountCode,
           debit: amountOrZero(line.debit),
@@ -423,6 +523,13 @@ export async function previewOpeningBalanceImportText(
         currencyCode: input.currencyCode,
         sourceReference: optionalText(input.sourceReference),
         memo: optionalText(input.memo),
+        profileFromDate: input.profileFromDate,
+        profileToDate: input.profileToDate,
+        profileStatus: input.profileStatus,
+        transactionsAllowed: input.transactionsAllowed,
+        profitAndLossCarryForwardAccountId: optionalText(
+          input.profitAndLossCarryForwardAccountId
+        ),
         importText,
         delimiter: optionalText(delimiter)
       })
@@ -442,6 +549,13 @@ export async function postOpeningBalanceImport(
         currencyCode: input.currencyCode,
         sourceReference: optionalText(input.sourceReference),
         memo: optionalText(input.memo),
+        profileFromDate: input.profileFromDate,
+        profileToDate: input.profileToDate,
+        profileStatus: input.profileStatus,
+        transactionsAllowed: input.transactionsAllowed,
+        profitAndLossCarryForwardAccountId: optionalText(
+          input.profitAndLossCarryForwardAccountId
+        ),
         lines: input.lines.map((line) => ({
           accountCode: line.accountCode,
           debit: amountOrZero(line.debit),
@@ -556,8 +670,8 @@ export async function configureAccountCodeRange(
   );
 }
 
-function setQuery(query: URLSearchParams, key: string, value: string) {
-  const trimmed = value.trim();
+function setQuery(query: URLSearchParams, key: string, value?: string) {
+  const trimmed = value?.trim() ?? "";
 
   if (trimmed !== "") {
     query.set(key, trimmed);
