@@ -18,6 +18,8 @@ import type {
   ProviderAccessOperatorRecoveryCodesResult,
   ProviderAccessOperatorScopesInput,
   ProviderAccessOperatorStatusInput,
+  ProviderAccessOperatorTotpEnrollmentResult,
+  ProviderAccessOperatorTotpInput,
   ProviderAccessPasswordChangeInput,
   ProviderAccessSession,
   ProviderAccessSessionCreateInput,
@@ -266,7 +268,8 @@ export async function createProviderAccessOperatorSession(
         password: input.password,
         scopes: input.scopes,
         expiresInMinutes: input.expiresInMinutes,
-        recoveryCode: input.recoveryCode?.trim() || null
+        recoveryCode: input.recoveryCode?.trim() || null,
+        totpCode: input.totpCode?.trim() || null
       })
     }
   );
@@ -332,6 +335,21 @@ export async function resetProviderAccessOperatorRecoveryCodes(
       method: "POST",
       body: JSON.stringify({
         count: input.count,
+        updatedBy: input.updatedBy.trim()
+      })
+    }
+  );
+}
+
+export async function resetProviderAccessOperatorTotp(
+  userId: string,
+  input: ProviderAccessOperatorTotpInput
+): Promise<ProviderAccessOperatorTotpEnrollmentResult> {
+  return apiRequest<ProviderAccessOperatorTotpEnrollmentResult>(
+    `/api/v1/control-cloud/provider-access/operators/${encodeURIComponent(userId)}/totp`,
+    {
+      method: "POST",
+      body: JSON.stringify({
         updatedBy: input.updatedBy.trim()
       })
     }

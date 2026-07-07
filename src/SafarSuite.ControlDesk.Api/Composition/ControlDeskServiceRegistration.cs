@@ -100,6 +100,7 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingClou
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.QueueCloudInstallationSupportCommand;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorPassword;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorRecoveryCodes;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorTotp;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.RevokeCloudAppActivationIssue;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorScopes;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorStatus;
@@ -260,6 +261,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<ChangeProviderAccessOperatorPasswordHandler>();
         services.AddScoped<ResetProviderAccessOperatorPasswordHandler>();
         services.AddScoped<ResetProviderAccessOperatorRecoveryCodesHandler>();
+        services.AddScoped<ResetProviderAccessOperatorTotpHandler>();
         services.AddScoped<UpdateProviderAccessOperatorScopesHandler>();
         services.AddScoped<UpdateProviderAccessOperatorStatusHandler>();
         services.AddScoped<CreateCloudInstallationSetupTokenHandler>();

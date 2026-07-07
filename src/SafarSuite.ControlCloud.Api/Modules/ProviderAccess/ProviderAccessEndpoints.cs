@@ -27,6 +27,8 @@ public static class ProviderAccessEndpoints
             .WithName("ResetProviderAccessOperatorPassword");
         group.MapPost("/operators/{userId}/recovery-codes", ResetOperatorRecoveryCodesAsync)
             .WithName("ResetProviderAccessOperatorRecoveryCodes");
+        group.MapPost("/operators/{userId}/totp", ResetOperatorTotpAsync)
+            .WithName("ResetProviderAccessOperatorTotp");
         group.MapPost("/operators/{userId}/scopes", UpdateOperatorScopesAsync)
             .WithName("UpdateProviderAccessOperatorScopes");
         group.MapPost("/operators/{userId}/status", UpdateOperatorStatusAsync)
@@ -68,6 +70,7 @@ public static class ProviderAccessEndpoints
             request.Scopes,
             request.ExpiresInMinutes,
             request.RecoveryCode,
+            request.TotpCode,
             cancellationToken);
 
         await RecordAuditAsync(
@@ -535,6 +538,63 @@ public static class ProviderAccessEndpoints
             recoveryCodes));
     }
 
+    private static async Task<IResult> ResetOperatorTotpAsync(
+        string userId,
+        ResetProviderOperatorTotpRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService sessions,
+        IProviderAccessOperatorStore operators,
+        IClientPortalAuditRecorder audit,
+        IControlCloudClock clock,
+        CancellationToken cancellationToken)
+    {
+        var authorization = sessions.Authorize(
+            httpRequest,
+            ProviderAccessScopes.ProviderOperatorsManage);
+
+        if (!authorization.IsSuccess)
+        {
+            return ToAuthorizationFailure(authorization);
+        }
+
+        var providerOperator = await operators.GetByUserIdAsync(userId, cancellationToken);
+
+        if (providerOperator is null)
+        {
+            return OperatorNotFound();
+        }
+
+        var actor = NormalizeActor(request.UpdatedBy, authorization.Principal!.Actor);
+        var secret = ProviderAccessTotp.CreateSecret();
+
+        providerOperator.TotpSecret = secret;
+        providerOperator.TotpEnabledAtUtc ??= clock.UtcNow;
+        providerOperator.TotpUpdatedAtUtc = clock.UtcNow;
+        providerOperator.TotpUpdatedBy = actor;
+        providerOperator.LastTotpUsedAtUtc = null;
+        providerOperator.LastTotpStep = null;
+        providerOperator.UpdatedAtUtc = clock.UtcNow;
+        providerOperator.UpdatedBy = actor;
+
+        await operators.SaveAsync(providerOperator, cancellationToken);
+        await RecordAuditAsync(
+            audit,
+            ClientPortalAuditEventTypes.ProviderOperatorTotpReset,
+            providerOperator.Email,
+            actor,
+            "Provider operator TOTP enrollment was reset.",
+            clock,
+            cancellationToken);
+
+        return Results.Ok(new ProviderOperatorTotpEnrollmentResponse(
+            ToResponse(providerOperator),
+            secret,
+            ProviderAccessTotp.CreateOtpAuthUri(
+                "SafarSuite Provider",
+                providerOperator.Email,
+                secret)));
+    }
+
     private static IResult ToAuthorizationFailure(ProviderAccessAuthorizationResult authorization)
     {
         return Results.Json(
@@ -585,7 +645,13 @@ public static class ProviderAccessEndpoints
             providerOperator.UpdatedAtUtc,
             providerOperator.UpdatedBy,
             providerOperator.LastLoginAtUtc,
-            providerOperator.RecoveryCodesUpdatedAtUtc is not null,
+            providerOperator.RecoveryCodesUpdatedAtUtc is not null
+                || !string.IsNullOrWhiteSpace(providerOperator.TotpSecret),
+            !string.IsNullOrWhiteSpace(providerOperator.TotpSecret),
+            providerOperator.TotpEnabledAtUtc,
+            providerOperator.TotpUpdatedAtUtc,
+            providerOperator.TotpUpdatedBy,
+            providerOperator.LastTotpUsedAtUtc,
             providerOperator.RecoveryCodeHashes.Length,
             providerOperator.RecoveryCodesUpdatedAtUtc,
             providerOperator.RecoveryCodesUpdatedBy,
@@ -692,7 +758,8 @@ public static class ProviderAccessEndpoints
         string Password,
         string[]? Scopes = null,
         int? ExpiresInMinutes = null,
-        string? RecoveryCode = null);
+        string? RecoveryCode = null,
+        string? TotpCode = null);
 
     public sealed record ChangeProviderOperatorPasswordRequest(
         string Email,
@@ -721,6 +788,11 @@ public static class ProviderAccessEndpoints
         string? UpdatedBy,
         DateTimeOffset? LastLoginAtUtc,
         bool MfaEnabled,
+        bool TotpEnabled,
+        DateTimeOffset? TotpEnabledAtUtc,
+        DateTimeOffset? TotpUpdatedAtUtc,
+        string? TotpUpdatedBy,
+        DateTimeOffset? LastTotpUsedAtUtc,
         int RecoveryCodeCount,
         DateTimeOffset? RecoveryCodesUpdatedAtUtc,
         string? RecoveryCodesUpdatedBy,
@@ -729,6 +801,11 @@ public static class ProviderAccessEndpoints
     public sealed record ProviderOperatorRecoveryCodesResponse(
         ProviderAccessOperatorResponse Operator,
         IReadOnlyCollection<string> RecoveryCodes);
+
+    public sealed record ProviderOperatorTotpEnrollmentResponse(
+        ProviderAccessOperatorResponse Operator,
+        string Secret,
+        string OtpAuthUri);
 
     public sealed record CreateProviderOperatorRequest(
         string Email,
@@ -743,6 +820,9 @@ public static class ProviderAccessEndpoints
 
     public sealed record ResetProviderOperatorRecoveryCodesRequest(
         int? Count = null,
+        string? UpdatedBy = null);
+
+    public sealed record ResetProviderOperatorTotpRequest(
         string? UpdatedBy = null);
 
     public sealed record UpdateProviderOperatorScopesRequest(

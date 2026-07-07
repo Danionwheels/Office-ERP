@@ -29,6 +29,11 @@ public interface IControlCloudProviderAccessClient
         ResetProviderOperatorRecoveryCodesRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<ControlCloudProviderOperatorTotpClientResult> ResetOperatorTotpAsync(
+        string userId,
+        ResetProviderOperatorTotpRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<ControlCloudProviderOperatorClientResult> UpdateOperatorScopesAsync(
         string userId,
         UpdateProviderOperatorScopesRequest request,
@@ -194,6 +199,46 @@ public sealed class ControlCloudProviderOperatorRecoveryCodesClientResult
         string detail)
     {
         return new ControlCloudProviderOperatorRecoveryCodesClientResult(
+            response: null,
+            failureCode,
+            detail);
+    }
+}
+
+public sealed class ControlCloudProviderOperatorTotpClientResult
+{
+    private ControlCloudProviderOperatorTotpClientResult(
+        ProviderOperatorTotpEnrollmentResponse? response,
+        string? failureCode,
+        string? detail)
+    {
+        Response = response;
+        FailureCode = failureCode;
+        Detail = detail;
+    }
+
+    public bool IsSuccess => Response is not null;
+
+    public ProviderOperatorTotpEnrollmentResponse? Response { get; }
+
+    public string? FailureCode { get; }
+
+    public string? Detail { get; }
+
+    public static ControlCloudProviderOperatorTotpClientResult Success(
+        ProviderOperatorTotpEnrollmentResponse response)
+    {
+        return new ControlCloudProviderOperatorTotpClientResult(
+            response,
+            failureCode: null,
+            detail: null);
+    }
+
+    public static ControlCloudProviderOperatorTotpClientResult Failure(
+        string failureCode,
+        string detail)
+    {
+        return new ControlCloudProviderOperatorTotpClientResult(
             response: null,
             failureCode,
             detail);

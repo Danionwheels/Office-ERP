@@ -185,6 +185,12 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
             RecoveryCodesUpdatedAtUtc = entity.RecoveryCodesUpdatedAtUtc,
             RecoveryCodesUpdatedBy = entity.RecoveryCodesUpdatedBy,
             LastRecoveryCodeUsedAtUtc = entity.LastRecoveryCodeUsedAtUtc,
+            TotpSecret = entity.TotpSecret,
+            TotpEnabledAtUtc = entity.TotpEnabledAtUtc,
+            TotpUpdatedAtUtc = entity.TotpUpdatedAtUtc,
+            TotpUpdatedBy = entity.TotpUpdatedBy,
+            LastTotpUsedAtUtc = entity.LastTotpUsedAtUtc,
+            LastTotpStep = entity.LastTotpStep,
             CreatedAtUtc = entity.CreatedAtUtc,
             CreatedBy = entity.CreatedBy,
             UpdatedAtUtc = entity.UpdatedAtUtc,
@@ -214,6 +220,16 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
             ? null
             : providerOperator.RecoveryCodesUpdatedBy.Trim();
         entity.LastRecoveryCodeUsedAtUtc = providerOperator.LastRecoveryCodeUsedAtUtc;
+        entity.TotpSecret = string.IsNullOrWhiteSpace(providerOperator.TotpSecret)
+            ? null
+            : providerOperator.TotpSecret.Trim();
+        entity.TotpEnabledAtUtc = providerOperator.TotpEnabledAtUtc;
+        entity.TotpUpdatedAtUtc = providerOperator.TotpUpdatedAtUtc;
+        entity.TotpUpdatedBy = string.IsNullOrWhiteSpace(providerOperator.TotpUpdatedBy)
+            ? null
+            : providerOperator.TotpUpdatedBy.Trim();
+        entity.LastTotpUsedAtUtc = providerOperator.LastTotpUsedAtUtc;
+        entity.LastTotpStep = providerOperator.LastTotpStep;
         entity.CreatedAtUtc = providerOperator.CreatedAtUtc;
         entity.CreatedBy = providerOperator.CreatedBy.Trim();
         entity.UpdatedAtUtc = providerOperator.UpdatedAtUtc;

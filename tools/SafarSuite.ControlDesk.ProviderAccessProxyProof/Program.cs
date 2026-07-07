@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework;
@@ -239,6 +242,19 @@ try
         "recovery-code reset should enable MFA and return one-time recovery codes.");
     checks.Add("reset provider recovery codes through Control Desk session override");
 
+    var totpEnrollment = await SendJsonAsync<ProviderOperatorTotpEnrollmentResponse>(
+        managerSessionControlDeskHttp,
+        HttpMethod.Post,
+        $"api/v1/control-cloud/provider-access/operators/{Uri.EscapeDataString(createdOperator.UserId)}/totp",
+        new ResetProviderOperatorTotpRequest("control-desk-proxy-proof"));
+    Require(
+        totpEnrollment.Operator.MfaEnabled
+        && totpEnrollment.Operator.TotpEnabled
+        && !string.IsNullOrWhiteSpace(totpEnrollment.Secret)
+        && totpEnrollment.OtpAuthUri.StartsWith("otpauth://totp/", StringComparison.Ordinal),
+        "TOTP reset should enable provider MFA and return one-time enrollment material.");
+    checks.Add("reset provider TOTP through Control Desk session override");
+
     var selfChangedOperator = await SendJsonAsync<ProviderAccessOperatorResponse>(
         controlDeskHttp,
         HttpMethod.Post,
@@ -261,9 +277,10 @@ try
             changedPassword,
             [ProviderAccessScopes.ProviderOperatorsManage],
             15,
-            recoveryCodes.RecoveryCodes.First()));
+            RecoveryCode: null,
+            TotpCode: ProofTotp.CreateCode(totpEnrollment.Secret, DateTimeOffset.UtcNow)));
     RequireBearerSession(changedPasswordSession, ProviderAccessScopes.ProviderOperatorsManage);
-    checks.Add("minted provider bearer session with self-changed password and recovery code");
+    checks.Add("minted provider bearer session with self-changed password and TOTP");
 
     await VerifyPersistedOperatorAsync(
         options.ConnectionString,
@@ -778,12 +795,79 @@ internal static class ProofJson
     };
 }
 
+internal static class ProofTotp
+{
+    private const string Base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    private const int Digits = 6;
+    private const int PeriodSeconds = 30;
+
+    public static string CreateCode(
+        string secret,
+        DateTimeOffset now)
+    {
+        var secretBytes = DecodeBase32(secret);
+        var counter = BitConverter.GetBytes(now.ToUnixTimeSeconds() / PeriodSeconds);
+
+        if (BitConverter.IsLittleEndian)
+        {
+            Array.Reverse(counter);
+        }
+
+        using var hmac = new HMACSHA1(secretBytes);
+        var hash = hmac.ComputeHash(counter);
+        var offset = hash[^1] & 0x0f;
+        var binaryCode =
+            ((hash[offset] & 0x7f) << 24)
+            | ((hash[offset + 1] & 0xff) << 16)
+            | ((hash[offset + 2] & 0xff) << 8)
+            | (hash[offset + 3] & 0xff);
+
+        return (binaryCode % (int)Math.Pow(10, Digits))
+            .ToString($"D{Digits}", CultureInfo.InvariantCulture);
+    }
+
+    private static byte[] DecodeBase32(string secret)
+    {
+        var normalizedSecret = new string(secret
+            .Where(character => !char.IsWhiteSpace(character) && character is not '-' and not '=')
+            .Select(character => char.ToUpperInvariant(character))
+            .ToArray());
+        var bytes = new List<byte>();
+        var buffer = 0;
+        var bitsLeft = 0;
+
+        foreach (var character in normalizedSecret)
+        {
+            var value = Base32Alphabet.IndexOf(character);
+
+            if (value < 0)
+            {
+                throw new FormatException("TOTP secret is not base32 encoded.");
+            }
+
+            buffer = (buffer << 5) | value;
+            bitsLeft += 5;
+
+            if (bitsLeft < 8)
+            {
+                continue;
+            }
+
+            bytes.Add((byte)((buffer >> (bitsLeft - 8)) & 0xff));
+            bitsLeft -= 8;
+        }
+
+        return bytes.ToArray();
+    }
+}
+
 internal sealed record CreateProviderOperatorSessionRequest(
     string Email,
     string Password,
     string[]? Scopes = null,
     int? ExpiresInMinutes = null,
-    string? RecoveryCode = null);
+    string? RecoveryCode = null,
+    string? TotpCode = null);
 
 internal sealed record ChangeProviderOperatorPasswordRequest(
     string Email,

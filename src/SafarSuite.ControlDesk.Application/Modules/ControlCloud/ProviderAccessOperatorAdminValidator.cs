@@ -110,6 +110,18 @@ internal static class ProviderAccessOperatorAdminValidator
         return errors;
     }
 
+    public static IReadOnlyCollection<ApplicationError> ValidateTotpReset(
+        string userId,
+        string? actor)
+    {
+        var errors = new List<ApplicationError>();
+
+        AddRequiredText(errors, nameof(userId), userId, 120);
+        AddOptionalText(errors, nameof(actor), actor, 120);
+
+        return errors;
+    }
+
     public static IReadOnlyCollection<ApplicationError> ValidateScopes(
         string userId,
         IEnumerable<string>? scopes,
@@ -168,8 +180,8 @@ internal static class ProviderAccessOperatorAdminValidator
             "ProviderOperatorScopesUnsupported" => ApplicationError.Validation("scopes", message),
             "ProviderOperatorStatusUnsupported" => ApplicationError.Validation("status", message),
             "ProviderCredentialsInvalid" => ApplicationError.Validation(credentialTarget, message),
-            "ProviderMfaRequired" => ApplicationError.Validation("recoveryCode", message),
-            "ProviderMfaInvalid" => ApplicationError.Validation("recoveryCode", message),
+            "ProviderMfaRequired" => ApplicationError.Validation("totpCode", message),
+            "ProviderMfaInvalid" => ApplicationError.Validation("totpCode", message),
             "ProviderMfaUnavailable" => ApplicationError.Validation("recoveryCode", message),
             "ProviderAccessDenied" => ApplicationError.ServiceUnavailable(message),
             "ProviderAccessNotConfigured" => ApplicationError.ServiceUnavailable(message),

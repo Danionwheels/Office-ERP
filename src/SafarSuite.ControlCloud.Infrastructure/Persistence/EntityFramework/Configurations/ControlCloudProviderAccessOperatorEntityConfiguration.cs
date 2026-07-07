@@ -52,6 +52,20 @@ public sealed class ControlCloudProviderAccessOperatorEntityConfiguration
             .HasMaxLength(120);
         builder.Property(providerOperator => providerOperator.LastRecoveryCodeUsedAtUtc)
             .HasColumnName("last_recovery_code_used_at_utc");
+        builder.Property(providerOperator => providerOperator.TotpSecret)
+            .HasColumnName("totp_secret")
+            .HasMaxLength(128);
+        builder.Property(providerOperator => providerOperator.TotpEnabledAtUtc)
+            .HasColumnName("totp_enabled_at_utc");
+        builder.Property(providerOperator => providerOperator.TotpUpdatedAtUtc)
+            .HasColumnName("totp_updated_at_utc");
+        builder.Property(providerOperator => providerOperator.TotpUpdatedBy)
+            .HasColumnName("totp_updated_by")
+            .HasMaxLength(120);
+        builder.Property(providerOperator => providerOperator.LastTotpUsedAtUtc)
+            .HasColumnName("last_totp_used_at_utc");
+        builder.Property(providerOperator => providerOperator.LastTotpStep)
+            .HasColumnName("last_totp_step");
         builder.Property(providerOperator => providerOperator.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .IsRequired();

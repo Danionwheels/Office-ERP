@@ -22,6 +22,18 @@ public sealed class ProviderAccessOperator
 
     public DateTimeOffset? LastRecoveryCodeUsedAtUtc { get; set; }
 
+    public string? TotpSecret { get; set; }
+
+    public DateTimeOffset? TotpEnabledAtUtc { get; set; }
+
+    public DateTimeOffset? TotpUpdatedAtUtc { get; set; }
+
+    public string? TotpUpdatedBy { get; set; }
+
+    public DateTimeOffset? LastTotpUsedAtUtc { get; set; }
+
+    public long? LastTotpStep { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public string CreatedBy { get; set; } = "";

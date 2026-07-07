@@ -8,7 +8,8 @@ public sealed record CreateProviderOperatorSessionRequest(
     string Password,
     string[]? Scopes = null,
     int? ExpiresInMinutes = null,
-    string? RecoveryCode = null);
+    string? RecoveryCode = null,
+    string? TotpCode = null);
 
 public sealed record ChangeProviderOperatorPasswordRequest(
     string Email,
@@ -34,6 +35,11 @@ public sealed record ProviderAccessOperatorResponse(
     string? UpdatedBy,
     DateTimeOffset? LastLoginAtUtc,
     bool MfaEnabled,
+    bool TotpEnabled,
+    DateTimeOffset? TotpEnabledAtUtc,
+    DateTimeOffset? TotpUpdatedAtUtc,
+    string? TotpUpdatedBy,
+    DateTimeOffset? LastTotpUsedAtUtc,
     int RecoveryCodeCount,
     DateTimeOffset? RecoveryCodesUpdatedAtUtc,
     string? RecoveryCodesUpdatedBy,
@@ -42,6 +48,11 @@ public sealed record ProviderAccessOperatorResponse(
 public sealed record ProviderOperatorRecoveryCodesResponse(
     ProviderAccessOperatorResponse Operator,
     IReadOnlyCollection<string> RecoveryCodes);
+
+public sealed record ProviderOperatorTotpEnrollmentResponse(
+    ProviderAccessOperatorResponse Operator,
+    string Secret,
+    string OtpAuthUri);
 
 public sealed record CreateProviderOperatorRequest(
     string Email,
@@ -56,6 +67,9 @@ public sealed record ResetProviderOperatorPasswordRequest(
 
 public sealed record ResetProviderOperatorRecoveryCodesRequest(
     int? Count = null,
+    string? UpdatedBy = null);
+
+public sealed record ResetProviderOperatorTotpRequest(
     string? UpdatedBy = null);
 
 public sealed record UpdateProviderOperatorScopesRequest(

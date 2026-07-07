@@ -114,6 +114,11 @@ export type ProviderAccessOperator = {
   updatedBy: string | null;
   lastLoginAtUtc: string | null;
   mfaEnabled?: boolean;
+  totpEnabled?: boolean;
+  totpEnabledAtUtc?: string | null;
+  totpUpdatedAtUtc?: string | null;
+  totpUpdatedBy?: string | null;
+  lastTotpUsedAtUtc?: string | null;
   recoveryCodeCount?: number;
   recoveryCodesUpdatedAtUtc?: string | null;
   recoveryCodesUpdatedBy?: string | null;
@@ -134,6 +139,7 @@ export type ProviderAccessSessionCreateInput = {
   scopes: string[];
   expiresInMinutes: number;
   recoveryCode?: string;
+  totpCode?: string;
 };
 
 export type ProviderAccessPasswordChangeInput = {
@@ -163,6 +169,16 @@ export type ProviderAccessOperatorRecoveryCodesInput = {
 export type ProviderAccessOperatorRecoveryCodesResult = {
   operator: ProviderAccessOperator;
   recoveryCodes: string[];
+};
+
+export type ProviderAccessOperatorTotpInput = {
+  updatedBy: string;
+};
+
+export type ProviderAccessOperatorTotpEnrollmentResult = {
+  operator: ProviderAccessOperator;
+  secret: string;
+  otpAuthUri: string;
 };
 
 export type ProviderAccessOperatorScopesInput = {

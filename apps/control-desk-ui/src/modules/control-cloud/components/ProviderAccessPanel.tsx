@@ -24,6 +24,7 @@ import {
   listProviderAccessOperators,
   resetProviderAccessOperatorPassword,
   resetProviderAccessOperatorRecoveryCodes,
+  resetProviderAccessOperatorTotp,
   updateProviderAccessOperatorScopes,
   updateProviderAccessOperatorStatus
 } from "../api/controlCloudApi";
@@ -82,6 +83,7 @@ const emptySessionForm: ProviderAccessSessionCreateInput = {
   email: "",
   password: "",
   recoveryCode: "",
+  totpCode: "",
   scopes: ["provider-operators:manage"],
   expiresInMinutes: 60
 };
@@ -112,6 +114,10 @@ export function ProviderAccessPanel() {
   const [passwordDraft, setPasswordDraft] = useState("");
   const [recoveryCodeCount, setRecoveryCodeCount] = useState(10);
   const [generatedRecoveryCodes, setGeneratedRecoveryCodes] = useState<string[]>([]);
+  const [generatedTotpEnrollment, setGeneratedTotpEnrollment] = useState<{
+    secret: string;
+    otpAuthUri: string;
+  } | null>(null);
   const [updatedBy, setUpdatedBy] = useState("SafarSuite Control Desk");
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -159,8 +165,12 @@ export function ProviderAccessPanel() {
     setScopeDraft(selectedOperator.scopes);
     setStatusDraft(selectedOperator.status);
     setPasswordDraft("");
-    setGeneratedRecoveryCodes([]);
   }, [selectedOperator]);
+
+  useEffect(() => {
+    setGeneratedRecoveryCodes([]);
+    setGeneratedTotpEnrollment(null);
+  }, [selectedUserId]);
 
   async function handleCreateSession() {
     await runPanelAction(async () => {
@@ -181,7 +191,8 @@ export function ProviderAccessPanel() {
       setSessionForm({
         ...sessionForm,
         password: "",
-        recoveryCode: ""
+        recoveryCode: "",
+        totpCode: ""
       });
       setMessage(`Signed in provider operator ${createdSession.actor}.`);
 
@@ -318,7 +329,28 @@ export function ProviderAccessPanel() {
       setOperators(upsertOperator(operators, result.operator));
       setSelectedUserId(result.operator.userId);
       setGeneratedRecoveryCodes(result.recoveryCodes);
+      setGeneratedTotpEnrollment(null);
       setMessage(`Recovery codes reset for ${result.operator.email}.`);
+    });
+  }
+
+  async function handleResetTotp() {
+    if (selectedOperator === null) {
+      return;
+    }
+
+    await runPanelAction(async () => {
+      const result = await resetProviderAccessOperatorTotp(selectedOperator.userId, {
+        updatedBy
+      });
+      setOperators(upsertOperator(operators, result.operator));
+      setSelectedUserId(result.operator.userId);
+      setGeneratedRecoveryCodes([]);
+      setGeneratedTotpEnrollment({
+        secret: result.secret,
+        otpAuthUri: result.otpAuthUri
+      });
+      setMessage(`TOTP reset for ${result.operator.email}.`);
     });
   }
 
@@ -403,6 +435,20 @@ export function ProviderAccessPanel() {
                 onChange={(event) => setSessionForm({
                   ...sessionForm,
                   recoveryCode: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>TOTP code</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={sessionForm.totpCode ?? ""}
+                disabled={isBusy}
+                maxLength={12}
+                onChange={(event) => setSessionForm({
+                  ...sessionForm,
+                  totpCode: event.target.value
                 })}
               />
             </label>
@@ -695,7 +741,7 @@ export function ProviderAccessPanel() {
                 </div>
                 <div>
                   <dt>MFA</dt>
-                  <dd>{selectedOperator.mfaEnabled ? `${selectedOperator.recoveryCodeCount ?? 0} codes` : "Not enabled"}</dd>
+                  <dd>{formatMfaSummary(selectedOperator)}</dd>
                 </div>
               </dl>
 
@@ -817,6 +863,30 @@ export function ProviderAccessPanel() {
                   ))}
                 </div>
               )}
+
+              <div className="provider-access-status-row">
+                <label className="provider-access-checkbox-state">
+                  <span>TOTP</span>
+                  <input type="checkbox" checked={selectedOperator.totpEnabled === true} readOnly />
+                </label>
+                <button
+                  className="icon-button"
+                  type="button"
+                  disabled={isBusy || updatedBy.trim() === ""}
+                  onClick={handleResetTotp}
+                  title="Reset provider operator TOTP"
+                >
+                  <ShieldCheck size={16} />
+                  Reset TOTP
+                </button>
+              </div>
+
+              {generatedTotpEnrollment !== null && (
+                <div className="provider-access-totp-enrollment">
+                  <code>{generatedTotpEnrollment.secret}</code>
+                  <code>{generatedTotpEnrollment.otpAuthUri}</code>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -920,6 +990,20 @@ function formatScopes(scopes: string[]): string {
   return scopes.some((scope) => scope === "*")
     ? "All scopes"
     : scopes.join(", ");
+}
+
+function formatMfaSummary(providerOperator: ProviderAccessOperator): string {
+  const parts: string[] = [];
+
+  if (providerOperator.totpEnabled === true) {
+    parts.push("TOTP");
+  }
+
+  if ((providerOperator.recoveryCodeCount ?? 0) > 0) {
+    parts.push(`${providerOperator.recoveryCodeCount} codes`);
+  }
+
+  return parts.length > 0 ? parts.join(" + ") : "Not enabled";
 }
 
 function toPanelError(caughtError: unknown): string {

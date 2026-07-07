@@ -5,4 +5,5 @@ public sealed record CreateProviderAccessOperatorSessionCommand(
     string Password,
     string[]? Scopes = null,
     int? ExpiresInMinutes = null,
-    string? RecoveryCode = null);
+    string? RecoveryCode = null,
+    string? TotpCode = null);

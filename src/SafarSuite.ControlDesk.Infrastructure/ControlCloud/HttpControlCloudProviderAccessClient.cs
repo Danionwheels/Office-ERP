@@ -120,6 +120,22 @@ public sealed class HttpControlCloudProviderAccessClient : IControlCloudProvider
             : ControlCloudProviderOperatorRecoveryCodesClientResult.Failure(result.FailureCode!, result.Detail!);
     }
 
+    public async Task<ControlCloudProviderOperatorTotpClientResult> ResetOperatorTotpAsync(
+        string userId,
+        ResetProviderOperatorTotpRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SendAsync<ResetProviderOperatorTotpRequest, ProviderOperatorTotpEnrollmentResponse>(
+            $"operators/{Uri.EscapeDataString(userId.Trim())}/totp",
+            request,
+            "provider operator TOTP",
+            cancellationToken);
+
+        return result.IsSuccess
+            ? ControlCloudProviderOperatorTotpClientResult.Success(result.Response!)
+            : ControlCloudProviderOperatorTotpClientResult.Failure(result.FailureCode!, result.Detail!);
+    }
+
     public async Task<ControlCloudProviderOperatorClientResult> UpdateOperatorScopesAsync(
         string userId,
         UpdateProviderOperatorScopesRequest request,

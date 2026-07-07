@@ -4508,6 +4508,20 @@ td {
   flex: 1 1 220px;
 }
 
+.provider-access-status-row .provider-access-checkbox-state {
+  align-items: center;
+  display: inline-flex;
+  flex: 1 1 160px;
+  flex-direction: row;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.provider-access-status-row .provider-access-checkbox-state input {
+  height: 16px;
+  width: 16px;
+}
+
 .provider-access-status-row .icon-button {
   min-height: 36px;
 }
@@ -4528,6 +4542,23 @@ td {
   font-size: 12px;
   font-weight: 750;
   text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.provider-access-totp-enrollment {
+  display: grid;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.provider-access-totp-enrollment code {
+  border: 1px solid #cbd1d7;
+  border-radius: 5px;
+  padding: 6px 8px;
+  background: #f8fafc;
+  color: #20252b;
+  font-size: 12px;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 

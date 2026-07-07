@@ -131,6 +131,62 @@ try
     Require(consumedRecoveryOperator?.LastRecoveryCodeUsedAtUtc == clock.UtcNow, "recovery code use should be timestamped.");
     checks.Add("enforced and consumed provider recovery-code MFA");
 
+    var totpSecret = ProviderAccessTotp.CreateSecret();
+    var totpCode = ProviderAccessTotp.CreateCode(totpSecret, clock.UtcNow);
+    var totpOperator = new ProviderAccessOperator
+    {
+        UserId = Guid.NewGuid().ToString("N"),
+        Email = "totp.provider@safarsuite.local",
+        FullName = "TOTP Provider",
+        PasswordHash = credentials.HashPassword("TotpProviderPass123!"),
+        Status = ProviderAccessOperatorStatuses.Active,
+        Scopes = [ProviderAccessScopes.ProviderOperatorsManage],
+        TotpSecret = totpSecret,
+        TotpEnabledAtUtc = clock.UtcNow,
+        TotpUpdatedAtUtc = clock.UtcNow,
+        TotpUpdatedBy = "provider-access-smoke",
+        CreatedAtUtc = clock.UtcNow,
+        CreatedBy = "provider-access-smoke"
+    };
+
+    await fileStore.SaveAsync(totpOperator);
+
+    var totpRequiredSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "totp.provider@safarsuite.local",
+        "TotpProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10);
+    var invalidTotpSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "totp.provider@safarsuite.local",
+        "TotpProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        totpCode: "000000");
+    var totpSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "totp.provider@safarsuite.local",
+        "TotpProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        totpCode: totpCode);
+    var replayedTotpSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "totp.provider@safarsuite.local",
+        "TotpProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        totpCode: totpCode);
+    var usedTotpOperator = await fileStore.GetByEmailAsync("totp.provider@safarsuite.local");
+
+    Require(!totpRequiredSession.IsSuccess, "TOTP-enabled operator should require an MFA code.");
+    Require(totpRequiredSession.FailureCode == "ProviderMfaRequired", "missing TOTP code should return ProviderMfaRequired.");
+    Require(!invalidTotpSession.IsSuccess, "TOTP-enabled operator should reject an invalid TOTP code.");
+    Require(invalidTotpSession.FailureCode == "ProviderMfaInvalid", "invalid TOTP code should return ProviderMfaInvalid.");
+    Require(totpSession.IsSuccess, "TOTP-enabled operator should issue a session with a valid TOTP code.");
+    Require(!replayedTotpSession.IsSuccess, "TOTP-enabled operator should reject a replayed TOTP code.");
+    Require(replayedTotpSession.FailureCode == "ProviderMfaInvalid", "replayed TOTP code should return ProviderMfaInvalid.");
+    Require(usedTotpOperator?.LastTotpUsedAtUtc == clock.UtcNow, "TOTP use should be timestamped.");
+    Require(usedTotpOperator?.LastTotpStep is not null, "TOTP use should store the accepted step.");
+    checks.Add("enforced provider TOTP MFA and replay guard");
+
     var rotatedProviderOptions = CopyOptionsWithSessionSigningKeys(
         providerOptions,
         activeKeyId: "provider-access-smoke-session-signing-key-v2",
@@ -265,6 +321,9 @@ try
     Require(
         entityType.FindProperty("RecoveryCodeHashesJson")?.GetColumnName() == "recovery_code_hashes_json",
         "EF provider operator model should map recovery code hashes.");
+    Require(
+        entityType.FindProperty("TotpSecret")?.GetColumnName() == "totp_secret",
+        "EF provider operator model should map TOTP secrets.");
     checks.Add("verified EF provider operator model mapping");
 
     var efStore = new EfProviderAccessOperatorStore(dbContext, providerOptions);
@@ -316,6 +375,12 @@ static ProviderAccessOperator CopyOperatorWithScopes(
         RecoveryCodesUpdatedAtUtc = source.RecoveryCodesUpdatedAtUtc,
         RecoveryCodesUpdatedBy = source.RecoveryCodesUpdatedBy,
         LastRecoveryCodeUsedAtUtc = source.LastRecoveryCodeUsedAtUtc,
+        TotpSecret = source.TotpSecret,
+        TotpEnabledAtUtc = source.TotpEnabledAtUtc,
+        TotpUpdatedAtUtc = source.TotpUpdatedAtUtc,
+        TotpUpdatedBy = source.TotpUpdatedBy,
+        LastTotpUsedAtUtc = source.LastTotpUsedAtUtc,
+        LastTotpStep = source.LastTotpStep,
         CreatedAtUtc = source.CreatedAtUtc,
         CreatedBy = source.CreatedBy,
         UpdatedAtUtc = source.UpdatedAtUtc,

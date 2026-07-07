@@ -86,6 +86,7 @@ public sealed class ProviderAccessSessionService
         IEnumerable<string>? scopes,
         int? expiresInMinutes,
         string? recoveryCode = null,
+        string? totpCode = null,
         CancellationToken cancellationToken = default)
     {
         if (GetActiveSessionSigningSecret() is null)
@@ -141,11 +142,11 @@ public sealed class ProviderAccessSessionService
                 StatusCodes.Status403Forbidden);
         }
 
-        var recoveryCodeResult = TryConsumeRecoveryCode(user, recoveryCode);
+        var mfaResult = TryValidateMfa(user, recoveryCode, totpCode);
 
-        if (recoveryCodeResult is not null)
+        if (mfaResult is not null)
         {
-            return recoveryCodeResult;
+            return mfaResult;
         }
 
         user.LastLoginAtUtc = _clock.UtcNow;
@@ -157,15 +158,73 @@ public sealed class ProviderAccessSessionService
             expiresInMinutes);
     }
 
-    private ProviderAccessSessionResult? TryConsumeRecoveryCode(
+    private ProviderAccessSessionResult? TryValidateMfa(
         ProviderAccessOperator user,
-        string? recoveryCode)
+        string? recoveryCode,
+        string? totpCode)
     {
+        var hasTotp = !string.IsNullOrWhiteSpace(user.TotpSecret);
+        var hasRecoveryCodes = user.RecoveryCodesUpdatedAtUtc is not null;
         var recoveryCodeHashes = NormalizeRecoveryCodeHashes(user.RecoveryCodeHashes);
 
-        if (user.RecoveryCodesUpdatedAtUtc is null)
+        if (!hasTotp && !hasRecoveryCodes)
         {
             return null;
+        }
+
+        if (!hasTotp && recoveryCodeHashes.Length == 0)
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderMfaUnavailable",
+                "Provider operator has no remaining recovery codes.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        var suppliedTotpCode = !string.IsNullOrWhiteSpace(totpCode);
+        var invalidTotpCode = false;
+
+        if (hasTotp && suppliedTotpCode)
+        {
+            if (ProviderAccessTotp.TryVerifyCode(
+                user.TotpSecret!,
+                totpCode,
+                _clock.UtcNow,
+                user.LastTotpStep,
+                out var acceptedStep))
+            {
+                user.LastTotpUsedAtUtc = _clock.UtcNow;
+                user.LastTotpStep = acceptedStep;
+                return null;
+            }
+
+            invalidTotpCode = true;
+        }
+
+        var normalizedCode = NormalizeRecoveryCode(recoveryCode);
+
+        if (!string.IsNullOrWhiteSpace(normalizedCode))
+        {
+            var recoveryCodeResult = TryConsumeRecoveryCode(user, recoveryCodeHashes, normalizedCode);
+
+            if (recoveryCodeResult is null)
+            {
+                return null;
+            }
+
+            return hasRecoveryCodes ? recoveryCodeResult : InvalidMfaCode();
+        }
+
+        if (invalidTotpCode)
+        {
+            return InvalidMfaCode();
+        }
+
+        if (hasTotp)
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderMfaRequired",
+                "Provider operator MFA code is required.",
+                StatusCodes.Status401Unauthorized);
         }
 
         if (recoveryCodeHashes.Length == 0)
@@ -176,26 +235,24 @@ public sealed class ProviderAccessSessionService
                 StatusCodes.Status401Unauthorized);
         }
 
-        var normalizedCode = NormalizeRecoveryCode(recoveryCode);
+        return ProviderAccessSessionResult.Failure(
+            "ProviderMfaRequired",
+            "Provider operator recovery code is required.",
+            StatusCodes.Status401Unauthorized);
+    }
 
-        if (string.IsNullOrWhiteSpace(normalizedCode))
-        {
-            return ProviderAccessSessionResult.Failure(
-                "ProviderMfaRequired",
-                "Provider operator recovery code is required.",
-                StatusCodes.Status401Unauthorized);
-        }
-
+    private ProviderAccessSessionResult? TryConsumeRecoveryCode(
+        ProviderAccessOperator user,
+        string[] recoveryCodeHashes,
+        string normalizedCode)
+    {
         var recoveryCodeHash = HashRecoveryCode(normalizedCode);
         var matchedHash = recoveryCodeHashes.FirstOrDefault(hash =>
             FixedTimeEquals(hash, recoveryCodeHash));
 
         if (matchedHash is null)
         {
-            return ProviderAccessSessionResult.Failure(
-                "ProviderMfaInvalid",
-                "Provider operator recovery code is invalid.",
-                StatusCodes.Status401Unauthorized);
+            return InvalidMfaCode();
         }
 
         user.RecoveryCodeHashes = recoveryCodeHashes
@@ -204,6 +261,14 @@ public sealed class ProviderAccessSessionService
         user.LastRecoveryCodeUsedAtUtc = _clock.UtcNow;
 
         return null;
+    }
+
+    private static ProviderAccessSessionResult InvalidMfaCode()
+    {
+        return ProviderAccessSessionResult.Failure(
+            "ProviderMfaInvalid",
+            "Provider operator MFA code is invalid.",
+            StatusCodes.Status401Unauthorized);
     }
 
     public ProviderAccessAuthorizationResult Authorize(

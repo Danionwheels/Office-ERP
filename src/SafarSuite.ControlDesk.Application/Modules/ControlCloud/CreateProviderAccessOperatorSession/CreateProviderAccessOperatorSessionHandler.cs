@@ -34,7 +34,8 @@ public sealed class CreateProviderAccessOperatorSessionHandler
                 command.Password,
                 ProviderAccessOperatorAdminValidator.NormalizeOptionalScopes(command.Scopes),
                 command.ExpiresInMinutes,
-                command.RecoveryCode),
+                command.RecoveryCode,
+                command.TotpCode),
             cancellationToken);
 
         return result.IsSuccess
