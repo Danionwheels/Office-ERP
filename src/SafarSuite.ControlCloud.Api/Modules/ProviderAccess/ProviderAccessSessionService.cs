@@ -46,7 +46,7 @@ public sealed class ProviderAccessSessionService
                 StatusCodes.Status503ServiceUnavailable);
         }
 
-        if (string.IsNullOrWhiteSpace(_options.SessionSigningSecret))
+        if (GetActiveSessionSigningSecret() is null)
         {
             return ProviderAccessSessionResult.Failure(
                 "ProviderAccessNotConfigured",
@@ -87,7 +87,7 @@ public sealed class ProviderAccessSessionService
         int? expiresInMinutes,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_options.SessionSigningSecret))
+        if (GetActiveSessionSigningSecret() is null)
         {
             return ProviderAccessSessionResult.Failure(
                 "ProviderAccessNotConfigured",
@@ -173,7 +173,7 @@ public sealed class ProviderAccessSessionService
             return null;
         }
 
-        if (string.IsNullOrWhiteSpace(_options.SessionSigningSecret))
+        if (!GetSessionValidationSecrets().Any())
         {
             return ProviderAccessAuthorizationResult.Failure(
                 "ProviderAccessNotConfigured",
@@ -192,9 +192,7 @@ public sealed class ProviderAccessSessionService
                 StatusCodes.Status401Unauthorized);
         }
 
-        var expectedSignature = Sign(parts[0]);
-
-        if (!FixedTimeEquals(parts[1], expectedSignature))
+        if (!HasValidSignature(parts[0], parts[1]))
         {
             return ProviderAccessAuthorizationResult.Failure(
                 "ProviderAccessDenied",
@@ -313,7 +311,17 @@ public sealed class ProviderAccessSessionService
             now,
             expiresAtUtc);
         var payloadText = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions));
-        var signature = Sign(payloadText);
+        var signingSecret = GetActiveSessionSigningSecret();
+
+        if (signingSecret is null)
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderAccessNotConfigured",
+                "Provider access session signing is not configured.",
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var signature = Sign(payloadText, signingSecret);
 
         return ProviderAccessSessionResult.Success(
             $"{payloadText}.{signature}",
@@ -322,9 +330,79 @@ public sealed class ProviderAccessSessionService
             expiresAtUtc);
     }
 
-    private string Sign(string payloadText)
+    private string? GetActiveSessionSigningSecret()
     {
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_options.SessionSigningSecret));
+        var signingKeys = GetConfiguredSessionSigningKeys().ToArray();
+
+        if (signingKeys.Length == 0)
+        {
+            return string.IsNullOrWhiteSpace(_options.SessionSigningSecret)
+                ? null
+                : _options.SessionSigningSecret;
+        }
+
+        var activeKeyId = _options.ActiveSessionSigningKeyId?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(activeKeyId))
+        {
+            return signingKeys
+                .FirstOrDefault(key => key.KeyId.Trim().Equals(activeKeyId, StringComparison.Ordinal))
+                ?.Secret;
+        }
+
+        return signingKeys.Length == 1
+            ? signingKeys[0].Secret
+            : null;
+    }
+
+    private bool HasValidSignature(string payloadText, string signature)
+    {
+        foreach (var secret in GetSessionValidationSecrets())
+        {
+            if (FixedTimeEquals(signature, Sign(payloadText, secret)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private IEnumerable<string> GetSessionValidationSecrets()
+    {
+        var seenSecrets = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var key in GetConfiguredSessionSigningKeys())
+        {
+            if (seenSecrets.Add(key.Secret))
+            {
+                yield return key.Secret;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_options.SessionSigningSecret)
+            && seenSecrets.Add(_options.SessionSigningSecret))
+        {
+            yield return _options.SessionSigningSecret;
+        }
+    }
+
+    private IEnumerable<ProviderAccessSessionSigningKeyOptions> GetConfiguredSessionSigningKeys()
+    {
+        foreach (var key in _options.SessionSigningKeys ?? [])
+        {
+            if (key is not null
+                && !string.IsNullOrWhiteSpace(key.KeyId)
+                && !string.IsNullOrWhiteSpace(key.Secret))
+            {
+                yield return key;
+            }
+        }
+    }
+
+    private static string Sign(string payloadText, string secret)
+    {
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
         var signature = hmac.ComputeHash(Encoding.UTF8.GetBytes(payloadText));
 
         return Base64UrlEncode(signature);

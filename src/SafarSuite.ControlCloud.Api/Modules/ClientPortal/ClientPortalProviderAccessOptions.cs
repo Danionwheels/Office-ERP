@@ -10,6 +10,10 @@ public sealed class ClientPortalProviderAccessOptions
     public string SessionSigningSecret { get; set; } =
         "local-development-provider-session-signing-secret-change-before-cloud";
 
+    public string ActiveSessionSigningKeyId { get; set; } = "";
+
+    public ProviderAccessSessionSigningKeyOptions[] SessionSigningKeys { get; set; } = [];
+
     public int SessionMinutes { get; set; } = 60;
 
     public string[] DefaultScopes { get; set; } =
@@ -40,6 +44,13 @@ public sealed class ClientPortalProviderAccessOptions
             ]
         }
     ];
+}
+
+public sealed class ProviderAccessSessionSigningKeyOptions
+{
+    public string KeyId { get; set; } = "";
+
+    public string Secret { get; set; } = "";
 }
 
 public sealed class ProviderAccessUserOptions

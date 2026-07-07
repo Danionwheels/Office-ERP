@@ -75,6 +75,8 @@ Provider access settings live under `ClientPortal:ProviderAccess`:
     "ProviderAccess": {
       "SharedSecret": "change-before-production",
       "SessionSigningSecret": "change-before-production",
+      "ActiveSessionSigningKeyId": "",
+      "SessionSigningKeys": [],
       "SessionMinutes": 60,
       "DefaultScopes": [
         "app-activation:read",
@@ -91,7 +93,8 @@ Provider access settings live under `ClientPortal:ProviderAccess`:
 
 Notes:
 
-- `SessionSigningSecret` is required for bearer sessions.
+- `SessionSigningSecret` is the legacy single-secret signing setting and is still supported for bearer sessions.
+- `SessionSigningKeys` is the preferred rotation shape. When populated, Control Cloud signs new sessions with `ActiveSessionSigningKeyId` and validates bearer sessions against every configured key in the array. Keep the previous key in the array for one maximum session lifetime, then remove it.
 - `SessionMinutes` is clamped between 5 and 1440 minutes.
 - `OperatorStorePath` is used only by file persistence.
 - `Users` is a seed list, not a long-term management surface. It is written only when the operator store is missing or empty.
@@ -208,10 +211,10 @@ dotnet run --project tools\SafarSuite.ControlCloud.ProviderAccessSmoke\SafarSuit
 Expected result:
 
 ```text
-Provider access smoke passed 8 checks:
+Provider access smoke passed 10 checks:
 ```
 
-The smoke proves file-backed seed persistence, scoped operator session issuance, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
+The smoke proves file-backed seed persistence, scoped operator session issuance, session-signing key rotation acceptance/removal, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
 
 Run the live Control Desk proxy proof:
 
@@ -233,7 +236,7 @@ For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBoot
 
 | Code | Meaning | Operator action |
 | --- | --- | --- |
-| `ProviderAccessNotConfigured` | Missing shared secret or session signing secret. | Check `ClientPortal:ProviderAccess:SharedSecret` and `SessionSigningSecret`. |
+| `ProviderAccessNotConfigured` | Missing shared secret or usable session signing key. | Check `ClientPortal:ProviderAccess:SharedSecret`, `SessionSigningSecret`, or the `ActiveSessionSigningKeyId`/`SessionSigningKeys` pair. |
 | `ProviderAccessDenied` | Shared secret or bearer token is invalid. | Mint a fresh session and confirm the configured secret/token source. |
 | `ProviderCredentialsInvalid` | Operator email, password, hash, or status did not authenticate. | Confirm the email, reset the password, and ensure status is `Active`. |
 | `ProviderAccessScopeUnsupported` | The requested session scope is not in the supported scope catalog. | Fix the typo or add a new scope deliberately in code. |
@@ -249,8 +252,9 @@ For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBoot
 - Keep provider operators separate from client portal identities.
 - Use named operators for routine work; keep shared-secret sessions for bootstrap or emergency recovery only.
 - Assign the smallest scope set that covers the task.
-- Rotate `SharedSecret` and `SessionSigningSecret` before production use.
+- Rotate `SharedSecret` before production use.
+- Rotate session signing through `SessionSigningKeys`: add the new key, set `ActiveSessionSigningKeyId` to it, keep the previous key configured until the longest possible provider session expires, then remove the previous key.
 - Do not keep development seed credentials in production config.
 - Back up `cloud.provider_access_operators` with the rest of Control Cloud state.
-- Treat a `SessionSigningSecret` rotation as invalidating all outstanding bearer sessions.
+- Treat removal of an old signing key as invalidating any outstanding bearer sessions signed by that key.
 - Keep provider operator changes flowing through the existing audit lane as the manager UI grows.

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlCloud.Api.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Api.Modules.ProviderAccess;
@@ -73,6 +74,58 @@ try
     Require(session.IsSuccess, "valid provider operator credentials should issue a session.");
     Require(session.Scopes?.Single() == ProviderAccessScopes.ProviderOperatorsManage, "session should carry requested scope.");
     checks.Add("issued scoped provider operator session");
+
+    var rotatedProviderOptions = CopyOptionsWithSessionSigningKeys(
+        providerOptions,
+        activeKeyId: "provider-access-smoke-session-signing-key-v2",
+        [
+            new ProviderAccessSessionSigningKeyOptions
+            {
+                KeyId = "provider-access-smoke-session-signing-key-v2",
+                Secret = "provider-access-smoke-session-signing-secret-v2"
+            },
+            new ProviderAccessSessionSigningKeyOptions
+            {
+                KeyId = "provider-access-smoke-session-signing-key-v1",
+                Secret = providerOptions.SessionSigningSecret
+            }
+        ]);
+    var rotatedSessionService = new ProviderAccessSessionService(
+        rotatedProviderOptions,
+        clock,
+        credentials,
+        fileStore);
+    var rotatedAuthorization = AuthorizeBearerToken(
+        rotatedSessionService,
+        session.AccessToken!,
+        ProviderAccessScopes.ProviderOperatorsManage);
+
+    Require(rotatedAuthorization.IsSuccess, "rotated signing key ring should accept sessions signed by a previous key.");
+    checks.Add("accepted provider session signed by previous signing key");
+
+    var retiredProviderOptions = CopyOptionsWithSessionSigningKeys(
+        providerOptions,
+        activeKeyId: "provider-access-smoke-session-signing-key-v2",
+        [
+            new ProviderAccessSessionSigningKeyOptions
+            {
+                KeyId = "provider-access-smoke-session-signing-key-v2",
+                Secret = "provider-access-smoke-session-signing-secret-v2"
+            }
+        ]);
+    var retiredSessionService = new ProviderAccessSessionService(
+        retiredProviderOptions,
+        clock,
+        credentials,
+        fileStore);
+    var retiredAuthorization = AuthorizeBearerToken(
+        retiredSessionService,
+        session.AccessToken!,
+        ProviderAccessScopes.ProviderOperatorsManage);
+
+    Require(!retiredAuthorization.IsSuccess, "retired signing key ring should reject sessions signed by a removed key.");
+    Require(retiredAuthorization.FailureCode == "ProviderAccessDenied", "retired signing key should return a denied authorization failure.");
+    checks.Add("rejected provider session after previous signing key removal");
 
     var deniedSession = await sessionService.CreateSessionFromCredentialsAsync(
         "seed.provider@safarsuite.local",
@@ -186,6 +239,35 @@ static ProviderAccessOperator CopyOperatorWithScopes(
         UpdatedBy = source.UpdatedBy,
         LastLoginAtUtc = source.LastLoginAtUtc
     };
+}
+
+static ClientPortalProviderAccessOptions CopyOptionsWithSessionSigningKeys(
+    ClientPortalProviderAccessOptions source,
+    string activeKeyId,
+    ProviderAccessSessionSigningKeyOptions[] sessionSigningKeys)
+{
+    return new ClientPortalProviderAccessOptions
+    {
+        SharedSecret = source.SharedSecret,
+        SessionSigningSecret = "",
+        ActiveSessionSigningKeyId = activeKeyId,
+        SessionSigningKeys = sessionSigningKeys,
+        SessionMinutes = source.SessionMinutes,
+        DefaultScopes = source.DefaultScopes,
+        OperatorStorePath = source.OperatorStorePath,
+        Users = source.Users
+    };
+}
+
+static ProviderAccessAuthorizationResult AuthorizeBearerToken(
+    ProviderAccessSessionService service,
+    string accessToken,
+    string requiredScope)
+{
+    var context = new DefaultHttpContext();
+    context.Request.Headers.Authorization = $"Bearer {accessToken}";
+
+    return service.Authorize(context.Request, requiredScope);
 }
 
 static void Require(bool condition, string message)
