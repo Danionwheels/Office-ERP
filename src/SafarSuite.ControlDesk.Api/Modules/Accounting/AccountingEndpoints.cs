@@ -1,12 +1,15 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountCodeRange;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureOpeningBalanceProfile;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureVoucherNumberingRule;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountCodeRangeValidation;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetBalanceSheet;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntry;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
@@ -15,6 +18,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepa
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseReadiness;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetOpeningBalanceProfile;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountCodeRanges;
@@ -24,6 +28,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.ListLedgerAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListVoucherNumberingRules;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostManualJournalEntry;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewChartOfAccountsImportText;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImportText;
@@ -46,11 +51,16 @@ public static class AccountingEndpoints
         group.MapGet("/ledger-accounts", ListLedgerAccountsAsync);
         group.MapGet("/ledger-accounts/reconciliation", GetLedgerAccountReconciliationAsync);
         group.MapGet("/ledger-accounts/repair-plan", GetLedgerAccountRepairPlanAsync);
+        group.MapPost("/ledger-accounts/import-preview", PreviewChartOfAccountsImportTextAsync);
         group.MapPost("/ledger-accounts", CreateLedgerAccountAsync);
         group.MapPut("/ledger-accounts/{ledgerAccountId:guid}", UpdateLedgerAccountAsync);
         group.MapGet("/ledger-accounts/suggest-code", SuggestLedgerAccountCodeAsync);
         group.MapGet("/accounting-setup/account-code-ranges", ListAccountCodeRangesAsync);
+        group.MapGet("/accounting-setup/account-code-ranges/validation", GetAccountCodeRangeValidationAsync);
         group.MapPut("/accounting-setup/account-code-ranges/{role}", ConfigureAccountCodeRangeAsync);
+        group.MapPost("/accounting-setup/standard-chart-of-accounts", BootstrapStandardChartOfAccountsAsync);
+        group.MapGet("/accounting-setup/opening-balance-profile", GetOpeningBalanceProfileAsync);
+        group.MapPut("/accounting-setup/opening-balance-profile", ConfigureOpeningBalanceProfileAsync);
         group.MapGet("/accounting-setup/voucher-numbering", ListVoucherNumberingRulesAsync);
         group.MapPut("/accounting-setup/voucher-numbering/{sourceType}", ConfigureVoucherNumberingRuleAsync);
         group.MapGet("/accounting-controls", GetAccountingControlSettingsAsync);
@@ -86,6 +96,7 @@ public static class AccountingEndpoints
         string? status,
         bool? isPostingAccount,
         string? role,
+        string? viewMode,
         ListLedgerAccountsHandler handler,
         CancellationToken cancellationToken)
     {
@@ -96,7 +107,8 @@ public static class AccountingEndpoints
                 type,
                 status,
                 isPostingAccount,
-                role),
+                role,
+                viewMode),
             cancellationToken);
 
         if (result.IsFailure)
@@ -155,6 +167,65 @@ public static class AccountingEndpoints
             result.Value.Status);
 
         return Results.Created($"/api/v1/accounting/ledger-accounts/{response.LedgerAccountId}", response);
+    }
+
+    private static async Task<IResult> PreviewChartOfAccountsImportTextAsync(
+        PreviewChartOfAccountsImportTextRequest request,
+        PreviewChartOfAccountsImportTextHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new PreviewChartOfAccountsImportTextCommand(
+                request.CompanyCode,
+                request.ImportText,
+                request.Delimiter),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new PreviewChartOfAccountsImportTextResponse(
+            result.Value.CompanyCode,
+            result.Value.Format,
+            result.Value.ParsedLineCount,
+            result.Value.IgnoredLineCount,
+            result.Value.CanImport,
+            result.Value.InsertCount,
+            result.Value.UpdateCount,
+            result.Value.NoChangeCount,
+            result.Value.RejectCount,
+            result.Value.WarningCount,
+            result.Value.IssueCount,
+            result.Value.ParseIssues.Select(issue => new ChartOfAccountsImportParseIssueResponse(
+                issue.LineNumber,
+                issue.Column,
+                issue.Message,
+                issue.RawValue)).ToArray(),
+            result.Value.Rows.Select(row => new ChartOfAccountsImportRowResponse(
+                row.LineNumber,
+                row.Action,
+                row.Code,
+                row.DisplayCode,
+                row.Name,
+                row.ImportedLevel,
+                row.ResolvedLevel,
+                row.Type,
+                row.NormalBalance,
+                row.IsPostingAccount,
+                row.ParentCode,
+                row.ParentAccountId,
+                row.ParentSource,
+                row.CurrencyCode,
+                row.ExistingLedgerAccountId,
+                row.ExistingStatus,
+                row.RangeRole,
+                row.RangeDisplayName,
+                row.Issues.Select(issue => new ChartOfAccountsImportIssueResponse(
+                    issue.Severity,
+                    issue.Code,
+                    issue.Message)).ToArray())).ToArray()));
     }
 
     private static async Task<IResult> GetLedgerAccountReconciliationAsync(
@@ -274,11 +345,12 @@ public static class AccountingEndpoints
     private static async Task<IResult> SuggestLedgerAccountCodeAsync(
         string role,
         string? companyCode,
+        Guid? parentAccountId,
         SuggestLedgerAccountCodeHandler handler,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new SuggestLedgerAccountCodeQuery(role, companyCode),
+            new SuggestLedgerAccountCodeQuery(role, companyCode, parentAccountId),
             cancellationToken);
 
         if (result.IsFailure)
@@ -296,7 +368,10 @@ public static class AccountingEndpoints
             result.Value.IsPostingAccount,
             result.Value.RangeStart,
             result.Value.RangeEnd,
-            result.Value.ParentCode));
+            result.Value.ParentCode,
+            result.Value.ParentAccountId,
+            result.Value.ParentAccountCode,
+            result.Value.ParentAccountName));
     }
 
     private static async Task<IResult> ListAccountCodeRangesAsync(
@@ -316,6 +391,38 @@ public static class AccountingEndpoints
         return Results.Ok(new ListAccountCodeRangesResponse(
             result.Value.CompanyCode,
             result.Value.Ranges.Select(ToResponse).ToArray()));
+    }
+
+    private static async Task<IResult> GetAccountCodeRangeValidationAsync(
+        string? companyCode,
+        GetAccountCodeRangeValidationHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetAccountCodeRangeValidationQuery(companyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new AccountCodeRangeValidationResponse(
+            result.Value.CompanyCode,
+            result.Value.RangeCount,
+            result.Value.ActiveRangeCount,
+            result.Value.IsValid,
+            result.Value.ErrorCount,
+            result.Value.WarningCount,
+            result.Value.IssueCount,
+            result.Value.Issues.Select(issue => new AccountCodeRangeValidationIssueResponse(
+                issue.Severity,
+                issue.Code,
+                issue.Message,
+                issue.RangeRole,
+                issue.RelatedRangeRole,
+                issue.RangeStart,
+                issue.RangeEnd)).ToArray()));
     }
 
     private static async Task<IResult> ConfigureAccountCodeRangeAsync(
@@ -339,6 +446,78 @@ public static class AccountingEndpoints
                 request.IsPostingAccount,
                 request.ParentCode,
                 request.IsActive),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
+    private static async Task<IResult> BootstrapStandardChartOfAccountsAsync(
+        BootstrapStandardChartOfAccountsRequest request,
+        BootstrapStandardChartOfAccountsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new BootstrapStandardChartOfAccountsCommand(request.CompanyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new BootstrapStandardChartOfAccountsResponse(
+            result.Value.CompanyCode,
+            result.Value.CreatedCount,
+            result.Value.ReusedCount,
+            result.Value.Accounts.Select(account => new BootstrapStandardChartOfAccountsItemResponse(
+                account.LedgerAccountId,
+                account.Role,
+                account.Action,
+                account.Code,
+                account.Name,
+                account.Type,
+                account.NormalBalance,
+                account.Level,
+                account.ParentAccountId,
+                account.IsPostingAccount,
+                account.Status)).ToArray()));
+    }
+
+    private static async Task<IResult> GetOpeningBalanceProfileAsync(
+        string? companyCode,
+        GetOpeningBalanceProfileHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetOpeningBalanceProfileQuery(companyCode),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(ToResponse(result.Value));
+    }
+
+    private static async Task<IResult> ConfigureOpeningBalanceProfileAsync(
+        ConfigureOpeningBalanceProfileRequest request,
+        ConfigureOpeningBalanceProfileHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ConfigureOpeningBalanceProfileCommand(
+                request.CompanyCode,
+                request.FiscalYearFrom,
+                request.FiscalYearTo,
+                request.Status,
+                request.TransactionsAllowed,
+                request.ProfitAndLossCarryForwardAccountId),
             cancellationToken);
 
         if (result.IsFailure)
@@ -850,6 +1029,11 @@ public static class AccountingEndpoints
                 request.CurrencyCode,
                 request.SourceReference,
                 request.Memo,
+                request.ProfileFromDate,
+                request.ProfileToDate,
+                request.ProfileStatus,
+                request.TransactionsAllowed,
+                request.ProfitAndLossCarryForwardAccountId,
                 request.Lines?.Select(line => new PreviewOpeningBalanceImportLineCommand(
                     line.AccountCode,
                     line.Debit,
@@ -900,6 +1084,11 @@ public static class AccountingEndpoints
                 request.CurrencyCode,
                 request.SourceReference,
                 request.Memo,
+                request.ProfileFromDate,
+                request.ProfileToDate,
+                request.ProfileStatus,
+                request.TransactionsAllowed,
+                request.ProfitAndLossCarryForwardAccountId,
                 request.Lines?.Select(line => new PostOpeningBalanceImportLineCommand(
                     line.AccountCode,
                     line.Debit,
@@ -928,6 +1117,11 @@ public static class AccountingEndpoints
                 request.CurrencyCode,
                 request.SourceReference,
                 request.Memo,
+                request.ProfileFromDate,
+                request.ProfileToDate,
+                request.ProfileStatus,
+                request.TransactionsAllowed,
+                request.ProfitAndLossCarryForwardAccountId,
                 request.ImportText,
                 request.Delimiter),
             cancellationToken);
@@ -1115,6 +1309,12 @@ public static class AccountingEndpoints
             sourceDocument.Label,
             sourceDocument.DashboardModule,
             sourceDocument.DashboardStep,
+            sourceDocument.FiscalYearFrom,
+            sourceDocument.FiscalYearTo,
+            sourceDocument.TransactionsAllowed,
+            sourceDocument.ProfitAndLossCarryForwardAccountId,
+            sourceDocument.ProfitAndLossCarryForwardAccountCode,
+            sourceDocument.ProfitAndLossCarryForwardAccountName,
             sourceDocument.Message);
     }
 
@@ -1170,6 +1370,35 @@ public static class AccountingEndpoints
         return account is null
             ? null
             : new AccountingControlAccountResponse(
+                account.LedgerAccountId,
+                account.Code,
+                account.Name,
+                account.Type,
+                account.NormalBalance,
+                account.Status);
+    }
+
+    private static OpeningBalanceProfileResponse ToResponse(GetOpeningBalanceProfileResult profile)
+    {
+        return new OpeningBalanceProfileResponse(
+            profile.CompanyCode,
+            profile.FiscalYearFrom,
+            profile.FiscalYearTo,
+            profile.Status,
+            profile.TransactionsAllowed,
+            profile.ProfitAndLossCarryForwardAccountId,
+            ToResponse(profile.ProfitAndLossCarryForwardAccount),
+            profile.IsConfigured,
+            profile.CreatedAtUtc,
+            profile.UpdatedAtUtc);
+    }
+
+    private static OpeningBalanceProfileAccountResponse? ToResponse(
+        OpeningBalanceProfileAccountResult? account)
+    {
+        return account is null
+            ? null
+            : new OpeningBalanceProfileAccountResponse(
                 account.LedgerAccountId,
                 account.Code,
                 account.Name,

@@ -5,6 +5,11 @@ public sealed record PostOpeningBalanceImportCommand(
     string CurrencyCode,
     string? SourceReference,
     string? Memo,
+    DateOnly ProfileFromDate,
+    DateOnly ProfileToDate,
+    string ProfileStatus,
+    bool TransactionsAllowed,
+    Guid? ProfitAndLossCarryForwardAccountId,
     IReadOnlyCollection<PostOpeningBalanceImportLineCommand> Lines);
 
 public sealed record PostOpeningBalanceImportLineCommand(

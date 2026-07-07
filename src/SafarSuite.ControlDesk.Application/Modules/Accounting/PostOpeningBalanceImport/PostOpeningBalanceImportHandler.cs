@@ -1,5 +1,6 @@
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureOpeningBalanceProfile;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
@@ -11,6 +12,7 @@ namespace SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalan
 public sealed class PostOpeningBalanceImportHandler
 {
     private readonly PreviewOpeningBalanceImportHandler _previewOpeningBalanceImport;
+    private readonly ConfigureOpeningBalanceProfileHandler _configureOpeningBalanceProfile;
     private readonly IJournalEntryRepository _journalEntries;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IIdGenerator _idGenerator;
@@ -18,12 +20,14 @@ public sealed class PostOpeningBalanceImportHandler
 
     public PostOpeningBalanceImportHandler(
         PreviewOpeningBalanceImportHandler previewOpeningBalanceImport,
+        ConfigureOpeningBalanceProfileHandler configureOpeningBalanceProfile,
         IJournalEntryRepository journalEntries,
         IUnitOfWork unitOfWork,
         IIdGenerator idGenerator,
         IClock clock)
     {
         _previewOpeningBalanceImport = previewOpeningBalanceImport;
+        _configureOpeningBalanceProfile = configureOpeningBalanceProfile;
         _journalEntries = journalEntries;
         _unitOfWork = unitOfWork;
         _idGenerator = idGenerator;
@@ -40,6 +44,11 @@ public sealed class PostOpeningBalanceImportHandler
                 command.CurrencyCode,
                 command.SourceReference,
                 command.Memo,
+                command.ProfileFromDate,
+                command.ProfileToDate,
+                command.ProfileStatus,
+                command.TransactionsAllowed,
+                command.ProfitAndLossCarryForwardAccountId,
                 command.Lines?.Select(line => new PreviewOpeningBalanceImportLineCommand(
                     line.AccountCode,
                     line.Debit,
@@ -69,6 +78,21 @@ public sealed class PostOpeningBalanceImportHandler
         if (duplicateError is not null)
         {
             return Result<JournalEntrySummaryResult>.Failure(duplicateError);
+        }
+
+        var profileResult = await _configureOpeningBalanceProfile.HandleAsync(
+            new ConfigureOpeningBalanceProfileCommand(
+                null,
+                command.ProfileFromDate,
+                command.ProfileToDate,
+                command.ProfileStatus,
+                command.TransactionsAllowed,
+                command.ProfitAndLossCarryForwardAccountId),
+            cancellationToken);
+
+        if (profileResult.IsFailure)
+        {
+            return Result<JournalEntrySummaryResult>.Failure(profileResult.Errors);
         }
 
         try

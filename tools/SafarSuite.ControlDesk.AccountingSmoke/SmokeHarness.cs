@@ -3,6 +3,7 @@ using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureOpeningBalanceProfile;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureVoucherNumberingRule;
@@ -10,6 +11,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeri
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseReadiness;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountCodeRangeValidation;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetBalanceSheet;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
@@ -20,6 +22,7 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListVoucherNumberingRules;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewChartOfAccountsImportText;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImportText;
@@ -66,6 +69,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         IAccountingControlSettingsRepository accountingControlSettings,
         IVoucherNumberingRuleRepository voucherNumberingRules,
         IAccountingPeriodRepository accountingPeriods,
+        IOpeningBalanceProfileRepository openingBalanceProfiles,
         ILedgerAccountRepository ledgerAccounts,
         IJournalEntryRepository journalEntries,
         IChargeCodeRepository chargeCodes,
@@ -86,6 +90,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         AccountingControlSettings = accountingControlSettings;
         VoucherNumberingRules = voucherNumberingRules;
         AccountingPeriods = accountingPeriods;
+        OpeningBalanceProfiles = openingBalanceProfiles;
         LedgerAccounts = ledgerAccounts;
         JournalEntries = journalEntries;
         ChargeCodes = chargeCodes;
@@ -104,6 +109,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
 
         var postingService = new PaymentPostingService(LedgerAccounts, IdGenerator, Clock);
         var periodGuard = new AccountingPeriodPostingGuard(AccountingPeriods);
+        var openingBalanceProfileGuard = new OpeningBalanceProfilePostingGuard(LedgerAccounts);
         var outboxMessageFactory = new PaymentCloudOutboxMessageFactory(IdGenerator, Clock);
         var creditBalanceService = new ClientCreditBalanceService(
             Invoices,
@@ -119,9 +125,17 @@ internal sealed class SmokeHarness : IAsyncDisposable
             JournalEntries,
             VoucherNumberingRules);
         var settingsResultFactory = new AccountingControlSettingsResultFactory(LedgerAccounts);
+        var openingBalanceProfileResultFactory = new OpeningBalanceProfileResultFactory(LedgerAccounts, Clock);
         var closeReadinessService = new AccountingPeriodCloseReadinessService(
             AccountingPeriods,
             JournalEntries);
+        var configureOpeningBalanceProfile = new ConfigureOpeningBalanceProfileHandler(
+            OpeningBalanceProfiles,
+            LedgerAccounts,
+            openingBalanceProfileResultFactory,
+            UnitOfWork,
+            IdGenerator,
+            Clock);
 
         SuggestLedgerAccountCode = new SuggestLedgerAccountCodeHandler(
             LedgerAccounts,
@@ -196,8 +210,20 @@ internal sealed class SmokeHarness : IAsyncDisposable
             AccountCodeRanges,
             LedgerAccounts);
 
+        GetAccountCodeRangeValidation = new GetAccountCodeRangeValidationHandler(
+            AccountCodeRanges,
+            LedgerAccounts,
+            AccountingSetupDefaults);
+
+        PreviewChartOfAccountsImportText = new PreviewChartOfAccountsImportTextHandler(
+            LedgerAccounts,
+            AccountCodeRanges,
+            AccountingSetupDefaults);
+
         GetJournalEntrySourceDocument = new GetJournalEntrySourceDocumentHandler(
             JournalEntries,
+            OpeningBalanceProfiles,
+            LedgerAccounts,
             Invoices,
             CreditNotes,
             Payments,
@@ -227,6 +253,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         PreviewOpeningBalanceImport = new PreviewOpeningBalanceImportHandler(
             LedgerAccounts,
             periodGuard,
+            openingBalanceProfileGuard,
             voucherNumberService);
 
         PreviewOpeningBalanceImportText = new PreviewOpeningBalanceImportTextHandler(
@@ -234,6 +261,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
 
         PostOpeningBalanceImport = new PostOpeningBalanceImportHandler(
             PreviewOpeningBalanceImport,
+            configureOpeningBalanceProfile,
             JournalEntries,
             UnitOfWork,
             IdGenerator,
@@ -294,12 +322,14 @@ internal sealed class SmokeHarness : IAsyncDisposable
         GetInvoiceDocument = new GetInvoiceDocumentHandler(
             Invoices,
             CreditNotes,
-            JournalEntries);
+            JournalEntries,
+            LedgerAccounts);
 
         GetCreditNoteDocument = new GetCreditNoteDocumentHandler(
             CreditNotes,
             Invoices,
-            JournalEntries);
+            JournalEntries,
+            LedgerAccounts);
 
         IssueInvoice = new IssueInvoiceHandler(
             Invoices,
@@ -318,6 +348,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Invoices,
             Payments,
             JournalEntries,
+            LedgerAccounts,
             CloudOutboxMessages,
             periodGuard,
             postingService,
@@ -330,12 +361,14 @@ internal sealed class SmokeHarness : IAsyncDisposable
         GetInvoicePaymentDocument = new GetInvoicePaymentDocumentHandler(
             Payments,
             Invoices,
-            JournalEntries);
+            JournalEntries,
+            LedgerAccounts);
 
         IssueCreditNote = new IssueCreditNoteHandler(
             Invoices,
             CreditNotes,
             JournalEntries,
+            LedgerAccounts,
             periodGuard,
             CloudOutboxMessages,
             UnitOfWork,
@@ -347,6 +380,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Clients,
             ClientRefunds,
             JournalEntries,
+            LedgerAccounts,
             CloudOutboxMessages,
             periodGuard,
             postingService,
@@ -360,6 +394,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         GetClientRefundDocument = new GetClientRefundDocumentHandler(
             ClientRefunds,
             JournalEntries,
+            LedgerAccounts,
             creditBalanceService);
 
         ApplyClientCredit = new ApplyClientCreditHandler(
@@ -381,7 +416,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Payments,
             ClientRefunds,
             ClientCreditApplications,
-            JournalEntries);
+            JournalEntries,
+            LedgerAccounts);
     }
 
     public static async Task<SmokeHarness> CreateAsync(
@@ -409,6 +445,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new InMemoryAccountingControlSettingsRepository(),
             new InMemoryVoucherNumberingRuleRepository(),
             new InMemoryAccountingPeriodRepository(),
+            new InMemoryOpeningBalanceProfileRepository(),
             new InMemoryLedgerAccountRepository(),
             new InMemoryJournalEntryRepository(),
             new InMemoryChargeCodeRepository(),
@@ -443,6 +480,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new EfAccountingControlSettingsRepository(dbContext),
             new EfVoucherNumberingRuleRepository(dbContext),
             new EfAccountingPeriodRepository(dbContext),
+            new EfOpeningBalanceProfileRepository(dbContext),
             new EfLedgerAccountRepository(dbContext),
             new EfJournalEntryRepository(dbContext),
             new EfChargeCodeRepository(dbContext),
@@ -470,6 +508,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public IVoucherNumberingRuleRepository VoucherNumberingRules { get; }
 
     public IAccountingPeriodRepository AccountingPeriods { get; }
+
+    public IOpeningBalanceProfileRepository OpeningBalanceProfiles { get; }
 
     public ILedgerAccountRepository LedgerAccounts { get; }
 
@@ -520,6 +560,10 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public GetLedgerAccountReconciliationHandler GetLedgerAccountReconciliation { get; }
 
     public GetLedgerAccountRepairPlanHandler GetLedgerAccountRepairPlan { get; }
+
+    public GetAccountCodeRangeValidationHandler GetAccountCodeRangeValidation { get; }
+
+    public PreviewChartOfAccountsImportTextHandler PreviewChartOfAccountsImportText { get; }
 
     public SuggestLedgerAccountCodeHandler SuggestLedgerAccountCode { get; }
 

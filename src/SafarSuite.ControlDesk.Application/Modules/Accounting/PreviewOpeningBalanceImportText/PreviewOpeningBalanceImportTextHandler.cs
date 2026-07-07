@@ -32,6 +32,11 @@ public sealed class PreviewOpeningBalanceImportTextHandler
                 command.CurrencyCode,
                 command.SourceReference,
                 command.Memo,
+                command.ProfileFromDate,
+                command.ProfileToDate,
+                command.ProfileStatus,
+                command.TransactionsAllowed,
+                command.ProfitAndLossCarryForwardAccountId,
                 parseResult.Lines),
             cancellationToken);
 
@@ -73,7 +78,7 @@ public sealed class PreviewOpeningBalanceImportTextHandler
             .Split('\n');
         var firstDataLine = rows.FirstOrDefault(row => !string.IsNullOrWhiteSpace(row)) ?? string.Empty;
         var delimiterChar = ResolveDelimiter(delimiter, firstDataLine);
-        var format = delimiterChar switch
+        var delimiterName = delimiterChar switch
         {
             '\t' => "Tab",
             '|' => "Pipe",
@@ -128,6 +133,10 @@ public sealed class PreviewOpeningBalanceImportTextHandler
                 credit,
                 description));
         }
+
+        var format = headerMap is null
+            ? delimiterName
+            : $"{delimiterName} / {headerMap.FormatName}";
 
         return new OpeningBalanceImportTextParseResult(
             format,
@@ -210,9 +219,37 @@ public sealed class PreviewOpeningBalanceImportTextHandler
         var normalizedCells = cells
             .Select((cell, index) => (Name: NormalizeHeader(cell), Index: index))
             .ToArray();
-        var accountIndex = FindHeaderIndex(normalizedCells, "accountcode", "account", "code", "glcode");
-        var debitIndex = FindHeaderIndex(normalizedCells, "debit", "dr");
-        var creditIndex = FindHeaderIndex(normalizedCells, "credit", "cr");
+        var accountIndex = FindHeaderIndex(
+            normalizedCells,
+            "accountcode",
+            "account",
+            "code",
+            "glcode",
+            "acccode",
+            "coa3code",
+            "dcocoa3code",
+            "dvhcoa3code",
+            "rptcoa3code");
+        var debitIndex = FindHeaderIndex(
+            normalizedCells,
+            "debit",
+            "dr",
+            "damt",
+            "adamt",
+            "dbtamt",
+            "dcodbtamt",
+            "baldbtamt",
+            "opndbtamt");
+        var creditIndex = FindHeaderIndex(
+            normalizedCells,
+            "credit",
+            "cr",
+            "camt",
+            "acamt",
+            "crdamt",
+            "dcocrdamt",
+            "balcrdamt",
+            "opncrdamt");
 
         if (accountIndex < 0 || debitIndex < 0 || creditIndex < 0)
         {
@@ -224,8 +261,26 @@ public sealed class PreviewOpeningBalanceImportTextHandler
             accountIndex,
             debitIndex,
             creditIndex,
-            FindHeaderIndex(normalizedCells, "description", "memo", "narration"));
+            FindHeaderIndex(normalizedCells, "description", "memo", "narration", "remarks", "remark", "drem", "mcoremark"),
+            ResolveFormatName(normalizedCells));
         return true;
+    }
+
+    private static string ResolveFormatName(IReadOnlyCollection<(string Name, int Index)> cells)
+    {
+        var names = cells.Select(cell => cell.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (names.Contains("dcocoa3code") || names.Contains("dcodbtamt") || names.Contains("dcocrdamt"))
+        {
+            return "ACT_SD_COA_OPNBAL";
+        }
+
+        if (names.Contains("acccode") || names.Contains("damt") || names.Contains("camt"))
+        {
+            return "OP_BAL";
+        }
+
+        return "Standard";
     }
 
     private static int FindHeaderIndex(
@@ -294,9 +349,10 @@ public sealed class PreviewOpeningBalanceImportTextHandler
         int AccountCodeIndex,
         int DebitIndex,
         int CreditIndex,
-        int DescriptionIndex)
+        int DescriptionIndex,
+        string FormatName)
     {
-        public static ColumnMap Default { get; } = new(0, 1, 2, 3);
+        public static ColumnMap Default { get; } = new(0, 1, 2, 3, "Standard");
     }
 
     private sealed record OpeningBalanceImportTextParseResult(

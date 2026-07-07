@@ -17,4 +17,10 @@ public sealed record JournalEntrySourceDocumentResult(
     string? Label,
     string? DashboardModule,
     string? DashboardStep,
+    DateOnly? FiscalYearFrom,
+    DateOnly? FiscalYearTo,
+    bool? TransactionsAllowed,
+    Guid? ProfitAndLossCarryForwardAccountId,
+    string? ProfitAndLossCarryForwardAccountCode,
+    string? ProfitAndLossCarryForwardAccountName,
     string? Message);

@@ -116,6 +116,58 @@ public sealed record LedgerAccountSummaryResponse(
     string? RangeRole,
     string? RangeDisplayName);
 
+public sealed record PreviewChartOfAccountsImportTextRequest(
+    string? CompanyCode,
+    string ImportText,
+    string? Delimiter);
+
+public sealed record PreviewChartOfAccountsImportTextResponse(
+    string CompanyCode,
+    string Format,
+    int ParsedLineCount,
+    int IgnoredLineCount,
+    bool CanImport,
+    int InsertCount,
+    int UpdateCount,
+    int NoChangeCount,
+    int RejectCount,
+    int WarningCount,
+    int IssueCount,
+    IReadOnlyCollection<ChartOfAccountsImportParseIssueResponse> ParseIssues,
+    IReadOnlyCollection<ChartOfAccountsImportRowResponse> Rows);
+
+public sealed record ChartOfAccountsImportParseIssueResponse(
+    int LineNumber,
+    string Column,
+    string Message,
+    string? RawValue);
+
+public sealed record ChartOfAccountsImportRowResponse(
+    int LineNumber,
+    string Action,
+    string Code,
+    string DisplayCode,
+    string Name,
+    string? ImportedLevel,
+    string ResolvedLevel,
+    string Type,
+    string NormalBalance,
+    bool IsPostingAccount,
+    string? ParentCode,
+    Guid? ParentAccountId,
+    string? ParentSource,
+    string? CurrencyCode,
+    Guid? ExistingLedgerAccountId,
+    string? ExistingStatus,
+    string? RangeRole,
+    string? RangeDisplayName,
+    IReadOnlyCollection<ChartOfAccountsImportIssueResponse> Issues);
+
+public sealed record ChartOfAccountsImportIssueResponse(
+    string Severity,
+    string Code,
+    string Message);
+
 public sealed record SuggestLedgerAccountCodeResponse(
     string CompanyCode,
     string Role,
@@ -126,7 +178,10 @@ public sealed record SuggestLedgerAccountCodeResponse(
     bool IsPostingAccount,
     string RangeStart,
     string RangeEnd,
-    string? ParentCode);
+    string? ParentCode,
+    Guid? ParentAccountId,
+    string? ParentAccountCode,
+    string? ParentAccountName);
 
 public sealed record ConfigureAccountCodeRangeRequest(
     string DisplayName,
@@ -158,6 +213,46 @@ public sealed record AccountCodeRangeResponse(
 public sealed record ListAccountCodeRangesResponse(
     string CompanyCode,
     IReadOnlyCollection<AccountCodeRangeResponse> Ranges);
+
+public sealed record AccountCodeRangeValidationResponse(
+    string CompanyCode,
+    int RangeCount,
+    int ActiveRangeCount,
+    bool IsValid,
+    int ErrorCount,
+    int WarningCount,
+    int IssueCount,
+    IReadOnlyCollection<AccountCodeRangeValidationIssueResponse> Issues);
+
+public sealed record AccountCodeRangeValidationIssueResponse(
+    string Severity,
+    string Code,
+    string Message,
+    string? RangeRole,
+    string? RelatedRangeRole,
+    string? RangeStart,
+    string? RangeEnd);
+
+public sealed record BootstrapStandardChartOfAccountsRequest(string? CompanyCode);
+
+public sealed record BootstrapStandardChartOfAccountsResponse(
+    string CompanyCode,
+    int CreatedCount,
+    int ReusedCount,
+    IReadOnlyCollection<BootstrapStandardChartOfAccountsItemResponse> Accounts);
+
+public sealed record BootstrapStandardChartOfAccountsItemResponse(
+    Guid LedgerAccountId,
+    string Role,
+    string Action,
+    string Code,
+    string Name,
+    string Type,
+    string NormalBalance,
+    string Level,
+    Guid? ParentAccountId,
+    bool IsPostingAccount,
+    string Status);
 
 public sealed record ConfigureVoucherNumberingRuleRequest(
     string Prefix,
@@ -202,6 +297,34 @@ public sealed record AccountingControlSettingsResponse(
     DateTimeOffset? UpdatedAtUtc);
 
 public sealed record AccountingControlAccountResponse(
+    Guid LedgerAccountId,
+    string Code,
+    string Name,
+    string Type,
+    string NormalBalance,
+    string Status);
+
+public sealed record ConfigureOpeningBalanceProfileRequest(
+    string? CompanyCode,
+    DateOnly FiscalYearFrom,
+    DateOnly FiscalYearTo,
+    string Status,
+    bool TransactionsAllowed,
+    Guid? ProfitAndLossCarryForwardAccountId);
+
+public sealed record OpeningBalanceProfileResponse(
+    string CompanyCode,
+    DateOnly FiscalYearFrom,
+    DateOnly FiscalYearTo,
+    string Status,
+    bool TransactionsAllowed,
+    Guid? ProfitAndLossCarryForwardAccountId,
+    OpeningBalanceProfileAccountResponse? ProfitAndLossCarryForwardAccount,
+    bool IsConfigured,
+    DateTimeOffset? CreatedAtUtc,
+    DateTimeOffset? UpdatedAtUtc);
+
+public sealed record OpeningBalanceProfileAccountResponse(
     Guid LedgerAccountId,
     string Code,
     string Name,
@@ -410,6 +533,11 @@ public sealed record PreviewOpeningBalanceImportRequest(
     string CurrencyCode,
     string? SourceReference,
     string? Memo,
+    DateOnly ProfileFromDate,
+    DateOnly ProfileToDate,
+    string ProfileStatus,
+    bool TransactionsAllowed,
+    Guid? ProfitAndLossCarryForwardAccountId,
     IReadOnlyCollection<PreviewOpeningBalanceImportLineRequest> Lines);
 
 public sealed record PreviewOpeningBalanceImportLineRequest(
@@ -423,6 +551,11 @@ public sealed record PreviewOpeningBalanceImportTextRequest(
     string CurrencyCode,
     string? SourceReference,
     string? Memo,
+    DateOnly ProfileFromDate,
+    DateOnly ProfileToDate,
+    string ProfileStatus,
+    bool TransactionsAllowed,
+    Guid? ProfitAndLossCarryForwardAccountId,
     string ImportText,
     string? Delimiter);
 
@@ -431,6 +564,11 @@ public sealed record PostOpeningBalanceImportRequest(
     string CurrencyCode,
     string? SourceReference,
     string? Memo,
+    DateOnly ProfileFromDate,
+    DateOnly ProfileToDate,
+    string ProfileStatus,
+    bool TransactionsAllowed,
+    Guid? ProfitAndLossCarryForwardAccountId,
     IReadOnlyCollection<PostOpeningBalanceImportLineRequest> Lines);
 
 public sealed record PostOpeningBalanceImportLineRequest(
@@ -524,6 +662,12 @@ public sealed record JournalEntrySourceDocumentResponse(
     string? Label,
     string? DashboardModule,
     string? DashboardStep,
+    DateOnly? FiscalYearFrom,
+    DateOnly? FiscalYearTo,
+    bool? TransactionsAllowed,
+    Guid? ProfitAndLossCarryForwardAccountId,
+    string? ProfitAndLossCarryForwardAccountCode,
+    string? ProfitAndLossCarryForwardAccountName,
     string? Message);
 
 public sealed record JournalEntryLineResponse(

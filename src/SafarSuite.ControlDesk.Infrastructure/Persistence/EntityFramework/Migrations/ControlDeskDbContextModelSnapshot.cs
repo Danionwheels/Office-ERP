@@ -353,6 +353,60 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.ToTable("ledger_accounts", "control");
                 });
 
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.OpeningBalanceProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("opening_balance_profile_id");
+
+                    b.Property<string>("CompanyCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("company_code");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateOnly>("FiscalYearFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("fiscal_year_from");
+
+                    b.Property<DateOnly>("FiscalYearTo")
+                        .HasColumnType("date")
+                        .HasColumnName("fiscal_year_to");
+
+                    b.Property<Guid?>("ProfitAndLossCarryForwardAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("profit_and_loss_carry_forward_account_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<bool>("TransactionsAllowed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("transactions_allowed");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyCode")
+                        .IsUnique()
+                        .HasDatabaseName("ux_opening_balance_profiles_company");
+
+                    b.HasIndex("ProfitAndLossCarryForwardAccountId")
+                        .HasDatabaseName("ix_opening_balance_profiles_pl_carry_forward_account_id");
+
+                    b.ToTable("opening_balance_profiles", "control");
+                });
+
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.VoucherNumberingRule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1406,6 +1460,14 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
                         .WithMany()
                         .HasForeignKey("ParentAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.OpeningBalanceProfile", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ProfitAndLossCarryForwardAccountId")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 

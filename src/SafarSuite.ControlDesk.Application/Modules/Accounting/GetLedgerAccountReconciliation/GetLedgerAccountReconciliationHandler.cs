@@ -1,5 +1,6 @@
 using SafarSuite.ControlDesk.Application.Common.Results;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
 
@@ -73,7 +74,7 @@ public sealed class GetLedgerAccountReconciliationHandler
         }
         else
         {
-            ReconcileRangeDefaults(account, range, issues);
+            ReconcileRangeDefaults(account, range, accountsById, issues);
         }
 
         ReconcileLevelRules(account, range, accountsById, issues);
@@ -97,6 +98,7 @@ public sealed class GetLedgerAccountReconciliationHandler
     private static void ReconcileRangeDefaults(
         LedgerAccount account,
         AccountCodeRange range,
+        IReadOnlyDictionary<Guid, LedgerAccount> accountsById,
         ICollection<LedgerAccountReconciliationIssueResult> issues)
     {
         if (!range.IsActive)
@@ -135,7 +137,7 @@ public sealed class GetLedgerAccountReconciliationHandler
                 $"Posting flag is {account.IsPostingAccount}, but range {range.DisplayName} expects {range.IsPostingAccount}.");
         }
 
-        var expectedLevel = DetermineExpectedLevel(range, account);
+        var expectedLevel = DetermineExpectedLevel(range, account, accountsById);
 
         if (account.Level != expectedLevel)
         {
@@ -153,7 +155,8 @@ public sealed class GetLedgerAccountReconciliationHandler
         IReadOnlyDictionary<Guid, LedgerAccount> accountsById,
         ICollection<LedgerAccountReconciliationIssueResult> issues)
     {
-        if (RequiresNonPostingAccount(account.Level) && account.IsPostingAccount)
+        if (LedgerAccountHierarchyPolicy.RequiresNonPostingAccount(account.Level)
+            && account.IsPostingAccount)
         {
             AddIssue(
                 issues,
@@ -162,7 +165,8 @@ public sealed class GetLedgerAccountReconciliationHandler
                 $"{account.Level} accounts cannot be posting accounts.");
         }
 
-        if (RequiresPostingAccount(account.Level) && !account.IsPostingAccount)
+        if (LedgerAccountHierarchyPolicy.RequiresPostingAccount(account.Level)
+            && !account.IsPostingAccount)
         {
             AddIssue(
                 issues,
@@ -171,44 +175,61 @@ public sealed class GetLedgerAccountReconciliationHandler
                 $"{account.Level} accounts must be posting accounts.");
         }
 
-        if (account.Level is LedgerAccountLevel.Header
-            or LedgerAccountLevel.Total
-            or LedgerAccountLevel.Master
-            or LedgerAccountLevel.Control)
+        if (LedgerAccountHierarchyPolicy.IsStructuralLevel(account.Level))
         {
-            if (account.ParentAccountId.HasValue)
-            {
-                AddIssue(
-                    issues,
-                    "Error",
-                    "StructureAccountHasParent",
-                    $"{account.Level} accounts should not have a parent account.");
-            }
+            ReconcileStructuralParent(account, accountsById, issues);
 
             return;
         }
 
-        if (account.Level == LedgerAccountLevel.Subsidiary)
+        if (LedgerAccountHierarchyPolicy.RequiresPostingAccount(account.Level))
         {
-            ReconcileSubsidiaryParent(account, range, accountsById, issues);
+            ReconcilePostingParent(account, range, accountsById, issues);
+        }
+    }
 
+    private static void ReconcileStructuralParent(
+        LedgerAccount account,
+        IReadOnlyDictionary<Guid, LedgerAccount> accountsById,
+        ICollection<LedgerAccountReconciliationIssueResult> issues)
+    {
+        if (!account.ParentAccountId.HasValue)
+        {
             return;
         }
 
-        if (account.Level == LedgerAccountLevel.Detail
-            && account.ParentAccountId.HasValue
-            && accountsById.TryGetValue(account.ParentAccountId.Value.Value, out var detailParent)
-            && detailParent.Level != LedgerAccountLevel.Master)
+        if (!accountsById.TryGetValue(account.ParentAccountId.Value.Value, out var parentAccount))
         {
             AddIssue(
                 issues,
                 "Error",
-                "DetailParentNotMaster",
-                "Detail account parent should be a Master account.");
+                "StructuralParentMissing",
+                "Structural account parent does not exist.");
+
+            return;
+        }
+
+        if (!LedgerAccountHierarchyPolicy.IsStructuralLevel(parentAccount.Level)
+            || parentAccount.IsPostingAccount)
+        {
+            AddIssue(
+                issues,
+                "Error",
+                "StructuralParentNotStructural",
+                "Structural account parent should be a non-posting Header, Total, Master, or Control account.");
+        }
+
+        if (parentAccount.Type != account.Type || parentAccount.NormalBalance != account.NormalBalance)
+        {
+            AddIssue(
+                issues,
+                "Error",
+                "StructuralParentTypeBalanceMismatch",
+                "Structural account parent should use the same account type and normal balance.");
         }
     }
 
-    private static void ReconcileSubsidiaryParent(
+    private static void ReconcilePostingParent(
         LedgerAccount account,
         AccountCodeRange? range,
         IReadOnlyDictionary<Guid, LedgerAccount> accountsById,
@@ -216,11 +237,14 @@ public sealed class GetLedgerAccountReconciliationHandler
     {
         if (!account.ParentAccountId.HasValue)
         {
-            AddIssue(
-                issues,
-                "Error",
-                "SubsidiaryMissingParent",
-                "Subsidiary account is not linked to a Control parent account.");
+            if (account.Level == LedgerAccountLevel.Subsidiary)
+            {
+                AddIssue(
+                    issues,
+                    "Error",
+                    "PostingChildMissingParent",
+                    "Subsidiary account is not linked to a parent account.");
+            }
 
             return;
         }
@@ -230,29 +254,44 @@ public sealed class GetLedgerAccountReconciliationHandler
             AddIssue(
                 issues,
                 "Error",
-                "SubsidiaryParentMissing",
-                "Subsidiary account parent does not exist.");
+                "PostingChildParentMissing",
+                "Posting account parent does not exist.");
 
             return;
         }
 
-        if (parentAccount.Level != LedgerAccountLevel.Control)
+        if (parentAccount.Status != LedgerAccountStatus.Active)
         {
             AddIssue(
                 issues,
-                "Error",
-                "SubsidiaryParentNotControl",
-                "Subsidiary account parent should be a Control account.");
+                "Warning",
+                "PostingChildParentInactive",
+                "Posting account parent is inactive.");
         }
 
-        if (!string.IsNullOrWhiteSpace(range?.ParentCode)
-            && !string.Equals(parentAccount.Code.Value, range.ParentCode, StringComparison.Ordinal))
+        if (parentAccount.Type != account.Type || parentAccount.NormalBalance != account.NormalBalance)
         {
             AddIssue(
                 issues,
                 "Error",
-                "SubsidiaryParentCodeMismatch",
-                $"Subsidiary parent should use configured parent code {range.ParentCode}.");
+                "PostingChildParentTypeBalanceMismatch",
+                "Posting account parent should use the same account type and normal balance.");
+        }
+
+        if (range is not null
+            && !LedgerAccountHierarchyPolicy.IsChildCodeInsideParentScope(
+                account.Code.Value,
+                parentAccount.Code.Value,
+                range))
+        {
+            var issueCode = string.IsNullOrWhiteSpace(range.ParentCode)
+                ? "PostingChildParentCodeScopeMismatch"
+                : "PostingChildParentCodeMismatch";
+            AddIssue(
+                issues,
+                "Error",
+                issueCode,
+                $"Posting parent {parentAccount.Code.Value} cannot own codes from range {range.DisplayName}.");
         }
     }
 
@@ -273,56 +312,17 @@ public sealed class GetLedgerAccountReconciliationHandler
 
     private static LedgerAccountLevel DetermineExpectedLevel(
         AccountCodeRange range,
-        LedgerAccount account)
+        LedgerAccount account,
+        IReadOnlyDictionary<Guid, LedgerAccount> accountsById)
     {
-        if (HasRangeIntent(range, "Header"))
-        {
-            return LedgerAccountLevel.Header;
-        }
+        accountsById.TryGetValue(
+            account.ParentAccountId?.Value ?? Guid.Empty,
+            out var parentAccount);
 
-        if (HasRangeIntent(range, "Total"))
-        {
-            return LedgerAccountLevel.Total;
-        }
-
-        if (HasRangeIntent(range, "Control"))
-        {
-            return LedgerAccountLevel.Control;
-        }
-
-        if (HasRangeIntent(range, "Master"))
-        {
-            return LedgerAccountLevel.Master;
-        }
-
-        if (!string.IsNullOrWhiteSpace(range.ParentCode))
-        {
-            return LedgerAccountLevel.Subsidiary;
-        }
-
-        return account.IsPostingAccount
-            ? LedgerAccountLevel.Detail
-            : LedgerAccountLevel.Master;
-    }
-
-    private static bool RequiresNonPostingAccount(LedgerAccountLevel level)
-    {
-        return level is LedgerAccountLevel.Header
-            or LedgerAccountLevel.Total
-            or LedgerAccountLevel.Master
-            or LedgerAccountLevel.Control;
-    }
-
-    private static bool RequiresPostingAccount(LedgerAccountLevel level)
-    {
-        return level is LedgerAccountLevel.Detail
-            or LedgerAccountLevel.Subsidiary;
-    }
-
-    private static bool HasRangeIntent(AccountCodeRange range, string intent)
-    {
-        return range.Role.Contains(intent, StringComparison.OrdinalIgnoreCase)
-            || range.DisplayName.Contains(intent, StringComparison.OrdinalIgnoreCase);
+        return LedgerAccountHierarchyPolicy.DetermineExpectedLevel(
+            range,
+            parentAccount,
+            account.IsPostingAccount);
     }
 
     private static void AddIssue(

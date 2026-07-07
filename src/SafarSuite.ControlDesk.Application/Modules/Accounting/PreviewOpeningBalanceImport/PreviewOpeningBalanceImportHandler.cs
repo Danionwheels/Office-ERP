@@ -9,15 +9,18 @@ public sealed class PreviewOpeningBalanceImportHandler
 {
     private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly AccountingPeriodPostingGuard _periodGuard;
+    private readonly OpeningBalanceProfilePostingGuard _profileGuard;
     private readonly JournalVoucherNumberService _voucherNumbers;
 
     public PreviewOpeningBalanceImportHandler(
         ILedgerAccountRepository ledgerAccounts,
         AccountingPeriodPostingGuard periodGuard,
+        OpeningBalanceProfilePostingGuard profileGuard,
         JournalVoucherNumberService voucherNumbers)
     {
         _ledgerAccounts = ledgerAccounts;
         _periodGuard = periodGuard;
+        _profileGuard = profileGuard;
         _voucherNumbers = voucherNumbers;
     }
 
@@ -53,6 +56,15 @@ public sealed class PreviewOpeningBalanceImportHandler
                 blockers.Add(periodError.Message);
             }
         }
+
+        blockers.AddRange(await _profileGuard.ValidateAsync(
+            command.EntryDate,
+            command.ProfileFromDate,
+            command.ProfileToDate,
+            command.ProfileStatus,
+            command.TransactionsAllowed,
+            command.ProfitAndLossCarryForwardAccountId,
+            cancellationToken));
 
         var sourceReference = await ResolveSourceReferenceAsync(command, cancellationToken);
         var lineResults = await ValidateLinesAsync(command.Lines ?? [], cancellationToken);

@@ -12,11 +12,13 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.ListVoucherNumbering
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetBalanceSheet;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountCodeRangeValidation;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewChartOfAccountsImportText;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImportText;
@@ -34,6 +36,7 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ApplyClientCredit;
+using SafarSuite.ControlDesk.Application.Modules.Payments.Common;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetClientRefundDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetInvoicePaymentDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.IssueClientRefund;
@@ -42,6 +45,7 @@ using SafarSuite.ControlDesk.Domain.Modules.Accounting;
 using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Infrastructure.ControlCloud;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.InMemory;
+using SafarSuite.ControlDesk.Infrastructure.System;
 using Microsoft.Extensions.Options;
 
 namespace SafarSuite.ControlDesk.AccountingSmoke;
@@ -71,7 +75,10 @@ internal sealed class AccountingSmokeRunner
         var businessDate = new DateOnly(2026, 7, 1);
         var accounts = await CreateLedgerAccountsAsync(cancellationToken);
         await AssertLedgerAccountReconciliationAsync(accounts, cancellationToken);
+        await AssertAccountCodeRangeValidationAsync(cancellationToken);
         await AssertLedgerAccountGuardrailsAsync(accounts, cancellationToken);
+        await AssertPaymentPostingAccountGuardsAsync(accounts, cancellationToken);
+        await AssertChartOfAccountsImportPreviewAsync(accounts, cancellationToken);
         await AssertPostingPeriodGuardAsync(cancellationToken);
         await AssertVoucherAndOpeningBalancePreviewAsync(accounts, businessDate, cancellationToken);
         var client = await CreateClientAsync(cancellationToken);
@@ -101,6 +108,16 @@ internal sealed class AccountingSmokeRunner
             businessDate,
             cancellationToken);
         AssertBalanced(firstIssue.TotalDebit, firstIssue.TotalCredit, "first invoice journal");
+        AssertJournalLineAccountMetadata(
+            firstIssue.JournalLines.Select(line => (
+                line.LedgerAccountCode,
+                line.LedgerAccountName,
+                line.LedgerAccountType,
+                line.LedgerAccountNormalBalance,
+                line.LedgerAccountLevel,
+                line.IsPostingAccount,
+                line.LedgerAccountStatus)),
+            "first invoice journal");
         SmokeAssertions.Equal("Issued", firstIssue.InvoiceStatus, "first invoice issue status");
 
         var payment = await RecordPaymentAsync(
@@ -110,11 +127,31 @@ internal sealed class AccountingSmokeRunner
             businessDate,
             cancellationToken);
         AssertBalanced(payment.TotalDebit, payment.TotalCredit, "payment journal");
+        AssertJournalLineAccountMetadata(
+            payment.JournalLines.Select(line => (
+                line.LedgerAccountCode,
+                line.LedgerAccountName,
+                line.LedgerAccountType,
+                line.LedgerAccountNormalBalance,
+                line.LedgerAccountLevel,
+                line.IsPostingAccount,
+                line.LedgerAccountStatus)),
+            "payment journal");
         SmokeAssertions.Equal("Paid", payment.InvoiceStatus, "paid invoice status");
         SmokeAssertions.Money(0m, payment.BalanceDue, "paid invoice balance");
 
         var creditNote = await IssueCreditNoteAsync(firstInvoice.InvoiceId, businessDate, cancellationToken);
         AssertBalanced(creditNote.TotalDebit, creditNote.TotalCredit, "credit note journal");
+        AssertJournalLineAccountMetadata(
+            creditNote.JournalLines.Select(line => (
+                line.LedgerAccountCode,
+                line.LedgerAccountName,
+                line.LedgerAccountType,
+                line.LedgerAccountNormalBalance,
+                line.LedgerAccountLevel,
+                line.IsPostingAccount,
+                line.LedgerAccountStatus)),
+            "credit note journal");
         SmokeAssertions.Money(110m, creditNote.Amount, "credit note amount");
 
         var refund = await IssueRefundAsync(
@@ -124,6 +161,16 @@ internal sealed class AccountingSmokeRunner
             businessDate,
             cancellationToken);
         AssertBalanced(refund.TotalDebit, refund.TotalCredit, "client refund journal");
+        AssertJournalLineAccountMetadata(
+            refund.JournalLines.Select(line => (
+                line.LedgerAccountCode,
+                line.LedgerAccountName,
+                line.LedgerAccountType,
+                line.LedgerAccountNormalBalance,
+                line.LedgerAccountLevel,
+                line.IsPostingAccount,
+                line.LedgerAccountStatus)),
+            "client refund journal");
         SmokeAssertions.Money(-110m, refund.ClientBalanceBefore, "refund balance before");
         SmokeAssertions.Money(-70m, refund.ClientBalanceAfter, "refund balance after");
 
@@ -191,10 +238,70 @@ internal sealed class AccountingSmokeRunner
             "Accounts receivable control",
             null,
             cancellationToken);
-        var accountsReceivableSuggestion = await SuggestLedgerAccountCodeAsync("ClientReceivable", cancellationToken);
+        var accountsReceivableSuggestion = await SuggestLedgerAccountCodeAsync(
+            "ClientReceivable",
+            accountsReceivableControl.LedgerAccountId,
+            cancellationToken);
         SmokeAssertions.Equal(9, accountsReceivableSuggestion.SuggestedCode.Length, "receivable setup suggestion length");
+        SmokeAssertions.Equal(
+            accountsReceivableControl.LedgerAccountId,
+            accountsReceivableSuggestion.ParentAccountId ?? Guid.Empty,
+            "receivable suggestion parent account");
+        SmokeAssertions.Equal(
+            accountsReceivableControl.Code,
+            accountsReceivableSuggestion.ParentAccountCode ?? "",
+            "receivable suggestion parent code");
         SmokeAssertions.Equal("Header", assetHeader.Level, "asset header level");
         SmokeAssertions.Equal("Total", assetTotal.Level, "asset total level");
+
+        var nestedAssetHeaderSuggestion = await SuggestLedgerAccountCodeAsync(
+            "AssetHeader",
+            assetHeader.LedgerAccountId,
+            cancellationToken);
+        var nestedAssetHeader = SmokeAssertions.RequireSuccess(
+            await _harness.CreateLedgerAccount.HandleAsync(
+                new CreateLedgerAccountCommand(
+                    nestedAssetHeaderSuggestion.SuggestedCode,
+                    "Nested asset header",
+                    nestedAssetHeaderSuggestion.Type,
+                    nestedAssetHeaderSuggestion.NormalBalance,
+                    assetHeader.LedgerAccountId,
+                    nestedAssetHeaderSuggestion.IsPostingAccount,
+                    "Header"),
+                cancellationToken),
+            "create nested asset header account");
+        SmokeAssertions.Equal(
+            assetHeader.LedgerAccountId,
+            nestedAssetHeader.ParentAccountId ?? Guid.Empty,
+            "nested asset header parent account");
+        SmokeAssertions.Equal("Header", nestedAssetHeader.Level, "nested asset header level");
+
+        var nestedAssetGrandchildSuggestion = await SuggestLedgerAccountCodeAsync(
+            "AssetHeader",
+            nestedAssetHeader.LedgerAccountId,
+            cancellationToken);
+        var nestedAssetGrandchild = SmokeAssertions.RequireSuccess(
+            await _harness.CreateLedgerAccount.HandleAsync(
+                new CreateLedgerAccountCommand(
+                    nestedAssetGrandchildSuggestion.SuggestedCode,
+                    "Nested asset grandchild",
+                    nestedAssetGrandchildSuggestion.Type,
+                    nestedAssetGrandchildSuggestion.NormalBalance,
+                    nestedAssetHeader.LedgerAccountId,
+                    nestedAssetGrandchildSuggestion.IsPostingAccount,
+                    "Header"),
+                cancellationToken),
+            "create nested asset grandchild account");
+        SmokeAssertions.Equal(
+            nestedAssetHeader.LedgerAccountId,
+            nestedAssetGrandchild.ParentAccountId ?? Guid.Empty,
+            "nested asset grandchild parent account");
+        SmokeAssertions.Equal("Header", nestedAssetGrandchild.Level, "nested asset grandchild level");
+        var cashBankControl = await GetOrCreateReusableLedgerAccountAsync(
+            "CashBankControl",
+            "Cash and bank control",
+            null,
+            cancellationToken);
 
         var accountsReceivable = SmokeAssertions.RequireSuccess(
             await _harness.CreateLedgerAccount.HandleAsync(
@@ -213,11 +320,29 @@ internal sealed class AccountingSmokeRunner
             "receivable parent account");
         SmokeAssertions.Equal("Control", accountsReceivableControl.Level, "receivable control level");
         SmokeAssertions.Equal("Subsidiary", accountsReceivable.Level, "receivable subsidiary level");
-        var cashOrBank = await GetOrCreateReusableLedgerAccountAsync(
+        SmokeAssertions.Equal("Control", cashBankControl.Level, "cash bank control level");
+
+        var cashBankSuggestion = await SuggestLedgerAccountCodeAsync(
             "CashBank",
-            "Cash and bank",
-            null,
+            cashBankControl.LedgerAccountId,
             cancellationToken);
+        var cashOrBank = SmokeAssertions.RequireSuccess(
+            await _harness.CreateLedgerAccount.HandleAsync(
+                new CreateLedgerAccountCommand(
+                    cashBankSuggestion.SuggestedCode,
+                    "Cash and bank",
+                    cashBankSuggestion.Type,
+                    cashBankSuggestion.NormalBalance,
+                    cashBankControl.LedgerAccountId,
+                    cashBankSuggestion.IsPostingAccount,
+                    "Subsidiary"),
+                cancellationToken),
+            "create cash bank subsidiary account");
+        SmokeAssertions.Equal(
+            cashBankControl.LedgerAccountId,
+            cashOrBank.ParentAccountId ?? Guid.Empty,
+            "cash bank subsidiary parent account");
+        SmokeAssertions.Equal("Subsidiary", cashOrBank.Level, "cash bank subsidiary level");
         var revenue = await GetOrCreateReusableLedgerAccountAsync(
             "SubscriptionRevenue",
             "Subscription revenue",
@@ -244,14 +369,19 @@ internal sealed class AccountingSmokeRunner
             null,
             cancellationToken);
 
-        var nextAccountsReceivableSuggestion = await SuggestLedgerAccountCodeAsync("ClientReceivable", cancellationToken);
+        var nextAccountsReceivableSuggestion = await SuggestLedgerAccountCodeAsync(
+            "ClientReceivable",
+            accountsReceivableControl.LedgerAccountId,
+            cancellationToken);
         SmokeAssertions.Equal(
             BigInteger.Parse(accountsReceivableSuggestion.SuggestedCode) + BigInteger.One,
             BigInteger.Parse(nextAccountsReceivableSuggestion.SuggestedCode),
             "next receivable setup suggestion");
 
         return new LedgerAccounts(
+            accountsReceivableControl.LedgerAccountId,
             accountsReceivable.LedgerAccountId,
+            cashBankControl.LedgerAccountId,
             cashOrBank.LedgerAccountId,
             revenue.LedgerAccountId,
             tax.LedgerAccountId,
@@ -261,6 +391,9 @@ internal sealed class AccountingSmokeRunner
             [
                 assetHeader.LedgerAccountId,
                 assetTotal.LedgerAccountId,
+                nestedAssetHeader.LedgerAccountId,
+                nestedAssetGrandchild.LedgerAccountId,
+                cashBankControl.LedgerAccountId,
                 accountsReceivableControl.LedgerAccountId,
                 accountsReceivable.LedgerAccountId,
                 cashOrBank.LedgerAccountId,
@@ -334,9 +467,17 @@ internal sealed class AccountingSmokeRunner
         string role,
         CancellationToken cancellationToken)
     {
+        return await SuggestLedgerAccountCodeAsync(role, null, cancellationToken);
+    }
+
+    private async Task<SuggestLedgerAccountCodeResult> SuggestLedgerAccountCodeAsync(
+        string role,
+        Guid? parentAccountId,
+        CancellationToken cancellationToken)
+    {
         return SmokeAssertions.RequireSuccess(
             await _harness.SuggestLedgerAccountCode.HandleAsync(
-                new SuggestLedgerAccountCodeQuery(role),
+                new SuggestLedgerAccountCodeQuery(role, ParentAccountId: parentAccountId),
                 cancellationToken),
             $"suggest ledger account code for {role}");
     }
@@ -386,6 +527,103 @@ internal sealed class AccountingSmokeRunner
                 .Sum(item => item.Actions.Count);
 
         SmokeAssertions.Equal(expectedActionCount, actionCount, "ledger account repair plan action count");
+    }
+
+    private async Task AssertAccountCodeRangeValidationAsync(CancellationToken cancellationToken)
+    {
+        var validation = SmokeAssertions.RequireSuccess(
+            await _harness.GetAccountCodeRangeValidation.HandleAsync(
+                new GetAccountCodeRangeValidationQuery(null),
+                cancellationToken),
+            "get account code range validation");
+
+        if (_options.Provider == "inmemory")
+        {
+            SmokeAssertions.True(validation.IsValid, "default account code ranges should be valid");
+            SmokeAssertions.Equal(0, validation.ErrorCount, "default account code range error count");
+            SmokeAssertions.Equal(0, validation.WarningCount, "default account code range warning count");
+        }
+
+        await AssertPollutedAccountCodeRangeValidationAsync(cancellationToken);
+    }
+
+    private static async Task AssertPollutedAccountCodeRangeValidationAsync(CancellationToken cancellationToken)
+    {
+        var ranges = new InMemoryAccountCodeRangeRepository();
+        var ledgerAccounts = new InMemoryLedgerAccountRepository();
+        var defaults = new AccountingSetupDefaults(
+            ranges,
+            new NoOpUnitOfWork(),
+            new GuidIdGenerator(),
+            new SystemClock());
+
+        await ranges.AddAsync(CreateSmokeRange(
+            "SmokeAssetOverlap",
+            "Smoke asset overlap",
+            "100",
+            "10050",
+            "10060",
+            5,
+            LedgerAccountType.Asset,
+            NormalBalance.Debit,
+            isPostingAccount: false,
+            parentCode: null), cancellationToken);
+        await ranges.AddAsync(CreateSmokeRange(
+            "SmokeMissingParent",
+            "Smoke missing parent",
+            "88900",
+            "889000001",
+            "889009999",
+            9,
+            LedgerAccountType.Expense,
+            NormalBalance.Debit,
+            isPostingAccount: true,
+            parentCode: "88900"), cancellationToken);
+
+        var handler = new GetAccountCodeRangeValidationHandler(
+            ranges,
+            ledgerAccounts,
+            defaults);
+        var validation = SmokeAssertions.RequireSuccess(
+            await handler.HandleAsync(new GetAccountCodeRangeValidationQuery(null), cancellationToken),
+            "get polluted account code range validation");
+
+        SmokeAssertions.True(!validation.IsValid, "polluted account code ranges should be invalid");
+        SmokeAssertions.True(
+            validation.Issues.Any(issue => issue.Code == "OverlappingRange"),
+            "polluted account code ranges should detect overlap");
+        SmokeAssertions.True(
+            validation.Issues.Any(issue => issue.Code == "ParentCodeNotCovered"),
+            "polluted account code ranges should detect missing parent range");
+    }
+
+    private static AccountCodeRange CreateSmokeRange(
+        string role,
+        string displayName,
+        string searchPrefix,
+        string rangeStart,
+        string rangeEnd,
+        int codeLength,
+        LedgerAccountType accountType,
+        NormalBalance normalBalance,
+        bool isPostingAccount,
+        string? parentCode)
+    {
+        return AccountCodeRange.Create(
+            AccountCodeRangeId.Create(Guid.NewGuid()),
+            AccountingSetupDefaults.DefaultCompanyCode,
+            role,
+            displayName,
+            searchPrefix,
+            rangeStart,
+            rangeEnd,
+            codeLength,
+            accountType,
+            normalBalance,
+            isPostingAccount,
+            parentCode,
+            isActive: true,
+            DateTimeOffset.UtcNow);
     }
 
     private async Task AssertLedgerAccountGuardrailsAsync(
@@ -439,20 +677,121 @@ internal sealed class AccountingSmokeRunner
             "Posting flag must be False");
 
         var nextReceivable = await SuggestLedgerAccountCodeAsync("ClientReceivable", cancellationToken);
-        SmokeAssertions.RequireFailure(
+        var nestedReceivable = SmokeAssertions.RequireSuccess(
             await _harness.CreateLedgerAccount.HandleAsync(
                 new CreateLedgerAccountCommand(
                     nextReceivable.SuggestedCode,
-                    "Subsidiary with wrong parent should be rejected",
+                    "Nested receivable descendant should be allowed",
                     nextReceivable.Type,
                     nextReceivable.NormalBalance,
                     accounts.AccountsReceivableAccountId,
                     nextReceivable.IsPostingAccount,
                     "Subsidiary"),
                 cancellationToken),
-            "reject subsidiary with non-control parent",
+            "allow subsidiary under same-range descendant parent");
+        SmokeAssertions.Equal(
+            accounts.AccountsReceivableAccountId,
+            nestedReceivable.ParentAccountId ?? Guid.Empty,
+            "nested receivable descendant parent account");
+
+        nextReceivable = await SuggestLedgerAccountCodeAsync(
+            "ClientReceivable",
+            accounts.AccountsReceivableControlId,
+            cancellationToken);
+
+        SmokeAssertions.RequireFailure(
+            await _harness.CreateLedgerAccount.HandleAsync(
+                new CreateLedgerAccountCommand(
+                    nextReceivable.SuggestedCode,
+                    "Subsidiary under wrong control should be rejected",
+                    nextReceivable.Type,
+                    nextReceivable.NormalBalance,
+                    accounts.CashOrBankControlId,
+                    nextReceivable.IsPostingAccount,
+                    "Subsidiary"),
+                cancellationToken),
+            "reject explicit child range under wrong control",
             nameof(CreateLedgerAccountCommand.ParentAccountId),
-            "Control account");
+            "must be 15100");
+
+        var nextCashBank = await SuggestLedgerAccountCodeAsync(
+            "CashBank",
+            accounts.CashOrBankControlId,
+            cancellationToken);
+        var nestedCashBank = SmokeAssertions.RequireSuccess(
+            await _harness.CreateLedgerAccount.HandleAsync(
+                new CreateLedgerAccountCommand(
+                    nextCashBank.SuggestedCode,
+                    "Nested cash bank descendant should be allowed",
+                    nextCashBank.Type,
+                    nextCashBank.NormalBalance,
+                    accounts.CashOrBankAccountId,
+                    nextCashBank.IsPostingAccount,
+                    "Subsidiary"),
+                cancellationToken),
+            "allow cash bank under same-range descendant parent");
+        SmokeAssertions.Equal(
+            accounts.CashOrBankAccountId,
+            nestedCashBank.ParentAccountId ?? Guid.Empty,
+            "nested cash bank descendant parent account");
+
+        nextCashBank = await SuggestLedgerAccountCodeAsync(
+            "CashBank",
+            accounts.CashOrBankControlId,
+            cancellationToken);
+
+        SmokeAssertions.RequireFailure(
+            await _harness.CreateLedgerAccount.HandleAsync(
+                new CreateLedgerAccountCommand(
+                    nextCashBank.SuggestedCode,
+                    "Cash bank under receivable control should be rejected",
+                    nextCashBank.Type,
+                    nextCashBank.NormalBalance,
+                    accounts.AccountsReceivableControlId,
+                    nextCashBank.IsPostingAccount,
+                    "Subsidiary"),
+                cancellationToken),
+            "reject open posting range under unrelated control",
+            nameof(CreateLedgerAccountCommand.ParentAccountId),
+            "cannot own codes from range");
+    }
+
+    private async Task AssertPaymentPostingAccountGuardsAsync(
+        LedgerAccounts accounts,
+        CancellationToken cancellationToken)
+    {
+        var cashOrBankAccount = await _harness.LedgerAccounts.GetByIdAsync(
+            LedgerAccountId.Create(accounts.CashOrBankAccountId),
+            cancellationToken);
+
+        if (cashOrBankAccount is null)
+        {
+            throw new SmokeFailureException("cash or bank account should exist for posting account guard smoke.");
+        }
+
+        var postingService = new PaymentPostingService(
+            _harness.LedgerAccounts,
+            new GuidIdGenerator(),
+            new SystemClock());
+
+        cashOrBankAccount.Deactivate();
+
+        try
+        {
+            SmokeAssertions.RequireFailure(
+                await postingService.ValidateAssetPostingAccountAsync(
+                    LedgerAccountId.Create(accounts.CashOrBankAccountId),
+                    nameof(RecordInvoicePaymentCommand.CashOrBankAccountId),
+                    "Cash or bank account",
+                    cancellationToken),
+                "reject inactive payment posting account",
+                nameof(RecordInvoicePaymentCommand.CashOrBankAccountId),
+                "active");
+        }
+        finally
+        {
+            cashOrBankAccount.Activate();
+        }
     }
 
     private static async Task AssertPostingPeriodGuardAsync(CancellationToken cancellationToken)
@@ -528,6 +867,100 @@ internal sealed class AccountingSmokeRunner
             "closed posting period error should name the closed MAIN period.");
     }
 
+    private async Task AssertChartOfAccountsImportPreviewAsync(
+        LedgerAccounts accounts,
+        CancellationToken cancellationToken)
+    {
+        var receivableAccount = await RequireLedgerAccountAsync(
+            accounts.AccountsReceivableAccountId,
+            cancellationToken);
+        var receivableControlCode = receivableAccount.Code.Value[..5];
+        var receivableControl = await _harness.LedgerAccounts.GetByCodeAsync(
+            LedgerAccountCode.Create(receivableControlCode),
+            cancellationToken)
+            ?? throw new SmokeFailureException("receivable control account was not found for COA import preview.");
+        var cashBankControl = await RequireLedgerAccountAsync(
+            accounts.CashOrBankControlId,
+            cancellationToken);
+        var importReceivableSuggestion = await SuggestLedgerAccountCodeAsync(
+            "ClientReceivable",
+            accounts.AccountsReceivableControlId,
+            cancellationToken);
+        var importCashBankSuggestion = await SuggestLedgerAccountCodeAsync(
+            "CashBank",
+            accounts.CashOrBankControlId,
+            cancellationToken);
+        var missingParentReceivableCode = NextNumericCode(importReceivableSuggestion.SuggestedCode);
+
+        var preview = SmokeAssertions.RequireSuccess(
+            await _harness.PreviewChartOfAccountsImportText.HandleAsync(
+                new PreviewChartOfAccountsImportTextCommand(
+                    null,
+                    string.Join(
+                        Environment.NewLine,
+                        [
+                            "Acc Type,Account Code,Parent Code,Account Name,CUR",
+                            $"Control,{receivableControl.Code.Value},,{receivableControl.Name},PKR",
+                            $"Subsidiary,{receivableAccount.Code.Value},{receivableControl.Code.Value},Imported receivable rename,PKR",
+                            $"Subsidiary,{importReceivableSuggestion.SuggestedCode},{receivableControl.Code.Value},Imported client receivable,PKR",
+                            $"Control,{cashBankControl.Code.Value},,{cashBankControl.Name},PKR",
+                            $"Subsidiary,{importCashBankSuggestion.SuggestedCode},{cashBankControl.Code.Value},Imported bank account,PKR",
+                            $"Subsidiary,{missingParentReceivableCode},99999,Missing parent receivable,PKR"
+                        ]),
+                    "comma"),
+                cancellationToken),
+            "preview chart of accounts import text");
+
+        SmokeAssertions.Equal("MAIN", preview.CompanyCode, "COA import preview company");
+        SmokeAssertions.Equal("Comma", preview.Format, "COA import preview format");
+        SmokeAssertions.Equal(6, preview.ParsedLineCount, "COA import preview parsed line count");
+        SmokeAssertions.Equal(1, preview.IgnoredLineCount, "COA import preview ignored header count");
+        SmokeAssertions.Equal(2, preview.InsertCount, "COA import preview insert count");
+        SmokeAssertions.Equal(1, preview.UpdateCount, "COA import preview update count");
+        SmokeAssertions.Equal(2, preview.NoChangeCount, "COA import preview no-change count");
+        SmokeAssertions.Equal(1, preview.RejectCount, "COA import preview reject count");
+        SmokeAssertions.True(!preview.CanImport, "COA import preview should block rejected rows.");
+
+        var noChangeRow = preview.Rows.Single(row => row.Code == receivableControl.Code.Value);
+        SmokeAssertions.Equal("NoChange", noChangeRow.Action, "existing control COA preview action");
+        SmokeAssertions.Equal(
+            receivableControl.Id.Value,
+            noChangeRow.ExistingLedgerAccountId ?? Guid.Empty,
+            "existing control COA preview id");
+        SmokeAssertions.Equal("Control", noChangeRow.ResolvedLevel, "existing control COA preview level");
+
+        var updateRow = preview.Rows.Single(row => row.Code == receivableAccount.Code.Value);
+        SmokeAssertions.Equal("Update", updateRow.Action, "existing subsidiary COA preview update action");
+        SmokeAssertions.Equal(
+            receivableAccount.Id.Value,
+            updateRow.ExistingLedgerAccountId ?? Guid.Empty,
+            "existing subsidiary COA preview id");
+
+        var childRow = preview.Rows.Single(row => row.Code == importReceivableSuggestion.SuggestedCode);
+        SmokeAssertions.Equal("Insert", childRow.Action, "new subsidiary COA preview action");
+        SmokeAssertions.Equal(
+            receivableControl.Id.Value,
+            childRow.ParentAccountId ?? Guid.Empty,
+            "new subsidiary COA preview parent");
+        SmokeAssertions.Equal("Existing", childRow.ParentSource ?? "", "new subsidiary COA preview parent source");
+        SmokeAssertions.Equal("Subsidiary", childRow.ResolvedLevel, "new subsidiary COA preview level");
+
+        var importParentRow = preview.Rows.Single(row => row.Code == cashBankControl.Code.Value);
+        SmokeAssertions.Equal("NoChange", importParentRow.Action, "existing cash control COA preview action");
+        SmokeAssertions.Equal("Control", importParentRow.ResolvedLevel, "existing cash control COA preview level");
+
+        var importChildRow = preview.Rows.Single(row => row.Code == importCashBankSuggestion.SuggestedCode);
+        SmokeAssertions.Equal("Insert", importChildRow.Action, "existing-parent child COA preview action");
+        SmokeAssertions.Equal("Existing", importChildRow.ParentSource ?? "", "existing-parent child COA preview parent source");
+        SmokeAssertions.Equal("Subsidiary", importChildRow.ResolvedLevel, "existing-parent child COA preview level");
+
+        var missingParentRow = preview.Rows.Single(row => row.Code == missingParentReceivableCode);
+        SmokeAssertions.Equal("Reject", missingParentRow.Action, "missing parent COA preview action");
+        SmokeAssertions.True(
+            missingParentRow.Issues.Any(issue => issue.Code == "MissingParent"),
+            "missing parent COA preview should report missing parent.");
+    }
+
     private async Task AssertVoucherAndOpeningBalancePreviewAsync(
         LedgerAccounts accounts,
         DateOnly businessDate,
@@ -589,6 +1022,8 @@ internal sealed class AccountingSmokeRunner
         var retainedEarningsAccount = await RequireLedgerAccountAsync(
             accounts.RetainedEarningsAccountId,
             cancellationToken);
+        var profileFromDate = new DateOnly(businessDate.Year, 1, 1);
+        var profileToDate = new DateOnly(businessDate.Year, 12, 31);
 
         var openingPreview = SmokeAssertions.RequireSuccess(
             await _harness.PreviewOpeningBalanceImport.HandleAsync(
@@ -597,6 +1032,11 @@ internal sealed class AccountingSmokeRunner
                     CurrencyCode,
                     null,
                     "Legacy opening balance dry-run",
+                    profileFromDate,
+                    profileToDate,
+                    "Open",
+                    true,
+                    accounts.RetainedEarningsAccountId,
                     [
                         new PreviewOpeningBalanceImportLineCommand(
                             cashAccount.Code.Value,
@@ -638,6 +1078,11 @@ internal sealed class AccountingSmokeRunner
                     CurrencyCode,
                     null,
                     "Configured opening balance dry-run",
+                    profileFromDate,
+                    profileToDate,
+                    "Open",
+                    true,
+                    accounts.RetainedEarningsAccountId,
                     [
                         new PreviewOpeningBalanceImportLineCommand(
                             cashAccount.Code.Value,
@@ -665,6 +1110,11 @@ internal sealed class AccountingSmokeRunner
                     CurrencyCode,
                     null,
                     "Legacy opening balance text dry-run",
+                    profileFromDate,
+                    profileToDate,
+                    "Open",
+                    true,
+                    accounts.RetainedEarningsAccountId,
                     string.Join(
                         Environment.NewLine,
                         [
@@ -676,7 +1126,7 @@ internal sealed class AccountingSmokeRunner
                 cancellationToken),
             "preview opening balance import text");
 
-        SmokeAssertions.Equal("Comma", textPreview.Format, "opening balance text format");
+        SmokeAssertions.Equal("Comma / Standard", textPreview.Format, "opening balance text format");
         SmokeAssertions.Equal(2, textPreview.ParsedLineCount, "opening balance text parsed line count");
         SmokeAssertions.Equal(1, textPreview.IgnoredLineCount, "opening balance text ignored header count");
         SmokeAssertions.Equal(0, textPreview.ParseIssues.Count, "opening balance text parse issue count");
@@ -691,6 +1141,11 @@ internal sealed class AccountingSmokeRunner
                     CurrencyCode,
                     null,
                     null,
+                    profileFromDate,
+                    profileToDate,
+                    "Open",
+                    true,
+                    accounts.RetainedEarningsAccountId,
                     string.Join(
                         Environment.NewLine,
                         [
@@ -702,7 +1157,7 @@ internal sealed class AccountingSmokeRunner
                 cancellationToken),
             "preview blocked opening balance import text");
 
-        SmokeAssertions.Equal("Pipe", blockedTextPreview.Format, "blocked opening balance text format");
+        SmokeAssertions.Equal("Pipe / Standard", blockedTextPreview.Format, "blocked opening balance text format");
         SmokeAssertions.Equal(1, blockedTextPreview.ParseIssues.Count, "blocked opening balance text parse issue count");
         SmokeAssertions.True(!blockedTextPreview.Preview.CanPost, "blocked opening balance text preview should not post.");
         SmokeAssertions.True(
@@ -717,6 +1172,11 @@ internal sealed class AccountingSmokeRunner
                     CurrencyCode,
                     null,
                     null,
+                    profileFromDate,
+                    profileToDate,
+                    "Open",
+                    true,
+                    accounts.RetainedEarningsAccountId,
                     [
                         new PreviewOpeningBalanceImportLineCommand(
                             "NO-SUCH-ACCOUNT",
@@ -735,6 +1195,8 @@ internal sealed class AccountingSmokeRunner
             "blocked opening balance preview should report row validation issues.");
 
         var futureOpeningDate = new DateOnly(2030, 1, 1);
+        var futureProfileFromDate = new DateOnly(futureOpeningDate.Year, 1, 1);
+        var futureProfileToDate = new DateOnly(futureOpeningDate.Year, 12, 31);
         var futureOpeningReference = "OB-FUTURE-2030-0001";
         var postedOpening = SmokeAssertions.RequireSuccess(
             await _harness.PostOpeningBalanceImport.HandleAsync(
@@ -743,6 +1205,11 @@ internal sealed class AccountingSmokeRunner
                     CurrencyCode,
                     futureOpeningReference,
                     "Future-dated opening balance posting smoke",
+                    futureProfileFromDate,
+                    futureProfileToDate,
+                    "Open",
+                    true,
+                    accounts.RetainedEarningsAccountId,
                     [
                         new PostOpeningBalanceImportLineCommand(
                             cashAccount.Code.Value,
@@ -771,6 +1238,11 @@ internal sealed class AccountingSmokeRunner
                     CurrencyCode,
                     futureOpeningReference,
                     "Duplicate opening balance posting smoke",
+                    futureProfileFromDate,
+                    futureProfileToDate,
+                    "Open",
+                    true,
+                    accounts.RetainedEarningsAccountId,
                     [
                         new PostOpeningBalanceImportLineCommand(
                             cashAccount.Code.Value,
@@ -796,6 +1268,13 @@ internal sealed class AccountingSmokeRunner
             && code.StartsWith(range.SearchPrefix, StringComparison.Ordinal)
             && StringComparer.Ordinal.Compare(code, range.RangeStart) >= 0
             && StringComparer.Ordinal.Compare(code, range.RangeEnd) <= 0;
+    }
+
+    private static string NextNumericCode(string code)
+    {
+        return (BigInteger.Parse(code) + BigInteger.One)
+            .ToString()
+            .PadLeft(code.Length, '0');
     }
 
     private static bool IsCompatibleWithRange(
@@ -1134,6 +1613,13 @@ internal sealed class AccountingSmokeRunner
                 && line.JournalEntryId is null),
             "statement should include a zero-net applied credit line without a journal.");
         SmokeAssertions.Equal(5, statement.JournalPostings.Count, "statement journal posting count");
+
+        var statementJournalLines = statement.JournalPostings.SelectMany(posting => posting.Lines).ToArray();
+        SmokeAssertions.True(
+            statementJournalLines.All(line =>
+                !string.IsNullOrWhiteSpace(line.LedgerAccountCode)
+                && !string.IsNullOrWhiteSpace(line.LedgerAccountName)),
+            "statement journal lines should expose COA account code and name.");
     }
 
     private async Task AssertGeneralLedgerReportsAsync(
@@ -1593,6 +2079,31 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Money(totalDebit, totalCredit, label);
     }
 
+    private static void AssertJournalLineAccountMetadata(
+        IEnumerable<(
+            string? Code,
+            string? Name,
+            string? Type,
+            string? NormalBalance,
+            string? Level,
+            bool? IsPostingAccount,
+            string? Status)> lines,
+        string label)
+    {
+        var journalLines = lines.ToArray();
+        SmokeAssertions.True(journalLines.Length > 0, $"{label} should include journal lines.");
+        SmokeAssertions.True(
+            journalLines.All(line =>
+                !string.IsNullOrWhiteSpace(line.Code)
+                && !string.IsNullOrWhiteSpace(line.Name)
+                && !string.IsNullOrWhiteSpace(line.Type)
+                && !string.IsNullOrWhiteSpace(line.NormalBalance)
+                && !string.IsNullOrWhiteSpace(line.Level)
+                && line.IsPostingAccount == true
+                && !string.IsNullOrWhiteSpace(line.Status)),
+            $"{label} lines should expose COA metadata.");
+    }
+
     private static TrialBalanceLineResult FindTrialBalanceLine(
         GetTrialBalanceResult trialBalance,
         Guid ledgerAccountId,
@@ -1643,7 +2154,9 @@ internal sealed class AccountingSmokeRunner
     }
 
     private sealed record LedgerAccounts(
+        Guid AccountsReceivableControlId,
         Guid AccountsReceivableAccountId,
+        Guid CashOrBankControlId,
         Guid CashOrBankAccountId,
         Guid RevenueAccountId,
         Guid TaxAccountId,

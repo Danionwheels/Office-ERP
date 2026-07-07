@@ -27,6 +27,8 @@ public sealed class ControlDeskDbContext : DbContext
 
     public DbSet<AccountingControlSettings> AccountingControlSettings => Set<AccountingControlSettings>();
 
+    public DbSet<OpeningBalanceProfile> OpeningBalanceProfiles => Set<OpeningBalanceProfile>();
+
     public DbSet<VoucherNumberingRule> VoucherNumberingRules => Set<VoucherNumberingRule>();
 
     public DbSet<AccountingPeriod> AccountingPeriods => Set<AccountingPeriod>();
@@ -63,6 +65,7 @@ public sealed class ControlDeskDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ClientDeploymentConfiguration());
         modelBuilder.ApplyConfiguration(new AccountCodeRangeConfiguration());
         modelBuilder.ApplyConfiguration(new AccountingControlSettingsConfiguration());
+        modelBuilder.ApplyConfiguration(new OpeningBalanceProfileConfiguration());
         modelBuilder.ApplyConfiguration(new VoucherNumberingRuleConfiguration());
         modelBuilder.ApplyConfiguration(new AccountingPeriodConfiguration());
         modelBuilder.ApplyConfiguration(new LedgerAccountConfiguration());

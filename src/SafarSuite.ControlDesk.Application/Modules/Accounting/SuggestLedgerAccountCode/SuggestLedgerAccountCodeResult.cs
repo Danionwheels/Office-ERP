@@ -10,4 +10,7 @@ public sealed record SuggestLedgerAccountCodeResult(
     bool IsPostingAccount,
     string RangeStart,
     string RangeEnd,
-    string? ParentCode);
+    string? ParentCode,
+    Guid? ParentAccountId,
+    string? ParentAccountCode,
+    string? ParentAccountName);
