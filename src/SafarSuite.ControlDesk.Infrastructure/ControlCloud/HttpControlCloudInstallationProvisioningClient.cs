@@ -9,17 +9,18 @@ namespace SafarSuite.ControlDesk.Infrastructure.ControlCloud;
 public sealed class HttpControlCloudInstallationProvisioningClient
     : IControlCloudInstallationProvisioningClient
 {
-    private const string ProviderAccessHeaderName = "X-SafarSuite-Provider-Key";
-
     private readonly HttpClient _httpClient;
     private readonly IOptions<ControlCloudStatusOptions> _options;
+    private readonly IControlCloudProviderAccessCredentialSource _credentialSource;
 
     public HttpControlCloudInstallationProvisioningClient(
         HttpClient httpClient,
-        IOptions<ControlCloudStatusOptions> options)
+        IOptions<ControlCloudStatusOptions> options,
+        IControlCloudProviderAccessCredentialSource credentialSource)
     {
         _httpClient = httpClient;
         _options = options;
+        _credentialSource = credentialSource;
     }
 
     public Task<ControlCloudSetupTokenClientResult> CreateSetupTokenAsync(
@@ -401,31 +402,22 @@ public sealed class HttpControlCloudInstallationProvisioningClient
 
     private void AddProviderAccessHeader(HttpRequestMessage message)
     {
-        var providerAccessToken = _options.Value.ProviderAccessToken.Trim();
-
-        if (!string.IsNullOrWhiteSpace(providerAccessToken))
+        if (_credentialSource.TryGetCredential(
+                _options.Value.ProviderAccessToken,
+                _options.Value.ProviderAccessSecret,
+                out var credential))
         {
             message.Headers.TryAddWithoutValidation(
-                "Authorization",
-                $"Bearer {providerAccessToken}");
-
-            return;
-        }
-
-        var providerAccessSecret = _options.Value.ProviderAccessSecret.Trim();
-
-        if (!string.IsNullOrWhiteSpace(providerAccessSecret))
-        {
-            message.Headers.TryAddWithoutValidation(
-                ProviderAccessHeaderName,
-                providerAccessSecret);
+                credential.HeaderName,
+                credential.HeaderValue);
         }
     }
 
     private bool HasProviderAccess()
     {
-        return !string.IsNullOrWhiteSpace(_options.Value.ProviderAccessToken)
-            || !string.IsNullOrWhiteSpace(_options.Value.ProviderAccessSecret);
+        return _credentialSource.HasCredential(
+            _options.Value.ProviderAccessToken,
+            _options.Value.ProviderAccessSecret);
     }
 
     private static async Task<CloudError> ReadErrorAsync(

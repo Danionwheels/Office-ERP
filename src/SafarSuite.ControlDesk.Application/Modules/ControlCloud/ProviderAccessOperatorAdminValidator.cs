@@ -31,6 +31,28 @@ internal static class ProviderAccessOperatorAdminValidator
         return errors;
     }
 
+    public static IReadOnlyCollection<ApplicationError> ValidateSession(
+        string email,
+        string password,
+        IEnumerable<string>? scopes,
+        int? expiresInMinutes)
+    {
+        var errors = new List<ApplicationError>();
+
+        AddEmail(errors, nameof(email), email);
+        AddRequiredText(errors, nameof(password), password, 200);
+        AddOptionalScopes(errors, nameof(scopes), scopes);
+
+        if (expiresInMinutes is < 5 or > 1440)
+        {
+            errors.Add(ApplicationError.Validation(
+                nameof(expiresInMinutes),
+                "Provider operator session length must be between 5 and 1440 minutes."));
+        }
+
+        return errors;
+    }
+
     public static IReadOnlyCollection<ApplicationError> ValidatePasswordReset(
         string userId,
         string password,
@@ -99,9 +121,11 @@ internal static class ProviderAccessOperatorAdminValidator
             "ProviderOperatorScopesRequired" => ApplicationError.Validation("scopes", message),
             "ProviderOperatorScopesUnsupported" => ApplicationError.Validation("scopes", message),
             "ProviderOperatorStatusUnsupported" => ApplicationError.Validation("status", message),
+            "ProviderCredentialsInvalid" => ApplicationError.Validation("password", message),
             "ProviderAccessDenied" => ApplicationError.ServiceUnavailable(message),
             "ProviderAccessNotConfigured" => ApplicationError.ServiceUnavailable(message),
             "ProviderAccessScopeDenied" => ApplicationError.ServiceUnavailable(message),
+            "ProviderAccessScopeUnsupported" => ApplicationError.Validation("scopes", message),
             "ControlCloudProviderAccessDenied" => ApplicationError.ServiceUnavailable(message),
             "ControlCloudProviderAccessNotConfigured" => ApplicationError.ServiceUnavailable(message),
             _ => ApplicationError.Unexpected(message)
@@ -122,6 +146,15 @@ internal static class ProviderAccessOperatorAdminValidator
             .Where(scope => !string.IsNullOrWhiteSpace(scope))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    public static string[]? NormalizeOptionalScopes(IEnumerable<string>? scopes)
+    {
+        var normalizedScopes = NormalizeScopes(scopes ?? []);
+
+        return normalizedScopes.Length == 0
+            ? null
+            : normalizedScopes;
     }
 
     private static void AddEmail(
@@ -168,6 +201,24 @@ internal static class ProviderAccessOperatorAdminValidator
 
             return;
         }
+
+        foreach (var scope in normalizedScopes)
+        {
+            if (!SupportedScopes.Contains(scope, StringComparer.OrdinalIgnoreCase))
+            {
+                errors.Add(ApplicationError.Validation(
+                    target,
+                    $"Provider operator scope '{scope}' is not supported."));
+            }
+        }
+    }
+
+    private static void AddOptionalScopes(
+        ICollection<ApplicationError> errors,
+        string target,
+        IEnumerable<string>? scopes)
+    {
+        var normalizedScopes = NormalizeScopes(scopes ?? []);
 
         foreach (var scope in normalizedScopes)
         {

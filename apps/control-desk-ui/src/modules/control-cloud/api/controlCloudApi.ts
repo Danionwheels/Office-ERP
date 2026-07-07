@@ -16,6 +16,8 @@ import type {
   ProviderAccessOperatorPasswordInput,
   ProviderAccessOperatorScopesInput,
   ProviderAccessOperatorStatusInput,
+  ProviderAccessSession,
+  ProviderAccessSessionCreateInput,
   QueuedCloudInstallationSupportCommand,
   QueueCloudInstallationSupportCommandInput,
   SafarSuiteAppActivationIssue
@@ -247,6 +249,23 @@ export async function listProviderAccessOperators(): Promise<ProviderAccessOpera
   );
 
   return response.operators;
+}
+
+export async function createProviderAccessOperatorSession(
+  input: ProviderAccessSessionCreateInput
+): Promise<ProviderAccessSession> {
+  return apiRequest<ProviderAccessSession>(
+    "/api/v1/control-cloud/provider-access/operator-sessions",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: input.email.trim(),
+        password: input.password,
+        scopes: input.scopes,
+        expiresInMinutes: input.expiresInMinutes
+      })
+    }
+  );
 }
 
 export async function createProviderAccessOperator(

@@ -1,4 +1,8 @@
 import { ApiError, type ApiErrorItem } from "./apiError";
+import {
+  getProviderAccessToken,
+  providerAccessTokenOverrideHeader
+} from "./providerAccessSession";
 
 type ApiErrorResponse = {
   statusCode?: number;
@@ -10,12 +14,21 @@ export async function apiRequest<TResponse>(
   path: string,
   init: RequestInit = {}
 ): Promise<TResponse> {
+  const headers = new Headers(init.headers);
+
+  headers.set("Content-Type", "application/json");
+
+  if (path.startsWith("/api/v1/control-cloud")) {
+    const providerAccessToken = getProviderAccessToken();
+
+    if (providerAccessToken !== null) {
+      headers.set(providerAccessTokenOverrideHeader, providerAccessToken);
+    }
+  }
+
   const response = await fetch(path, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init.headers
-    }
+    headers
   });
 
   if (!response.ok) {

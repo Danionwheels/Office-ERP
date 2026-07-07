@@ -3,6 +3,19 @@ namespace SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 public sealed record ProviderAccessOperatorsResponse(
     IReadOnlyCollection<ProviderAccessOperatorResponse> Operators);
 
+public sealed record CreateProviderOperatorSessionRequest(
+    string Email,
+    string Password,
+    string[]? Scopes = null,
+    int? ExpiresInMinutes = null);
+
+public sealed record ProviderAccessSessionResponse(
+    string AccessToken,
+    string TokenType,
+    string Actor,
+    IReadOnlyCollection<string> Scopes,
+    DateTimeOffset ExpiresAtUtc);
+
 public sealed record ProviderAccessOperatorResponse(
     string UserId,
     string Email,

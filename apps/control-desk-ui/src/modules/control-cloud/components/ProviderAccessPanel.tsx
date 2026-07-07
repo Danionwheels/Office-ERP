@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   KeyRound,
+  LogIn,
+  LogOut,
   Plus,
   RefreshCw,
   Save,
@@ -10,6 +12,13 @@ import {
 } from "lucide-react";
 import { ApiError } from "../../../shared/api/apiError";
 import {
+  clearProviderAccessSession,
+  getProviderAccessSession,
+  saveProviderAccessSession,
+  type StoredProviderAccessSession
+} from "../../../shared/api/providerAccessSession";
+import {
+  createProviderAccessOperatorSession,
   createProviderAccessOperator,
   listProviderAccessOperators,
   resetProviderAccessOperatorPassword,
@@ -18,7 +27,8 @@ import {
 } from "../api/controlCloudApi";
 import type {
   ProviderAccessOperator,
-  ProviderAccessOperatorCreateInput
+  ProviderAccessOperatorCreateInput,
+  ProviderAccessSessionCreateInput
 } from "../types/controlCloudTypes";
 import { formatNullableDateTime, shortIdentifier } from "../utils/cloudWorkspaceModel";
 
@@ -66,9 +76,21 @@ const emptyCreateOperatorForm: ProviderAccessOperatorCreateInput = {
   createdBy: "SafarSuite Control Desk"
 };
 
+const emptySessionForm: ProviderAccessSessionCreateInput = {
+  email: "",
+  password: "",
+  scopes: ["provider-operators:manage"],
+  expiresInMinutes: 60
+};
+
 export function ProviderAccessPanel() {
   const [operators, setOperators] = useState<ProviderAccessOperator[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [session, setSession] = useState<StoredProviderAccessSession | null>(
+    () => getProviderAccessSession()
+  );
+  const [sessionForm, setSessionForm] =
+    useState<ProviderAccessSessionCreateInput>(emptySessionForm);
   const [createForm, setCreateForm] =
     useState<ProviderAccessOperatorCreateInput>(emptyCreateOperatorForm);
   const [scopeDraft, setScopeDraft] = useState<string[]>([]);
@@ -95,6 +117,18 @@ export function ProviderAccessPanel() {
   }, []);
 
   useEffect(() => {
+    if (session === null) {
+      return;
+    }
+
+    setUpdatedBy(session.actor);
+    setCreateForm((current) => ({
+      ...current,
+      createdBy: session.actor
+    }));
+  }, [session]);
+
+  useEffect(() => {
     if (selectedOperator === null) {
       setScopeDraft([]);
       setStatusDraft("Active");
@@ -106,6 +140,35 @@ export function ProviderAccessPanel() {
     setStatusDraft(selectedOperator.status);
     setPasswordDraft("");
   }, [selectedOperator]);
+
+  async function handleCreateSession() {
+    await runPanelAction(async () => {
+      const createdSession = await createProviderAccessOperatorSession({
+        ...sessionForm,
+        scopes: normalizeScopes(sessionForm.scopes)
+      });
+      saveProviderAccessSession(createdSession);
+      setSession(createdSession);
+      setSessionForm({
+        ...sessionForm,
+        password: ""
+      });
+      setMessage(`Signed in provider operator ${createdSession.actor}.`);
+
+      const nextOperators = sortOperators(await listProviderAccessOperators());
+      setOperators(nextOperators);
+      setSelectedUserId((current) =>
+        nextOperators.some((operator) => operator.userId === current)
+          ? current
+          : nextOperators[0]?.userId ?? "");
+    });
+  }
+
+  function handleClearSession() {
+    clearProviderAccessSession();
+    setSession(null);
+    setMessage("Provider operator session cleared.");
+  }
 
   async function loadOperators() {
     await runPanelAction(async () => {
@@ -221,6 +284,109 @@ export function ProviderAccessPanel() {
             Refresh
           </button>
         </div>
+      </div>
+
+      <div className="provider-access-session">
+        <div className="provider-access-subheading">
+          <LogIn size={16} />
+          <strong>Operator session</strong>
+        </div>
+
+        {session === null ? (
+          <div className="provider-access-session-form">
+            <label>
+              <span>Email</span>
+              <input
+                type="email"
+                value={sessionForm.email}
+                disabled={isBusy}
+                maxLength={320}
+                onChange={(event) => setSessionForm({
+                  ...sessionForm,
+                  email: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Password</span>
+              <input
+                type="password"
+                value={sessionForm.password}
+                disabled={isBusy}
+                onChange={(event) => setSessionForm({
+                  ...sessionForm,
+                  password: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Minutes</span>
+              <input
+                type="number"
+                min={5}
+                max={1440}
+                value={sessionForm.expiresInMinutes}
+                disabled={isBusy}
+                onChange={(event) => setSessionForm({
+                  ...sessionForm,
+                  expiresInMinutes: Number(event.target.value)
+                })}
+              />
+            </label>
+            <ScopePicker
+              value={sessionForm.scopes}
+              disabled={isBusy}
+              onChange={(scopes) => setSessionForm({
+                ...sessionForm,
+                scopes
+              })}
+            />
+            <button
+              className="icon-button primary"
+              type="button"
+              disabled={
+                isBusy
+                || sessionForm.email.trim() === ""
+                || sessionForm.password.trim() === ""
+                || normalizeScopes(sessionForm.scopes).length === 0
+                || sessionForm.expiresInMinutes < 5
+                || sessionForm.expiresInMinutes > 1440
+              }
+              onClick={handleCreateSession}
+              title="Sign in provider operator"
+            >
+              <LogIn size={16} />
+              Sign in
+            </button>
+          </div>
+        ) : (
+          <div className="provider-access-session-current">
+            <dl className="provider-access-facts">
+              <div>
+                <dt>Actor</dt>
+                <dd>{session.actor}</dd>
+              </div>
+              <div>
+                <dt>Expires</dt>
+                <dd>{formatNullableDateTime(session.expiresAtUtc)}</dd>
+              </div>
+              <div>
+                <dt>Scopes</dt>
+                <dd>{formatScopes(session.scopes)}</dd>
+              </div>
+            </dl>
+            <button
+              className="icon-button"
+              type="button"
+              disabled={isBusy}
+              onClick={handleClearSession}
+              title="Clear provider operator session"
+            >
+              <LogOut size={16} />
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
 
       {message !== "" && <div className="provider-access-message">{message}</div>}
@@ -551,6 +717,12 @@ function sortOperators(operators: ProviderAccessOperator[]): ProviderAccessOpera
 
 function isActive(status: string): boolean {
   return status.trim().toLowerCase() === "active";
+}
+
+function formatScopes(scopes: string[]): string {
+  return scopes.some((scope) => scope === "*")
+    ? "All scopes"
+    : scopes.join(", ");
 }
 
 function toPanelError(caughtError: unknown): string {

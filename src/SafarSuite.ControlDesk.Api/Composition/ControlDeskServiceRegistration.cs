@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
@@ -85,6 +86,7 @@ using SafarSuite.ControlDesk.Application.Modules.Contracts.SuspendClientContract
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationBootstrapPackage;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperator;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperatorSession;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationDiagnostics;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
@@ -139,10 +141,14 @@ public static class ControlDeskServiceRegistration
             configuration.GetSection(ProductModuleCatalogOptions.SectionName));
         services.Configure<ProductKernelCommandIssuerOptions>(
             configuration.GetSection(ProductKernelCommandIssuerOptions.SectionName));
+        services.AddHttpContextAccessor();
         services.AddSingleton<ControlCloudEnvelopeBuilder>();
         services.AddSingleton<ICloudOutboxPublishPolicy, ConfiguredCloudOutboxPublishPolicy>();
         services.AddSingleton<ConfiguredProductModuleCatalog>();
         services.AddScoped<IProductModuleCatalog, PersistedProductModuleCatalog>();
+        services.AddScoped<
+            IControlCloudProviderAccessCredentialSource,
+            HttpContextControlCloudProviderAccessCredentialSource>();
         AddControlCloudPublisher(services, configuration);
         services.AddHttpClient<IControlCloudInstallationStatusClient, HttpControlCloudInstallationStatusClient>();
         services.AddHttpClient<IControlCloudInstallationProvisioningClient, HttpControlCloudInstallationProvisioningClient>();
@@ -248,6 +254,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<ListCloudAppActivationIssuesHandler>();
         services.AddScoped<ListProviderAccessOperatorsHandler>();
         services.AddScoped<CreateProviderAccessOperatorHandler>();
+        services.AddScoped<CreateProviderAccessOperatorSessionHandler>();
         services.AddScoped<ResetProviderAccessOperatorPasswordHandler>();
         services.AddScoped<UpdateProviderAccessOperatorScopesHandler>();
         services.AddScoped<UpdateProviderAccessOperatorStatusHandler>();

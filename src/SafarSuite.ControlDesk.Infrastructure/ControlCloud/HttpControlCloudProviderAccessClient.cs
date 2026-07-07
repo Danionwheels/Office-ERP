@@ -8,17 +8,37 @@ namespace SafarSuite.ControlDesk.Infrastructure.ControlCloud;
 
 public sealed class HttpControlCloudProviderAccessClient : IControlCloudProviderAccessClient
 {
-    private const string ProviderAccessHeaderName = "X-SafarSuite-Provider-Key";
-
     private readonly HttpClient _httpClient;
     private readonly IOptions<ControlCloudStatusOptions> _options;
+    private readonly IControlCloudProviderAccessCredentialSource _credentialSource;
 
     public HttpControlCloudProviderAccessClient(
         HttpClient httpClient,
-        IOptions<ControlCloudStatusOptions> options)
+        IOptions<ControlCloudStatusOptions> options,
+        IControlCloudProviderAccessCredentialSource credentialSource)
     {
         _httpClient = httpClient;
         _options = options;
+        _credentialSource = credentialSource;
+    }
+
+    public async Task<ControlCloudProviderAccessSessionClientResult> CreateOperatorSessionAsync(
+        CreateProviderOperatorSessionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SendWithoutProviderAccessAsync<
+            CreateProviderOperatorSessionRequest,
+            ProviderAccessSessionResponse>(
+            "operator-sessions",
+            request,
+            "provider operator session",
+            cancellationToken);
+
+        return result.IsSuccess
+            ? ControlCloudProviderAccessSessionClientResult.Success(result.Response!)
+            : ControlCloudProviderAccessSessionClientResult.Failure(
+                result.FailureCode!,
+                result.Detail!);
     }
 
     public async Task<ControlCloudProviderOperatorsClientResult> ListOperatorsAsync(
@@ -171,6 +191,47 @@ public sealed class HttpControlCloudProviderAccessClient : IControlCloudProvider
         }
     }
 
+    private async Task<ProviderAccessHttpResult<TResponse>> SendWithoutProviderAccessAsync<
+        TRequest,
+        TResponse>(
+        string action,
+        TRequest request,
+        string actionLabel,
+        CancellationToken cancellationToken)
+        where TResponse : class
+    {
+        var configurationFailure = ValidateBaseUrl<TResponse>();
+
+        if (configurationFailure is not null)
+        {
+            return configurationFailure;
+        }
+
+        try
+        {
+            var requestUri = BuildProviderAccessUri(action);
+            using var message = new HttpRequestMessage(HttpMethod.Post, requestUri)
+            {
+                Content = JsonContent.Create(request)
+            };
+            using var response = await _httpClient.SendAsync(message, cancellationToken);
+
+            return await ToResultAsync<TResponse>(response, actionLabel, cancellationToken);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return ProviderAccessHttpResult<TResponse>.Failure(
+                "ControlCloudProviderAccessUnavailable",
+                $"Timed out while updating Control Cloud {actionLabel}.");
+        }
+        catch (HttpRequestException exception)
+        {
+            return ProviderAccessHttpResult<TResponse>.Failure(
+                "ControlCloudProviderAccessUnavailable",
+                exception.Message);
+        }
+    }
+
     private async Task<ProviderAccessHttpResult<TResponse>> ToResultAsync<TResponse>(
         HttpResponseMessage response,
         string actionLabel,
@@ -199,11 +260,11 @@ public sealed class HttpControlCloudProviderAccessClient : IControlCloudProvider
     private ProviderAccessHttpResult<TResponse>? ValidateConfiguration<TResponse>()
         where TResponse : class
     {
-        if (!Uri.TryCreate(_options.Value.BaseUrl, UriKind.Absolute, out _))
+        var baseUrlFailure = ValidateBaseUrl<TResponse>();
+
+        if (baseUrlFailure is not null)
         {
-            return ProviderAccessHttpResult<TResponse>.Failure(
-                "ControlCloudProviderAccessNotConfigured",
-                "Control Cloud provider access base URL is not configured.");
+            return baseUrlFailure;
         }
 
         if (!HasProviderAccess())
@@ -211,6 +272,19 @@ public sealed class HttpControlCloudProviderAccessClient : IControlCloudProvider
             return ProviderAccessHttpResult<TResponse>.Failure(
                 "ControlCloudProviderAccessNotConfigured",
                 "Control Cloud provider access token or secret is not configured.");
+        }
+
+        return null;
+    }
+
+    private ProviderAccessHttpResult<TResponse>? ValidateBaseUrl<TResponse>()
+        where TResponse : class
+    {
+        if (!Uri.TryCreate(_options.Value.BaseUrl, UriKind.Absolute, out _))
+        {
+            return ProviderAccessHttpResult<TResponse>.Failure(
+                "ControlCloudProviderAccessNotConfigured",
+                "Control Cloud provider access base URL is not configured.");
         }
 
         return null;
@@ -225,31 +299,22 @@ public sealed class HttpControlCloudProviderAccessClient : IControlCloudProvider
 
     private void AddProviderAccessHeader(HttpRequestMessage message)
     {
-        var providerAccessToken = _options.Value.ProviderAccessToken.Trim();
-
-        if (!string.IsNullOrWhiteSpace(providerAccessToken))
+        if (_credentialSource.TryGetCredential(
+                _options.Value.ProviderAccessToken,
+                _options.Value.ProviderAccessSecret,
+                out var credential))
         {
             message.Headers.TryAddWithoutValidation(
-                "Authorization",
-                $"Bearer {providerAccessToken}");
-
-            return;
-        }
-
-        var providerAccessSecret = _options.Value.ProviderAccessSecret.Trim();
-
-        if (!string.IsNullOrWhiteSpace(providerAccessSecret))
-        {
-            message.Headers.TryAddWithoutValidation(
-                ProviderAccessHeaderName,
-                providerAccessSecret);
+                credential.HeaderName,
+                credential.HeaderValue);
         }
     }
 
     private bool HasProviderAccess()
     {
-        return !string.IsNullOrWhiteSpace(_options.Value.ProviderAccessToken)
-            || !string.IsNullOrWhiteSpace(_options.Value.ProviderAccessSecret);
+        return _credentialSource.HasCredential(
+            _options.Value.ProviderAccessToken,
+            _options.Value.ProviderAccessSecret);
     }
 
     private static string ToDefaultFailureCode(HttpStatusCode statusCode)

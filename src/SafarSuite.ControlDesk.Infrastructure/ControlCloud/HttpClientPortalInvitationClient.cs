@@ -2,23 +2,25 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 
 namespace SafarSuite.ControlDesk.Infrastructure.ControlCloud;
 
 public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationClient
 {
-    private const string ProviderAccessHeaderName = "X-SafarSuite-Provider-Key";
-
     private readonly HttpClient _httpClient;
     private readonly IOptions<ControlCloudPortalInvitationOptions> _options;
+    private readonly IControlCloudProviderAccessCredentialSource _credentialSource;
 
     public HttpClientPortalInvitationClient(
         HttpClient httpClient,
-        IOptions<ControlCloudPortalInvitationOptions> options)
+        IOptions<ControlCloudPortalInvitationOptions> options,
+        IControlCloudProviderAccessCredentialSource credentialSource)
     {
         _httpClient = httpClient;
         _options = options;
+        _credentialSource = credentialSource;
     }
 
     public async Task<ClientPortalInvitationListClientResult> ListInvitationsAsync(
@@ -262,28 +264,25 @@ public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationCl
     private HttpRequestMessage CreateRequest(HttpMethod method, Uri requestUri)
     {
         var message = new HttpRequestMessage(method, requestUri);
-        var providerAccessToken = _options.Value.ProviderAccessToken.Trim();
 
-        if (!string.IsNullOrWhiteSpace(providerAccessToken))
+        if (_credentialSource.TryGetCredential(
+                _options.Value.ProviderAccessToken,
+                _options.Value.ProviderAccessSecret,
+                out var credential))
         {
             message.Headers.TryAddWithoutValidation(
-                "Authorization",
-                $"Bearer {providerAccessToken}");
-
-            return message;
+                credential.HeaderName,
+                credential.HeaderValue);
         }
-
-        message.Headers.TryAddWithoutValidation(
-            ProviderAccessHeaderName,
-            _options.Value.ProviderAccessSecret.Trim());
 
         return message;
     }
 
     private bool HasProviderAccess()
     {
-        return !string.IsNullOrWhiteSpace(_options.Value.ProviderAccessToken)
-            || !string.IsNullOrWhiteSpace(_options.Value.ProviderAccessSecret);
+        return _credentialSource.HasCredential(
+            _options.Value.ProviderAccessToken,
+            _options.Value.ProviderAccessSecret);
     }
 
     private static string ToDefaultFailureCode(HttpStatusCode statusCode)

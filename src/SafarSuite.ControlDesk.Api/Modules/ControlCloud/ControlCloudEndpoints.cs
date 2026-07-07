@@ -2,6 +2,7 @@ using SafarSuite.ControlDesk.Api.Common;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationBootstrapPackage;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperator;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperatorSession;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationDiagnostics;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
@@ -32,6 +33,9 @@ public static class ControlCloudEndpoints
         group.MapGet(
             "/provider-access/operators",
             ListProviderAccessOperatorsAsync);
+        group.MapPost(
+            "/provider-access/operator-sessions",
+            CreateProviderAccessOperatorSessionAsync);
         group.MapPost(
             "/provider-access/operators",
             CreateProviderAccessOperatorAsync);
@@ -75,6 +79,24 @@ public static class ControlCloudEndpoints
         group.MapPost("/outbox-messages/publish-local", PublishOutboxMessagesAsync);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> CreateProviderAccessOperatorSessionAsync(
+        CreateProviderOperatorSessionRequest request,
+        CreateProviderAccessOperatorSessionHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new CreateProviderAccessOperatorSessionCommand(
+                request.Email,
+                request.Password,
+                request.Scopes,
+                request.ExpiresInMinutes),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
     }
 
     private static async Task<IResult> ListProviderAccessOperatorsAsync(

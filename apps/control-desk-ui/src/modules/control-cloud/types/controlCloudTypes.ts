@@ -115,6 +115,21 @@ export type ProviderAccessOperator = {
   lastLoginAtUtc: string | null;
 };
 
+export type ProviderAccessSession = {
+  accessToken: string;
+  tokenType: string;
+  actor: string;
+  scopes: string[];
+  expiresAtUtc: string;
+};
+
+export type ProviderAccessSessionCreateInput = {
+  email: string;
+  password: string;
+  scopes: string[];
+  expiresInMinutes: number;
+};
+
 export type ProviderAccessOperatorCreateInput = {
   email: string;
   fullName: string;

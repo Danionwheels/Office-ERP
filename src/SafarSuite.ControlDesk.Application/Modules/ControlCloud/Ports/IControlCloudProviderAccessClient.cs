@@ -4,6 +4,10 @@ namespace SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 
 public interface IControlCloudProviderAccessClient
 {
+    Task<ControlCloudProviderAccessSessionClientResult> CreateOperatorSessionAsync(
+        CreateProviderOperatorSessionRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<ControlCloudProviderOperatorsClientResult> ListOperatorsAsync(
         CancellationToken cancellationToken = default);
 
@@ -25,6 +29,46 @@ public interface IControlCloudProviderAccessClient
         string userId,
         UpdateProviderOperatorStatusRequest request,
         CancellationToken cancellationToken = default);
+}
+
+public sealed class ControlCloudProviderAccessSessionClientResult
+{
+    private ControlCloudProviderAccessSessionClientResult(
+        ProviderAccessSessionResponse? session,
+        string? failureCode,
+        string? detail)
+    {
+        Session = session;
+        FailureCode = failureCode;
+        Detail = detail;
+    }
+
+    public bool IsSuccess => Session is not null;
+
+    public ProviderAccessSessionResponse? Session { get; }
+
+    public string? FailureCode { get; }
+
+    public string? Detail { get; }
+
+    public static ControlCloudProviderAccessSessionClientResult Success(
+        ProviderAccessSessionResponse session)
+    {
+        return new ControlCloudProviderAccessSessionClientResult(
+            session,
+            failureCode: null,
+            detail: null);
+    }
+
+    public static ControlCloudProviderAccessSessionClientResult Failure(
+        string failureCode,
+        string detail)
+    {
+        return new ControlCloudProviderAccessSessionClientResult(
+            session: null,
+            failureCode,
+            detail);
+    }
 }
 
 public sealed class ControlCloudProviderOperatorsClientResult

@@ -4259,6 +4259,41 @@ td {
   align-items: start;
 }
 
+.provider-access-session {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #d6dde5;
+  border-bottom: 1px solid #d6dde5;
+  padding: 9px 0;
+}
+
+.provider-access-session-form,
+.provider-access-session-current {
+  display: grid;
+  gap: 8px;
+  align-items: end;
+}
+
+.provider-access-session-form {
+  grid-template-columns: minmax(220px, 1fr) minmax(190px, 0.8fr) 110px minmax(280px, 1.2fr) auto;
+}
+
+.provider-access-session-current {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.provider-access-session-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.provider-access-session-form label span {
+  color: #39414c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .provider-access-create,
 .provider-access-register,
 .provider-access-editor {
@@ -13291,6 +13326,8 @@ td {
   .statement-detail-grid,
   .statement-summary-grid,
   .provider-access-grid,
+  .provider-access-session-form,
+  .provider-access-session-current,
   .client-contacts-zone,
   .client-notes-zone {
     grid-template-columns: 1fr;
@@ -13692,6 +13729,8 @@ td {
   .cloud-diagnostics-checks,
   .cloud-diagnostics-line,
   .provider-access-form-grid,
+  .provider-access-session-form,
+  .provider-access-session-current,
   .provider-scope-picker,
   .provider-access-facts,
   .billing-form-grid.rule,
