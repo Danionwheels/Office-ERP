@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -175,19 +176,53 @@ try
         "status update should reactivate the operator.");
     checks.Add("reactivated provider operator through Control Desk proxy");
 
-    var operatorSession = await SendJsonAsync<ProviderAccessSessionResponse>(
-        controlCloudHttp,
+    var limitedOperatorSession = await SendJsonAsync<ProviderAccessSessionResponse>(
+        controlDeskHttp,
         HttpMethod.Post,
-        "api/v1/provider-access/operator-sessions",
+        "api/v1/control-cloud/provider-access/operator-sessions",
         new CreateProviderOperatorSessionRequest(
             operatorEmail,
             resetPassword,
             [ProviderAccessScopes.AppActivationRead, ProviderAccessScopes.AppActivationWrite],
             15));
 
-    RequireBearerSession(operatorSession, ProviderAccessScopes.AppActivationRead);
-    Require(operatorSession.Scopes.Contains(ProviderAccessScopes.AppActivationWrite), "operator session should include updated write scope.");
-    checks.Add("minted provider bearer session with proxy-reset password");
+    RequireBearerSession(limitedOperatorSession, ProviderAccessScopes.AppActivationRead);
+    Require(limitedOperatorSession.Scopes.Contains(ProviderAccessScopes.AppActivationWrite), "operator session should include updated write scope.");
+    checks.Add("minted provider bearer session through Control Desk proxy");
+
+    using var limitedSessionControlDeskHttp = CreateControlDeskHttpClient(
+        options.ControlDeskBaseUrl,
+        limitedOperatorSession.AccessToken);
+    await RequireFailureStatusAsync(
+        limitedSessionControlDeskHttp,
+        HttpMethod.Get,
+        "api/v1/control-cloud/provider-access/operators",
+        HttpStatusCode.ServiceUnavailable);
+    checks.Add("proved under-scoped Control Desk session override is enforced");
+
+    var managerOperatorSession = await SendJsonAsync<ProviderAccessSessionResponse>(
+        controlDeskHttp,
+        HttpMethod.Post,
+        "api/v1/control-cloud/provider-access/operator-sessions",
+        new CreateProviderOperatorSessionRequest(
+            operatorEmail,
+            resetPassword,
+            [ProviderAccessScopes.ProviderOperatorsManage],
+            15));
+
+    RequireBearerSession(managerOperatorSession, ProviderAccessScopes.ProviderOperatorsManage);
+    using var managerSessionControlDeskHttp = CreateControlDeskHttpClient(
+        options.ControlDeskBaseUrl,
+        managerOperatorSession.AccessToken);
+    var operatorsViaSession = await SendJsonAsync<ProviderAccessOperatorsResponse>(
+        managerSessionControlDeskHttp,
+        HttpMethod.Get,
+        "api/v1/control-cloud/provider-access/operators");
+    Require(
+        operatorsViaSession.Operators.Any(providerOperator =>
+            providerOperator.UserId == createdOperator.UserId),
+        "provider operator list should work with a manager-scoped Control Desk session override.");
+    checks.Add("listed provider operators with Control Desk session override");
 
     await VerifyPersistedOperatorAsync(
         options.ConnectionString,
@@ -209,7 +244,8 @@ try
             controlDeskUrl = options.ControlDeskBaseUrl,
             operatorEmail,
             userId = createdOperator.UserId,
-            scopes = operatorSession.Scopes
+            limitedScopes = limitedOperatorSession.Scopes,
+            managerScopes = managerOperatorSession.Scopes
         },
         ProofJson.Options));
 
@@ -280,6 +316,38 @@ static async Task<T> SendJsonAsync<T>(
 
     return JsonSerializer.Deserialize<T>(responseBody, ProofJson.Options)
         ?? throw new InvalidOperationException($"HTTP {method} {path} returned an empty or invalid JSON response.");
+}
+
+static HttpClient CreateControlDeskHttpClient(
+    string controlDeskBaseUrl,
+    string providerAccessToken)
+{
+    var http = new HttpClient
+    {
+        BaseAddress = new Uri($"{controlDeskBaseUrl}/")
+    };
+    http.DefaultRequestHeaders.TryAddWithoutValidation(
+        "X-SafarSuite-Provider-Access-Token",
+        providerAccessToken);
+
+    return http;
+}
+
+static async Task RequireFailureStatusAsync(
+    HttpClient http,
+    HttpMethod method,
+    string path,
+    HttpStatusCode expectedStatusCode)
+{
+    using var request = new HttpRequestMessage(method, path);
+    using var response = await http.SendAsync(request);
+    var responseBody = await response.Content.ReadAsStringAsync();
+
+    if (response.StatusCode != expectedStatusCode)
+    {
+        throw new InvalidOperationException(
+            $"HTTP {method} {path} should have failed with {(int)expectedStatusCode}, but returned {(int)response.StatusCode}: {responseBody}");
+    }
 }
 
 static void RequireBearerSession(

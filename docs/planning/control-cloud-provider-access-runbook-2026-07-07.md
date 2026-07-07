@@ -25,7 +25,7 @@ provider shared secret
   -> scoped bearer session
 ```
 
-The legacy `X-SafarSuite-Provider-Key` header still works as a bootstrap fallback, but new tooling should prefer bearer sessions. Control Desk can send a bearer token through `ControlCloud:Status:ProviderAccessToken` and `ControlCloud:PortalInvitations:ProviderAccessToken`; when those are blank it falls back to the configured provider shared secret.
+The legacy `X-SafarSuite-Provider-Key` header still works as a bootstrap fallback, but new tooling should prefer bearer sessions. Control Desk can send a configured bearer token through `ControlCloud:Status:ProviderAccessToken` and `ControlCloud:PortalInvitations:ProviderAccessToken`; when those are blank it falls back to the configured provider shared secret. The Control Desk UI can also mint a named provider-operator bearer session and forward it to Control Desk proxy routes through the `X-SafarSuite-Provider-Access-Token` override header; that session takes precedence over configured fallback credentials for the current browser request.
 
 ## Control Desk Manager Surface
 
@@ -39,7 +39,7 @@ From the provider access panel, a manager can:
 - suspend or reactivate an operator
 - reset an operator's temporary password
 
-The panel still relies on the Control Desk server having a configured provider bearer token or shared-secret fallback. Keep routine changes tied to named operators and use the shared secret only for bootstrap or emergency recovery.
+The panel can sign in a named provider operator, store the short-lived bearer session in the browser until expiry, and use that session for provider-gated Control Desk proxy calls. The Control Desk server can still use a configured provider bearer token or shared-secret fallback for bootstrap and automation. Keep routine changes tied to named operators and use the shared secret only for bootstrap or emergency recovery.
 
 ## Supported Scopes
 
@@ -221,10 +221,10 @@ dotnet run --project tools\SafarSuite.ControlDesk.ProviderAccessProxyProof\Safar
 Expected result:
 
 ```text
-Control Desk provider-access proxy proof passed 13 checks:
+Control Desk provider-access proxy proof passed 15 checks:
 ```
 
-The proxy proof applies Control Cloud PostgreSQL migrations, starts Control Cloud and Control Desk on temporary local ports, points Control Desk at the Control Cloud provider access gate, performs list/create/scope/status/password-reset operations through `/api/v1/control-cloud/provider-access/operators`, mints a provider bearer session with the reset password, and verifies the final provider operator row in PostgreSQL.
+The proxy proof applies Control Cloud PostgreSQL migrations, starts Control Cloud and Control Desk on temporary local ports, points Control Desk at the Control Cloud provider access gate, performs list/create/scope/status/password-reset operations through `/api/v1/control-cloud/provider-access/operators`, mints provider bearer sessions through `/api/v1/control-cloud/provider-access/operator-sessions`, proves an under-scoped override session is enforced ahead of the configured shared-secret fallback, proves a manager-scoped override session can list operators, and verifies the final provider operator row in PostgreSQL.
 
 For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBootstrapProof activate-app-runtime` defaults to `POST /api/v1/provider-access/operator-sessions` and then sends the returned bearer token to Control Cloud.
 
