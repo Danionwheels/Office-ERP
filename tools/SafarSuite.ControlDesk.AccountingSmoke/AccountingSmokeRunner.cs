@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Reflection;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ApplyLedgerAccountRepairAction;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
@@ -380,6 +382,7 @@ internal sealed class AccountingSmokeRunner
             "next receivable setup suggestion");
 
         return new LedgerAccounts(
+            assetHeader.LedgerAccountId,
             accountsReceivableControl.LedgerAccountId,
             accountsReceivable.LedgerAccountId,
             cashBankControl.LedgerAccountId,
@@ -497,6 +500,9 @@ internal sealed class AccountingSmokeRunner
         {
             SmokeAssertions.Equal(0, reconciliation.IssueCount, "ledger account reconciliation issue count");
             await AssertLedgerAccountRepairPlanAsync(accounts, expectedActionCount: 0, cancellationToken);
+            await AssertGuidedPostingFlagRepairActionAsync(
+                accounts.LegacyDriftHeaderAccountId,
+                cancellationToken);
 
             return;
         }
@@ -528,6 +534,93 @@ internal sealed class AccountingSmokeRunner
                 .Sum(item => item.Actions.Count);
 
         SmokeAssertions.Equal(expectedActionCount, actionCount, "ledger account repair plan action count");
+    }
+
+    private async Task AssertGuidedPostingFlagRepairActionAsync(
+        Guid ledgerAccountId,
+        CancellationToken cancellationToken)
+    {
+        var driftedAccount = await _harness.LedgerAccounts.GetByIdAsync(
+                LedgerAccountId.Create(ledgerAccountId),
+                cancellationToken)
+            ?? throw new SmokeFailureException("guided repair drift account was not found.");
+
+        ForceLegacyPostingFlag(driftedAccount, isPostingAccount: true);
+
+        var driftRepairPlan = SmokeAssertions.RequireSuccess(
+            await _harness.GetLedgerAccountRepairPlan.HandleAsync(
+                new GetLedgerAccountRepairPlanQuery(null),
+                cancellationToken),
+            "get drift ledger account repair plan");
+        var driftItem = driftRepairPlan.Items.SingleOrDefault(item => item.LedgerAccountId == ledgerAccountId)
+            ?? throw new SmokeFailureException("drifted header account should have repair-plan actions.");
+        var postingAction = driftItem.Actions.SingleOrDefault(action =>
+                action.IssueCode == "NonPostingLevelIsPosting"
+                && action.ActionCode == "UpdatePostingFlag")
+            ?? throw new SmokeFailureException("drifted header account should expose posting flag repair.");
+
+        SmokeAssertions.True(postingAction.IsAutomatable, "posting flag repair should be automatable.");
+        SmokeAssertions.Equal(
+            "GuidedPostingFlagUpdate",
+            postingAction.RepairMode,
+            "posting flag repair mode");
+        SmokeAssertions.Equal("Posting", postingAction.CurrentValue ?? "", "posting flag current value");
+        SmokeAssertions.Equal("Non-posting", postingAction.SuggestedValue ?? "", "posting flag suggested value");
+
+        _ = SmokeAssertions.RequireFailure(
+            await _harness.ApplyLedgerAccountRepairAction.HandleAsync(
+                new ApplyLedgerAccountRepairActionCommand(
+                    ledgerAccountId,
+                    null,
+                    postingAction.IssueCode,
+                    postingAction.ActionCode,
+                    Confirmed: false),
+                cancellationToken),
+            "apply unconfirmed ledger account repair action",
+            nameof(ApplyLedgerAccountRepairActionCommand.Confirmed),
+            "confirmation is required");
+
+        var repairedAccount = SmokeAssertions.RequireSuccess(
+            await _harness.ApplyLedgerAccountRepairAction.HandleAsync(
+                new ApplyLedgerAccountRepairActionCommand(
+                    ledgerAccountId,
+                    null,
+                    postingAction.IssueCode,
+                    postingAction.ActionCode,
+                    Confirmed: true),
+                cancellationToken),
+            "apply guided ledger account repair action");
+
+        SmokeAssertions.Equal(ledgerAccountId, repairedAccount.LedgerAccountId, "repaired ledger account id");
+        SmokeAssertions.True(!repairedAccount.IsPostingAccount, "guided repair should switch header to non-posting.");
+        SmokeAssertions.Equal(
+            "GuidedPostingFlagUpdate",
+            repairedAccount.AppliedAction.RepairMode,
+            "applied repair mode");
+
+        var repairedPlan = SmokeAssertions.RequireSuccess(
+            await _harness.GetLedgerAccountRepairPlan.HandleAsync(
+                new GetLedgerAccountRepairPlanQuery(null),
+                cancellationToken),
+            "get repaired ledger account repair plan");
+
+        SmokeAssertions.True(
+            repairedPlan.Items.All(item => item.LedgerAccountId != ledgerAccountId),
+            "repaired header account should leave the repair plan.");
+    }
+
+    private static void ForceLegacyPostingFlag(LedgerAccount account, bool isPostingAccount)
+    {
+        var backingField = typeof(LedgerAccount).GetField(
+            $"<{nameof(LedgerAccount.IsPostingAccount)}>k__BackingField",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        if (backingField is null)
+        {
+            throw new SmokeFailureException("Ledger account posting flag backing field was not found.");
+        }
+
+        backingField.SetValue(account, isPostingAccount);
     }
 
     private async Task AssertAccountCodeRangeValidationAsync(CancellationToken cancellationToken)
@@ -2223,6 +2316,7 @@ internal sealed class AccountingSmokeRunner
     }
 
     private sealed record LedgerAccounts(
+        Guid LegacyDriftHeaderAccountId,
         Guid AccountsReceivableControlId,
         Guid AccountsReceivableAccountId,
         Guid CashOrBankControlId,

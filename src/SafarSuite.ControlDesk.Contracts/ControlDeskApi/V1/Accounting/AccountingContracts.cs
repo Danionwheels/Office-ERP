@@ -101,6 +101,25 @@ public sealed record LedgerAccountRepairActionResponse(
     string? SuggestedValue,
     IReadOnlyCollection<string> Notes);
 
+public sealed record ApplyLedgerAccountRepairActionRequest(
+    string? CompanyCode,
+    string IssueCode,
+    string ActionCode,
+    bool Confirmed);
+
+public sealed record ApplyLedgerAccountRepairActionResponse(
+    Guid LedgerAccountId,
+    string Code,
+    string Name,
+    string Type,
+    string NormalBalance,
+    string Level,
+    Guid? ParentAccountId,
+    bool IsPostingAccount,
+    string Status,
+    DateTimeOffset CreatedAtUtc,
+    LedgerAccountRepairActionResponse AppliedAction);
+
 public sealed record LedgerAccountSummaryResponse(
     Guid LedgerAccountId,
     string Code,

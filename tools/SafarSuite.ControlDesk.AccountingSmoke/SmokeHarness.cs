@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ApplyLedgerAccountRepairAction;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
@@ -209,6 +210,10 @@ internal sealed class SmokeHarness : IAsyncDisposable
             GetLedgerAccountReconciliation,
             AccountCodeRanges,
             LedgerAccounts);
+        ApplyLedgerAccountRepairAction = new ApplyLedgerAccountRepairActionHandler(
+            GetLedgerAccountRepairPlan,
+            LedgerAccounts,
+            UnitOfWork);
 
         GetAccountCodeRangeValidation = new GetAccountCodeRangeValidationHandler(
             AccountCodeRanges,
@@ -560,6 +565,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public GetLedgerAccountReconciliationHandler GetLedgerAccountReconciliation { get; }
 
     public GetLedgerAccountRepairPlanHandler GetLedgerAccountRepairPlan { get; }
+
+    public ApplyLedgerAccountRepairActionHandler ApplyLedgerAccountRepairAction { get; }
 
     public GetAccountCodeRangeValidationHandler GetAccountCodeRangeValidation { get; }
 

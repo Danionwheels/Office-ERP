@@ -322,7 +322,7 @@ public sealed class GetLedgerAccountRepairPlanHandler
             "UpdatePostingFlag",
             title,
             description,
-            isAutomatable ? "FutureGuidedAction" : "ManualReview",
+            isAutomatable ? "GuidedPostingFlagUpdate" : "ManualReview",
             isAutomatable,
             currentValue,
             suggestedValue,

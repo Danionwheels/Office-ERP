@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ApplyLedgerAccountRepairAction;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
@@ -54,6 +55,7 @@ public static class AccountingEndpoints
         group.MapPost("/ledger-accounts/import-preview", PreviewChartOfAccountsImportTextAsync);
         group.MapPost("/ledger-accounts", CreateLedgerAccountAsync);
         group.MapPut("/ledger-accounts/{ledgerAccountId:guid}", UpdateLedgerAccountAsync);
+        group.MapPost("/ledger-accounts/{ledgerAccountId:guid}/repair-actions", ApplyLedgerAccountRepairActionAsync);
         group.MapGet("/ledger-accounts/suggest-code", SuggestLedgerAccountCodeAsync);
         group.MapGet("/accounting-setup/account-code-ranges", ListAccountCodeRangesAsync);
         group.MapGet("/accounting-setup/account-code-ranges/validation", GetAccountCodeRangeValidationAsync);
@@ -340,6 +342,50 @@ public static class AccountingEndpoints
             result.Value.IsPostingAccount,
             result.Value.Status,
             result.Value.CreatedAtUtc));
+    }
+
+    private static async Task<IResult> ApplyLedgerAccountRepairActionAsync(
+        Guid ledgerAccountId,
+        ApplyLedgerAccountRepairActionRequest request,
+        ApplyLedgerAccountRepairActionHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ApplyLedgerAccountRepairActionCommand(
+                ledgerAccountId,
+                request.CompanyCode,
+                request.IssueCode,
+                request.ActionCode,
+                request.Confirmed),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ApplyLedgerAccountRepairActionResponse(
+            result.Value.LedgerAccountId,
+            result.Value.Code,
+            result.Value.Name,
+            result.Value.Type,
+            result.Value.NormalBalance,
+            result.Value.Level,
+            result.Value.ParentAccountId,
+            result.Value.IsPostingAccount,
+            result.Value.Status,
+            result.Value.CreatedAtUtc,
+            new LedgerAccountRepairActionResponse(
+                result.Value.AppliedAction.IssueCode,
+                result.Value.AppliedAction.Severity,
+                result.Value.AppliedAction.ActionCode,
+                result.Value.AppliedAction.Title,
+                result.Value.AppliedAction.Description,
+                result.Value.AppliedAction.RepairMode,
+                result.Value.AppliedAction.IsAutomatable,
+                result.Value.AppliedAction.CurrentValue,
+                result.Value.AppliedAction.SuggestedValue,
+                result.Value.AppliedAction.Notes)));
     }
 
     private static async Task<IResult> SuggestLedgerAccountCodeAsync(

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ApplyLedgerAccountRepairAction;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
@@ -218,6 +219,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<ListLedgerAccountsHandler>();
         services.AddScoped<GetLedgerAccountReconciliationHandler>();
         services.AddScoped<GetLedgerAccountRepairPlanHandler>();
+        services.AddScoped<ApplyLedgerAccountRepairActionHandler>();
         services.AddScoped<PreviewChartOfAccountsImportTextHandler>();
         services.AddScoped<SuggestLedgerAccountCodeHandler>();
         services.AddScoped<ListJournalEntriesHandler>();
