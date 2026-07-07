@@ -11,6 +11,10 @@ type LedgerAccountReconciliationPanelProps = {
   reconciliation: LedgerAccountReconciliation | null;
   repairPlan: LedgerAccountRepairPlan | null;
   isBusy: boolean;
+  onApplyRepairAction: (
+    ledgerAccountId: string,
+    action: LedgerAccountRepairAction
+  ) => Promise<void>;
   onRefresh: () => Promise<void>;
 };
 
@@ -34,6 +38,7 @@ export function LedgerAccountReconciliationPanel({
   reconciliation,
   repairPlan,
   isBusy,
+  onApplyRepairAction,
   onRefresh
 }: LedgerAccountReconciliationPanelProps) {
   const issueCount = reconciliation?.issueCount ?? 0;
@@ -46,6 +51,17 @@ export function LedgerAccountReconciliationPanel({
   );
   const healthFacts = getCoaReconciliationFacts(reconciliation, repairPlan);
   const issueGroups = getTopIssueGroups(reconciliation);
+
+  async function handleApplyRepairAction(
+    item: LedgerAccountReconciliationItem,
+    action: LedgerAccountRepairAction
+  ) {
+    if (!confirmRepairAction(item, action)) {
+      return;
+    }
+
+    await onApplyRepairAction(item.ledgerAccountId, action);
+  }
 
   return (
     <section className="client-panel coa-reconciliation-panel">
@@ -231,6 +247,20 @@ export function LedgerAccountReconciliationPanel({
                               )}
                               {action.notes.length > 0 && (
                                 <small>{formatRepairNotes(action)}</small>
+                              )}
+                              {canApplyRepairAction(action) && (
+                                <footer className="coa-repair-action-footer">
+                                  <button
+                                    className="coa-repair-apply-button"
+                                    type="button"
+                                    onClick={() => void handleApplyRepairAction(item, action)}
+                                    disabled={isBusy}
+                                    title="Apply guided repair"
+                                  >
+                                    <Wrench size={13} />
+                                    Apply
+                                  </button>
+                                </footer>
                               )}
                             </article>
                           ))
@@ -488,4 +518,24 @@ function formatRepairMode(action: LedgerAccountRepairAction): string {
 
 function formatRepairNotes(action: LedgerAccountRepairAction): string {
   return action.notes.length === 1 ? action.notes[0] : `${action.notes[0]} (+${action.notes.length - 1})`;
+}
+
+function canApplyRepairAction(action: LedgerAccountRepairAction): boolean {
+  return action.isAutomatable && action.repairMode === "GuidedPostingFlagUpdate";
+}
+
+function confirmRepairAction(
+  item: LedgerAccountReconciliationItem,
+  action: LedgerAccountRepairAction
+): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  return window.confirm([
+    `Apply repair to ${item.displayCode} / ${item.name}?`,
+    action.title,
+    `Current: ${action.currentValue ?? "-"}`,
+    `Suggested: ${action.suggestedValue ?? "-"}`
+  ].join("\n"));
 }

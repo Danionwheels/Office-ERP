@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, type ApiErrorItem } from "../../../shared/api/apiError";
 import {
+  applyLedgerAccountRepairAction,
   bootstrapStandardChartOfAccounts,
   closeAccountingPeriod,
   configureAccountingControlSettings,
@@ -65,6 +66,7 @@ import type {
   LedgerAccountEditorInput,
   LedgerAccountFilters,
   LedgerAccountReconciliation,
+  LedgerAccountRepairAction,
   LedgerAccountRepairPlan,
   LedgerAccountSummary,
   OpeningBalanceImportInput,
@@ -485,6 +487,44 @@ export function useAccountingWorkspace({
           ? "COA reconciliation passed."
           : `COA reconciliation found ${reconciliation.issueCount} issue(s) and ${repairPlan.actionCount} repair action(s).`
       );
+    });
+  }
+
+  async function handleApplyLedgerAccountRepairAction(
+    ledgerAccountId: string,
+    action: LedgerAccountRepairAction
+  ) {
+    await runAction(async () => {
+      const appliedRepair = await applyLedgerAccountRepairAction(ledgerAccountId, {
+        companyCode: accountingCompanyCode,
+        issueCode: action.issueCode,
+        actionCode: action.actionCode,
+        confirmed: true
+      });
+      const [accounts, reconciliation, repairPlan, rangeValidation] = await Promise.all([
+        listLedgerAccounts(withAccountingCompanyCode(ledgerAccountFilters)),
+        getLedgerAccountReconciliation(accountingCompanyCode),
+        getLedgerAccountRepairPlan(accountingCompanyCode),
+        getAccountCodeRangeValidation(accountingCompanyCode)
+      ]);
+
+      setLedgerAccounts(accounts);
+      setLedgerAccountReconciliation(reconciliation);
+      setLedgerAccountRepairPlan(repairPlan);
+      setAccountCodeRangeValidation(rangeValidation);
+
+      if (selectedLedgerAccountId === appliedRepair.ledgerAccountId) {
+        const updatedAccount = accounts.find((account) =>
+          account.ledgerAccountId === appliedRepair.ledgerAccountId
+        );
+
+        if (updatedAccount !== undefined) {
+          setLedgerAccountEditorForm(toLedgerAccountEditorForm(updatedAccount));
+        }
+      }
+
+      await onLedgerSetupChanged?.();
+      setMessage(`Applied repair: ${appliedRepair.appliedAction.title}.`);
     });
   }
 
@@ -1383,6 +1423,7 @@ export function useAccountingWorkspace({
     handleEditLedgerAccount,
     handleSuggestAccountingLedgerAccountCode,
     handleSaveLedgerAccount,
+    handleApplyLedgerAccountRepairAction,
     handlePreviewChartOfAccountsImport,
     handleUseChartOfAccountsImportTemplate,
     handleToggleLedgerAccountStatus,

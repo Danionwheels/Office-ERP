@@ -272,6 +272,7 @@ export function AccountingWorkspace({
             reconciliation={workspace.ledgerAccountReconciliation}
             repairPlan={workspace.ledgerAccountRepairPlan}
             isBusy={isBusy}
+            onApplyRepairAction={workspace.handleApplyLedgerAccountRepairAction}
             onRefresh={() => workspace.refreshLedgerAccountReconciliation()}
           />
         )}

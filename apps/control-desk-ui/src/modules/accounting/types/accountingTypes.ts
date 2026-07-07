@@ -80,6 +80,27 @@ export type LedgerAccountRepairAction = {
   notes: string[];
 };
 
+export type ApplyLedgerAccountRepairActionInput = {
+  companyCode: string;
+  issueCode: string;
+  actionCode: string;
+  confirmed: boolean;
+};
+
+export type ApplyLedgerAccountRepairActionResult = {
+  ledgerAccountId: string;
+  code: string;
+  name: string;
+  type: string;
+  normalBalance: string;
+  level: string;
+  parentAccountId?: string | null;
+  isPostingAccount: boolean;
+  status: string;
+  createdAtUtc: string;
+  appliedAction: LedgerAccountRepairAction;
+};
+
 export type LedgerAccountCodeSuggestion = {
   companyCode: string;
   role: string;

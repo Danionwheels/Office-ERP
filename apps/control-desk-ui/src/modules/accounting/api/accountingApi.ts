@@ -9,6 +9,8 @@ import type {
   AccountingPeriodCloseJournalPreview,
   AccountingPeriodCloseReadiness,
   AccountingPeriodFormInput,
+  ApplyLedgerAccountRepairActionInput,
+  ApplyLedgerAccountRepairActionResult,
   BalanceSheet,
   BalanceSheetFilters,
   ChartOfAccountsImportTextPreview,
@@ -48,6 +50,8 @@ type ListLedgerAccountsResponse = {
 type LedgerAccountReconciliationResponse = LedgerAccountReconciliation;
 
 type LedgerAccountRepairPlanResponse = LedgerAccountRepairPlan;
+
+type ApplyLedgerAccountRepairActionResponse = ApplyLedgerAccountRepairActionResult;
 
 type AccountCodeRangeValidationResponse = AccountCodeRangeValidation;
 
@@ -137,6 +141,24 @@ export async function getLedgerAccountRepairPlan(
 
   return apiRequest<LedgerAccountRepairPlanResponse>(
     `/api/v1/accounting/ledger-accounts/repair-plan${suffix}`
+  );
+}
+
+export async function applyLedgerAccountRepairAction(
+  ledgerAccountId: string,
+  input: ApplyLedgerAccountRepairActionInput
+): Promise<ApplyLedgerAccountRepairActionResult> {
+  return apiRequest<ApplyLedgerAccountRepairActionResponse>(
+    `/api/v1/accounting/ledger-accounts/${encodeURIComponent(ledgerAccountId)}/repair-actions`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        companyCode: optionalText(input.companyCode),
+        issueCode: input.issueCode,
+        actionCode: input.actionCode,
+        confirmed: input.confirmed
+      })
+    }
   );
 }
 
