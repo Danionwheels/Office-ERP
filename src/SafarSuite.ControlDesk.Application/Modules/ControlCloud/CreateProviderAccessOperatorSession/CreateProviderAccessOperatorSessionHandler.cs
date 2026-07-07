@@ -33,7 +33,8 @@ public sealed class CreateProviderAccessOperatorSessionHandler
                 command.Email.Trim(),
                 command.Password,
                 ProviderAccessOperatorAdminValidator.NormalizeOptionalScopes(command.Scopes),
-                command.ExpiresInMinutes),
+                command.ExpiresInMinutes,
+                command.RecoveryCode),
             cancellationToken);
 
         return result.IsSuccess

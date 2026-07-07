@@ -85,6 +85,7 @@ public sealed class ProviderAccessSessionService
         string? password,
         IEnumerable<string>? scopes,
         int? expiresInMinutes,
+        string? recoveryCode = null,
         CancellationToken cancellationToken = default)
     {
         if (GetActiveSessionSigningSecret() is null)
@@ -140,6 +141,13 @@ public sealed class ProviderAccessSessionService
                 StatusCodes.Status403Forbidden);
         }
 
+        var recoveryCodeResult = TryConsumeRecoveryCode(user, recoveryCode);
+
+        if (recoveryCodeResult is not null)
+        {
+            return recoveryCodeResult;
+        }
+
         user.LastLoginAtUtc = _clock.UtcNow;
         await _operators.SaveAsync(user, cancellationToken);
 
@@ -147,6 +155,55 @@ public sealed class ProviderAccessSessionService
             BuildOperatorActor(user),
             requestedScopes,
             expiresInMinutes);
+    }
+
+    private ProviderAccessSessionResult? TryConsumeRecoveryCode(
+        ProviderAccessOperator user,
+        string? recoveryCode)
+    {
+        var recoveryCodeHashes = NormalizeRecoveryCodeHashes(user.RecoveryCodeHashes);
+
+        if (user.RecoveryCodesUpdatedAtUtc is null)
+        {
+            return null;
+        }
+
+        if (recoveryCodeHashes.Length == 0)
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderMfaUnavailable",
+                "Provider operator has no remaining recovery codes.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        var normalizedCode = NormalizeRecoveryCode(recoveryCode);
+
+        if (string.IsNullOrWhiteSpace(normalizedCode))
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderMfaRequired",
+                "Provider operator recovery code is required.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        var recoveryCodeHash = HashRecoveryCode(normalizedCode);
+        var matchedHash = recoveryCodeHashes.FirstOrDefault(hash =>
+            FixedTimeEquals(hash, recoveryCodeHash));
+
+        if (matchedHash is null)
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderMfaInvalid",
+                "Provider operator recovery code is invalid.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        user.RecoveryCodeHashes = recoveryCodeHashes
+            .Where(hash => !hash.Equals(matchedHash, StringComparison.Ordinal))
+            .ToArray();
+        user.LastRecoveryCodeUsedAtUtc = _clock.UtcNow;
+
+        return null;
     }
 
     public ProviderAccessAuthorizationResult Authorize(
@@ -449,6 +506,33 @@ public sealed class ProviderAccessSessionService
         return string.IsNullOrWhiteSpace(fullName)
             ? NormalizeEmail(user.Email)
             : fullName;
+    }
+
+    private string HashRecoveryCode(string recoveryCode)
+    {
+        return _credentials.HashSecret($"provider-access-recovery-code:{recoveryCode}");
+    }
+
+    private static string NormalizeRecoveryCode(string? recoveryCode)
+    {
+        if (string.IsNullOrWhiteSpace(recoveryCode))
+        {
+            return "";
+        }
+
+        return new string(recoveryCode
+            .Where(character => !char.IsWhiteSpace(character) && character != '-')
+            .Select(character => char.ToUpperInvariant(character))
+            .ToArray());
+    }
+
+    private static string[] NormalizeRecoveryCodeHashes(IEnumerable<string>? recoveryCodeHashes)
+    {
+        return (recoveryCodeHashes ?? [])
+            .Select(hash => hash.Trim())
+            .Where(hash => !string.IsNullOrWhiteSpace(hash))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static string FormatUnsupportedScopes(IReadOnlyCollection<string> scopes)

@@ -113,6 +113,11 @@ export type ProviderAccessOperator = {
   updatedAtUtc: string | null;
   updatedBy: string | null;
   lastLoginAtUtc: string | null;
+  mfaEnabled?: boolean;
+  recoveryCodeCount?: number;
+  recoveryCodesUpdatedAtUtc?: string | null;
+  recoveryCodesUpdatedBy?: string | null;
+  lastRecoveryCodeUsedAtUtc?: string | null;
 };
 
 export type ProviderAccessSession = {
@@ -128,6 +133,7 @@ export type ProviderAccessSessionCreateInput = {
   password: string;
   scopes: string[];
   expiresInMinutes: number;
+  recoveryCode?: string;
 };
 
 export type ProviderAccessPasswordChangeInput = {
@@ -147,6 +153,16 @@ export type ProviderAccessOperatorCreateInput = {
 export type ProviderAccessOperatorPasswordInput = {
   password: string;
   updatedBy: string;
+};
+
+export type ProviderAccessOperatorRecoveryCodesInput = {
+  count: number;
+  updatedBy: string;
+};
+
+export type ProviderAccessOperatorRecoveryCodesResult = {
+  operator: ProviderAccessOperator;
+  recoveryCodes: string[];
 };
 
 export type ProviderAccessOperatorScopesInput = {

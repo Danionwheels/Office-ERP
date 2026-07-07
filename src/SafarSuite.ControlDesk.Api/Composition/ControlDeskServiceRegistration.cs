@@ -99,6 +99,7 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.QueueCloudInstallationSupportCommand;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorPassword;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorRecoveryCodes;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.RevokeCloudAppActivationIssue;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorScopes;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorStatus;
@@ -258,6 +259,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<CreateProviderAccessOperatorSessionHandler>();
         services.AddScoped<ChangeProviderAccessOperatorPasswordHandler>();
         services.AddScoped<ResetProviderAccessOperatorPasswordHandler>();
+        services.AddScoped<ResetProviderAccessOperatorRecoveryCodesHandler>();
         services.AddScoped<UpdateProviderAccessOperatorScopesHandler>();
         services.AddScoped<UpdateProviderAccessOperatorStatusHandler>();
         services.AddScoped<CreateCloudInstallationSetupTokenHandler>();

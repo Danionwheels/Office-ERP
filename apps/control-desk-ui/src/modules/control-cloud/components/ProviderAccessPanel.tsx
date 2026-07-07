@@ -23,6 +23,7 @@ import {
   createProviderAccessOperator,
   listProviderAccessOperators,
   resetProviderAccessOperatorPassword,
+  resetProviderAccessOperatorRecoveryCodes,
   updateProviderAccessOperatorScopes,
   updateProviderAccessOperatorStatus
 } from "../api/controlCloudApi";
@@ -80,6 +81,7 @@ const emptyCreateOperatorForm: ProviderAccessOperatorCreateInput = {
 const emptySessionForm: ProviderAccessSessionCreateInput = {
   email: "",
   password: "",
+  recoveryCode: "",
   scopes: ["provider-operators:manage"],
   expiresInMinutes: 60
 };
@@ -108,6 +110,8 @@ export function ProviderAccessPanel() {
   const [scopeDraft, setScopeDraft] = useState<string[]>([]);
   const [statusDraft, setStatusDraft] = useState("Active");
   const [passwordDraft, setPasswordDraft] = useState("");
+  const [recoveryCodeCount, setRecoveryCodeCount] = useState(10);
+  const [generatedRecoveryCodes, setGeneratedRecoveryCodes] = useState<string[]>([]);
   const [updatedBy, setUpdatedBy] = useState("SafarSuite Control Desk");
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -155,6 +159,7 @@ export function ProviderAccessPanel() {
     setScopeDraft(selectedOperator.scopes);
     setStatusDraft(selectedOperator.status);
     setPasswordDraft("");
+    setGeneratedRecoveryCodes([]);
   }, [selectedOperator]);
 
   async function handleCreateSession() {
@@ -175,7 +180,8 @@ export function ProviderAccessPanel() {
       });
       setSessionForm({
         ...sessionForm,
-        password: ""
+        password: "",
+        recoveryCode: ""
       });
       setMessage(`Signed in provider operator ${createdSession.actor}.`);
 
@@ -299,6 +305,23 @@ export function ProviderAccessPanel() {
     });
   }
 
+  async function handleResetRecoveryCodes() {
+    if (selectedOperator === null) {
+      return;
+    }
+
+    await runPanelAction(async () => {
+      const result = await resetProviderAccessOperatorRecoveryCodes(selectedOperator.userId, {
+        count: recoveryCodeCount,
+        updatedBy
+      });
+      setOperators(upsertOperator(operators, result.operator));
+      setSelectedUserId(result.operator.userId);
+      setGeneratedRecoveryCodes(result.recoveryCodes);
+      setMessage(`Recovery codes reset for ${result.operator.email}.`);
+    });
+  }
+
   async function runPanelAction(action: () => Promise<void>) {
     setIsBusy(true);
     setError("");
@@ -367,6 +390,19 @@ export function ProviderAccessPanel() {
                 onChange={(event) => setSessionForm({
                   ...sessionForm,
                   password: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Recovery code</span>
+              <input
+                type="text"
+                value={sessionForm.recoveryCode ?? ""}
+                disabled={isBusy}
+                maxLength={32}
+                onChange={(event) => setSessionForm({
+                  ...sessionForm,
+                  recoveryCode: event.target.value
                 })}
               />
             </label>
@@ -657,6 +693,10 @@ export function ProviderAccessPanel() {
                   <dt>Updated</dt>
                   <dd>{formatNullableDateTime(selectedOperator.updatedAtUtc)}</dd>
                 </div>
+                <div>
+                  <dt>MFA</dt>
+                  <dd>{selectedOperator.mfaEnabled ? `${selectedOperator.recoveryCodeCount ?? 0} codes` : "Not enabled"}</dd>
+                </div>
               </dl>
 
               <label className="provider-access-actor-field">
@@ -740,6 +780,43 @@ export function ProviderAccessPanel() {
                   Reset
                 </button>
               </div>
+
+              <div className="provider-access-status-row">
+                <label>
+                  <span>Recovery codes</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={recoveryCodeCount}
+                    disabled={isBusy}
+                    onChange={(event) => setRecoveryCodeCount(Number(event.target.value))}
+                  />
+                </label>
+                <button
+                  className="icon-button"
+                  type="button"
+                  disabled={
+                    isBusy
+                    || recoveryCodeCount < 1
+                    || recoveryCodeCount > 20
+                    || updatedBy.trim() === ""
+                  }
+                  onClick={handleResetRecoveryCodes}
+                  title="Reset provider operator recovery codes"
+                >
+                  <ShieldCheck size={16} />
+                  Reset codes
+                </button>
+              </div>
+
+              {generatedRecoveryCodes.length > 0 && (
+                <div className="provider-access-recovery-codes">
+                  {generatedRecoveryCodes.map((code) => (
+                    <code key={code}>{code}</code>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>

@@ -14,6 +14,7 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListProviderAccess
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.QueueCloudInstallationSupportCommand;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorPassword;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorRecoveryCodes;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.RevokeCloudAppActivationIssue;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorScopes;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorStatus;
@@ -46,6 +47,9 @@ public static class ControlCloudEndpoints
         group.MapPost(
             "/provider-access/operators/{userId}/password",
             ResetProviderAccessOperatorPasswordAsync);
+        group.MapPost(
+            "/provider-access/operators/{userId}/recovery-codes",
+            ResetProviderAccessOperatorRecoveryCodesAsync);
         group.MapPost(
             "/provider-access/operators/{userId}/scopes",
             UpdateProviderAccessOperatorScopesAsync);
@@ -95,7 +99,8 @@ public static class ControlCloudEndpoints
                 request.Email,
                 request.Password,
                 request.Scopes,
-                request.ExpiresInMinutes),
+                request.ExpiresInMinutes,
+                request.RecoveryCode),
             cancellationToken);
 
         return result.IsFailure
@@ -162,6 +167,24 @@ public static class ControlCloudEndpoints
             new ResetProviderAccessOperatorPasswordCommand(
                 userId,
                 request.Password,
+                request.UpdatedBy),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
+    private static async Task<IResult> ResetProviderAccessOperatorRecoveryCodesAsync(
+        string userId,
+        ResetProviderOperatorRecoveryCodesRequest request,
+        ResetProviderAccessOperatorRecoveryCodesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ResetProviderAccessOperatorRecoveryCodesCommand(
+                userId,
+                request.Count,
                 request.UpdatedBy),
             cancellationToken);
 

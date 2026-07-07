@@ -181,6 +181,10 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
             PasswordHash = entity.PasswordHash,
             Status = entity.Status,
             Scopes = DeserializeScopes(entity.ScopesJson).ToArray(),
+            RecoveryCodeHashes = DeserializeRecoveryCodeHashes(entity.RecoveryCodeHashesJson).ToArray(),
+            RecoveryCodesUpdatedAtUtc = entity.RecoveryCodesUpdatedAtUtc,
+            RecoveryCodesUpdatedBy = entity.RecoveryCodesUpdatedBy,
+            LastRecoveryCodeUsedAtUtc = entity.LastRecoveryCodeUsedAtUtc,
             CreatedAtUtc = entity.CreatedAtUtc,
             CreatedBy = entity.CreatedBy,
             UpdatedAtUtc = entity.UpdatedAtUtc,
@@ -202,6 +206,14 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
         entity.ScopesJson = JsonSerializer.Serialize(
             ProviderAccessScopes.Normalize(providerOperator.Scopes, []),
             JsonOptions);
+        entity.RecoveryCodeHashesJson = JsonSerializer.Serialize(
+            NormalizeRecoveryCodeHashes(providerOperator.RecoveryCodeHashes),
+            JsonOptions);
+        entity.RecoveryCodesUpdatedAtUtc = providerOperator.RecoveryCodesUpdatedAtUtc;
+        entity.RecoveryCodesUpdatedBy = string.IsNullOrWhiteSpace(providerOperator.RecoveryCodesUpdatedBy)
+            ? null
+            : providerOperator.RecoveryCodesUpdatedBy.Trim();
+        entity.LastRecoveryCodeUsedAtUtc = providerOperator.LastRecoveryCodeUsedAtUtc;
         entity.CreatedAtUtc = providerOperator.CreatedAtUtc;
         entity.CreatedBy = providerOperator.CreatedBy.Trim();
         entity.UpdatedAtUtc = providerOperator.UpdatedAtUtc;
@@ -233,6 +245,32 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
         return string.IsNullOrWhiteSpace(email)
             ? ""
             : email.Trim().ToLowerInvariant();
+    }
+
+    private static IReadOnlyCollection<string> DeserializeRecoveryCodeHashes(string hashesJson)
+    {
+        if (string.IsNullOrWhiteSpace(hashesJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(hashesJson, JsonOptions) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string[] NormalizeRecoveryCodeHashes(IEnumerable<string>? recoveryCodeHashes)
+    {
+        return (recoveryCodeHashes ?? [])
+            .Select(hash => hash.Trim())
+            .Where(hash => !string.IsNullOrWhiteSpace(hash))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private IReadOnlyCollection<string> NormalizeSeedScopes(ProviderAccessUserOptions user)

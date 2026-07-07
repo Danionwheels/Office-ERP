@@ -14,6 +14,8 @@ import type {
   ProviderAccessOperator,
   ProviderAccessOperatorCreateInput,
   ProviderAccessOperatorPasswordInput,
+  ProviderAccessOperatorRecoveryCodesInput,
+  ProviderAccessOperatorRecoveryCodesResult,
   ProviderAccessOperatorScopesInput,
   ProviderAccessOperatorStatusInput,
   ProviderAccessPasswordChangeInput,
@@ -263,7 +265,8 @@ export async function createProviderAccessOperatorSession(
         email: input.email.trim(),
         password: input.password,
         scopes: input.scopes,
-        expiresInMinutes: input.expiresInMinutes
+        expiresInMinutes: input.expiresInMinutes,
+        recoveryCode: input.recoveryCode?.trim() || null
       })
     }
   );
@@ -313,6 +316,22 @@ export async function resetProviderAccessOperatorPassword(
       method: "POST",
       body: JSON.stringify({
         password: input.password,
+        updatedBy: input.updatedBy.trim()
+      })
+    }
+  );
+}
+
+export async function resetProviderAccessOperatorRecoveryCodes(
+  userId: string,
+  input: ProviderAccessOperatorRecoveryCodesInput
+): Promise<ProviderAccessOperatorRecoveryCodesResult> {
+  return apiRequest<ProviderAccessOperatorRecoveryCodesResult>(
+    `/api/v1/control-cloud/provider-access/operators/${encodeURIComponent(userId)}/recovery-codes`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        count: input.count,
         updatedBy: input.updatedBy.trim()
       })
     }

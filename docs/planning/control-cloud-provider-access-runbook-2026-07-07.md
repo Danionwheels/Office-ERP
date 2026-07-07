@@ -38,6 +38,7 @@ From the provider access panel, a manager can:
 - update an operator's assigned scopes
 - suspend or reactivate an operator
 - reset an operator's temporary password
+- reset one-time recovery codes for recovery-code MFA
 - change the signed-in operator's own password
 
 The panel can sign in a named provider operator, store the short-lived bearer session in the browser until expiry, and use that session for provider-gated Control Desk proxy calls. The Control Desk server can still use a configured provider bearer token or shared-secret fallback for bootstrap and automation. Keep routine changes tied to named operators and use the shared secret only for bootstrap or emergency recovery.
@@ -111,7 +112,7 @@ dotnet tool restore
 dotnet tool run dotnet-ef database update --project src\SafarSuite.ControlCloud.Infrastructure\SafarSuite.ControlCloud.Infrastructure.csproj --startup-project src\SafarSuite.ControlCloud.Infrastructure\SafarSuite.ControlCloud.Infrastructure.csproj --context ControlCloudDbContext
 ```
 
-The provider-operator migration is `20260707181435_AddProviderAccessOperators`.
+The provider-operator migrations are `20260707181435_AddProviderAccessOperators` and `20260708123000_AddProviderAccessOperatorRecoveryCodes`.
 
 ## Bootstrap First Operator
 
@@ -183,6 +184,7 @@ Use operator credentials for normal sessions:
 $session = Invoke-RestMethod -Method Post -Uri "$base/api/v1/provider-access/operator-sessions" -ContentType "application/json" -Body (@{
   email = "ops.one@safarsuite.local"
   password = "ChangeThisProviderPassword123!"
+  recoveryCode = "ABCD-EFGH-JKLM"
   scopes = @("app-activation:read", "app-activation:write")
   expiresInMinutes = 15
 } | ConvertTo-Json -Depth 5)
@@ -190,6 +192,8 @@ $headers = @{ Authorization = "Bearer $($session.accessToken)" }
 ```
 
 If `scopes` is omitted, Control Cloud tries to issue all scopes assigned to the operator. Prefer explicit scopes for task-specific tooling.
+
+If recovery-code MFA has been enabled for an operator, `recoveryCode` is required. A valid recovery code is consumed on successful session creation. If all codes are consumed, a manager with `provider-operators:manage` must reset codes before that operator can mint another session.
 
 The local development seed operator is `provider.admin@safarsuite.local`; the proof tooling uses `provider-dev-password-change-before-cloud`. Treat that account and password as development-only.
 
@@ -209,6 +213,18 @@ Invoke-RestMethod -Method Post -Uri "$base/api/v1/provider-access/operators/$($o
   updatedBy = "ops.one@safarsuite.local"
 } | ConvertTo-Json -Depth 5)
 ```
+
+Reset operator recovery codes:
+
+```powershell
+$recoveryCodes = Invoke-RestMethod -Method Post -Uri "$base/api/v1/provider-access/operators/$($operator.userId)/recovery-codes" -Headers $headers -ContentType "application/json" -Body (@{
+  count = 10
+  updatedBy = "ops.one@safarsuite.local"
+} | ConvertTo-Json -Depth 5)
+$recoveryCodes.recoveryCodes
+```
+
+Recovery codes are returned only in this reset response. Control Cloud stores only hashes, consumes a valid code on provider-operator session creation, and blocks password-only login once recovery codes have been configured.
 
 Update scopes:
 
@@ -241,10 +257,10 @@ dotnet run --project tools\SafarSuite.ControlCloud.ProviderAccessSmoke\SafarSuit
 Expected result:
 
 ```text
-Provider access smoke passed 11 checks:
+Provider access smoke passed 12 checks:
 ```
 
-The smoke proves file-backed seed persistence, scoped operator session issuance, session-signing key rotation acceptance/removal, file-backed secret loading, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
+The smoke proves file-backed seed persistence, scoped operator session issuance, recovery-code MFA enforcement/consumption/exhaustion, session-signing key rotation acceptance/removal, file-backed secret loading, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
 
 Run the live Control Desk proxy proof:
 
@@ -255,10 +271,10 @@ dotnet run --project tools\SafarSuite.ControlDesk.ProviderAccessProxyProof\Safar
 Expected result:
 
 ```text
-Control Desk provider-access proxy proof passed 17 checks:
+Control Desk provider-access proxy proof passed 18 checks:
 ```
 
-The proxy proof applies Control Cloud PostgreSQL migrations, starts Control Cloud and Control Desk on temporary local ports, points Control Desk at the Control Cloud provider access gate, performs list/create/scope/status/password-reset operations through `/api/v1/control-cloud/provider-access/operators`, mints provider bearer sessions through `/api/v1/control-cloud/provider-access/operator-sessions`, proves an under-scoped override session is enforced ahead of the configured shared-secret fallback, proves a manager-scoped override session can list operators, changes a provider operator password through `/api/v1/control-cloud/provider-access/operator-password`, signs in with the self-changed password, and verifies the final provider operator row in PostgreSQL.
+The proxy proof applies Control Cloud PostgreSQL migrations, starts Control Cloud and Control Desk on temporary local ports, points Control Desk at the Control Cloud provider access gate, performs list/create/scope/status/password-reset/recovery-code-reset operations through `/api/v1/control-cloud/provider-access/operators`, mints provider bearer sessions through `/api/v1/control-cloud/provider-access/operator-sessions`, proves an under-scoped override session is enforced ahead of the configured shared-secret fallback, proves a manager-scoped override session can list operators, changes a provider operator password through `/api/v1/control-cloud/provider-access/operator-password`, signs in with the self-changed password and a recovery code, and verifies the final provider operator row in PostgreSQL.
 
 For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBootstrapProof activate-app-runtime` defaults to `POST /api/v1/provider-access/operator-sessions` and then sends the returned bearer token to Control Cloud.
 
@@ -272,16 +288,21 @@ For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBoot
 | `ProviderAccessScopeUnsupported` | The requested session scope is not in the supported scope catalog. | Fix the typo or add a new scope deliberately in code. |
 | `ProviderAccessScopeDenied` | The session/operator lacks the required scope. | Mint a session with the needed assigned scope or update the operator scopes. |
 | `ProviderAccessExpired` | Bearer session expired. | Mint a new session. |
+| `ProviderMfaRequired` | The operator has recovery-code MFA enabled and did not provide a recovery code. | Provide one unused recovery code. |
+| `ProviderMfaInvalid` | The supplied recovery code does not match an unused stored hash. | Retry with an unused recovery code or reset codes. |
+| `ProviderMfaUnavailable` | Recovery-code MFA is enabled but no unused recovery codes remain. | Reset recovery codes through a manager-scoped provider session. |
 | `ProviderOperatorScopesUnsupported` | A stored operator has invalid assigned scopes. | Repair the operator scopes in the store or database. |
 | `ProviderOperatorAlreadyExists` | Create request reused an email already in the store. | Use the existing operator or choose a different email. |
 | `ProviderOperatorNotFound` | Password/scope/status update targeted an unknown `userId`. | List operators and retry with the returned `userId`. |
 | `ProviderOperatorPasswordUnchanged` | Self-service password change reused the current password. | Choose a different new password. |
+| `ProviderOperatorRecoveryCodeCountInvalid` | Recovery code reset requested an unsupported count. | Use a count between 1 and 20. |
 
 ## Production Guardrails
 
 - Keep provider operators separate from client portal identities.
 - Use named operators for routine work; keep shared-secret sessions for bootstrap or emergency recovery only.
 - Assign the smallest scope set that covers the task.
+- Enable recovery-code MFA for provider operators that can perform production changes, and rotate codes after break-glass use.
 - Keep production provider-access secrets in a host secret store or mounted secret files, not inline appsettings.
 - Rotate `SharedSecret` before production use.
 - Rotate session signing through `SessionSigningKeys`: mount the new key file, add the new key, set `ActiveSessionSigningKeyId` to it, keep the previous key configured until the longest possible provider session expires, then remove the previous key and its mounted secret.

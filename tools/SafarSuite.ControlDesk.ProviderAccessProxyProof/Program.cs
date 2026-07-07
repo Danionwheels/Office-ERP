@@ -225,6 +225,20 @@ try
         "provider operator list should work with a manager-scoped Control Desk session override.");
     checks.Add("listed provider operators with Control Desk session override");
 
+    var recoveryCodes = await SendJsonAsync<ProviderOperatorRecoveryCodesResponse>(
+        managerSessionControlDeskHttp,
+        HttpMethod.Post,
+        $"api/v1/control-cloud/provider-access/operators/{Uri.EscapeDataString(createdOperator.UserId)}/recovery-codes",
+        new ResetProviderOperatorRecoveryCodesRequest(
+            3,
+            "control-desk-proxy-proof"));
+    Require(
+        recoveryCodes.Operator.MfaEnabled
+        && recoveryCodes.Operator.RecoveryCodeCount == 3
+        && recoveryCodes.RecoveryCodes.Count == 3,
+        "recovery-code reset should enable MFA and return one-time recovery codes.");
+    checks.Add("reset provider recovery codes through Control Desk session override");
+
     var selfChangedOperator = await SendJsonAsync<ProviderAccessOperatorResponse>(
         controlDeskHttp,
         HttpMethod.Post,
@@ -246,9 +260,10 @@ try
             operatorEmail,
             changedPassword,
             [ProviderAccessScopes.ProviderOperatorsManage],
-            15));
+            15,
+            recoveryCodes.RecoveryCodes.First()));
     RequireBearerSession(changedPasswordSession, ProviderAccessScopes.ProviderOperatorsManage);
-    checks.Add("minted provider bearer session with self-changed password");
+    checks.Add("minted provider bearer session with self-changed password and recovery code");
 
     await VerifyPersistedOperatorAsync(
         options.ConnectionString,
@@ -767,7 +782,8 @@ internal sealed record CreateProviderOperatorSessionRequest(
     string Email,
     string Password,
     string[]? Scopes = null,
-    int? ExpiresInMinutes = null);
+    int? ExpiresInMinutes = null,
+    string? RecoveryCode = null);
 
 internal sealed record ChangeProviderOperatorPasswordRequest(
     string Email,

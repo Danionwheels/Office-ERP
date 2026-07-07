@@ -41,6 +41,17 @@ public sealed class ControlCloudProviderAccessOperatorEntityConfiguration
             .HasColumnName("scopes_json")
             .HasColumnType("jsonb")
             .IsRequired();
+        builder.Property(providerOperator => providerOperator.RecoveryCodeHashesJson)
+            .HasColumnName("recovery_code_hashes_json")
+            .HasColumnType("jsonb")
+            .IsRequired();
+        builder.Property(providerOperator => providerOperator.RecoveryCodesUpdatedAtUtc)
+            .HasColumnName("recovery_codes_updated_at_utc");
+        builder.Property(providerOperator => providerOperator.RecoveryCodesUpdatedBy)
+            .HasColumnName("recovery_codes_updated_by")
+            .HasMaxLength(120);
+        builder.Property(providerOperator => providerOperator.LastRecoveryCodeUsedAtUtc)
+            .HasColumnName("last_recovery_code_used_at_utc");
         builder.Property(providerOperator => providerOperator.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .IsRequired();

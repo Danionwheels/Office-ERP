@@ -38,6 +38,7 @@ public static class ClientPortalAuditEventTypes
     public const string ProviderOperatorCreated = "ProviderOperatorCreated";
     public const string ProviderOperatorPasswordChanged = "ProviderOperatorPasswordChanged";
     public const string ProviderOperatorPasswordReset = "ProviderOperatorPasswordReset";
+    public const string ProviderOperatorRecoveryCodesReset = "ProviderOperatorRecoveryCodesReset";
     public const string ProviderOperatorScopesUpdated = "ProviderOperatorScopesUpdated";
     public const string ProviderOperatorStatusUpdated = "ProviderOperatorStatusUpdated";
     public const string ProviderOperatorSessionIssued = "ProviderOperatorSessionIssued";

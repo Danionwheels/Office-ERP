@@ -90,6 +90,26 @@ internal static class ProviderAccessOperatorAdminValidator
         return errors;
     }
 
+    public static IReadOnlyCollection<ApplicationError> ValidateRecoveryCodeReset(
+        string userId,
+        int? count,
+        string? actor)
+    {
+        var errors = new List<ApplicationError>();
+
+        AddRequiredText(errors, nameof(userId), userId, 120);
+        AddOptionalText(errors, nameof(actor), actor, 120);
+
+        if (count is < 1 or > 20)
+        {
+            errors.Add(ApplicationError.Validation(
+                nameof(count),
+                "Provider operator recovery code count must be between 1 and 20."));
+        }
+
+        return errors;
+    }
+
     public static IReadOnlyCollection<ApplicationError> ValidateScopes(
         string userId,
         IEnumerable<string>? scopes,
@@ -143,10 +163,14 @@ internal static class ProviderAccessOperatorAdminValidator
             "ProviderOperatorNameRequired" => ApplicationError.Validation("fullName", message),
             "ProviderOperatorPasswordInvalid" => ApplicationError.Validation("password", message),
             "ProviderOperatorPasswordUnchanged" => ApplicationError.Validation("newPassword", message),
+            "ProviderOperatorRecoveryCodeCountInvalid" => ApplicationError.Validation("count", message),
             "ProviderOperatorScopesRequired" => ApplicationError.Validation("scopes", message),
             "ProviderOperatorScopesUnsupported" => ApplicationError.Validation("scopes", message),
             "ProviderOperatorStatusUnsupported" => ApplicationError.Validation("status", message),
             "ProviderCredentialsInvalid" => ApplicationError.Validation(credentialTarget, message),
+            "ProviderMfaRequired" => ApplicationError.Validation("recoveryCode", message),
+            "ProviderMfaInvalid" => ApplicationError.Validation("recoveryCode", message),
+            "ProviderMfaUnavailable" => ApplicationError.Validation("recoveryCode", message),
             "ProviderAccessDenied" => ApplicationError.ServiceUnavailable(message),
             "ProviderAccessNotConfigured" => ApplicationError.ServiceUnavailable(message),
             "ProviderAccessScopeDenied" => ApplicationError.ServiceUnavailable(message),

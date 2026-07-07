@@ -104,6 +104,22 @@ public sealed class HttpControlCloudProviderAccessClient : IControlCloudProvider
             : ControlCloudProviderOperatorClientResult.Failure(result.FailureCode!, result.Detail!);
     }
 
+    public async Task<ControlCloudProviderOperatorRecoveryCodesClientResult> ResetOperatorRecoveryCodesAsync(
+        string userId,
+        ResetProviderOperatorRecoveryCodesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SendAsync<ResetProviderOperatorRecoveryCodesRequest, ProviderOperatorRecoveryCodesResponse>(
+            $"operators/{Uri.EscapeDataString(userId.Trim())}/recovery-codes",
+            request,
+            "provider operator recovery codes",
+            cancellationToken);
+
+        return result.IsSuccess
+            ? ControlCloudProviderOperatorRecoveryCodesClientResult.Success(result.Response!)
+            : ControlCloudProviderOperatorRecoveryCodesClientResult.Failure(result.FailureCode!, result.Detail!);
+    }
+
     public async Task<ControlCloudProviderOperatorClientResult> UpdateOperatorScopesAsync(
         string userId,
         UpdateProviderOperatorScopesRequest request,

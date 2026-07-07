@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using SafarSuite.ControlCloud.Application.Common;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 
@@ -24,6 +25,8 @@ public static class ProviderAccessEndpoints
             .WithName("CreateProviderAccessOperator");
         group.MapPost("/operators/{userId}/password", ResetOperatorPasswordAsync)
             .WithName("ResetProviderAccessOperatorPassword");
+        group.MapPost("/operators/{userId}/recovery-codes", ResetOperatorRecoveryCodesAsync)
+            .WithName("ResetProviderAccessOperatorRecoveryCodes");
         group.MapPost("/operators/{userId}/scopes", UpdateOperatorScopesAsync)
             .WithName("UpdateProviderAccessOperatorScopes");
         group.MapPost("/operators/{userId}/status", UpdateOperatorStatusAsync)
@@ -64,6 +67,7 @@ public static class ProviderAccessEndpoints
             request.Password,
             request.Scopes,
             request.ExpiresInMinutes,
+            request.RecoveryCode,
             cancellationToken);
 
         await RecordAuditAsync(
@@ -465,6 +469,72 @@ public static class ProviderAccessEndpoints
         return null;
     }
 
+    private static async Task<IResult> ResetOperatorRecoveryCodesAsync(
+        string userId,
+        ResetProviderOperatorRecoveryCodesRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService sessions,
+        IProviderAccessOperatorStore operators,
+        IClientPortalCredentialService credentials,
+        IClientPortalAuditRecorder audit,
+        IControlCloudClock clock,
+        CancellationToken cancellationToken)
+    {
+        var authorization = sessions.Authorize(
+            httpRequest,
+            ProviderAccessScopes.ProviderOperatorsManage);
+
+        if (!authorization.IsSuccess)
+        {
+            return ToAuthorizationFailure(authorization);
+        }
+
+        var count = request.Count ?? 10;
+
+        if (count is < 1 or > 20)
+        {
+            return Results.BadRequest(new
+            {
+                code = "ProviderOperatorRecoveryCodeCountInvalid",
+                detail = "Provider operator recovery code count must be between 1 and 20."
+            });
+        }
+
+        var providerOperator = await operators.GetByUserIdAsync(userId, cancellationToken);
+
+        if (providerOperator is null)
+        {
+            return OperatorNotFound();
+        }
+
+        var actor = NormalizeActor(request.UpdatedBy, authorization.Principal!.Actor);
+        var recoveryCodes = Enumerable.Range(0, count)
+            .Select(_ => CreateRecoveryCode())
+            .ToArray();
+        providerOperator.RecoveryCodeHashes = recoveryCodes
+            .Select(code => credentials.HashSecret($"provider-access-recovery-code:{NormalizeRecoveryCode(code)}"))
+            .ToArray();
+        providerOperator.RecoveryCodesUpdatedAtUtc = clock.UtcNow;
+        providerOperator.RecoveryCodesUpdatedBy = actor;
+        providerOperator.LastRecoveryCodeUsedAtUtc = null;
+        providerOperator.UpdatedAtUtc = clock.UtcNow;
+        providerOperator.UpdatedBy = actor;
+
+        await operators.SaveAsync(providerOperator, cancellationToken);
+        await RecordAuditAsync(
+            audit,
+            ClientPortalAuditEventTypes.ProviderOperatorRecoveryCodesReset,
+            providerOperator.Email,
+            actor,
+            "Provider operator recovery codes were reset.",
+            clock,
+            cancellationToken);
+
+        return Results.Ok(new ProviderOperatorRecoveryCodesResponse(
+            ToResponse(providerOperator),
+            recoveryCodes));
+    }
+
     private static IResult ToAuthorizationFailure(ProviderAccessAuthorizationResult authorization)
     {
         return Results.Json(
@@ -514,7 +584,12 @@ public static class ProviderAccessEndpoints
             providerOperator.CreatedBy,
             providerOperator.UpdatedAtUtc,
             providerOperator.UpdatedBy,
-            providerOperator.LastLoginAtUtc);
+            providerOperator.LastLoginAtUtc,
+            providerOperator.RecoveryCodesUpdatedAtUtc is not null,
+            providerOperator.RecoveryCodeHashes.Length,
+            providerOperator.RecoveryCodesUpdatedAtUtc,
+            providerOperator.RecoveryCodesUpdatedBy,
+            providerOperator.LastRecoveryCodeUsedAtUtc);
     }
 
     private static async Task RecordAuditAsync(
@@ -579,6 +654,33 @@ public static class ProviderAccessEndpoints
             : normalized;
     }
 
+    private static string CreateRecoveryCode()
+    {
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        var characters = Enumerable.Range(0, 12)
+            .Select(_ => alphabet[RandomNumberGenerator.GetInt32(alphabet.Length)])
+            .ToArray();
+
+        return string.Join(
+            "-",
+            new string(characters, 0, 4),
+            new string(characters, 4, 4),
+            new string(characters, 8, 4));
+    }
+
+    private static string NormalizeRecoveryCode(string? recoveryCode)
+    {
+        if (string.IsNullOrWhiteSpace(recoveryCode))
+        {
+            return "";
+        }
+
+        return new string(recoveryCode
+            .Where(character => !char.IsWhiteSpace(character) && character != '-')
+            .Select(character => char.ToUpperInvariant(character))
+            .ToArray());
+    }
+
     public sealed record CreateProviderAccessSessionRequest(
         string SharedSecret,
         string? Actor,
@@ -589,7 +691,8 @@ public static class ProviderAccessEndpoints
         string Email,
         string Password,
         string[]? Scopes = null,
-        int? ExpiresInMinutes = null);
+        int? ExpiresInMinutes = null,
+        string? RecoveryCode = null);
 
     public sealed record ChangeProviderOperatorPasswordRequest(
         string Email,
@@ -616,7 +719,16 @@ public static class ProviderAccessEndpoints
         string CreatedBy,
         DateTimeOffset? UpdatedAtUtc,
         string? UpdatedBy,
-        DateTimeOffset? LastLoginAtUtc);
+        DateTimeOffset? LastLoginAtUtc,
+        bool MfaEnabled,
+        int RecoveryCodeCount,
+        DateTimeOffset? RecoveryCodesUpdatedAtUtc,
+        string? RecoveryCodesUpdatedBy,
+        DateTimeOffset? LastRecoveryCodeUsedAtUtc);
+
+    public sealed record ProviderOperatorRecoveryCodesResponse(
+        ProviderAccessOperatorResponse Operator,
+        IReadOnlyCollection<string> RecoveryCodes);
 
     public sealed record CreateProviderOperatorRequest(
         string Email,
@@ -627,6 +739,10 @@ public static class ProviderAccessEndpoints
 
     public sealed record ResetProviderOperatorPasswordRequest(
         string Password,
+        string? UpdatedBy = null);
+
+    public sealed record ResetProviderOperatorRecoveryCodesRequest(
+        int? Count = null,
         string? UpdatedBy = null);
 
     public sealed record UpdateProviderOperatorScopesRequest(

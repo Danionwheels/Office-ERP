@@ -4512,6 +4512,25 @@ td {
   min-height: 36px;
 }
 
+.provider-access-recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 6px;
+  max-width: 100%;
+}
+
+.provider-access-recovery-codes code {
+  border: 1px solid #cbd1d7;
+  border-radius: 5px;
+  padding: 6px 8px;
+  background: #f8fafc;
+  color: #20252b;
+  font-size: 12px;
+  font-weight: 750;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 .cloud-control-board {
   display: grid;
   grid-template-columns: repeat(3, minmax(190px, 1fr));

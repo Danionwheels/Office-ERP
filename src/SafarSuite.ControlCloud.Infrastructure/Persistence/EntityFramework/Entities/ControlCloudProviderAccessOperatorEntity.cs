@@ -16,6 +16,14 @@ public sealed class ControlCloudProviderAccessOperatorEntity
 
     public string ScopesJson { get; set; } = "";
 
+    public string RecoveryCodeHashesJson { get; set; } = "";
+
+    public DateTimeOffset? RecoveryCodesUpdatedAtUtc { get; set; }
+
+    public string? RecoveryCodesUpdatedBy { get; set; }
+
+    public DateTimeOffset? LastRecoveryCodeUsedAtUtc { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public string CreatedBy { get; set; } = "";

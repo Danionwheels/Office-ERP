@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlCloud.Api.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Api.Modules.ProviderAccess;
 using SafarSuite.ControlCloud.Application.Common;
+using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 using SafarSuite.ControlCloud.Infrastructure.ClientPortal;
 using SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework;
 
@@ -75,6 +76,60 @@ try
     Require(session.IsSuccess, "valid provider operator credentials should issue a session.");
     Require(session.Scopes?.Single() == ProviderAccessScopes.ProviderOperatorsManage, "session should carry requested scope.");
     checks.Add("issued scoped provider operator session");
+
+    var recoveryCode = "ABCD-EFGH-JKLM";
+    var recoveryOperator = new ProviderAccessOperator
+    {
+        UserId = Guid.NewGuid().ToString("N"),
+        Email = "mfa.provider@safarsuite.local",
+        FullName = "MFA Provider",
+        PasswordHash = credentials.HashPassword("MfaProviderPass123!"),
+        Status = ProviderAccessOperatorStatuses.Active,
+        Scopes = [ProviderAccessScopes.ProviderOperatorsManage],
+        RecoveryCodeHashes = [HashRecoveryCode(credentials, recoveryCode)],
+        RecoveryCodesUpdatedAtUtc = clock.UtcNow,
+        RecoveryCodesUpdatedBy = "provider-access-smoke",
+        CreatedAtUtc = clock.UtcNow,
+        CreatedBy = "provider-access-smoke"
+    };
+
+    await fileStore.SaveAsync(recoveryOperator);
+
+    var mfaRequiredSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "mfa.provider@safarsuite.local",
+        "MfaProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10);
+    var invalidMfaSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "mfa.provider@safarsuite.local",
+        "MfaProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        recoveryCode: "wrong-code");
+    var mfaSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "mfa.provider@safarsuite.local",
+        "MfaProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        recoveryCode: recoveryCode.ToLowerInvariant());
+    var exhaustedMfaSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "mfa.provider@safarsuite.local",
+        "MfaProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        recoveryCode: recoveryCode);
+    var consumedRecoveryOperator = await fileStore.GetByEmailAsync("mfa.provider@safarsuite.local");
+
+    Require(!mfaRequiredSession.IsSuccess, "MFA-enabled operator should require a recovery code.");
+    Require(mfaRequiredSession.FailureCode == "ProviderMfaRequired", "missing recovery code should return ProviderMfaRequired.");
+    Require(!invalidMfaSession.IsSuccess, "MFA-enabled operator should reject an invalid recovery code.");
+    Require(invalidMfaSession.FailureCode == "ProviderMfaInvalid", "invalid recovery code should return ProviderMfaInvalid.");
+    Require(mfaSession.IsSuccess, "MFA-enabled operator should issue a session with a valid recovery code.");
+    Require(!exhaustedMfaSession.IsSuccess, "MFA-enabled operator should not fall back to password-only after all recovery codes are consumed.");
+    Require(exhaustedMfaSession.FailureCode == "ProviderMfaUnavailable", "exhausted recovery codes should return ProviderMfaUnavailable.");
+    Require(consumedRecoveryOperator?.RecoveryCodeHashes.Length == 0, "valid recovery code should be consumed.");
+    Require(consumedRecoveryOperator?.LastRecoveryCodeUsedAtUtc == clock.UtcNow, "recovery code use should be timestamped.");
+    checks.Add("enforced and consumed provider recovery-code MFA");
 
     var rotatedProviderOptions = CopyOptionsWithSessionSigningKeys(
         providerOptions,
@@ -207,6 +262,9 @@ try
             index.IsUnique
             && index.GetDatabaseName() == "ux_provider_access_operators_email"),
         "EF provider operator model should keep unique normalized email index.");
+    Require(
+        entityType.FindProperty("RecoveryCodeHashesJson")?.GetColumnName() == "recovery_code_hashes_json",
+        "EF provider operator model should map recovery code hashes.");
     checks.Add("verified EF provider operator model mapping");
 
     var efStore = new EfProviderAccessOperatorStore(dbContext, providerOptions);
@@ -254,12 +312,28 @@ static ProviderAccessOperator CopyOperatorWithScopes(
         PasswordHash = source.PasswordHash,
         Status = source.Status,
         Scopes = scopes,
+        RecoveryCodeHashes = source.RecoveryCodeHashes,
+        RecoveryCodesUpdatedAtUtc = source.RecoveryCodesUpdatedAtUtc,
+        RecoveryCodesUpdatedBy = source.RecoveryCodesUpdatedBy,
+        LastRecoveryCodeUsedAtUtc = source.LastRecoveryCodeUsedAtUtc,
         CreatedAtUtc = source.CreatedAtUtc,
         CreatedBy = source.CreatedBy,
         UpdatedAtUtc = source.UpdatedAtUtc,
         UpdatedBy = source.UpdatedBy,
         LastLoginAtUtc = source.LastLoginAtUtc
     };
+}
+
+static string HashRecoveryCode(
+    IClientPortalCredentialService credentials,
+    string recoveryCode)
+{
+    var normalized = new string(recoveryCode
+        .Where(character => !char.IsWhiteSpace(character) && character != '-')
+        .Select(character => char.ToUpperInvariant(character))
+        .ToArray());
+
+    return credentials.HashSecret($"provider-access-recovery-code:{normalized}");
 }
 
 static ClientPortalProviderAccessOptions CreateFileSourcedOptions(

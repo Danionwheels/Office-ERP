@@ -14,6 +14,14 @@ public sealed class ProviderAccessOperator
 
     public string[] Scopes { get; set; } = [];
 
+    public string[] RecoveryCodeHashes { get; set; } = [];
+
+    public DateTimeOffset? RecoveryCodesUpdatedAtUtc { get; set; }
+
+    public string? RecoveryCodesUpdatedBy { get; set; }
+
+    public DateTimeOffset? LastRecoveryCodeUsedAtUtc { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public string CreatedBy { get; set; } = "";
