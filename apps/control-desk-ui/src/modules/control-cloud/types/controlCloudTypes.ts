@@ -130,6 +130,12 @@ export type ProviderAccessSessionCreateInput = {
   expiresInMinutes: number;
 };
 
+export type ProviderAccessPasswordChangeInput = {
+  email: string;
+  currentPassword: string;
+  newPassword: string;
+};
+
 export type ProviderAccessOperatorCreateInput = {
   email: string;
   fullName: string;

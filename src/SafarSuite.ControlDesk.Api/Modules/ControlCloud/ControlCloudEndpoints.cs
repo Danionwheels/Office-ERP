@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ChangeProviderAccessOperatorPassword;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationBootstrapPackage;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperator;
@@ -36,6 +37,9 @@ public static class ControlCloudEndpoints
         group.MapPost(
             "/provider-access/operator-sessions",
             CreateProviderAccessOperatorSessionAsync);
+        group.MapPost(
+            "/provider-access/operator-password",
+            ChangeProviderAccessOperatorPasswordAsync);
         group.MapPost(
             "/provider-access/operators",
             CreateProviderAccessOperatorAsync);
@@ -104,6 +108,23 @@ public static class ControlCloudEndpoints
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
+    private static async Task<IResult> ChangeProviderAccessOperatorPasswordAsync(
+        ChangeProviderOperatorPasswordRequest request,
+        ChangeProviderAccessOperatorPasswordHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ChangeProviderAccessOperatorPasswordCommand(
+                request.Email,
+                request.CurrentPassword,
+                request.NewPassword),
+            cancellationToken);
 
         return result.IsFailure
             ? ApiResultMapper.ToErrorResult(result.Errors)

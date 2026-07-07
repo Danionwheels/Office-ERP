@@ -9,6 +9,11 @@ public sealed record CreateProviderOperatorSessionRequest(
     string[]? Scopes = null,
     int? ExpiresInMinutes = null);
 
+public sealed record ChangeProviderOperatorPasswordRequest(
+    string Email,
+    string CurrentPassword,
+    string NewPassword);
+
 public sealed record ProviderAccessSessionResponse(
     string AccessToken,
     string TokenType,

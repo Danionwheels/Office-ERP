@@ -8,6 +8,10 @@ public interface IControlCloudProviderAccessClient
         CreateProviderOperatorSessionRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<ControlCloudProviderOperatorClientResult> ChangeOperatorPasswordAsync(
+        ChangeProviderOperatorPasswordRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<ControlCloudProviderOperatorsClientResult> ListOperatorsAsync(
         CancellationToken cancellationToken = default);
 

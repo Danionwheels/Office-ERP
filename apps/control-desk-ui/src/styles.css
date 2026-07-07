@@ -4282,13 +4282,33 @@ td {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+.provider-access-password-change {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(170px, 0.8fr) minmax(170px, 0.8fr) minmax(150px, 0.7fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
 .provider-access-session-form label {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
+.provider-access-password-change label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .provider-access-session-form label span {
+  color: #39414c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.provider-access-password-change label span {
   color: #39414c;
   font-size: 12px;
   font-weight: 700;
@@ -13328,6 +13348,7 @@ td {
   .provider-access-grid,
   .provider-access-session-form,
   .provider-access-session-current,
+  .provider-access-password-change,
   .client-contacts-zone,
   .client-notes-zone {
     grid-template-columns: 1fr;
@@ -13731,6 +13752,7 @@ td {
   .provider-access-form-grid,
   .provider-access-session-form,
   .provider-access-session-current,
+  .provider-access-password-change,
   .provider-scope-picker,
   .provider-access-facts,
   .billing-form-grid.rule,

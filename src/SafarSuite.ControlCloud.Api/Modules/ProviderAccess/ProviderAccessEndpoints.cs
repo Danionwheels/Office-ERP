@@ -15,6 +15,8 @@ public static class ProviderAccessEndpoints
             .WithName("CreateProviderAccessSession");
         group.MapPost("/operator-sessions", CreateOperatorSessionAsync)
             .WithName("CreateProviderOperatorSession");
+        group.MapPost("/operator-password", ChangeOperatorPasswordAsync)
+            .WithName("ChangeProviderOperatorPassword");
 
         group.MapGet("/operators", ListOperatorsAsync)
             .WithName("ListProviderAccessOperators");
@@ -85,6 +87,77 @@ public static class ProviderAccessEndpoints
         }
 
         return Results.Ok(ToSessionResponse(result));
+    }
+
+    private static async Task<IResult> ChangeOperatorPasswordAsync(
+        ChangeProviderOperatorPasswordRequest request,
+        IProviderAccessOperatorStore operators,
+        IClientPortalCredentialService credentials,
+        IClientPortalAuditRecorder audit,
+        IControlCloudClock clock,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email)
+            || string.IsNullOrWhiteSpace(request.CurrentPassword))
+        {
+            return Results.Json(new
+            {
+                code = "ProviderCredentialsInvalid",
+                detail = "Provider operator credentials are invalid."
+            }, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 12)
+        {
+            return Results.BadRequest(new
+            {
+                code = "ProviderOperatorPasswordInvalid",
+                detail = "Provider operator password must be at least 12 characters."
+            });
+        }
+
+        if (request.CurrentPassword == request.NewPassword)
+        {
+            return Results.BadRequest(new
+            {
+                code = "ProviderOperatorPasswordUnchanged",
+                detail = "New provider operator password must be different from the current password."
+            });
+        }
+
+        var normalizedEmail = NormalizeEmail(request.Email);
+        var providerOperator = await operators.GetByEmailAsync(normalizedEmail, cancellationToken);
+
+        if (providerOperator is null
+            || !providerOperator.Status.Equals(ProviderAccessOperatorStatuses.Active, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(providerOperator.PasswordHash)
+            || !credentials.VerifyPassword(request.CurrentPassword, providerOperator.PasswordHash))
+        {
+            return Results.Json(new
+            {
+                code = "ProviderCredentialsInvalid",
+                detail = "Provider operator credentials are invalid."
+            }, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        var actor = string.IsNullOrWhiteSpace(providerOperator.FullName)
+            ? providerOperator.Email
+            : providerOperator.FullName.Trim();
+        providerOperator.PasswordHash = credentials.HashPassword(request.NewPassword);
+        providerOperator.UpdatedAtUtc = clock.UtcNow;
+        providerOperator.UpdatedBy = actor;
+
+        await operators.SaveAsync(providerOperator, cancellationToken);
+        await RecordAuditAsync(
+            audit,
+            ClientPortalAuditEventTypes.ProviderOperatorPasswordChanged,
+            providerOperator.Email,
+            actor,
+            "Provider operator changed their password.",
+            clock,
+            cancellationToken);
+
+        return Results.Ok(ToResponse(providerOperator));
     }
 
     private static async Task<IResult> ListOperatorsAsync(
@@ -517,6 +590,11 @@ public static class ProviderAccessEndpoints
         string Password,
         string[]? Scopes = null,
         int? ExpiresInMinutes = null);
+
+    public sealed record ChangeProviderOperatorPasswordRequest(
+        string Email,
+        string CurrentPassword,
+        string NewPassword);
 
     public sealed record ProviderAccessSessionResponse(
         string AccessToken,

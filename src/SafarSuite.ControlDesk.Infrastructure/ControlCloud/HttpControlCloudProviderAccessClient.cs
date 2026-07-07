@@ -41,6 +41,25 @@ public sealed class HttpControlCloudProviderAccessClient : IControlCloudProvider
                 result.Detail!);
     }
 
+    public async Task<ControlCloudProviderOperatorClientResult> ChangeOperatorPasswordAsync(
+        ChangeProviderOperatorPasswordRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SendWithoutProviderAccessAsync<
+            ChangeProviderOperatorPasswordRequest,
+            ProviderAccessOperatorResponse>(
+            "operator-password",
+            request,
+            "provider operator password",
+            cancellationToken);
+
+        return result.IsSuccess
+            ? ControlCloudProviderOperatorClientResult.Success(result.Response!)
+            : ControlCloudProviderOperatorClientResult.Failure(
+                result.FailureCode!,
+                result.Detail!);
+    }
+
     public async Task<ControlCloudProviderOperatorsClientResult> ListOperatorsAsync(
         CancellationToken cancellationToken = default)
     {

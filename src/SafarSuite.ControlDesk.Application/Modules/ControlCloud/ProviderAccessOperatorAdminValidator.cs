@@ -53,6 +53,29 @@ internal static class ProviderAccessOperatorAdminValidator
         return errors;
     }
 
+    public static IReadOnlyCollection<ApplicationError> ValidatePasswordChange(
+        string email,
+        string currentPassword,
+        string newPassword)
+    {
+        var errors = new List<ApplicationError>();
+
+        AddEmail(errors, nameof(email), email);
+        AddRequiredText(errors, nameof(currentPassword), currentPassword, 200);
+        AddPassword(errors, nameof(newPassword), newPassword);
+
+        if (!string.IsNullOrWhiteSpace(currentPassword)
+            && !string.IsNullOrWhiteSpace(newPassword)
+            && currentPassword == newPassword)
+        {
+            errors.Add(ApplicationError.Validation(
+                nameof(newPassword),
+                "New provider operator password must be different from the current password."));
+        }
+
+        return errors;
+    }
+
     public static IReadOnlyCollection<ApplicationError> ValidatePasswordReset(
         string userId,
         string password,
@@ -105,7 +128,8 @@ internal static class ProviderAccessOperatorAdminValidator
 
     public static ApplicationError ToApplicationError(
         string? failureCode,
-        string? detail)
+        string? detail,
+        string credentialTarget = "password")
     {
         var message = string.IsNullOrWhiteSpace(detail)
             ? "Control Cloud provider access request failed."
@@ -118,10 +142,11 @@ internal static class ProviderAccessOperatorAdminValidator
             "ProviderOperatorEmailInvalid" => ApplicationError.Validation("email", message),
             "ProviderOperatorNameRequired" => ApplicationError.Validation("fullName", message),
             "ProviderOperatorPasswordInvalid" => ApplicationError.Validation("password", message),
+            "ProviderOperatorPasswordUnchanged" => ApplicationError.Validation("newPassword", message),
             "ProviderOperatorScopesRequired" => ApplicationError.Validation("scopes", message),
             "ProviderOperatorScopesUnsupported" => ApplicationError.Validation("scopes", message),
             "ProviderOperatorStatusUnsupported" => ApplicationError.Validation("status", message),
-            "ProviderCredentialsInvalid" => ApplicationError.Validation("password", message),
+            "ProviderCredentialsInvalid" => ApplicationError.Validation(credentialTarget, message),
             "ProviderAccessDenied" => ApplicationError.ServiceUnavailable(message),
             "ProviderAccessNotConfigured" => ApplicationError.ServiceUnavailable(message),
             "ProviderAccessScopeDenied" => ApplicationError.ServiceUnavailable(message),

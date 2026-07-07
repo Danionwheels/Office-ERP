@@ -38,6 +38,7 @@ From the provider access panel, a manager can:
 - update an operator's assigned scopes
 - suspend or reactivate an operator
 - reset an operator's temporary password
+- change the signed-in operator's own password
 
 The panel can sign in a named provider operator, store the short-lived bearer session in the browser until expiry, and use that session for provider-gated Control Desk proxy calls. The Control Desk server can still use a configured provider bearer token or shared-secret fallback for bootstrap and automation. Keep routine changes tied to named operators and use the shared secret only for bootstrap or emergency recovery.
 
@@ -221,10 +222,10 @@ dotnet run --project tools\SafarSuite.ControlDesk.ProviderAccessProxyProof\Safar
 Expected result:
 
 ```text
-Control Desk provider-access proxy proof passed 15 checks:
+Control Desk provider-access proxy proof passed 17 checks:
 ```
 
-The proxy proof applies Control Cloud PostgreSQL migrations, starts Control Cloud and Control Desk on temporary local ports, points Control Desk at the Control Cloud provider access gate, performs list/create/scope/status/password-reset operations through `/api/v1/control-cloud/provider-access/operators`, mints provider bearer sessions through `/api/v1/control-cloud/provider-access/operator-sessions`, proves an under-scoped override session is enforced ahead of the configured shared-secret fallback, proves a manager-scoped override session can list operators, and verifies the final provider operator row in PostgreSQL.
+The proxy proof applies Control Cloud PostgreSQL migrations, starts Control Cloud and Control Desk on temporary local ports, points Control Desk at the Control Cloud provider access gate, performs list/create/scope/status/password-reset operations through `/api/v1/control-cloud/provider-access/operators`, mints provider bearer sessions through `/api/v1/control-cloud/provider-access/operator-sessions`, proves an under-scoped override session is enforced ahead of the configured shared-secret fallback, proves a manager-scoped override session can list operators, changes a provider operator password through `/api/v1/control-cloud/provider-access/operator-password`, signs in with the self-changed password, and verifies the final provider operator row in PostgreSQL.
 
 For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBootstrapProof activate-app-runtime` defaults to `POST /api/v1/provider-access/operator-sessions` and then sends the returned bearer token to Control Cloud.
 
@@ -241,6 +242,7 @@ For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBoot
 | `ProviderOperatorScopesUnsupported` | A stored operator has invalid assigned scopes. | Repair the operator scopes in the store or database. |
 | `ProviderOperatorAlreadyExists` | Create request reused an email already in the store. | Use the existing operator or choose a different email. |
 | `ProviderOperatorNotFound` | Password/scope/status update targeted an unknown `userId`. | List operators and retry with the returned `userId`. |
+| `ProviderOperatorPasswordUnchanged` | Self-service password change reused the current password. | Choose a different new password. |
 
 ## Production Guardrails
 

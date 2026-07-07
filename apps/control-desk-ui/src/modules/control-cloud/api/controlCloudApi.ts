@@ -16,6 +16,7 @@ import type {
   ProviderAccessOperatorPasswordInput,
   ProviderAccessOperatorScopesInput,
   ProviderAccessOperatorStatusInput,
+  ProviderAccessPasswordChangeInput,
   ProviderAccessSession,
   ProviderAccessSessionCreateInput,
   QueuedCloudInstallationSupportCommand,
@@ -263,6 +264,22 @@ export async function createProviderAccessOperatorSession(
         password: input.password,
         scopes: input.scopes,
         expiresInMinutes: input.expiresInMinutes
+      })
+    }
+  );
+}
+
+export async function changeProviderAccessOperatorPassword(
+  input: ProviderAccessPasswordChangeInput
+): Promise<ProviderAccessOperator> {
+  return apiRequest<ProviderAccessOperator>(
+    "/api/v1/control-cloud/provider-access/operator-password",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: input.email.trim(),
+        currentPassword: input.currentPassword,
+        newPassword: input.newPassword
       })
     }
   );

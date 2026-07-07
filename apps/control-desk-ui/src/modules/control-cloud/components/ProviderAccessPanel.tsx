@@ -18,6 +18,7 @@ import {
   type StoredProviderAccessSession
 } from "../../../shared/api/providerAccessSession";
 import {
+  changeProviderAccessOperatorPassword,
   createProviderAccessOperatorSession,
   createProviderAccessOperator,
   listProviderAccessOperators,
@@ -83,6 +84,13 @@ const emptySessionForm: ProviderAccessSessionCreateInput = {
   expiresInMinutes: 60
 };
 
+const emptyPasswordChangeForm = {
+  email: "",
+  currentPassword: "",
+  newPassword: "",
+  confirmPassword: ""
+};
+
 export function ProviderAccessPanel() {
   const [operators, setOperators] = useState<ProviderAccessOperator[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
@@ -91,6 +99,10 @@ export function ProviderAccessPanel() {
   );
   const [sessionForm, setSessionForm] =
     useState<ProviderAccessSessionCreateInput>(emptySessionForm);
+  const [passwordChangeForm, setPasswordChangeForm] = useState({
+    ...emptyPasswordChangeForm,
+    email: getProviderAccessSession()?.email ?? ""
+  });
   const [createForm, setCreateForm] =
     useState<ProviderAccessOperatorCreateInput>(emptyCreateOperatorForm);
   const [scopeDraft, setScopeDraft] = useState<string[]>([]);
@@ -122,6 +134,10 @@ export function ProviderAccessPanel() {
     }
 
     setUpdatedBy(session.actor);
+    setPasswordChangeForm((current) => ({
+      ...current,
+      email: session.email ?? current.email
+    }));
     setCreateForm((current) => ({
       ...current,
       createdBy: session.actor
@@ -147,8 +163,16 @@ export function ProviderAccessPanel() {
         ...sessionForm,
         scopes: normalizeScopes(sessionForm.scopes)
       });
-      saveProviderAccessSession(createdSession);
-      setSession(createdSession);
+      const storedSession = {
+        ...createdSession,
+        email: sessionForm.email.trim()
+      };
+      saveProviderAccessSession(storedSession);
+      setSession(storedSession);
+      setPasswordChangeForm({
+        ...emptyPasswordChangeForm,
+        email: sessionForm.email.trim()
+      });
       setSessionForm({
         ...sessionForm,
         password: ""
@@ -164,9 +188,36 @@ export function ProviderAccessPanel() {
     });
   }
 
+  async function handleChangeOwnPassword() {
+    if (passwordChangeForm.newPassword !== passwordChangeForm.confirmPassword) {
+      setError("New provider operator password confirmation does not match.");
+      return;
+    }
+
+    await runPanelAction(async () => {
+      await changeProviderAccessOperatorPassword({
+        email: passwordChangeForm.email,
+        currentPassword: passwordChangeForm.currentPassword,
+        newPassword: passwordChangeForm.newPassword
+      });
+      clearProviderAccessSession();
+      setSession(null);
+      setSessionForm({
+        ...emptySessionForm,
+        email: passwordChangeForm.email
+      });
+      setPasswordChangeForm({
+        ...emptyPasswordChangeForm,
+        email: passwordChangeForm.email
+      });
+      setMessage("Provider operator password changed. Sign in again with the new password.");
+    });
+  }
+
   function handleClearSession() {
     clearProviderAccessSession();
     setSession(null);
+    setPasswordChangeForm(emptyPasswordChangeForm);
     setMessage("Provider operator session cleared.");
   }
 
@@ -385,6 +436,75 @@ export function ProviderAccessPanel() {
               <LogOut size={16} />
               Sign out
             </button>
+            <div className="provider-access-password-change">
+              <label>
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={passwordChangeForm.email}
+                  disabled={isBusy}
+                  maxLength={320}
+                  onChange={(event) => setPasswordChangeForm({
+                    ...passwordChangeForm,
+                    email: event.target.value
+                  })}
+                />
+              </label>
+              <label>
+                <span>Current password</span>
+                <input
+                  type="password"
+                  value={passwordChangeForm.currentPassword}
+                  disabled={isBusy}
+                  onChange={(event) => setPasswordChangeForm({
+                    ...passwordChangeForm,
+                    currentPassword: event.target.value
+                  })}
+                />
+              </label>
+              <label>
+                <span>New password</span>
+                <input
+                  type="password"
+                  value={passwordChangeForm.newPassword}
+                  disabled={isBusy}
+                  minLength={12}
+                  onChange={(event) => setPasswordChangeForm({
+                    ...passwordChangeForm,
+                    newPassword: event.target.value
+                  })}
+                />
+              </label>
+              <label>
+                <span>Confirm</span>
+                <input
+                  type="password"
+                  value={passwordChangeForm.confirmPassword}
+                  disabled={isBusy}
+                  minLength={12}
+                  onChange={(event) => setPasswordChangeForm({
+                    ...passwordChangeForm,
+                    confirmPassword: event.target.value
+                  })}
+                />
+              </label>
+              <button
+                className="icon-button"
+                type="button"
+                disabled={
+                  isBusy
+                  || passwordChangeForm.email.trim() === ""
+                  || passwordChangeForm.currentPassword.trim() === ""
+                  || passwordChangeForm.newPassword.length < 12
+                  || passwordChangeForm.confirmPassword.length < 12
+                }
+                onClick={handleChangeOwnPassword}
+                title="Change provider operator password"
+              >
+                <KeyRound size={16} />
+                Change
+              </button>
+            </div>
           </div>
         )}
       </div>

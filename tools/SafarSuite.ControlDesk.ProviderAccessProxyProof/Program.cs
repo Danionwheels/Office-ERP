@@ -90,6 +90,7 @@ try
     var operatorEmail = $"proxy.proof.{runId:N}@safarsuite.local";
     var initialPassword = $"ProxyProofPassword-{runId:N}!";
     var resetPassword = $"ProxyProofReset-{runId:N}!";
+    var changedPassword = $"ProxyProofChanged-{runId:N}!";
 
     _ = await SendJsonAsync<ProviderAccessOperatorsResponse>(
         controlDeskHttp,
@@ -224,10 +225,36 @@ try
         "provider operator list should work with a manager-scoped Control Desk session override.");
     checks.Add("listed provider operators with Control Desk session override");
 
+    var selfChangedOperator = await SendJsonAsync<ProviderAccessOperatorResponse>(
+        controlDeskHttp,
+        HttpMethod.Post,
+        "api/v1/control-cloud/provider-access/operator-password",
+        new ChangeProviderOperatorPasswordRequest(
+            operatorEmail,
+            resetPassword,
+            changedPassword));
+    Require(
+        selfChangedOperator.UpdatedBy == "Control Desk Proxy Proof Operator",
+        "self-service password change should stamp the provider operator actor.");
+    checks.Add("changed provider operator password through Control Desk proxy");
+
+    var changedPasswordSession = await SendJsonAsync<ProviderAccessSessionResponse>(
+        controlDeskHttp,
+        HttpMethod.Post,
+        "api/v1/control-cloud/provider-access/operator-sessions",
+        new CreateProviderOperatorSessionRequest(
+            operatorEmail,
+            changedPassword,
+            [ProviderAccessScopes.ProviderOperatorsManage],
+            15));
+    RequireBearerSession(changedPasswordSession, ProviderAccessScopes.ProviderOperatorsManage);
+    checks.Add("minted provider bearer session with self-changed password");
+
     await VerifyPersistedOperatorAsync(
         options.ConnectionString,
         createdOperator.UserId,
-        operatorEmail);
+        operatorEmail,
+        "Control Desk Proxy Proof Operator");
     checks.Add("verified final provider operator state in PostgreSQL");
 
     Console.WriteLine($"Control Desk provider-access proxy proof passed {checks.Count} checks:");
@@ -363,7 +390,8 @@ static void RequireBearerSession(
 static async Task VerifyPersistedOperatorAsync(
     string connectionString,
     string userId,
-    string email)
+    string email,
+    string expectedUpdatedBy)
 {
     await using var dbContext = CreateDbContext(connectionString);
     var normalizedEmail = NormalizeEmail(email);
@@ -375,7 +403,7 @@ static async Task VerifyPersistedOperatorAsync(
 
     Require(entity is not null, "PostgreSQL should contain the provider operator created through Control Desk.");
     Require(entity!.Status.Equals(ProviderAccessStatuses.Active, StringComparison.OrdinalIgnoreCase), "PostgreSQL operator status should be Active.");
-    Require(entity.UpdatedBy == "control-desk-proxy-proof", "PostgreSQL operator should keep the proxy update actor.");
+    Require(entity.UpdatedBy == expectedUpdatedBy, "PostgreSQL operator should keep the latest password actor.");
     Require(entity.LastLoginAtUtc is not null, "PostgreSQL operator should record the proof login after password reset.");
 
     var scopes = JsonSerializer.Deserialize<string[]>(entity.ScopesJson, ProofJson.Options) ?? [];
@@ -740,6 +768,11 @@ internal sealed record CreateProviderOperatorSessionRequest(
     string Password,
     string[]? Scopes = null,
     int? ExpiresInMinutes = null);
+
+internal sealed record ChangeProviderOperatorPasswordRequest(
+    string Email,
+    string CurrentPassword,
+    string NewPassword);
 
 internal sealed record ProviderAccessSessionResponse(
     string AccessToken,

@@ -83,6 +83,7 @@ using SafarSuite.ControlDesk.Application.Modules.Contracts.PublishProductAccessC
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ReplaceActiveClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.SaveProductAccessCatalog;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.SuspendClientContract;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ChangeProviderAccessOperatorPassword;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationBootstrapPackage;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperator;
@@ -255,6 +256,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<ListProviderAccessOperatorsHandler>();
         services.AddScoped<CreateProviderAccessOperatorHandler>();
         services.AddScoped<CreateProviderAccessOperatorSessionHandler>();
+        services.AddScoped<ChangeProviderAccessOperatorPasswordHandler>();
         services.AddScoped<ResetProviderAccessOperatorPasswordHandler>();
         services.AddScoped<UpdateProviderAccessOperatorScopesHandler>();
         services.AddScoped<UpdateProviderAccessOperatorStatusHandler>();

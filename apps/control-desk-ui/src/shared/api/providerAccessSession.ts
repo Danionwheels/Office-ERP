@@ -7,6 +7,7 @@ export type StoredProviderAccessSession = {
   accessToken: string;
   tokenType: string;
   actor: string;
+  email?: string;
   scopes: string[];
   expiresAtUtc: string;
 };
