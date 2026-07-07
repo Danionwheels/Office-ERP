@@ -23,6 +23,9 @@ public sealed class ControlCloudDbContext : DbContext
     public DbSet<ControlCloudClientPortalUserEntity> ClientPortalUsers =>
         Set<ControlCloudClientPortalUserEntity>();
 
+    public DbSet<ControlCloudProviderAccessOperatorEntity> ProviderAccessOperators =>
+        Set<ControlCloudProviderAccessOperatorEntity>();
+
     public DbSet<ControlCloudClientInstallationEntity> ClientInstallations =>
         Set<ControlCloudClientInstallationEntity>();
 
@@ -51,6 +54,7 @@ public sealed class ControlCloudDbContext : DbContext
         modelBuilder.ApplyConfiguration(new ControlCloudClientCommercialProjectionEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ControlCloudClientPortalInvitationEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ControlCloudClientPortalUserEntityConfiguration());
+        modelBuilder.ApplyConfiguration(new ControlCloudProviderAccessOperatorEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ControlCloudClientInstallationEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ControlCloudEntitlementBundleIssueEntityConfiguration());
         modelBuilder.ApplyConfiguration(new ControlCloudInstallationCommandEntityConfiguration());

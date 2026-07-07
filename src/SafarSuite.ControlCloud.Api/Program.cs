@@ -90,7 +90,6 @@ builder.Services.AddSingleton<IControlCloudAppActivationTokenSigner, EcdsaContro
 builder.Services.AddSingleton<IControlCloudAppActivationIssueRepository, FileControlCloudAppActivationIssueRepository>();
 builder.Services.AddSingleton<IControlCloudInstallationSetupTokenService, RandomControlCloudInstallationSetupTokenService>();
 builder.Services.AddSingleton<IClientPortalCredentialService, HmacClientPortalCredentialService>();
-builder.Services.AddSingleton<IProviderAccessOperatorStore, FileProviderAccessOperatorStore>();
 AddClientPortalInvitationDelivery(builder.Services, clientPortalInvitationDeliveryOptions);
 builder.Services.AddSingleton<FileClientPortalAuditRecorder>();
 builder.Services.AddSingleton<IClientPortalAuditRecorder>(
@@ -98,7 +97,7 @@ builder.Services.AddSingleton<IClientPortalAuditRecorder>(
 builder.Services.AddSingleton<IControlCloudAuditEventReader>(
     services => services.GetRequiredService<FileClientPortalAuditRecorder>());
 builder.Services.AddSingleton<IClientPortalSessionService, HmacClientPortalSessionService>();
-builder.Services.AddSingleton<ProviderAccessSessionService>();
+builder.Services.AddScoped<ProviderAccessSessionService>();
 builder.Services.AddSingleton<ControlCloudEnvelopeSignatureValidator>();
 AddPersistence(builder.Services, builder.Configuration);
 builder.Services.AddScoped<ControlDeskEnvelopeProjectionService>();
@@ -197,6 +196,7 @@ static void AddPersistence(IServiceCollection services, IConfiguration configura
         services.AddScoped<IControlCloudInstallationCommandAcknowledgementRepository, EfControlCloudInstallationCommandAcknowledgementRepository>();
         services.AddScoped<IControlCloudInstallationHeartbeatRepository, EfControlCloudInstallationHeartbeatRepository>();
         services.AddScoped<IControlCloudInstallationDiagnosticReportRepository, EfControlCloudInstallationDiagnosticReportRepository>();
+        services.AddScoped<IProviderAccessOperatorStore, EfProviderAccessOperatorStore>();
         services.AddScoped<IControlCloudUnitOfWork, EfControlCloudUnitOfWork>();
 
         return;
@@ -218,5 +218,6 @@ static void AddPersistence(IServiceCollection services, IConfiguration configura
     services.AddSingleton<IControlCloudInstallationCommandAcknowledgementRepository, FileControlCloudInstallationCommandAcknowledgementRepository>();
     services.AddSingleton<IControlCloudInstallationHeartbeatRepository, FileControlCloudInstallationHeartbeatRepository>();
     services.AddSingleton<IControlCloudInstallationDiagnosticReportRepository, FileControlCloudInstallationDiagnosticReportRepository>();
+    services.AddSingleton<IProviderAccessOperatorStore, FileProviderAccessOperatorStore>();
     services.AddSingleton<IControlCloudUnitOfWork, FileControlCloudUnitOfWork>();
 }
