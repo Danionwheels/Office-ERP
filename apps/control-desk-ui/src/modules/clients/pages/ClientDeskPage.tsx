@@ -88,6 +88,7 @@ import {
   revokeCloudAppActivationIssue
 } from "../../control-cloud/api/controlCloudApi";
 import { CloudInstallationStatusPanel } from "../../control-cloud/components/CloudInstallationStatusPanel";
+import { ProviderAccessPanel } from "../../control-cloud/components/ProviderAccessPanel";
 import type {
   CloudAppActivationTokenFormInput,
   CloudAppActivationRevocationFormInput,
@@ -3114,51 +3115,54 @@ export function ClientDeskPage() {
             )}
 
             {activeDashboardModule === "cloud" && (
-              <CloudInstallationStatusPanel
-                client={selectedClient}
-                installationId={cloudInstallationId}
-                deployments={clientDeployments}
-                selectedDeploymentId={getSelectedDeploymentId(clientDeployments, cloudInstallationId)}
-                deploymentValue={deploymentForm}
-                setupTokenHours={setupTokenHours}
-                connectionState={cloudConnectionState}
-                status={cloudInstallationStatus}
-                setupToken={cloudSetupToken}
-                bootstrapPackage={cloudBootstrapPackage}
-                supportCommandValue={supportCommandForm}
-                queuedSupportCommand={queuedSupportCommand}
-                appActivationValue={appActivationForm}
-                issuedAppActivation={issuedAppActivation}
-                appActivationIssues={appActivationIssues}
-                appActivationIssueSearch={appActivationIssueSearch}
-                appActivationRevocationValue={appActivationRevocationForm}
-                outboxMessages={cloudOutboxMessages}
-                latestOutboxPublish={latestCloudOutboxPublish}
-                auditEvents={cloudAuditEvents}
-                diagnosticsReport={cloudDiagnosticsReport}
-                isBusy={isBusy || selectedClient === null}
-                onInstallationIdChange={handleCloudInstallationIdChange}
-                onDeploymentValueChange={handleDeploymentValueChange}
-                onSetupTokenHoursChange={setSetupTokenHours}
-                onDeploymentSelect={handleSelectClientDeployment}
-                onSaveDeployment={handleSaveClientDeployment}
-                onCreateSetupToken={handleCreateCloudSetupToken}
-                onCreateBootstrapPackage={handleCreateCloudBootstrapPackage}
-                onSupportCommandValueChange={handleSupportCommandValueChange}
-                onQueueSupportCommand={handleQueueCloudSupportCommand}
-                onAppActivationValueChange={handleAppActivationValueChange}
-                onIssueAppActivationToken={handleIssueCloudAppActivationToken}
-                onAppActivationIssueSearchChange={setAppActivationIssueSearch}
-                onRefreshAppActivationIssues={handleRefreshCloudAppActivationIssues}
-                onAppActivationRevocationValueChange={setAppActivationRevocationForm}
-                onRevokeAppActivationIssue={handleRevokeCloudAppActivationIssue}
-                onPrepareReplacementAppActivationIssue={handlePrepareReplacementAppActivationIssue}
-                onRefreshOutboxMessages={handleRefreshCloudOutboxMessages}
-                onPublishOutboxMessages={handlePublishCloudOutboxMessages}
-                onRefreshAuditEvents={handleRefreshCloudAuditEvents}
-                onRefreshDiagnostics={handleRefreshCloudDiagnostics}
-                onRefresh={handleRefreshCloudInstallationStatus}
-              />
+              <div className="cloud-workspace">
+                <CloudInstallationStatusPanel
+                  client={selectedClient}
+                  installationId={cloudInstallationId}
+                  deployments={clientDeployments}
+                  selectedDeploymentId={getSelectedDeploymentId(clientDeployments, cloudInstallationId)}
+                  deploymentValue={deploymentForm}
+                  setupTokenHours={setupTokenHours}
+                  connectionState={cloudConnectionState}
+                  status={cloudInstallationStatus}
+                  setupToken={cloudSetupToken}
+                  bootstrapPackage={cloudBootstrapPackage}
+                  supportCommandValue={supportCommandForm}
+                  queuedSupportCommand={queuedSupportCommand}
+                  appActivationValue={appActivationForm}
+                  issuedAppActivation={issuedAppActivation}
+                  appActivationIssues={appActivationIssues}
+                  appActivationIssueSearch={appActivationIssueSearch}
+                  appActivationRevocationValue={appActivationRevocationForm}
+                  outboxMessages={cloudOutboxMessages}
+                  latestOutboxPublish={latestCloudOutboxPublish}
+                  auditEvents={cloudAuditEvents}
+                  diagnosticsReport={cloudDiagnosticsReport}
+                  isBusy={isBusy || selectedClient === null}
+                  onInstallationIdChange={handleCloudInstallationIdChange}
+                  onDeploymentValueChange={handleDeploymentValueChange}
+                  onSetupTokenHoursChange={setSetupTokenHours}
+                  onDeploymentSelect={handleSelectClientDeployment}
+                  onSaveDeployment={handleSaveClientDeployment}
+                  onCreateSetupToken={handleCreateCloudSetupToken}
+                  onCreateBootstrapPackage={handleCreateCloudBootstrapPackage}
+                  onSupportCommandValueChange={handleSupportCommandValueChange}
+                  onQueueSupportCommand={handleQueueCloudSupportCommand}
+                  onAppActivationValueChange={handleAppActivationValueChange}
+                  onIssueAppActivationToken={handleIssueCloudAppActivationToken}
+                  onAppActivationIssueSearchChange={setAppActivationIssueSearch}
+                  onRefreshAppActivationIssues={handleRefreshCloudAppActivationIssues}
+                  onAppActivationRevocationValueChange={setAppActivationRevocationForm}
+                  onRevokeAppActivationIssue={handleRevokeCloudAppActivationIssue}
+                  onPrepareReplacementAppActivationIssue={handlePrepareReplacementAppActivationIssue}
+                  onRefreshOutboxMessages={handleRefreshCloudOutboxMessages}
+                  onPublishOutboxMessages={handlePublishCloudOutboxMessages}
+                  onRefreshAuditEvents={handleRefreshCloudAuditEvents}
+                  onRefreshDiagnostics={handleRefreshCloudDiagnostics}
+                  onRefresh={handleRefreshCloudInstallationStatus}
+                />
+                <ProviderAccessPanel />
+              </div>
             )}
 
             {activeDashboardModule === "statement" && (

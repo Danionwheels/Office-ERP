@@ -27,6 +27,20 @@ provider shared secret
 
 The legacy `X-SafarSuite-Provider-Key` header still works as a bootstrap fallback, but new tooling should prefer bearer sessions. Control Desk can send a bearer token through `ControlCloud:Status:ProviderAccessToken` and `ControlCloud:PortalInvitations:ProviderAccessToken`; when those are blank it falls back to the configured provider shared secret.
 
+## Control Desk Manager Surface
+
+Control Desk now exposes provider operator management in the Client Desk Cloud workspace. The surface uses the Control Desk proxy routes under `/api/v1/control-cloud/provider-access/operators`, so managers do not need to call the Control Cloud admin endpoints directly for routine work.
+
+From the provider access panel, a manager can:
+
+- refresh the provider operator register
+- create a named operator with a temporary password and explicit scopes
+- update an operator's assigned scopes
+- suspend or reactivate an operator
+- reset an operator's temporary password
+
+The panel still relies on the Control Desk server having a configured provider bearer token or shared-secret fallback. Keep routine changes tied to named operators and use the shared secret only for bootstrap or emergency recovery.
+
 ## Supported Scopes
 
 | Scope | Use |
@@ -223,4 +237,4 @@ For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBoot
 - Do not keep development seed credentials in production config.
 - Back up `cloud.provider_access_operators` with the rest of Control Cloud state.
 - Treat a `SessionSigningSecret` rotation as invalidating all outstanding bearer sessions.
-- Record provider operator changes through the existing audit lane before building richer manager UI.
+- Keep provider operator changes flowing through the existing audit lane as the manager UI grows.

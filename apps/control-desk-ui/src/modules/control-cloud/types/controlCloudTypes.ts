@@ -102,6 +102,42 @@ export type RevokeCloudAppActivationIssueInput = {
   reason: string;
 };
 
+export type ProviderAccessOperator = {
+  userId: string;
+  email: string;
+  fullName: string;
+  status: string;
+  scopes: string[];
+  createdAtUtc: string;
+  createdBy: string;
+  updatedAtUtc: string | null;
+  updatedBy: string | null;
+  lastLoginAtUtc: string | null;
+};
+
+export type ProviderAccessOperatorCreateInput = {
+  email: string;
+  fullName: string;
+  password: string;
+  scopes: string[];
+  createdBy: string;
+};
+
+export type ProviderAccessOperatorPasswordInput = {
+  password: string;
+  updatedBy: string;
+};
+
+export type ProviderAccessOperatorScopesInput = {
+  scopes: string[];
+  updatedBy: string;
+};
+
+export type ProviderAccessOperatorStatusInput = {
+  status: string;
+  updatedBy: string;
+};
+
 export type QueueCloudInstallationSupportCommandInput = {
   commandType: string;
   reason: string;

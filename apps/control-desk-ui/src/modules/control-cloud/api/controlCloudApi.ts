@@ -11,6 +11,11 @@ import type {
   LocalServerDiagnosticReport,
   LocalServerSetupToken,
   PublishCloudOutboxMessagesResult,
+  ProviderAccessOperator,
+  ProviderAccessOperatorCreateInput,
+  ProviderAccessOperatorPasswordInput,
+  ProviderAccessOperatorScopesInput,
+  ProviderAccessOperatorStatusInput,
   QueuedCloudInstallationSupportCommand,
   QueueCloudInstallationSupportCommandInput,
   SafarSuiteAppActivationIssue
@@ -26,6 +31,10 @@ type ControlCloudAuditEventsResponse = {
 
 type SafarSuiteAppActivationIssuesResponse = {
   issues: SafarSuiteAppActivationIssue[];
+};
+
+type ProviderAccessOperatorsResponse = {
+  operators: ProviderAccessOperator[];
 };
 
 export async function listCloudOutboxMessages(
@@ -227,6 +236,80 @@ export async function revokeCloudAppActivationIssue(
       body: JSON.stringify({
         revokedBy: input.revokedBy.trim(),
         reason: input.reason.trim()
+      })
+    }
+  );
+}
+
+export async function listProviderAccessOperators(): Promise<ProviderAccessOperator[]> {
+  const response = await apiRequest<ProviderAccessOperatorsResponse>(
+    "/api/v1/control-cloud/provider-access/operators"
+  );
+
+  return response.operators;
+}
+
+export async function createProviderAccessOperator(
+  input: ProviderAccessOperatorCreateInput
+): Promise<ProviderAccessOperator> {
+  return apiRequest<ProviderAccessOperator>(
+    "/api/v1/control-cloud/provider-access/operators",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: input.email.trim(),
+        fullName: input.fullName.trim(),
+        password: input.password,
+        scopes: input.scopes,
+        createdBy: input.createdBy.trim()
+      })
+    }
+  );
+}
+
+export async function resetProviderAccessOperatorPassword(
+  userId: string,
+  input: ProviderAccessOperatorPasswordInput
+): Promise<ProviderAccessOperator> {
+  return apiRequest<ProviderAccessOperator>(
+    `/api/v1/control-cloud/provider-access/operators/${encodeURIComponent(userId)}/password`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        password: input.password,
+        updatedBy: input.updatedBy.trim()
+      })
+    }
+  );
+}
+
+export async function updateProviderAccessOperatorScopes(
+  userId: string,
+  input: ProviderAccessOperatorScopesInput
+): Promise<ProviderAccessOperator> {
+  return apiRequest<ProviderAccessOperator>(
+    `/api/v1/control-cloud/provider-access/operators/${encodeURIComponent(userId)}/scopes`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        scopes: input.scopes,
+        updatedBy: input.updatedBy.trim()
+      })
+    }
+  );
+}
+
+export async function updateProviderAccessOperatorStatus(
+  userId: string,
+  input: ProviderAccessOperatorStatusInput
+): Promise<ProviderAccessOperator> {
+  return apiRequest<ProviderAccessOperator>(
+    `/api/v1/control-cloud/provider-access/operators/${encodeURIComponent(userId)}/status`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        status: input.status,
+        updatedBy: input.updatedBy.trim()
       })
     }
   );

@@ -1,0 +1,217 @@
+using SafarSuite.ControlDesk.Application.Common.Results;
+
+namespace SafarSuite.ControlDesk.Application.Modules.ControlCloud;
+
+internal static class ProviderAccessOperatorAdminValidator
+{
+    private static readonly string[] SupportedScopes =
+    [
+        "*",
+        "app-activation:read",
+        "app-activation:write",
+        "client-portal:manage",
+        "provider-operators:manage"
+    ];
+
+    public static IReadOnlyCollection<ApplicationError> ValidateCreate(
+        string email,
+        string fullName,
+        string password,
+        IEnumerable<string>? scopes,
+        string? actor)
+    {
+        var errors = new List<ApplicationError>();
+
+        AddEmail(errors, nameof(email), email);
+        AddRequiredText(errors, nameof(fullName), fullName, 180);
+        AddPassword(errors, nameof(password), password);
+        AddScopes(errors, nameof(scopes), scopes);
+        AddOptionalText(errors, nameof(actor), actor, 120);
+
+        return errors;
+    }
+
+    public static IReadOnlyCollection<ApplicationError> ValidatePasswordReset(
+        string userId,
+        string password,
+        string? actor)
+    {
+        var errors = new List<ApplicationError>();
+
+        AddRequiredText(errors, nameof(userId), userId, 120);
+        AddPassword(errors, nameof(password), password);
+        AddOptionalText(errors, nameof(actor), actor, 120);
+
+        return errors;
+    }
+
+    public static IReadOnlyCollection<ApplicationError> ValidateScopes(
+        string userId,
+        IEnumerable<string>? scopes,
+        string? actor)
+    {
+        var errors = new List<ApplicationError>();
+
+        AddRequiredText(errors, nameof(userId), userId, 120);
+        AddScopes(errors, nameof(scopes), scopes);
+        AddOptionalText(errors, nameof(actor), actor, 120);
+
+        return errors;
+    }
+
+    public static IReadOnlyCollection<ApplicationError> ValidateStatus(
+        string userId,
+        string status,
+        string? actor)
+    {
+        var errors = new List<ApplicationError>();
+
+        AddRequiredText(errors, nameof(userId), userId, 120);
+        AddRequiredText(errors, nameof(status), status, 32);
+        AddOptionalText(errors, nameof(actor), actor, 120);
+
+        if (!status.Equals("Active", StringComparison.Ordinal)
+            && !status.Equals("Suspended", StringComparison.Ordinal))
+        {
+            errors.Add(ApplicationError.Validation(
+                nameof(status),
+                "Provider operator status must be Active or Suspended."));
+        }
+
+        return errors;
+    }
+
+    public static ApplicationError ToApplicationError(
+        string? failureCode,
+        string? detail)
+    {
+        var message = string.IsNullOrWhiteSpace(detail)
+            ? "Control Cloud provider access request failed."
+            : detail;
+
+        return failureCode switch
+        {
+            "ProviderOperatorAlreadyExists" => ApplicationError.Conflict("email", message),
+            "ProviderOperatorNotFound" => ApplicationError.NotFound("userId", message),
+            "ProviderOperatorEmailInvalid" => ApplicationError.Validation("email", message),
+            "ProviderOperatorNameRequired" => ApplicationError.Validation("fullName", message),
+            "ProviderOperatorPasswordInvalid" => ApplicationError.Validation("password", message),
+            "ProviderOperatorScopesRequired" => ApplicationError.Validation("scopes", message),
+            "ProviderOperatorScopesUnsupported" => ApplicationError.Validation("scopes", message),
+            "ProviderOperatorStatusUnsupported" => ApplicationError.Validation("status", message),
+            "ProviderAccessDenied" => ApplicationError.ServiceUnavailable(message),
+            "ProviderAccessNotConfigured" => ApplicationError.ServiceUnavailable(message),
+            "ProviderAccessScopeDenied" => ApplicationError.ServiceUnavailable(message),
+            "ControlCloudProviderAccessDenied" => ApplicationError.ServiceUnavailable(message),
+            "ControlCloudProviderAccessNotConfigured" => ApplicationError.ServiceUnavailable(message),
+            _ => ApplicationError.Unexpected(message)
+        };
+    }
+
+    public static string NormalizeActor(string? actor)
+    {
+        return string.IsNullOrWhiteSpace(actor)
+            ? "SafarSuite Control Desk"
+            : actor.Trim();
+    }
+
+    public static string[] NormalizeScopes(IEnumerable<string> scopes)
+    {
+        return scopes
+            .Select(scope => scope.Trim())
+            .Where(scope => !string.IsNullOrWhiteSpace(scope))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static void AddEmail(
+        ICollection<ApplicationError> errors,
+        string target,
+        string email)
+    {
+        AddRequiredText(errors, target, email, 320);
+
+        if (!string.IsNullOrWhiteSpace(email)
+            && !email.Contains('@', StringComparison.Ordinal))
+        {
+            errors.Add(ApplicationError.Validation(target, "Provider operator email is invalid."));
+        }
+    }
+
+    private static void AddPassword(
+        ICollection<ApplicationError> errors,
+        string target,
+        string password)
+    {
+        AddRequiredText(errors, target, password, 200);
+
+        if (!string.IsNullOrWhiteSpace(password) && password.Length < 12)
+        {
+            errors.Add(ApplicationError.Validation(
+                target,
+                "Provider operator password must be at least 12 characters."));
+        }
+    }
+
+    private static void AddScopes(
+        ICollection<ApplicationError> errors,
+        string target,
+        IEnumerable<string>? scopes)
+    {
+        var normalizedScopes = NormalizeScopes(scopes ?? []);
+
+        if (normalizedScopes.Length == 0)
+        {
+            errors.Add(ApplicationError.Validation(
+                target,
+                "At least one provider operator scope is required."));
+
+            return;
+        }
+
+        foreach (var scope in normalizedScopes)
+        {
+            if (!SupportedScopes.Contains(scope, StringComparer.OrdinalIgnoreCase))
+            {
+                errors.Add(ApplicationError.Validation(
+                    target,
+                    $"Provider operator scope '{scope}' is not supported."));
+            }
+        }
+    }
+
+    private static void AddRequiredText(
+        ICollection<ApplicationError> errors,
+        string target,
+        string value,
+        int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            errors.Add(ApplicationError.Validation(target, $"{target} is required."));
+
+            return;
+        }
+
+        AddOptionalText(errors, target, value, maxLength);
+    }
+
+    private static void AddOptionalText(
+        ICollection<ApplicationError> errors,
+        string target,
+        string? value,
+        int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (value.Trim().Length > maxLength)
+        {
+            errors.Add(ApplicationError.Validation(
+                target,
+                $"{target} cannot exceed {maxLength} characters."));
+        }
+    }
+}

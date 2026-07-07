@@ -84,16 +84,21 @@ using SafarSuite.ControlDesk.Application.Modules.Contracts.SaveProductAccessCata
 using SafarSuite.ControlDesk.Application.Modules.Contracts.SuspendClientContract;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationBootstrapPackage;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperator;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationDiagnostics;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudAppActivationIssues;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationAuditEvents;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListProviderAccessOperators;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.QueueCloudInstallationSupportCommand;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorPassword;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.RevokeCloudAppActivationIssue;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorScopes;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorStatus;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.GetLatestEntitlementSnapshot;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoiceDefaults;
@@ -145,6 +150,7 @@ public static class ControlDeskServiceRegistration
         services.AddHttpClient<IControlCloudInstallationCommandClient, HttpControlCloudInstallationCommandClient>();
         services.AddHttpClient<IControlCloudAuditClient, HttpControlCloudAuditClient>();
         services.AddHttpClient<IClientPortalInvitationClient, HttpClientPortalInvitationClient>();
+        services.AddHttpClient<IControlCloudProviderAccessClient, HttpControlCloudProviderAccessClient>();
         services.AddHttpClient<IProductKernelCommandIssuerClient, HttpProductKernelCommandIssuerClient>();
 
         AddPersistence(services, configuration);
@@ -240,6 +246,11 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<GetCloudInstallationDiagnosticsHandler>();
         services.AddScoped<ListCloudInstallationAuditEventsHandler>();
         services.AddScoped<ListCloudAppActivationIssuesHandler>();
+        services.AddScoped<ListProviderAccessOperatorsHandler>();
+        services.AddScoped<CreateProviderAccessOperatorHandler>();
+        services.AddScoped<ResetProviderAccessOperatorPasswordHandler>();
+        services.AddScoped<UpdateProviderAccessOperatorScopesHandler>();
+        services.AddScoped<UpdateProviderAccessOperatorStatusHandler>();
         services.AddScoped<CreateCloudInstallationSetupTokenHandler>();
         services.AddScoped<CreateCloudInstallationBootstrapPackageHandler>();
         services.AddScoped<IssueCloudAppActivationTokenHandler>();

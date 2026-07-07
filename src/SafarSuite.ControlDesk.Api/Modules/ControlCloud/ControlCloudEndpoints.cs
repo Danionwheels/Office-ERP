@@ -1,15 +1,20 @@
 using SafarSuite.ControlDesk.Api.Common;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationBootstrapPackage;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperator;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationDiagnostics;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudAppActivationIssues;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationAuditEvents;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListProviderAccessOperators;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.QueueCloudInstallationSupportCommand;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorPassword;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.RevokeCloudAppActivationIssue;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorScopes;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorStatus;
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.ControlCloud;
 
@@ -24,6 +29,21 @@ public static class ControlCloudEndpoints
             .WithTags("Control Cloud");
 
         group.MapGet("/outbox-messages", ListOutboxMessagesAsync);
+        group.MapGet(
+            "/provider-access/operators",
+            ListProviderAccessOperatorsAsync);
+        group.MapPost(
+            "/provider-access/operators",
+            CreateProviderAccessOperatorAsync);
+        group.MapPost(
+            "/provider-access/operators/{userId}/password",
+            ResetProviderAccessOperatorPasswordAsync);
+        group.MapPost(
+            "/provider-access/operators/{userId}/scopes",
+            UpdateProviderAccessOperatorScopesAsync);
+        group.MapPost(
+            "/provider-access/operators/{userId}/status",
+            UpdateProviderAccessOperatorStatusAsync);
         group.MapGet(
             "/clients/{clientId:guid}/installations/{installationId}/status",
             GetInstallationStatusAsync);
@@ -55,6 +75,92 @@ public static class ControlCloudEndpoints
         group.MapPost("/outbox-messages/publish-local", PublishOutboxMessagesAsync);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> ListProviderAccessOperatorsAsync(
+        ListProviderAccessOperatorsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
+    private static async Task<IResult> CreateProviderAccessOperatorAsync(
+        CreateProviderOperatorRequest request,
+        CreateProviderAccessOperatorHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new CreateProviderAccessOperatorCommand(
+                request.Email,
+                request.FullName,
+                request.Password,
+                request.Scopes,
+                request.CreatedBy),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Created(
+                $"/api/v1/control-cloud/provider-access/operators/{Uri.EscapeDataString(result.Value.UserId)}",
+                result.Value);
+    }
+
+    private static async Task<IResult> ResetProviderAccessOperatorPasswordAsync(
+        string userId,
+        ResetProviderOperatorPasswordRequest request,
+        ResetProviderAccessOperatorPasswordHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ResetProviderAccessOperatorPasswordCommand(
+                userId,
+                request.Password,
+                request.UpdatedBy),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
+    private static async Task<IResult> UpdateProviderAccessOperatorScopesAsync(
+        string userId,
+        UpdateProviderOperatorScopesRequest request,
+        UpdateProviderAccessOperatorScopesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new UpdateProviderAccessOperatorScopesCommand(
+                userId,
+                request.Scopes,
+                request.UpdatedBy),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
+    private static async Task<IResult> UpdateProviderAccessOperatorStatusAsync(
+        string userId,
+        UpdateProviderOperatorStatusRequest request,
+        UpdateProviderAccessOperatorStatusHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new UpdateProviderAccessOperatorStatusCommand(
+                userId,
+                request.Status,
+                request.UpdatedBy),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
     }
 
     private static async Task<IResult> GetInstallationStatusAsync(
