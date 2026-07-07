@@ -18,15 +18,18 @@ public sealed class ProviderAccessSessionService
     private readonly ClientPortalProviderAccessOptions _options;
     private readonly IControlCloudClock _clock;
     private readonly IClientPortalCredentialService _credentials;
+    private readonly IProviderAccessOperatorStore _operators;
 
     public ProviderAccessSessionService(
         ClientPortalProviderAccessOptions options,
         IControlCloudClock clock,
-        IClientPortalCredentialService credentials)
+        IClientPortalCredentialService credentials,
+        IProviderAccessOperatorStore operators)
     {
         _options = options;
         _clock = clock;
         _credentials = credentials;
+        _operators = operators;
     }
 
     public ProviderAccessSessionResult CreateSession(
@@ -66,11 +69,12 @@ public sealed class ProviderAccessSessionService
             expiresInMinutes);
     }
 
-    public ProviderAccessSessionResult CreateSessionFromCredentials(
+    public async Task<ProviderAccessSessionResult> CreateSessionFromCredentialsAsync(
         string? email,
         string? password,
         IEnumerable<string>? scopes,
-        int? expiresInMinutes)
+        int? expiresInMinutes,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(_options.SessionSigningSecret))
         {
@@ -81,8 +85,7 @@ public sealed class ProviderAccessSessionService
         }
 
         var normalizedEmail = NormalizeEmail(email);
-        var user = _options.Users.FirstOrDefault(candidate =>
-            NormalizeEmail(candidate.Email).Equals(normalizedEmail, StringComparison.OrdinalIgnoreCase));
+        var user = await _operators.GetByEmailAsync(normalizedEmail, cancellationToken);
 
         if (user is null
             || !user.Status.Equals("Active", StringComparison.Ordinal)
@@ -106,6 +109,9 @@ public sealed class ProviderAccessSessionService
                 "Provider operator is not allowed to request one or more scopes.",
                 StatusCodes.Status403Forbidden);
         }
+
+        user.LastLoginAtUtc = _clock.UtcNow;
+        await _operators.SaveAsync(user, cancellationToken);
 
         return CreateSignedSession(
             BuildOperatorActor(user),
@@ -328,7 +334,7 @@ public sealed class ProviderAccessSessionService
             : email.Trim().ToLowerInvariant();
     }
 
-    private static string BuildOperatorActor(ProviderAccessUserOptions user)
+    private static string BuildOperatorActor(ProviderAccessOperator user)
     {
         var fullName = user.FullName.Trim();
 

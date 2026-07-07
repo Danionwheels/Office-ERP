@@ -6,6 +6,7 @@ public static class ProviderAccessScopes
     public const string AppActivationRead = "app-activation:read";
     public const string AppActivationWrite = "app-activation:write";
     public const string ClientPortalManage = "client-portal:manage";
+    public const string ProviderOperatorsManage = "provider-operators:manage";
 
     public static IReadOnlyCollection<string> Normalize(
         IEnumerable<string>? scopes,

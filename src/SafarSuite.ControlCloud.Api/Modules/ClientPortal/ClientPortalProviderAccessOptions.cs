@@ -16,8 +16,11 @@ public sealed class ClientPortalProviderAccessOptions
     [
         "app-activation:read",
         "app-activation:write",
-        "client-portal:manage"
+        "client-portal:manage",
+        "provider-operators:manage"
     ];
+
+    public string OperatorStorePath { get; set; } = "App_Data/provider-access-operators.json";
 
     public ProviderAccessUserOptions[] Users { get; set; } =
     [
@@ -32,7 +35,8 @@ public sealed class ClientPortalProviderAccessOptions
             [
                 "app-activation:read",
                 "app-activation:write",
-                "client-portal:manage"
+                "client-portal:manage",
+                "provider-operators:manage"
             ]
         }
     ];
