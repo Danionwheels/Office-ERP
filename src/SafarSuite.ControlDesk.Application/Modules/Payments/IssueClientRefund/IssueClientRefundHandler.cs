@@ -18,6 +18,7 @@ public sealed class IssueClientRefundHandler
     private readonly IClientRepository _clients;
     private readonly IClientRefundRepository _refunds;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly PaymentPostingService _postingService;
@@ -32,6 +33,7 @@ public sealed class IssueClientRefundHandler
         IClientRepository clients,
         IClientRefundRepository refunds,
         IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts,
         ICloudOutboxMessageRepository cloudOutboxMessages,
         AccountingPeriodPostingGuard periodGuard,
         PaymentPostingService postingService,
@@ -45,6 +47,7 @@ public sealed class IssueClientRefundHandler
         _clients = clients;
         _refunds = refunds;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
         _cloudOutboxMessages = cloudOutboxMessages;
         _periodGuard = periodGuard;
         _postingService = postingService;
@@ -174,11 +177,12 @@ public sealed class IssueClientRefundHandler
                             clientBalanceAfter),
                         token);
 
-                    return Result<IssueClientRefundResult>.Success(ToResult(
+                    return Result<IssueClientRefundResult>.Success(await ToResultAsync(
                         refund,
                         journalEntry,
                         creditBalance.StatementBalance,
-                        clientBalanceAfter));
+                        clientBalanceAfter,
+                        token));
                 },
                 cancellationToken);
         }
@@ -196,32 +200,21 @@ public sealed class IssueClientRefundHandler
         }
     }
 
-    private static IssueClientRefundResult ToResult(
+    private async Task<IssueClientRefundResult> ToResultAsync(
         ClientRefund refund,
         JournalEntry journalEntry,
         decimal clientBalanceBefore,
-        decimal clientBalanceAfter)
+        decimal clientBalanceAfter,
+        CancellationToken cancellationToken)
     {
-        return new IssueClientRefundResult(
-            refund.Id.Value,
-            refund.ClientId.Value,
-            refund.Status.ToString(),
-            refund.Method.ToString(),
-            refund.Reference.Value,
-            refund.Amount.Amount,
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
+
+        return PaymentDocumentResultFactory.ToIssueClientRefundResult(
+            refund,
+            journalEntry,
             clientBalanceBefore,
             clientBalanceAfter,
-            refund.Amount.CurrencyCode,
-            refund.RefundedOn,
-            journalEntry.Id.Value,
-            journalEntry.Status.ToString(),
-            journalEntry.EntryDate,
-            journalEntry.TotalDebit.Amount,
-            journalEntry.TotalCredit.Amount,
-            journalEntry.Lines.Select(line => new IssueClientRefundJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+            ledgerAccountsById);
     }
 }

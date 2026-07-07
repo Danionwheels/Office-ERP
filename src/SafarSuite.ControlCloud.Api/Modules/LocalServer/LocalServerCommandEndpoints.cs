@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using SafarSuite.ControlCloud.Api.Modules.ClientPortal;
+using SafarSuite.ControlCloud.Api.Modules.ProviderAccess;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.AcknowledgeInstallationCommand;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateInstallationSetupToken;
@@ -9,10 +10,14 @@ using SafarSuite.ControlCloud.Application.Modules.LocalServer.ExportOfflineRenew
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationStatus;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetLatestInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetPendingInstallationCommands;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueSafarSuiteAppActivationToken;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListSafarSuiteAppActivationIssues;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.QueueInstallationCommand;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ReceiveInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.RegisterLocalServerInstallation;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ReportInstallationHeartbeat;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.RevokeSafarSuiteAppActivationIssue;
 using SafarSuite.ControlCloud.Domain.Modules.LocalServer;
 using SafarSuite.ControlCloud.Infrastructure.LocalServer;
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
@@ -62,6 +67,26 @@ public static class LocalServerCommandEndpoints
                 "/clients/{clientId:guid}/installations/{installationId}/bootstrap-package/download",
                 DownloadBootstrapPackageAsync)
             .WithName("DownloadLocalServerBootstrapPackage");
+
+        controlCloudGroup.MapGet(
+                "/app-activation/signing-key",
+                GetAppActivationSigningKeyAsync)
+            .WithName("GetSafarSuiteAppActivationSigningKey");
+
+        controlCloudGroup.MapGet(
+                "/clients/{clientId:guid}/app-activation-issues",
+                ListAppActivationIssuesAsync)
+            .WithName("ListSafarSuiteAppActivationIssues");
+
+        controlCloudGroup.MapPost(
+                "/clients/{clientId:guid}/app-activation-issues/{activationIssueId:guid}/revoke",
+                RevokeAppActivationIssueAsync)
+            .WithName("RevokeSafarSuiteAppActivationIssue");
+
+        controlCloudGroup.MapPost(
+                "/clients/{clientId:guid}/installations/{installationId}/app-activation-token",
+                IssueAppActivationTokenAsync)
+            .WithName("IssueSafarSuiteAppActivationToken");
 
         controlCloudGroup.MapGet(
                 "/clients/{clientId:guid}/installations/{installationId}/offline-renewal-file",
@@ -214,6 +239,131 @@ public static class LocalServerCommandEndpoints
         return result.IsSuccess
             ? Results.Ok(result.BootstrapPackage!)
             : ToFailureResult(result.FailureCode, result.Detail);
+    }
+
+    private static Task<IResult> GetAppActivationSigningKeyAsync(
+        IControlCloudAppActivationTokenSigner signer)
+    {
+        return Task.FromResult<IResult>(Results.Ok(new SafarSuiteAppActivationSigningKeyResponse(
+            signer.SigningKeyId,
+            signer.PublicKeyPem)));
+    }
+
+    private static async Task<IResult> ListAppActivationIssuesAsync(
+        Guid clientId,
+        string? installationId,
+        Guid? appServerInstallationId,
+        string? query,
+        int? take,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
+        ListSafarSuiteAppActivationIssuesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.AppActivationRead);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var result = await handler.HandleAsync(
+            new ListSafarSuiteAppActivationIssuesQuery(
+                clientId,
+                installationId,
+                appServerInstallationId,
+                query,
+                take ?? 50),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Results.Ok(result.Response!)
+            : ToFailureResult(result.FailureCode, result.Detail);
+    }
+
+    private static async Task<IResult> IssueAppActivationTokenAsync(
+        Guid clientId,
+        string installationId,
+        IssueSafarSuiteAppActivationTokenRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
+        IssueSafarSuiteAppActivationTokenHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.AppActivationWrite);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var result = await handler.HandleAsync(
+            new IssueSafarSuiteAppActivationTokenCommand(
+                clientId,
+                installationId,
+                request.ActivationRequestId,
+                request.ServerInstallationId,
+                request.FingerprintHash,
+                request.ServerPublicKey,
+                request.RequestedBy,
+                request.ReplacesActivationIssueId),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Results.Ok(result.Response!)
+            : ToFailureResult(result.FailureCode, result.Detail);
+    }
+
+    private static async Task<IResult> RevokeAppActivationIssueAsync(
+        Guid clientId,
+        Guid activationIssueId,
+        RevokeSafarSuiteAppActivationIssueRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
+        RevokeSafarSuiteAppActivationIssueHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.AppActivationWrite);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var result = await handler.HandleAsync(
+            new RevokeSafarSuiteAppActivationIssueCommand(
+                clientId,
+                activationIssueId,
+                request.RevokedBy,
+                request.Reason),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Results.Ok(result.Issue!)
+            : ToFailureResult(result.FailureCode, result.Detail);
+    }
+
+    private static IResult? AuthorizeProviderAccess(
+        HttpRequest request,
+        ProviderAccessSessionService providerAccess,
+        string requiredScope)
+    {
+        var authorization = providerAccess.Authorize(request, requiredScope);
+
+        return authorization.IsSuccess
+            ? null
+            : Results.Json(
+                new { code = authorization.FailureCode, detail = authorization.Detail },
+                statusCode: authorization.StatusCode);
     }
 
     private static async Task<IResult> DownloadBootstrapPackageAsync(
@@ -483,20 +633,39 @@ public static class LocalServerCommandEndpoints
         return failureCode switch
         {
             "EntitlementNotFound" => Results.NotFound(response),
+            "ActivationIssueNotFound" => Results.NotFound(response),
+            "ActivationIssueReplacementNotFound" => Results.NotFound(response),
             "InstallationNotFound" => Results.NotFound(response),
             "InstallationNotRegistered" => Results.NotFound(response),
             "CommandNotFound" => Results.NotFound(response),
             "ClientNotFound" => Results.NotFound(response),
             "DiagnosticsNotFound" => Results.NotFound(response),
             "InstallationClientMismatch" => Results.Conflict(response),
+            "ActivationIssueAlreadyRevoked" => Results.Conflict(response),
+            "ActivationIssueClientMismatch" => Results.Conflict(response),
+            "ActivationIssueReplacementClientMismatch" => Results.Conflict(response),
+            "ActivationIssueReplacementInstallationMismatch" => Results.Conflict(response),
+            "ActivationIssueReplacementNotRevoked" => Results.Conflict(response),
+            "ActivationIssueRevocationCommandInvalid" => Results.Conflict(response),
             "DiagnosticsClientMismatch" => Results.Conflict(response),
             "DiagnosticsInstallationMismatch" => Results.Conflict(response),
             "DiagnosticsFormatUnsupported" => Results.Conflict(response),
+            "EntitlementInstallationMismatch" => Results.Conflict(response),
+            "EntitlementPayloadInvalid" => Results.Conflict(response),
             "EntitlementVersionRejected" => Results.Conflict(response),
             "InstallationCommandMismatch" => Results.Conflict(response),
             "SetupTokenScopeMismatch" => Results.Conflict(response),
             "SetupTokenNotUsable" => Results.Conflict(response),
             "SetupTokenNotFound" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "AppServerInstallationIdRequired" => Results.BadRequest(response),
+            "AppFingerprintRequired" => Results.BadRequest(response),
+            "AppServerPublicKeyRequired" => Results.BadRequest(response),
+            "ActivationIssueQueryInvalid" => Results.BadRequest(response),
+            "ActivationIssueTakeInvalid" => Results.BadRequest(response),
+            "ActivationIssueIdRequired" => Results.BadRequest(response),
+            "ActivationIssueRevokedByRequired" => Results.BadRequest(response),
+            "ActivationIssueRevocationReasonRequired" => Results.BadRequest(response),
+            "ActivationIssueReplacementIdInvalid" => Results.BadRequest(response),
             "CloudBaseUrlInvalid" => Results.BadRequest(response),
             "InstallScriptUrlInvalid" => Results.BadRequest(response),
             "BootstrapModeUnsupported" => Results.BadRequest(response),

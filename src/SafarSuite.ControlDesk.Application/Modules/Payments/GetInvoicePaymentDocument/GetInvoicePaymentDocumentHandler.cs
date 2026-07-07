@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Common;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
@@ -15,15 +16,18 @@ public sealed class GetInvoicePaymentDocumentHandler
     private readonly IPaymentRepository _payments;
     private readonly IInvoiceRepository _invoices;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
 
     public GetInvoicePaymentDocumentHandler(
         IPaymentRepository payments,
         IInvoiceRepository invoices,
-        IJournalEntryRepository journalEntries)
+        IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts)
     {
         _payments = payments;
         _invoices = invoices;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
     }
 
     public async Task<Result<InvoicePaymentDocumentResult>> HandleAsync(
@@ -63,17 +67,24 @@ public sealed class GetInvoicePaymentDocumentHandler
             JournalSourceType.PaymentReversal,
             payment,
             cancellationToken);
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
 
         return Result<InvoicePaymentDocumentResult>.Success(new InvoicePaymentDocumentResult(
             BillingDocumentResultFactory.ToInvoiceDraftResult(invoice),
-            PaymentDocumentResultFactory.ToRecordInvoicePaymentResult(payment, invoice, receiptJournal),
+            PaymentDocumentResultFactory.ToRecordInvoicePaymentResult(
+                payment,
+                invoice,
+                receiptJournal,
+                ledgerAccountsById),
             receiptJournal is null || reversalJournal is null
                 ? null
                 : PaymentDocumentResultFactory.ToReverseInvoicePaymentResult(
                     payment,
                     invoice,
                     reversalJournal,
-                    receiptJournal)));
+                    receiptJournal,
+                    ledgerAccountsById)));
     }
 
     private async Task<JournalEntry?> FindJournalAsync(

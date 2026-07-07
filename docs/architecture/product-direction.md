@@ -170,6 +170,12 @@ Deployment and sync vocabulary is defined in:
 docs/architecture/client-deployment-and-data-sync-boundary.md
 ```
 
+Client-side runtime communication, LAN setup, one-time deployment, manager rights, and the canonical Control Cloud bootstrap path are defined in:
+
+```text
+docs/architecture/client-runtime-communication-and-deployment-blueprint.md
+```
+
 ## What We Are Not Building First
 
 - We are not recreating all legacy Survey/FAS forms before proving the client-control chain.

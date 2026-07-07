@@ -76,6 +76,12 @@ export type ClientStatementJournalPosting = {
 
 export type ClientStatementJournalLine = {
   ledgerAccountId: string;
+  ledgerAccountCode?: string | null;
+  ledgerAccountName?: string | null;
+  ledgerAccountType?: string | null;
+  ledgerAccountLevel?: string | null;
+  isPostingAccount?: boolean | null;
+  ledgerAccountStatus?: string | null;
   debit: number;
   credit: number;
   description?: string | null;

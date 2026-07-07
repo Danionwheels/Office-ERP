@@ -1,0 +1,371 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using SafarSuite.ControlCloud.Api.Modules.ClientPortal;
+using SafarSuite.ControlCloud.Application.Common;
+using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
+
+namespace SafarSuite.ControlCloud.Api.Modules.ProviderAccess;
+
+public sealed class ProviderAccessSessionService
+{
+    public const string ProviderAccessHeaderName = "X-SafarSuite-Provider-Key";
+    private const string BearerPrefix = "Bearer ";
+    private const string TokenType = "provider_access";
+    private const string Issuer = "SafarSuite.ControlCloud";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private readonly ClientPortalProviderAccessOptions _options;
+    private readonly IControlCloudClock _clock;
+    private readonly IClientPortalCredentialService _credentials;
+
+    public ProviderAccessSessionService(
+        ClientPortalProviderAccessOptions options,
+        IControlCloudClock clock,
+        IClientPortalCredentialService credentials)
+    {
+        _options = options;
+        _clock = clock;
+        _credentials = credentials;
+    }
+
+    public ProviderAccessSessionResult CreateSession(
+        string? sharedSecret,
+        string? actor,
+        IEnumerable<string>? scopes,
+        int? expiresInMinutes)
+    {
+        if (string.IsNullOrWhiteSpace(_options.SharedSecret))
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderAccessNotConfigured",
+                "Provider access shared secret is not configured.",
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.SessionSigningSecret))
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderAccessNotConfigured",
+                "Provider access session signing is not configured.",
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        if (string.IsNullOrWhiteSpace(sharedSecret)
+            || !FixedTimeEquals(sharedSecret.Trim(), _options.SharedSecret.Trim()))
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderAccessDenied",
+                "Provider access is required before creating a provider session.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        return CreateSignedSession(
+            NormalizeActor(actor),
+            ProviderAccessScopes.Normalize(scopes, _options.DefaultScopes),
+            expiresInMinutes);
+    }
+
+    public ProviderAccessSessionResult CreateSessionFromCredentials(
+        string? email,
+        string? password,
+        IEnumerable<string>? scopes,
+        int? expiresInMinutes)
+    {
+        if (string.IsNullOrWhiteSpace(_options.SessionSigningSecret))
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderAccessNotConfigured",
+                "Provider access session signing is not configured.",
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var normalizedEmail = NormalizeEmail(email);
+        var user = _options.Users.FirstOrDefault(candidate =>
+            NormalizeEmail(candidate.Email).Equals(normalizedEmail, StringComparison.OrdinalIgnoreCase));
+
+        if (user is null
+            || !user.Status.Equals("Active", StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(user.PasswordHash)
+            || string.IsNullOrWhiteSpace(password)
+            || !_credentials.VerifyPassword(password, user.PasswordHash))
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderCredentialsInvalid",
+                "Provider operator credentials are invalid.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        var assignedScopes = ProviderAccessScopes.Normalize(user.Scopes, _options.DefaultScopes);
+        var requestedScopes = ProviderAccessScopes.Normalize(scopes, assignedScopes);
+
+        if (!requestedScopes.All(scope => HasScope(assignedScopes, scope)))
+        {
+            return ProviderAccessSessionResult.Failure(
+                "ProviderAccessScopeDenied",
+                "Provider operator is not allowed to request one or more scopes.",
+                StatusCodes.Status403Forbidden);
+        }
+
+        return CreateSignedSession(
+            BuildOperatorActor(user),
+            requestedScopes,
+            expiresInMinutes);
+    }
+
+    public ProviderAccessAuthorizationResult Authorize(
+        HttpRequest request,
+        string requiredScope)
+    {
+        var tokenResult = ValidateBearerToken(request.Headers.Authorization.ToString(), requiredScope);
+
+        if (tokenResult is not null)
+        {
+            return tokenResult;
+        }
+
+        return ValidateSharedSecretFallback(request, requiredScope);
+    }
+
+    private ProviderAccessAuthorizationResult? ValidateBearerToken(
+        string authorizationHeader,
+        string requiredScope)
+    {
+        if (string.IsNullOrWhiteSpace(authorizationHeader)
+            || !authorizationHeader.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(_options.SessionSigningSecret))
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessNotConfigured",
+                "Provider access session signing is not configured.",
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var token = authorizationHeader[BearerPrefix.Length..].Trim();
+        var parts = token.Split('.', 2);
+
+        if (parts.Length != 2 || parts[0].Length == 0 || parts[1].Length == 0)
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessDenied",
+                "Provider access token is invalid.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        var expectedSignature = Sign(parts[0]);
+
+        if (!FixedTimeEquals(parts[1], expectedSignature))
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessDenied",
+                "Provider access token signature is invalid.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        ProviderAccessTokenPayload? payload;
+
+        try
+        {
+            payload = JsonSerializer.Deserialize<ProviderAccessTokenPayload>(
+                Base64UrlDecode(parts[0]),
+                JsonOptions);
+        }
+        catch (FormatException)
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessDenied",
+                "Provider access token payload is invalid.",
+                StatusCodes.Status401Unauthorized);
+        }
+        catch (JsonException)
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessDenied",
+                "Provider access token payload is invalid.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        if (payload is null
+            || !payload.Type.Equals(TokenType, StringComparison.Ordinal)
+            || !payload.Issuer.Equals(Issuer, StringComparison.Ordinal)
+            || payload.SessionId == Guid.Empty
+            || string.IsNullOrWhiteSpace(payload.Actor))
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessDenied",
+                "Provider access token payload is invalid.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        if (payload.ExpiresAtUtc <= _clock.UtcNow)
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessExpired",
+                "Provider access token has expired.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        if (!HasScope(payload.Scopes, requiredScope))
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessScopeDenied",
+                "Provider session is not allowed to perform this action.",
+                StatusCodes.Status403Forbidden);
+        }
+
+        return ProviderAccessAuthorizationResult.Success(
+            new ProviderAccessPrincipal(
+                payload.Actor.Trim(),
+                "BearerSession",
+                payload.Scopes,
+                payload.ExpiresAtUtc));
+    }
+
+    private ProviderAccessAuthorizationResult ValidateSharedSecretFallback(
+        HttpRequest request,
+        string requiredScope)
+    {
+        var expectedSecret = _options.SharedSecret.Trim();
+
+        if (string.IsNullOrWhiteSpace(expectedSecret))
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessNotConfigured",
+                "Provider access is not configured.",
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var providedSecret = request.Headers[ProviderAccessHeaderName].ToString().Trim();
+
+        if (string.IsNullOrWhiteSpace(providedSecret)
+            || !FixedTimeEquals(providedSecret, expectedSecret))
+        {
+            return ProviderAccessAuthorizationResult.Failure(
+                "ProviderAccessDenied",
+                "Provider access is required before this cloud action.",
+                StatusCodes.Status401Unauthorized);
+        }
+
+        return ProviderAccessAuthorizationResult.Success(
+            new ProviderAccessPrincipal(
+                "provider-shared-secret",
+                "SharedSecret",
+                ProviderAccessScopes.Normalize([requiredScope], _options.DefaultScopes),
+                DateTimeOffset.MaxValue));
+    }
+
+    private ProviderAccessSessionResult CreateSignedSession(
+        string actor,
+        IReadOnlyCollection<string> scopes,
+        int? expiresInMinutes)
+    {
+        var now = _clock.UtcNow;
+        var sessionMinutes = expiresInMinutes is null
+            ? Math.Clamp(_options.SessionMinutes, 5, 1440)
+            : Math.Clamp(expiresInMinutes.Value, 5, 1440);
+        var expiresAtUtc = now.AddMinutes(sessionMinutes);
+        var payload = new ProviderAccessTokenPayload(
+            TokenType,
+            Issuer,
+            Guid.NewGuid(),
+            actor,
+            scopes.ToArray(),
+            now,
+            expiresAtUtc);
+        var payloadText = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions));
+        var signature = Sign(payloadText);
+
+        return ProviderAccessSessionResult.Success(
+            $"{payloadText}.{signature}",
+            actor,
+            scopes,
+            expiresAtUtc);
+    }
+
+    private string Sign(string payloadText)
+    {
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_options.SessionSigningSecret));
+        var signature = hmac.ComputeHash(Encoding.UTF8.GetBytes(payloadText));
+
+        return Base64UrlEncode(signature);
+    }
+
+    private static bool HasScope(
+        IEnumerable<string> scopes,
+        string requiredScope)
+    {
+        return scopes.Any(scope =>
+            scope.Equals(ProviderAccessScopes.Any, StringComparison.OrdinalIgnoreCase)
+            || scope.Equals(requiredScope, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool FixedTimeEquals(string left, string right)
+    {
+        var leftBytes = Encoding.UTF8.GetBytes(left);
+        var rightBytes = Encoding.UTF8.GetBytes(right);
+
+        return leftBytes.Length == rightBytes.Length
+            && CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
+    }
+
+    private static string NormalizeActor(string? actor)
+    {
+        var normalized = actor?.Trim();
+
+        return string.IsNullOrWhiteSpace(normalized)
+            ? "SafarSuite Control Desk"
+            : normalized;
+    }
+
+    private static string NormalizeEmail(string? email)
+    {
+        return string.IsNullOrWhiteSpace(email)
+            ? ""
+            : email.Trim().ToLowerInvariant();
+    }
+
+    private static string BuildOperatorActor(ProviderAccessUserOptions user)
+    {
+        var fullName = user.FullName.Trim();
+
+        return string.IsNullOrWhiteSpace(fullName)
+            ? NormalizeEmail(user.Email)
+            : fullName;
+    }
+
+    private static string Base64UrlEncode(byte[] value)
+    {
+        return Convert.ToBase64String(value)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+    }
+
+    private static byte[] Base64UrlDecode(string value)
+    {
+        var incoming = value
+            .Replace('-', '+')
+            .Replace('_', '/');
+        var padding = incoming.Length % 4;
+
+        if (padding > 0)
+        {
+            incoming = incoming.PadRight(incoming.Length + 4 - padding, '=');
+        }
+
+        return Convert.FromBase64String(incoming);
+    }
+
+    private sealed record ProviderAccessTokenPayload(
+        string Type,
+        string Issuer,
+        Guid SessionId,
+        string Actor,
+        string[] Scopes,
+        DateTimeOffset IssuedAtUtc,
+        DateTimeOffset ExpiresAtUtc);
+}

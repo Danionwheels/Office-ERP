@@ -56,9 +56,9 @@ public sealed class GetCloudInstallationStatusHandler
             "InstallationClientMismatch" => ApplicationError.Conflict(
                 "installationId",
                 result.Detail ?? "Installation belongs to another Control Cloud client."),
-            "ControlCloudStatusUnavailable" => ApplicationError.Unexpected(
+            "ControlCloudStatusUnavailable" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud status is unavailable."),
-            "ControlCloudStatusNotConfigured" => ApplicationError.Unexpected(
+            "ControlCloudStatusNotConfigured" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud status endpoint is not configured."),
             _ => ApplicationError.Unexpected(
                 result.Detail ?? "Control Cloud status could not be loaded.")

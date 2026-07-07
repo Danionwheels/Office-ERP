@@ -1,5 +1,4 @@
-using System.Security.Cryptography;
-using System.Text;
+using SafarSuite.ControlCloud.Api.Modules.ProviderAccess;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationStatus;
@@ -10,8 +9,6 @@ namespace SafarSuite.ControlCloud.Api.Modules.ClientPortal;
 
 public static class ClientPortalEndpoints
 {
-    private const string ProviderAccessHeaderName = "X-SafarSuite-Provider-Key";
-
     public static IEndpointRouteBuilder MapClientPortalEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints
@@ -49,7 +46,7 @@ public static class ClientPortalEndpoints
     private static async Task<IResult> CreateInvitationAsync(
         CreateClientPortalInvitationRequest request,
         HttpRequest httpRequest,
-        ClientPortalProviderAccessOptions providerAccess,
+        ProviderAccessSessionService providerAccess,
         IClientPortalInvitationDeliveryRecorder deliveries,
         IClientPortalAuditRecorder audit,
         CreateClientPortalInvitationHandler handler,
@@ -222,7 +219,7 @@ public static class ClientPortalEndpoints
     private static async Task<IResult> ListInvitationsAsync(
         Guid clientId,
         HttpRequest httpRequest,
-        ClientPortalProviderAccessOptions providerAccess,
+        ProviderAccessSessionService providerAccess,
         ListClientPortalInvitationsHandler handler,
         CancellationToken cancellationToken)
     {
@@ -254,7 +251,7 @@ public static class ClientPortalEndpoints
         Guid invitationId,
         ResendClientPortalInvitationRequest request,
         HttpRequest httpRequest,
-        ClientPortalProviderAccessOptions providerAccess,
+        ProviderAccessSessionService providerAccess,
         IClientPortalInvitationDeliveryRecorder deliveries,
         IClientPortalAuditRecorder audit,
         ResendClientPortalInvitationHandler handler,
@@ -319,7 +316,7 @@ public static class ClientPortalEndpoints
         Guid invitationId,
         RevokeClientPortalInvitationRequest request,
         HttpRequest httpRequest,
-        ClientPortalProviderAccessOptions providerAccess,
+        ProviderAccessSessionService providerAccess,
         RevokeClientPortalInvitationHandler handler,
         CancellationToken cancellationToken)
     {
@@ -342,45 +339,28 @@ public static class ClientPortalEndpoints
 
     private static IResult? AuthorizeProviderAccess(
         HttpRequest request,
-        ClientPortalProviderAccessOptions providerAccess)
+        ProviderAccessSessionService providerAccess)
     {
-        var expectedSecret = providerAccess.SharedSecret.Trim();
+        var authorization = providerAccess.Authorize(
+            request,
+            ProviderAccessScopes.ClientPortalManage);
 
-        if (string.IsNullOrWhiteSpace(expectedSecret))
+        if (authorization.IsSuccess)
         {
-            return Results.Json(
-                new
-                {
-                    code = "ClientPortalProviderAccessNotConfigured",
-                    detail = "Client Portal provider invitation access is not configured."
-                },
-                statusCode: StatusCodes.Status503ServiceUnavailable);
+            return null;
         }
 
-        var providedSecret = request.Headers[ProviderAccessHeaderName].ToString().Trim();
-
-        if (string.IsNullOrWhiteSpace(providedSecret)
-            || !FixedTimeEquals(providedSecret, expectedSecret))
+        var code = authorization.FailureCode switch
         {
-            return Results.Json(
-                new
-                {
-                    code = "ClientPortalProviderAccessDenied",
-                    detail = "Provider access is required before creating a Client Portal invitation."
-                },
-                statusCode: StatusCodes.Status401Unauthorized);
-        }
+            "ProviderAccessNotConfigured" => "ClientPortalProviderAccessNotConfigured",
+            "ProviderAccessScopeDenied" => "ClientPortalProviderAccessScopeDenied",
+            "ProviderAccessExpired" => "ClientPortalProviderAccessExpired",
+            _ => "ClientPortalProviderAccessDenied"
+        };
 
-        return null;
-    }
-
-    private static bool FixedTimeEquals(string left, string right)
-    {
-        var leftBytes = Encoding.UTF8.GetBytes(left);
-        var rightBytes = Encoding.UTF8.GetBytes(right);
-
-        return leftBytes.Length == rightBytes.Length
-            && CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
+        return Results.Json(
+            new { code, detail = authorization.Detail },
+            statusCode: authorization.StatusCode);
     }
 
     private static string NormalizeActor(string value)

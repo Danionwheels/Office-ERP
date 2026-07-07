@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import {
   Activity,
   Cloud,
@@ -9,89 +10,39 @@ import {
   PackageCheck,
   RefreshCw,
   Send,
-  ServerCog
+  ServerCog,
+  ShieldCheck,
+  ShieldOff,
+  Upload
 } from "lucide-react";
-import type {
-  ClientDeployment,
-  ClientDetails,
-  ConfigureClientDeploymentInput
-} from "../../clients/types/clientTypes";
-import type {
-  CloudInstallationSupportCommandFormInput,
-  ControlCloudAuditEvent,
-  ControlCloudInstallationStatus,
-  LocalServerBootstrapPackage,
-  LocalServerDiagnosticReport,
-  LocalServerDeploymentProfile,
-  LocalServerSetupToken,
-  QueuedCloudInstallationSupportCommand
-} from "../types/controlCloudTypes";
-
-type CloudInstallationStatusPanelProps = {
-  client: ClientDetails | null;
-  installationId: string;
-  deployments: ClientDeployment[];
-  selectedDeploymentId: string;
-  deploymentValue: ConfigureClientDeploymentInput;
-  setupTokenHours: string;
-  status: ControlCloudInstallationStatus | null;
-  setupToken: LocalServerSetupToken | null;
-  bootstrapPackage: LocalServerBootstrapPackage | null;
-  supportCommandValue: CloudInstallationSupportCommandFormInput;
-  queuedSupportCommand: QueuedCloudInstallationSupportCommand | null;
-  auditEvents: ControlCloudAuditEvent[];
-  diagnosticsReport: LocalServerDiagnosticReport | null;
-  isBusy: boolean;
-  onInstallationIdChange: (value: string) => void;
-  onDeploymentValueChange: (value: ConfigureClientDeploymentInput) => void;
-  onSetupTokenHoursChange: (value: string) => void;
-  onDeploymentSelect: (clientDeploymentId: string) => void;
-  onSaveDeployment: () => Promise<void>;
-  onCreateSetupToken: () => Promise<void>;
-  onCreateBootstrapPackage: () => Promise<void>;
-  onSupportCommandValueChange: (value: CloudInstallationSupportCommandFormInput) => void;
-  onQueueSupportCommand: () => Promise<void>;
-  onRefreshAuditEvents: () => Promise<void>;
-  onRefreshDiagnostics: () => Promise<void>;
-  onRefresh: () => Promise<void>;
-};
-
-const defaultBundleContentType = "application/vnd.safarsuite.local-server-bootstrap+json";
-
-function downloadBootstrapBundle(bootstrapPackage: LocalServerBootstrapPackage) {
-  const bundleJson = JSON.stringify(bootstrapPackage.signedBundle, null, 2);
-  const blob = new Blob([bundleJson], {
-    type: bootstrapPackage.bundleContentType || defaultBundleContentType
-  });
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const fallbackFileName = `${bootstrapPackage.installationId}-bootstrap.json`;
-
-  link.href = objectUrl;
-  link.download = bootstrapPackage.bundleFileName.trim() || fallbackFileName;
-  link.style.display = "none";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-}
-
-function downloadDiagnosticsReport(diagnosticsReport: LocalServerDiagnosticReport) {
-  const diagnosticsJson = JSON.stringify(diagnosticsReport, null, 2);
-  const blob = new Blob([diagnosticsJson], {
-    type: "application/json"
-  });
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = objectUrl;
-  link.download = `safarsuite-diagnostics-${diagnosticsReport.installationId}.json`;
-  link.style.display = "none";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-}
+import type { CloudInstallationStatusPanelProps } from "../types/cloudWorkspaceTypes";
+import {
+  downloadAppActivationImport,
+  downloadBootstrapBundle,
+  downloadDiagnosticsReport
+} from "../utils/cloudDownloads";
+import {
+  cloudConnectionStatusClass,
+  formatAuditEventType,
+  formatAvailability,
+  formatBranchLabel,
+  formatCheckCode,
+  formatCloudConnectionStatus,
+  formatCloudOutboxTiming,
+  formatCloudOutboxType,
+  formatNullableDateTime,
+  formatNullableText,
+  formatSyncLabel,
+  getAppIdentityMapping,
+  getCloudControlRows,
+  getCloudOutboxCounts,
+  isCloudConnectionBlockingWrites,
+  isRevokedAppActivationIssue,
+  shortIdentifier,
+  statusClass,
+  toAppActivationRequestJson
+} from "../utils/cloudWorkspaceModel";
+import { CloudControlBoard } from "./shared/CloudControlBoard";
 
 export function CloudInstallationStatusPanel({
   client,
@@ -100,11 +51,19 @@ export function CloudInstallationStatusPanel({
   selectedDeploymentId,
   deploymentValue,
   setupTokenHours,
+  connectionState,
   status,
   setupToken,
   bootstrapPackage,
   supportCommandValue,
   queuedSupportCommand,
+  appActivationValue,
+  issuedAppActivation,
+  appActivationIssues,
+  appActivationIssueSearch,
+  appActivationRevocationValue,
+  outboxMessages,
+  latestOutboxPublish,
   auditEvents,
   diagnosticsReport,
   isBusy,
@@ -117,16 +76,85 @@ export function CloudInstallationStatusPanel({
   onCreateBootstrapPackage,
   onSupportCommandValueChange,
   onQueueSupportCommand,
+  onAppActivationValueChange,
+  onIssueAppActivationToken,
+  onAppActivationIssueSearchChange,
+  onRefreshAppActivationIssues,
+  onAppActivationRevocationValueChange,
+  onRevokeAppActivationIssue,
+  onPrepareReplacementAppActivationIssue,
+  onRefreshOutboxMessages,
+  onPublishOutboxMessages,
   onRefreshAuditEvents,
   onRefreshDiagnostics,
   onRefresh
 }: CloudInstallationStatusPanelProps) {
+  const appActivationRequestInputRef = useRef<HTMLInputElement>(null);
+  const [appActivationImportError, setAppActivationImportError] = useState("");
   const latestHeartbeat = status?.latestHeartbeat ?? null;
   const latestEntitlement = status?.latestEntitlement ?? null;
   const commandStatus = status?.commandStatus ?? null;
   const deploymentProfile = status?.deploymentProfile ?? latestHeartbeat?.deploymentProfile ?? null;
+  const cloudConnectionText = formatCloudConnectionStatus(connectionState);
+  const cloudWritesBlocked = isCloudConnectionBlockingWrites(connectionState);
   const statusText =
-    latestHeartbeat?.licenseStatus ?? status?.installationStatus ?? "Not loaded";
+    connectionState.status === "connected" || connectionState.status === "notChecked"
+      ? latestHeartbeat?.licenseStatus ?? status?.installationStatus ?? "Not loaded"
+      : cloudConnectionText;
+  const cloudControlRows = getCloudControlRows({
+    auditEvents,
+    appActivationIssues,
+    connectionState,
+    commandStatus,
+    deploymentProfile,
+    deploymentValue,
+    diagnosticsReport,
+    issuedAppActivation,
+    installationId,
+    latestEntitlement,
+    latestHeartbeat,
+    status
+  });
+  const outboxCounts = getCloudOutboxCounts(outboxMessages);
+  const canIssueAppActivationToken =
+    !isBusy
+    && !cloudWritesBlocked
+    && client !== null
+    && deploymentValue.installationId.trim() !== ""
+    && appActivationValue.serverInstallationId.trim() !== ""
+    && appActivationValue.fingerprintHash.trim() !== ""
+    && appActivationValue.serverPublicKey.trim() !== "";
+  const canRevokeAppActivationIssue =
+    !isBusy
+    && !cloudWritesBlocked
+    && client !== null
+    && appActivationRevocationValue.revokedBy.trim() !== ""
+    && appActivationRevocationValue.reason.trim() !== "";
+  const appIdentityMapping = getAppIdentityMapping({
+    appActivationValue,
+    issuedAppActivation,
+    providerInstallationId: deploymentValue.installationId.trim() || installationId.trim()
+  });
+
+  async function handleImportAppActivationRequest(file: File) {
+    setAppActivationImportError("");
+
+    try {
+      const request = toAppActivationRequestJson(JSON.parse(await file.text()));
+      onAppActivationValueChange({
+        ...appActivationValue,
+        activationRequestId: request.activationRequestId ?? "",
+        serverInstallationId: request.serverInstallationId,
+        fingerprintHash: request.fingerprintHash,
+        serverPublicKey: request.serverPublicKey,
+        requestedBy: request.requestedBy?.trim() || appActivationValue.requestedBy
+      });
+    } catch (error) {
+      setAppActivationImportError(error instanceof Error
+        ? error.message
+        : "Activation request JSON could not be read.");
+    }
+  }
 
   return (
     <section className="client-panel cloud-status-panel">
@@ -135,11 +163,12 @@ export function CloudInstallationStatusPanel({
           <span>Control Cloud</span>
           <strong>{statusText}</strong>
         </div>
-        {status !== null && (
-          <span className={`status-pill ${statusClass(statusText)}`}>
-            {statusText}
-          </span>
-        )}
+        <span
+          className={`status-pill ${cloudConnectionStatusClass(connectionState)}`}
+          title={connectionState.detail}
+        >
+          {cloudConnectionText}
+        </span>
       </div>
 
       <div className="entitlement-action-row">
@@ -185,6 +214,93 @@ export function CloudInstallationStatusPanel({
         <span className="billing-small-fact">
           {client === null ? "Select a client" : client.code}
         </span>
+      </div>
+
+      <CloudControlBoard rows={cloudControlRows} />
+
+      <div className="cloud-audit-panel">
+        <div className="cloud-audit-heading">
+          <div>
+            <span>Local outbox</span>
+            <strong>
+              {outboxCounts.pending} pending / {outboxCounts.failed} failed
+            </strong>
+          </div>
+          <div className="cloud-diagnostics-actions">
+            <button
+              className="icon-button"
+              type="button"
+              disabled={isBusy}
+              onClick={onRefreshOutboxMessages}
+              title="Refresh local cloud outbox"
+            >
+              <RefreshCw size={16} />
+              Outbox
+            </button>
+            <button
+              className="icon-button primary"
+              type="button"
+              disabled={isBusy || outboxCounts.ready === 0 || cloudWritesBlocked}
+              onClick={onPublishOutboxMessages}
+              title="Publish ready local outbox messages to Control Cloud"
+            >
+              <Send size={16} />
+              Publish
+            </button>
+          </div>
+        </div>
+
+        <dl className="cloud-provisioning-facts">
+          <div>
+            <dt>Ready</dt>
+            <dd>{outboxCounts.ready}</dd>
+          </div>
+          <div>
+            <dt>Sent</dt>
+            <dd>{outboxCounts.sent}</dd>
+          </div>
+          <div>
+            <dt>Attempts</dt>
+            <dd>{outboxCounts.attempts}</dd>
+          </div>
+          <div>
+            <dt>Last publish</dt>
+            <dd>
+              {latestOutboxPublish === null
+                ? "Not run"
+                : `${latestOutboxPublish.publishedCount} sent / ${latestOutboxPublish.failedCount} failed`}
+            </dd>
+          </div>
+        </dl>
+
+        {outboxMessages.length === 0 ? (
+          <div className="client-empty-state">No local cloud outbox messages loaded</div>
+        ) : (
+          <div className="cloud-audit-list">
+            {outboxMessages.slice(0, 8).map((outboxMessage) => (
+              <article
+                className="cloud-audit-item"
+                key={outboxMessage.cloudOutboxMessageId}
+              >
+                <header>
+                  <div>
+                    <strong>{formatCloudOutboxType(outboxMessage)}</strong>
+                    <span>
+                      {outboxMessage.subjectType} / {shortIdentifier(outboxMessage.subjectId)}
+                    </span>
+                  </div>
+                  <span className={`status-pill ${statusClass(outboxMessage.status)}`}>
+                    {outboxMessage.status}
+                  </span>
+                </header>
+                <p>
+                  {formatCloudOutboxTiming(outboxMessage)}
+                  {outboxMessage.failureReason === null ? "" : ` ${outboxMessage.failureReason}`}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="cloud-deployment-grid">
@@ -363,7 +479,12 @@ export function CloudInstallationStatusPanel({
           <button
             className="icon-button"
             type="button"
-            disabled={isBusy || client === null || deploymentValue.installationId.trim() === ""}
+            disabled={
+              cloudWritesBlocked
+              || isBusy
+              || client === null
+              || deploymentValue.installationId.trim() === ""
+            }
             onClick={onCreateSetupToken}
             title="Create setup token"
           >
@@ -374,7 +495,8 @@ export function CloudInstallationStatusPanel({
             className="icon-button primary"
             type="button"
             disabled={
-              isBusy
+              cloudWritesBlocked
+              || isBusy
               || client === null
               || deploymentValue.installationId.trim() === ""
               || deploymentValue.localServerVersion.trim() === ""
@@ -453,14 +575,381 @@ export function CloudInstallationStatusPanel({
         <div className="cloud-command-panel">
           <div className="cloud-audit-heading">
             <div>
+              <span>App activation</span>
+              <strong>{issuedAppActivation === null ? "Ready" : "Issued"}</strong>
+            </div>
+            <div className="cloud-diagnostics-actions">
+              <button
+                className="icon-button"
+                type="button"
+                disabled={isBusy}
+                onClick={() => appActivationRequestInputRef.current?.click()}
+                title="Import SafarSuite app activation request JSON"
+              >
+                <Upload size={16} />
+                Import request
+              </button>
+              <input
+                ref={appActivationRequestInputRef}
+                className="cloud-hidden-file"
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0] ?? null;
+                  event.currentTarget.value = "";
+
+                  if (file !== null) {
+                    void handleImportAppActivationRequest(file);
+                  }
+                }}
+              />
+              <button
+                className="icon-button primary"
+                type="button"
+                disabled={!canIssueAppActivationToken}
+                onClick={onIssueAppActivationToken}
+                title="Issue SafarSuite app activation token"
+              >
+                <ShieldCheck size={16} />
+                Issue
+              </button>
+            </div>
+          </div>
+
+          <div className={`cloud-app-identity-map ${appIdentityMapping.tone}`}>
+            <div>
+              <span>Provider installation</span>
+              <strong>{appIdentityMapping.providerInstallationId}</strong>
+            </div>
+            <div>
+              <span>App server</span>
+              <strong>{appIdentityMapping.appServerInstallationId}</strong>
+            </div>
+            <div>
+              <span>App fingerprint</span>
+              <strong>{appIdentityMapping.appFingerprint}</strong>
+            </div>
+            <div>
+              <span>Mapping</span>
+              <strong>{appIdentityMapping.status}</strong>
+            </div>
+          </div>
+
+          {appActivationImportError !== "" && (
+            <div className="cloud-app-activation-error">{appActivationImportError}</div>
+          )}
+
+          <div className="cloud-app-activation-grid">
+            <label>
+              <span>Activation request</span>
+              <input
+                type="text"
+                value={appActivationValue.activationRequestId}
+                maxLength={36}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  activationRequestId: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Replacing issue</span>
+              <input
+                type="text"
+                value={appActivationValue.replacesActivationIssueId}
+                maxLength={36}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  replacesActivationIssueId: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>App server</span>
+              <input
+                type="text"
+                value={appActivationValue.serverInstallationId}
+                maxLength={36}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  serverInstallationId: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Fingerprint</span>
+              <input
+                type="text"
+                value={appActivationValue.fingerprintHash}
+                maxLength={512}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  fingerprintHash: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Requested by</span>
+              <input
+                type="text"
+                value={appActivationValue.requestedBy}
+                maxLength={120}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  requestedBy: event.target.value
+                })}
+              />
+            </label>
+            <label className="cloud-app-activation-key">
+              <span>Public key</span>
+              <textarea
+                rows={4}
+                value={appActivationValue.serverPublicKey}
+                maxLength={4096}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  serverPublicKey: event.target.value
+                })}
+              />
+            </label>
+          </div>
+
+          {issuedAppActivation !== null && (
+            <div className="cloud-provisioning-result">
+              <div className="cloud-provisioning-result-heading">
+                <div>
+                  <span>Activation import</span>
+                  <strong>{issuedAppActivation.activationIssueId}</strong>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => downloadAppActivationImport(issuedAppActivation)}
+                  title="Download signed app activation import"
+                >
+                  <Download size={16} />
+                  Download
+                </button>
+              </div>
+              <input readOnly value={issuedAppActivation.import.activationToken} />
+              <dl className="cloud-provisioning-facts">
+                <div>
+                  <dt>Provider install</dt>
+                  <dd>{issuedAppActivation.installationId}</dd>
+                </div>
+                <div>
+                  <dt>App server</dt>
+                  <dd>{issuedAppActivation.appServerInstallationId}</dd>
+                </div>
+                <div>
+                  <dt>Activation request</dt>
+                  <dd>{issuedAppActivation.activationRequestId}</dd>
+                </div>
+                {issuedAppActivation.replacesActivationIssueId !== null && (
+                  <div>
+                    <dt>Replaces</dt>
+                    <dd>{issuedAppActivation.replacesActivationIssueId}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Entitlement</dt>
+                  <dd>{issuedAppActivation.entitlementVersion}</dd>
+                </div>
+                <div>
+                  <dt>Expires</dt>
+                  <dd>{formatNullableDateTime(issuedAppActivation.expiresAtUtc)}</dd>
+                </div>
+                <div>
+                  <dt>Signature</dt>
+                  <dd>{issuedAppActivation.signingKeyId}</dd>
+                </div>
+                <div>
+                  <dt>Customer</dt>
+                  <dd>{issuedAppActivation.import.customerCode}</dd>
+                </div>
+                <div>
+                  <dt>Branch</dt>
+                  <dd>{issuedAppActivation.import.branchName}</dd>
+                </div>
+              </dl>
+            </div>
+          )}
+
+          <div className="cloud-app-activation-register">
+            <div className="cloud-audit-heading">
+              <div>
+                <span>Activation register</span>
+                <strong>{appActivationIssues.length}</strong>
+              </div>
+              <div className="cloud-diagnostics-actions">
+                <label className="cloud-app-activation-search">
+                  <span>Search</span>
+                  <input
+                    type="search"
+                    value={appActivationIssueSearch}
+                    maxLength={200}
+                    disabled={isBusy}
+                    onChange={(event) => onAppActivationIssueSearchChange(event.target.value)}
+                  />
+                </label>
+                <label className="cloud-app-activation-search">
+                  <span>Revoked by</span>
+                  <input
+                    type="text"
+                    value={appActivationRevocationValue.revokedBy}
+                    maxLength={120}
+                    disabled={isBusy}
+                    onChange={(event) => onAppActivationRevocationValueChange({
+                      ...appActivationRevocationValue,
+                      revokedBy: event.target.value
+                    })}
+                  />
+                </label>
+                <label className="cloud-app-activation-search wide">
+                  <span>Reason</span>
+                  <input
+                    type="text"
+                    value={appActivationRevocationValue.reason}
+                    maxLength={500}
+                    disabled={isBusy}
+                    onChange={(event) => onAppActivationRevocationValueChange({
+                      ...appActivationRevocationValue,
+                      reason: event.target.value
+                    })}
+                  />
+                </label>
+                <button
+                  className="icon-button"
+                  type="button"
+                  disabled={isBusy || client === null}
+                  onClick={onRefreshAppActivationIssues}
+                  title="Refresh app activation register"
+                >
+                  <RefreshCw size={16} />
+                  Register
+                </button>
+              </div>
+            </div>
+
+            {appActivationIssues.length === 0 ? (
+              <div className="client-empty-state">No app activation mappings loaded</div>
+            ) : (
+              <div className="cloud-app-activation-issue-list">
+                {appActivationIssues.map((issue) => (
+                  <article
+                    className={`cloud-app-activation-issue ${isRevokedAppActivationIssue(issue) ? "revoked" : ""}`}
+                    key={issue.activationIssueId}
+                  >
+                    <header>
+                      <div>
+                        <strong>{shortIdentifier(issue.installationId)} - {shortIdentifier(issue.appServerInstallationId)}</strong>
+                        <span>{issue.status} / v{issue.entitlementVersion}</span>
+                      </div>
+                      <div className="cloud-app-activation-issue-actions">
+                        <time dateTime={issue.issuedAtUtc}>
+                          {formatNullableDateTime(issue.issuedAtUtc)}
+                        </time>
+                        {!isRevokedAppActivationIssue(issue) && (
+                          <button
+                            className="icon-button"
+                            type="button"
+                            disabled={!canRevokeAppActivationIssue}
+                            onClick={() => onRevokeAppActivationIssue(issue.activationIssueId)}
+                            title="Revoke app activation mapping"
+                          >
+                            <ShieldOff size={16} />
+                            Revoke
+                          </button>
+                        )}
+                        {isRevokedAppActivationIssue(issue) && (
+                          <button
+                            className="icon-button"
+                            type="button"
+                            disabled={isBusy || client === null}
+                            onClick={() => onPrepareReplacementAppActivationIssue(issue)}
+                            title="Prepare replacement activation mapping"
+                          >
+                            <RefreshCw size={16} />
+                            Replace
+                          </button>
+                        )}
+                      </div>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>Issue</dt>
+                        <dd>{issue.activationIssueId}</dd>
+                      </div>
+                      <div>
+                        <dt>Request</dt>
+                        <dd>{issue.activationRequestId}</dd>
+                      </div>
+                      {issue.replacesActivationIssueId !== null && (
+                        <div>
+                          <dt>Replaces</dt>
+                          <dd>{issue.replacesActivationIssueId}</dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt>Fingerprint</dt>
+                        <dd>{shortIdentifier(issue.fingerprintHash)}</dd>
+                      </div>
+                      <div>
+                        <dt>Expires</dt>
+                        <dd>{formatNullableDateTime(issue.expiresAtUtc)}</dd>
+                      </div>
+                      <div>
+                        <dt>Requested by</dt>
+                        <dd>{issue.requestedBy}</dd>
+                      </div>
+                      <div>
+                        <dt>Key</dt>
+                        <dd>{issue.signingKeyId}</dd>
+                      </div>
+                      {issue.revokedAtUtc !== null && (
+                        <div>
+                          <dt>Revoked</dt>
+                          <dd>{formatNullableDateTime(issue.revokedAtUtc)}</dd>
+                        </div>
+                      )}
+                      {issue.revokedBy !== null && (
+                        <div>
+                          <dt>Revoked by</dt>
+                          <dd>{issue.revokedBy}</dd>
+                        </div>
+                      )}
+                      {issue.revocationReason !== null && (
+                        <div>
+                          <dt>Reason</dt>
+                          <dd>{issue.revocationReason}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="cloud-command-panel">
+          <div className="cloud-audit-heading">
+            <div>
               <span>Support command</span>
               <strong>{queuedSupportCommand?.status ?? "Ready"}</strong>
             </div>
             <button
               className="icon-button"
               type="button"
-              disabled={
-                isBusy
+            disabled={
+              cloudWritesBlocked
+                || isBusy
                 || client === null
                 || deploymentValue.installationId.trim() === ""
                 || supportCommandValue.reason.trim() === ""
@@ -782,92 +1271,4 @@ export function CloudInstallationStatusPanel({
       )}
     </section>
   );
-}
-
-function statusClass(value: string): string {
-  const normalized = value.trim().toLowerCase();
-
-  if (normalized === "active" || normalized === "healthy" || normalized === "registered" || normalized === "ok") {
-    return "active";
-  }
-
-  if (
-    normalized === "suspended"
-    || normalized === "expired"
-    || normalized === "failed"
-    || normalized === "failure"
-  ) {
-    return "suspended";
-  }
-
-  return "draft";
-}
-
-function formatNullableText(value: string | null | undefined): string {
-  return value === null || value === undefined || value.trim() === ""
-    ? "Not set"
-    : value;
-}
-
-function formatNullableDateTime(value: string | null | undefined): string {
-  if (value === null || value === undefined || value.trim() === "") {
-    return "Not available";
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(value));
-}
-
-function formatAvailability(value: boolean | null | undefined): string {
-  if (value === true) {
-    return "Available";
-  }
-
-  if (value === false) {
-    return "Unavailable";
-  }
-
-  return "Not reported";
-}
-
-function formatCheckCode(value: string): string {
-  return value
-    .split("-")
-    .filter((part) => part.trim() !== "")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatAuditEventType(value: string): string {
-  return value
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2");
-}
-
-function formatBranchLabel(profile: LocalServerDeploymentProfile | null): string {
-  if (profile === null) {
-    return "No site profile";
-  }
-
-  if (profile.branchCode !== null && profile.branchCode.trim() !== "") {
-    return `Branch ${profile.branchCode}`;
-  }
-
-  if (profile.parentSiteId !== null && profile.parentSiteId.trim() !== "") {
-    return `Parent ${profile.parentSiteId}`;
-  }
-
-  return profile.siteRole;
-}
-
-function formatSyncLabel(profile: LocalServerDeploymentProfile | null): string {
-  if (profile === null) {
-    return "Sync not loaded";
-  }
-
-  return profile.syncTopologyId === null || profile.syncTopologyId.trim() === ""
-    ? "No sync topology"
-    : profile.syncTopologyId;
 }

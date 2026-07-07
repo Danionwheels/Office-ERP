@@ -72,6 +72,12 @@ public sealed record ClientStatementJournalPostingResult(
 
 public sealed record ClientStatementJournalLineResult(
     Guid LedgerAccountId,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus,
     decimal Debit,
     decimal Credit,
     string? Description);

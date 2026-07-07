@@ -36,19 +36,22 @@ public sealed class LocalServerRuntimeWorker : BackgroundService
         {
             var now = DateTimeOffset.UtcNow;
 
-            if (now - lastCommandPollAtUtc >= _options.CommandPollInterval)
+            if (_options.EnableCommandPolling
+                && now - lastCommandPollAtUtc >= _options.CommandPollInterval)
             {
                 await ProcessCommandsAsync(stoppingToken);
                 lastCommandPollAtUtc = now;
             }
 
-            if (now - lastPullAtUtc >= _options.EntitlementPullInterval)
+            if (_options.EnableEntitlementPull
+                && now - lastPullAtUtc >= _options.EntitlementPullInterval)
             {
                 await PullEntitlementAsync(stoppingToken);
                 lastPullAtUtc = now;
             }
 
-            if (now - lastHeartbeatAtUtc >= _options.HeartbeatInterval)
+            if (_options.EnableHeartbeat
+                && now - lastHeartbeatAtUtc >= _options.HeartbeatInterval)
             {
                 await ReportHeartbeatAsync(stoppingToken);
                 lastHeartbeatAtUtc = now;

@@ -1,69 +1,32 @@
 import {
   AlertCircle,
-  ArrowRight,
   ArrowRightLeft,
   Banknote,
   CheckCircle2,
   Landmark,
   ListTree,
   PlusCircle,
-  Receipt,
-  type LucideIcon
+  Receipt
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
+import {
+  PaymentFlowRegister,
+  PaymentJournalRegister,
+  PaymentPostingBridge,
+  PaymentPostingResult
+} from "./shared/PaymentWorkflow";
 import type {
-  InvoiceDraft,
-  IssuedInvoice,
-  LedgerAccountFormInput
-} from "../../billing/types/billingTypes";
-import type { ClientAccountingProfile } from "../../clients/types/clientTypes";
-import type { ClientStatement } from "../../statements/types/statementTypes";
-import type {
-  AppliedClientCredit,
-  ApplyClientCreditInput,
-  IssueClientRefundInput,
-  IssuedClientRefund,
-  RecordedInvoicePayment,
-  RecordInvoicePaymentInput
-} from "../types/paymentTypes";
-
-type PaymentStep = "readiness" | "cash" | "receipt" | "settlement" | "refund" | "result";
-
-type PaymentReceiptPanelProps = {
-  invoiceDraft: InvoiceDraft | null;
-  issuedInvoice: IssuedInvoice | null;
-  initialStep?: PaymentStep;
-  accountingProfile: ClientAccountingProfile | null;
-  cashAccountValue: LedgerAccountFormInput;
-  paymentValue: RecordInvoicePaymentInput;
-  refundValue: IssueClientRefundInput;
-  creditApplicationValue: ApplyClientCreditInput;
-  recordedPayment: RecordedInvoicePayment | null;
-  issuedRefund: IssuedClientRefund | null;
-  appliedCredit: AppliedClientCredit | null;
-  clientStatement: ClientStatement | null;
-  isBusy: boolean;
-  onCashAccountChange: (value: LedgerAccountFormInput) => void;
-  onPaymentChange: (value: RecordInvoicePaymentInput) => void;
-  onRefundChange: (value: IssueClientRefundInput) => void;
-  onCreditApplicationChange: (value: ApplyClientCreditInput) => void;
-  onCreateCashAccount: () => Promise<void>;
-  onRecordPayment: () => Promise<void>;
-  onIssueRefund: () => Promise<void>;
-  onApplyCredit: () => Promise<void>;
-  onApprovePayment: (decisionNote: string) => Promise<void>;
-  onRejectPayment: (decisionNote: string) => Promise<void>;
-  onReversePayment: (decisionNote: string, reversalDate: string) => Promise<void>;
-  onViewJournalEntry: (journalEntryId: string) => Promise<void>;
-};
-
-type PaymentStepItem = {
-  step: PaymentStep;
-  label: string;
-  summary: string;
-  tone: "neutral" | "ready" | "warning";
-  Icon: LucideIcon;
-};
+  PaymentReceiptPanelProps,
+  PaymentStep
+} from "../types/paymentWorkflowTypes";
+import {
+  formatMoney,
+  getPaymentStepItems,
+  getRefundCredit,
+  getSettlementCredit,
+  statusClass,
+  toDateInputValue
+} from "../utils/paymentWorkflowModel";
 
 export function PaymentReceiptPanel({
   invoiceDraft,
@@ -290,6 +253,23 @@ export function PaymentReceiptPanel({
             <dd>{formatMoney(settlementCredit.availableCredit, settlementCredit.currencyCode)}</dd>
           </div>
         </dl>
+
+        <PaymentPostingBridge
+          accountsReceivableAccountId={paymentValue.accountsReceivableAccountId}
+          amount={paymentAmount}
+          cashOrBankAccountId={paymentValue.cashOrBankAccountId}
+          currencyCode={paymentValue.currencyCode}
+          documentDetail={
+            invoiceDraft === null
+              ? "No issued invoice"
+              : `${invoiceDraft.status} / ${formatMoney(invoiceDraft.balanceDue, invoiceDraft.currencyCode)}`
+          }
+          documentLabel={invoiceDraft?.invoiceNumber ?? "No invoice"}
+          journalEntryId={recordedPayment?.journalEntryId ?? null}
+          journalStatus={recordedPayment?.journalEntryStatus ?? null}
+          postingDate={paymentValue.postingDate}
+          postingVerb="Receipt"
+        />
 
         <div className="payment-readiness-actions">
           <button
@@ -619,6 +599,23 @@ export function PaymentReceiptPanel({
           </div>
         </dl>
 
+        <PaymentPostingBridge
+          accountsReceivableAccountId={refundValue.accountsReceivableAccountId}
+          amount={refundAmount}
+          cashOrBankAccountId={refundValue.cashOrBankAccountId}
+          currencyCode={refundValue.currencyCode}
+          documentDetail={
+            refundCredit.availableCredit <= 0
+              ? "No client credit"
+              : `Available ${formatMoney(refundCredit.availableCredit, refundCredit.currencyCode)}`
+          }
+          documentLabel={refundValue.reference.trim() === "" ? "Refund" : refundValue.reference}
+          journalEntryId={issuedRefund?.journalEntryId ?? null}
+          journalStatus={issuedRefund?.journalEntryStatus ?? null}
+          postingDate={refundValue.postingDate}
+          postingVerb="Refund"
+        />
+
         <div className="billing-subform-heading payment-receipt-heading">
           <Landmark size={16} />
           <strong>Refund</strong>
@@ -775,43 +772,22 @@ export function PaymentReceiptPanel({
         </div>
 
         {issuedRefund !== null && (
-          <dl className="payment-result-facts">
-            <div>
-              <dt>Refund</dt>
-              <dd>{issuedRefund.refundStatus}</dd>
-            </div>
-            <div>
-              <dt>Amount</dt>
-              <dd>{formatMoney(issuedRefund.amount, issuedRefund.currencyCode)}</dd>
-            </div>
-            <div>
-              <dt>Balance</dt>
-              <dd>{formatMoney(issuedRefund.clientBalanceAfter, issuedRefund.currencyCode)}</dd>
-            </div>
-            <div>
-              <dt>Journal</dt>
-              <dd className="fact-action-value">
-                <span>{issuedRefund.journalEntryStatus}</span>
-                <button
-                  className="table-icon-button"
-                  type="button"
-                  onClick={() => void onViewJournalEntry(issuedRefund.journalEntryId)}
-                  disabled={isBusy}
-                  title="Open related journal"
-                >
-                  <ListTree size={14} />
-                </button>
-              </dd>
-            </div>
-            <div>
-              <dt>Debit</dt>
-              <dd>{formatMoney(issuedRefund.totalDebit, issuedRefund.currencyCode)}</dd>
-            </div>
-            <div>
-              <dt>Credit</dt>
-              <dd>{formatMoney(issuedRefund.totalCredit, issuedRefund.currencyCode)}</dd>
-            </div>
-          </dl>
+          <PaymentPostingResult
+            actionLabel="Refund"
+            actionStatus={issuedRefund.refundStatus}
+            amount={issuedRefund.amount}
+            balanceLabel="Balance"
+            balanceValue={issuedRefund.clientBalanceAfter}
+            currencyCode={issuedRefund.currencyCode}
+            journalEntryId={issuedRefund.journalEntryId}
+            journalEntryStatus={issuedRefund.journalEntryStatus}
+            journalLines={issuedRefund.journalLines}
+            onViewJournalEntry={onViewJournalEntry}
+            totalCredit={issuedRefund.totalCredit}
+            totalDebit={issuedRefund.totalDebit}
+            isBusy={isBusy}
+            tableLabel="Refund journal lines"
+          />
         )}
       </form>
 
@@ -859,6 +835,23 @@ export function PaymentReceiptPanel({
             <dd>{invoiceDraft?.dueDate ?? "-"}</dd>
           </div>
         </dl>
+
+        <PaymentPostingBridge
+          accountsReceivableAccountId={paymentValue.accountsReceivableAccountId}
+          amount={paymentAmount}
+          cashOrBankAccountId={paymentValue.cashOrBankAccountId}
+          currencyCode={paymentValue.currencyCode}
+          documentDetail={
+            invoiceDraft === null
+              ? "No issued invoice"
+              : `${invoiceDraft.status} / ${formatMoney(invoiceDraft.balanceDue, invoiceDraft.currencyCode)}`
+          }
+          documentLabel={invoiceDraft?.invoiceNumber ?? "No invoice"}
+          journalEntryId={recordedPayment?.journalEntryId ?? null}
+          journalStatus={recordedPayment?.journalEntryStatus ?? null}
+          postingDate={paymentValue.postingDate}
+          postingVerb="Receipt"
+        />
 
         <div className="billing-subform-heading payment-receipt-heading">
           <Receipt size={16} />
@@ -1073,28 +1066,12 @@ export function PaymentReceiptPanel({
               </div>
             </dl>
 
-            {recordedPayment.journalLines.length === 0 ? (
-              <div className="client-empty-state">Payment is waiting for review before GL posting</div>
-            ) : (
-              <table className="billing-lines-table payment-journal-table">
-                <thead>
-                  <tr>
-                    <th>Description</th>
-                    <th className="numeric">Debit</th>
-                    <th className="numeric">Credit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recordedPayment.journalLines.map((line) => (
-                    <tr key={`${line.ledgerAccountId}-${line.debit}-${line.credit}`}>
-                      <td>{line.description ?? line.ledgerAccountId}</td>
-                      <td className="numeric">{formatMoney(line.debit, recordedPayment.currencyCode)}</td>
-                      <td className="numeric">{formatMoney(line.credit, recordedPayment.currencyCode)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <PaymentJournalRegister
+              currencyCode={recordedPayment.currencyCode}
+              emptyText="Payment is waiting for review before GL posting"
+              lines={recordedPayment.journalLines}
+              title="Payment journal lines"
+            />
 
             {(recordedPayment.paymentStatus === "PendingReview" || recordedPayment.paymentStatus === "Approved") && (
               <div className="payment-review-actions">
@@ -1166,307 +1143,4 @@ export function PaymentReceiptPanel({
       )}
     </section>
   );
-}
-
-function PaymentFlowRegister({
-  activeStep,
-  onSelectStep,
-  steps
-}: {
-  activeStep: PaymentStep;
-  onSelectStep: (step: PaymentStep) => void;
-  steps: PaymentStepItem[];
-}) {
-  return (
-    <div className="billing-flow-register payment-flow-register">
-      <table className="billing-flow-table payment-flow-table" aria-label="Payment workflow">
-        <thead>
-          <tr>
-            <th className="billing-flow-sequence" scope="col">No.</th>
-            <th scope="col">Work area</th>
-            <th className="billing-flow-status-cell" scope="col">Status</th>
-            <th className="billing-flow-cue-cell" scope="col">Next action</th>
-            <th className="billing-flow-open" scope="col">Open</th>
-          </tr>
-        </thead>
-        <tbody>
-          {steps.map((step, index) => {
-            const isActive = activeStep === step.step;
-
-            return (
-              <tr
-                className={`${step.tone}${isActive ? " active" : ""}`}
-                key={step.step}
-              >
-                <td className="billing-flow-sequence">
-                  <span>{index + 1}</span>
-                </td>
-                <td>
-                  <div className="billing-flow-step">
-                    <step.Icon size={16} />
-                    <span>
-                      <strong>{step.label}</strong>
-                      <small>{isActive ? "Current work area" : "Available"}</small>
-                    </span>
-                  </div>
-                </td>
-                <td className="billing-flow-status-cell">
-                  <span className={`billing-flow-status ${step.tone}`}>
-                    {step.summary}
-                  </span>
-                </td>
-                <td className="billing-flow-cue-cell">{getPaymentStepCue(step.step)}</td>
-                <td className="billing-flow-open">
-                  <button
-                    className="table-icon-button"
-                    type="button"
-                    onClick={() => onSelectStep(step.step)}
-                    aria-current={isActive ? "step" : undefined}
-                    aria-label={`Open ${step.label}`}
-                    title={`Open ${step.label}`}
-                  >
-                    <ArrowRight size={14} />
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function formatMoney(amount: number, currencyCode: string): string {
-  return `${amount.toFixed(2)} ${currencyCode}`;
-}
-
-function toDateInputValue(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-type PaymentStepInput = {
-  invoiceDraft: InvoiceDraft | null;
-  issuedInvoice: IssuedInvoice | null;
-  accountingProfile: ClientAccountingProfile | null;
-  hasCashAccount: boolean;
-  hasReceivableAccount: boolean;
-  recordedPayment: RecordedInvoicePayment | null;
-  issuedRefund: IssuedClientRefund | null;
-  appliedCredit: AppliedClientCredit | null;
-  refundCredit: RefundCreditSummary;
-  settlementCredit: SettlementCreditSummary;
-  canRecordPayment: boolean;
-};
-
-function getPaymentStepItems({
-  invoiceDraft,
-  issuedInvoice,
-  accountingProfile,
-  hasCashAccount,
-  hasReceivableAccount,
-  recordedPayment,
-  issuedRefund,
-  appliedCredit,
-  refundCredit,
-  settlementCredit,
-  canRecordPayment
-}: PaymentStepInput): PaymentStepItem[] {
-  const balanceSummary = invoiceDraft === null
-    ? "No invoice"
-    : formatMoney(invoiceDraft.balanceDue, invoiceDraft.currencyCode);
-  const resultSummary = getPostingResultSummary(recordedPayment, issuedRefund, appliedCredit);
-
-  return [
-    {
-      step: "readiness",
-      label: "Readiness",
-      summary: canRecordPayment ? "Ready to post" : getReadinessSummary({
-        invoiceDraft,
-        issuedInvoice,
-        accountingProfile,
-        hasCashAccount,
-        hasReceivableAccount
-      }),
-      tone: canRecordPayment ? "ready" : "warning",
-      Icon: AlertCircle
-    },
-    {
-      step: "cash",
-      label: "Cash account",
-      summary: hasCashAccount ? "Linked" : "Missing",
-      tone: hasCashAccount ? "ready" : "warning",
-      Icon: Banknote
-    },
-    {
-      step: "receipt",
-      label: "Receipt",
-      summary: balanceSummary,
-      tone: canRecordPayment ? "ready" : "neutral",
-      Icon: Receipt
-    },
-    {
-      step: "settlement",
-      label: "Settlement",
-      summary: settlementCredit.availableCredit > 0
-        ? formatMoney(settlementCredit.availableCredit, settlementCredit.currencyCode)
-        : "No credit",
-      tone: settlementCredit.availableCredit > 0 ? "ready" : "neutral",
-      Icon: ArrowRightLeft
-    },
-    {
-      step: "refund",
-      label: "Refund",
-      summary: refundCredit.availableCredit > 0
-        ? formatMoney(refundCredit.availableCredit, refundCredit.currencyCode)
-        : "No credit",
-      tone: refundCredit.availableCredit > 0 ? "ready" : "neutral",
-      Icon: Landmark
-    },
-    {
-      step: "result",
-      label: "Posting result",
-      summary: resultSummary,
-      tone: recordedPayment === null && issuedRefund === null && appliedCredit === null ? "neutral" : "ready",
-      Icon: CheckCircle2
-    }
-  ];
-}
-
-function getPostingResultSummary(
-  recordedPayment: RecordedInvoicePayment | null,
-  issuedRefund: IssuedClientRefund | null,
-  appliedCredit: AppliedClientCredit | null
-): string {
-  if (appliedCredit !== null) {
-    return `${appliedCredit.creditApplicationStatus} ${formatMoney(
-      appliedCredit.invoiceBalanceAfter,
-      appliedCredit.currencyCode
-    )}`;
-  }
-
-  if (issuedRefund !== null) {
-    return `${issuedRefund.refundStatus} ${formatMoney(
-      issuedRefund.clientBalanceAfter,
-      issuedRefund.currencyCode
-    )}`;
-  }
-
-  if (recordedPayment !== null) {
-    return `${recordedPayment.invoiceStatus} ${formatMoney(
-      recordedPayment.balanceDue,
-      recordedPayment.currencyCode
-    )}`;
-  }
-
-  return "Pending";
-}
-
-function getReadinessSummary({
-  invoiceDraft,
-  issuedInvoice,
-  accountingProfile,
-  hasCashAccount,
-  hasReceivableAccount
-}: Pick<
-  PaymentStepInput,
-  "invoiceDraft" | "issuedInvoice" | "accountingProfile" | "hasCashAccount" | "hasReceivableAccount"
->): string {
-  if (invoiceDraft === null) {
-    return "No invoice";
-  }
-
-  if (issuedInvoice === null) {
-    return "Issue invoice";
-  }
-
-  if (invoiceDraft.balanceDue <= 0) {
-    return "Paid";
-  }
-
-  if (accountingProfile === null || !hasReceivableAccount) {
-    return "AR missing";
-  }
-
-  if (!hasCashAccount) {
-    return "Cash missing";
-  }
-
-  return "Review";
-}
-
-function getPaymentStepCue(step: PaymentStep): string {
-  switch (step) {
-    case "readiness":
-      return "Confirm invoice, AR, cash, and balance";
-    case "cash":
-      return "Create or link the cash/bank posting account";
-    case "receipt":
-      return "Record payment against the issued invoice";
-    case "settlement":
-      return "Apply unapplied credit to open balance";
-    case "refund":
-      return "Return available client credit";
-    case "result":
-      return "Review posting, approval, reversal, and journal";
-  }
-}
-
-type RefundCreditSummary = {
-  currencyCode: string;
-  balanceDue: number;
-  availableCredit: number;
-};
-
-type SettlementCreditSummary = {
-  currencyCode: string;
-  availableCredit: number;
-};
-
-function getRefundCredit(
-  statement: ClientStatement | null,
-  preferredCurrencyCode: string
-): RefundCreditSummary {
-  const summaries = statement?.currencySummaries ?? [];
-  const preferredSummary = summaries.find((summary) =>
-    summary.currencyCode.toLowerCase() === preferredCurrencyCode.toLowerCase()
-  );
-  const creditSummary =
-    preferredSummary !== undefined && preferredSummary.balanceDue < 0
-      ? preferredSummary
-      : summaries.find((summary) => summary.balanceDue < 0);
-  const preferredCurrency = preferredCurrencyCode.trim().toUpperCase();
-  const currencyCode = creditSummary?.currencyCode ?? (preferredCurrency === "" ? "PKR" : preferredCurrency);
-  const balanceDue = creditSummary?.balanceDue ?? preferredSummary?.balanceDue ?? 0;
-
-  return {
-    currencyCode,
-    balanceDue,
-    availableCredit: balanceDue < 0 ? Math.abs(balanceDue) : 0
-  };
-}
-
-function getSettlementCredit(
-  statement: ClientStatement | null,
-  preferredCurrencyCode: string
-): SettlementCreditSummary {
-  const summaries = statement?.currencySummaries ?? [];
-  const preferredSummary = summaries.find((summary) =>
-    summary.currencyCode.toLowerCase() === preferredCurrencyCode.toLowerCase()
-  );
-  const creditSummary =
-    preferredSummary !== undefined && preferredSummary.availableCredit > 0
-      ? preferredSummary
-      : summaries.find((summary) => summary.availableCredit > 0);
-  const preferredCurrency = preferredCurrencyCode.trim().toUpperCase();
-  const currencyCode = creditSummary?.currencyCode ?? (preferredCurrency === "" ? "PKR" : preferredCurrency);
-
-  return {
-    currencyCode,
-    availableCredit: creditSummary?.availableCredit ?? preferredSummary?.availableCredit ?? 0
-  };
-}
-
-function statusClass(value: string): string {
-  return value.toLowerCase().replaceAll(" ", "");
 }

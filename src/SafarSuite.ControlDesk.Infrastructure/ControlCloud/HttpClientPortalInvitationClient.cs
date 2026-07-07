@@ -32,7 +32,7 @@ public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationCl
                 "Control Cloud portal invitation base URL is not configured.");
         }
 
-        if (string.IsNullOrWhiteSpace(_options.Value.ProviderAccessSecret))
+        if (!HasProviderAccess())
         {
             return ClientPortalInvitationListClientResult.Failure(
                 "ControlCloudInvitationNotConfigured",
@@ -95,7 +95,7 @@ public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationCl
                 "Control Cloud portal invitation base URL is not configured.");
         }
 
-        if (string.IsNullOrWhiteSpace(_options.Value.ProviderAccessSecret))
+        if (!HasProviderAccess())
         {
             return ClientPortalInvitationClientResult.Failure(
                 "ControlCloudInvitationNotConfigured",
@@ -209,7 +209,7 @@ public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationCl
                 "Control Cloud portal invitation base URL is not configured.");
         }
 
-        if (string.IsNullOrWhiteSpace(_options.Value.ProviderAccessSecret))
+        if (!HasProviderAccess())
         {
             return ClientPortalInvitationClientResult.Failure(
                 "ControlCloudInvitationNotConfigured",
@@ -262,11 +262,28 @@ public sealed class HttpClientPortalInvitationClient : IClientPortalInvitationCl
     private HttpRequestMessage CreateRequest(HttpMethod method, Uri requestUri)
     {
         var message = new HttpRequestMessage(method, requestUri);
+        var providerAccessToken = _options.Value.ProviderAccessToken.Trim();
+
+        if (!string.IsNullOrWhiteSpace(providerAccessToken))
+        {
+            message.Headers.TryAddWithoutValidation(
+                "Authorization",
+                $"Bearer {providerAccessToken}");
+
+            return message;
+        }
+
         message.Headers.TryAddWithoutValidation(
             ProviderAccessHeaderName,
             _options.Value.ProviderAccessSecret.Trim());
 
         return message;
+    }
+
+    private bool HasProviderAccess()
+    {
+        return !string.IsNullOrWhiteSpace(_options.Value.ProviderAccessToken)
+            || !string.IsNullOrWhiteSpace(_options.Value.ProviderAccessSecret);
     }
 
     private static string ToDefaultFailureCode(HttpStatusCode statusCode)

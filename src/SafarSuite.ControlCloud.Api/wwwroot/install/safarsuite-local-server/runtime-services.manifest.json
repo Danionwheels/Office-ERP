@@ -13,13 +13,13 @@
       "composeProfile": null,
       "imageEnvironmentVariable": "SAFARSUITE_LOCAL_SERVER_IMAGE",
       "publishedPortEnvironmentVariable": "SAFARSUITE_LOCAL_SERVER_HTTP_PORT",
-      "internalBaseUrl": "http://local-api:8080",
-      "healthUrl": "http://local-api:8080/health",
+      "internalBaseUrl": "https://local-api:8080",
+      "healthUrl": "https://local-api:8080/health",
       "dependsOn": ["local-db"]
     },
     {
       "serviceName": "local-worker",
-      "serviceRole": "Background cloud pull, heartbeat, and command processing",
+      "serviceRole": "Background entitlement pull and heartbeat reporting",
       "startsByDefault": true,
       "composeProfile": null,
       "imageEnvironmentVariable": "SAFARSUITE_LOCAL_SERVER_IMAGE",
@@ -30,7 +30,7 @@
     },
     {
       "serviceName": "local-agent",
-      "serviceRole": "Host/runtime diagnostics and support command bridge",
+      "serviceRole": "Support command polling, diagnostics, and acknowledgement bridge",
       "startsByDefault": true,
       "composeProfile": null,
       "imageEnvironmentVariable": "SAFARSUITE_LOCAL_SERVER_IMAGE",

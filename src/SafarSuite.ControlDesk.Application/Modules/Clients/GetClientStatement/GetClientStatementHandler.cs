@@ -19,6 +19,7 @@ public sealed class GetClientStatementHandler
     private readonly IClientRefundRepository _refunds;
     private readonly IClientCreditApplicationRepository _creditApplications;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
 
     public GetClientStatementHandler(
         IClientRepository clients,
@@ -27,7 +28,8 @@ public sealed class GetClientStatementHandler
         IPaymentRepository payments,
         IClientRefundRepository refunds,
         IClientCreditApplicationRepository creditApplications,
-        IJournalEntryRepository journalEntries)
+        IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts)
     {
         _clients = clients;
         _invoices = invoices;
@@ -36,6 +38,7 @@ public sealed class GetClientStatementHandler
         _refunds = refunds;
         _creditApplications = creditApplications;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
     }
 
     public async Task<Result<GetClientStatementResult>> HandleAsync(
@@ -175,6 +178,8 @@ public sealed class GetClientStatementHandler
             .Where(entry => entry.SourceReference is not null && refundReferences.Contains(entry.SourceReference))
             .GroupBy(entry => entry.SourceReference!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var ledgerAccountsById = (await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken))
+            .ToDictionary(account => account.Id.Value);
 
         var statementLines = BuildStatementLines(
             invoices,
@@ -195,7 +200,7 @@ public sealed class GetClientStatementHandler
             .OrderBy(entry => entry.EntryDate)
             .ThenBy(entry => entry.CreatedAtUtc)
             .ThenBy(entry => entry.Id.Value)
-            .Select(ToJournalPosting)
+            .Select(entry => ToJournalPosting(entry, ledgerAccountsById))
             .ToArray();
 
         return Result<GetClientStatementResult>.Success(new GetClientStatementResult(
@@ -528,7 +533,9 @@ public sealed class GetClientStatementHandler
             null);
     }
 
-    private static ClientStatementJournalPostingResult ToJournalPosting(JournalEntry entry)
+    private static ClientStatementJournalPostingResult ToJournalPosting(
+        JournalEntry entry,
+        IReadOnlyDictionary<Guid, LedgerAccount> ledgerAccountsById)
     {
         return new ClientStatementJournalPostingResult(
             entry.Id.Value,
@@ -540,11 +547,22 @@ public sealed class GetClientStatementHandler
             entry.TotalDebit.Amount,
             entry.TotalCredit.Amount,
             entry.CurrencyCode,
-            entry.Lines.Select(line => new ClientStatementJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+            entry.Lines.Select(line =>
+            {
+                ledgerAccountsById.TryGetValue(line.LedgerAccountId.Value, out var ledgerAccount);
+
+                return new ClientStatementJournalLineResult(
+                    line.LedgerAccountId.Value,
+                    ledgerAccount?.Code.Value,
+                    ledgerAccount?.Name,
+                    ledgerAccount?.Type.ToString(),
+                    ledgerAccount?.Level.ToString(),
+                    ledgerAccount?.IsPostingAccount,
+                    ledgerAccount?.Status.ToString(),
+                    line.Debit.Amount,
+                    line.Credit.Amount,
+                    line.Description);
+            }).ToArray());
     }
 
     private static bool IsPostedReceivableInvoice(Invoice invoice)

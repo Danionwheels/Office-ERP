@@ -8,6 +8,51 @@ export type LocalServerDeploymentProfile = {
   syncTopologyId: string | null;
 };
 
+export type ControlCloudConnectionState = {
+  status: "notChecked" | "checking" | "connected" | "unavailable" | "notConfigured";
+  detail: string;
+  checkedAtUtc: string | null;
+};
+
+export type CloudOutboxMessage = {
+  cloudOutboxMessageId: string;
+  messageType: string;
+  subjectType: string;
+  subjectId: string;
+  payloadJson: string;
+  status: string;
+  attemptCount: number;
+  occurredAtUtc: string;
+  lastAttemptedAtUtc: string | null;
+  nextAttemptAtUtc: string | null;
+  sentAtUtc: string | null;
+  failedAtUtc: string | null;
+  failureReason: string | null;
+};
+
+export type PublishedCloudOutboxMessage = {
+  cloudOutboxMessageId: string;
+  messageType: string;
+  subjectType: string;
+  subjectId: string;
+  status: string;
+  attemptCount: number;
+  lastAttemptedAtUtc: string | null;
+  nextAttemptAtUtc: string | null;
+  sentAtUtc: string | null;
+  failedAtUtc: string | null;
+  failureReason: string | null;
+  cloudReference: string | null;
+  envelopeSignature: string | null;
+};
+
+export type PublishCloudOutboxMessagesResult = {
+  requestedBatchSize: number;
+  publishedCount: number;
+  failedCount: number;
+  messages: PublishedCloudOutboxMessage[];
+};
+
 export type CreateCloudInstallationProvisioningInput = {
   expiresInHours: number;
   createdBy: string;
@@ -27,6 +72,34 @@ export type CloudInstallationSupportCommandFormInput = {
   reason: string;
   requestedBy: string;
   expiresInHours: string;
+};
+
+export type CloudAppActivationTokenFormInput = {
+  activationRequestId: string;
+  replacesActivationIssueId: string;
+  serverInstallationId: string;
+  fingerprintHash: string;
+  serverPublicKey: string;
+  requestedBy: string;
+};
+
+export type IssueCloudAppActivationTokenInput = {
+  activationRequestId: string | null;
+  replacesActivationIssueId: string | null;
+  serverInstallationId: string;
+  fingerprintHash: string;
+  serverPublicKey: string;
+  requestedBy: string;
+};
+
+export type CloudAppActivationRevocationFormInput = {
+  revokedBy: string;
+  reason: string;
+};
+
+export type RevokeCloudAppActivationIssueInput = {
+  revokedBy: string;
+  reason: string;
 };
 
 export type QueueCloudInstallationSupportCommandInput = {
@@ -52,6 +125,55 @@ export type QueuedCloudInstallationSupportCommand = {
   acknowledgementDetail: string | null;
   signatureKeyId: string;
   payloadSha256: string;
+};
+
+export type SafarSuiteAppActivationTokenImport = {
+  activationToken: string;
+  signature: string;
+  signingKeyId: string;
+  tenantId: string;
+  branchId: string;
+  customerCode: string;
+  customerName: string;
+  branchName: string;
+  paidUntil: string;
+  graceEndsOn: string;
+  offlineValidUntil: string;
+  moduleEntitlements: Record<string, boolean>;
+};
+
+export type IssuedSafarSuiteAppActivationToken = {
+  activationIssueId: string;
+  clientId: string;
+  installationId: string;
+  appServerInstallationId: string;
+  activationRequestId: string;
+  replacesActivationIssueId: string | null;
+  entitlementVersion: number;
+  signingKeyId: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+  import: SafarSuiteAppActivationTokenImport;
+};
+
+export type SafarSuiteAppActivationIssue = {
+  activationIssueId: string;
+  clientId: string;
+  installationId: string;
+  appServerInstallationId: string;
+  activationRequestId: string;
+  replacesActivationIssueId: string | null;
+  fingerprintHash: string;
+  serverPublicKeySha256: string;
+  entitlementVersion: number;
+  signingKeyId: string;
+  status: string;
+  requestedBy: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+  revokedAtUtc: string | null;
+  revokedBy: string | null;
+  revocationReason: string | null;
 };
 
 export type LocalServerSetupToken = {

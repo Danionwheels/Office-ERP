@@ -7,6 +7,7 @@ Use this as the canonical alignment note for SafarSuite Control Desk, SafarSuite
 Related runtime boundary note:
 
 ```text
+docs/architecture/client-runtime-communication-and-deployment-blueprint.md
 docs/architecture/safarsuite-runtime-integration-boundary.md
 docs/architecture/client-deployment-and-data-sync-boundary.md
 ```

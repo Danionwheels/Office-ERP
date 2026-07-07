@@ -3,9 +3,11 @@ using System.Text.Json;
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 using SafarSuite.LocalServer.Application.Commands;
 using SafarSuite.LocalServer.Application.Commands.Ports;
+using SafarSuite.LocalServer.Application.Common;
 using SafarSuite.LocalServer.Application.Diagnostics.CreateLocalServerDiagnosticsBundle;
 using SafarSuite.LocalServer.Application.Diagnostics.UploadDiagnosticsToControlCloud;
 using SafarSuite.LocalServer.Application.Entitlements.PullEntitlementFromControlCloud;
+using SafarSuite.LocalServer.Domain.Commands;
 
 namespace SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommands;
 
@@ -18,6 +20,8 @@ public sealed class ProcessInstallationCommandsHandler
 
     private readonly IControlCloudInstallationCommandClient _commandClient;
     private readonly ILocalServerInstallationCommandVerifier _commandVerifier;
+    private readonly ILocalServerAppActivationRevocationStore _appActivationRevocations;
+    private readonly ILocalServerClock _clock;
     private readonly PullEntitlementFromControlCloudHandler _entitlementPullHandler;
     private readonly CreateLocalServerDiagnosticsBundleHandler _diagnosticsBundleHandler;
     private readonly UploadDiagnosticsToControlCloudHandler _diagnosticsUploadHandler;
@@ -25,12 +29,16 @@ public sealed class ProcessInstallationCommandsHandler
     public ProcessInstallationCommandsHandler(
         IControlCloudInstallationCommandClient commandClient,
         ILocalServerInstallationCommandVerifier commandVerifier,
+        ILocalServerAppActivationRevocationStore appActivationRevocations,
+        ILocalServerClock clock,
         PullEntitlementFromControlCloudHandler entitlementPullHandler,
         CreateLocalServerDiagnosticsBundleHandler diagnosticsBundleHandler,
         UploadDiagnosticsToControlCloudHandler diagnosticsUploadHandler)
     {
         _commandClient = commandClient;
         _commandVerifier = commandVerifier;
+        _appActivationRevocations = appActivationRevocations;
+        _clock = clock;
         _entitlementPullHandler = entitlementPullHandler;
         _diagnosticsBundleHandler = diagnosticsBundleHandler;
         _diagnosticsUploadHandler = diagnosticsUploadHandler;
@@ -124,6 +132,12 @@ public sealed class ProcessInstallationCommandsHandler
                 cancellationToken),
 
             LocalServerInstallationCommandTypes.RefreshEntitlement => await ProcessEntitlementRefreshAsync(
+                clientId,
+                installationId,
+                queuedCommand,
+                cancellationToken),
+
+            LocalServerInstallationCommandTypes.RevokeAppActivation => await ProcessAppActivationRevocationAsync(
                 clientId,
                 installationId,
                 queuedCommand,
@@ -243,6 +257,80 @@ public sealed class ProcessInstallationCommandsHandler
             entitlementVersion: pullResult.Entitlement.EntitlementVersion);
     }
 
+    private async Task<ProcessedInstallationCommandResult> ProcessAppActivationRevocationAsync(
+        Guid clientId,
+        string installationId,
+        InstallationCommandResponse queuedCommand,
+        CancellationToken cancellationToken)
+    {
+        AppActivationRevocationCommandPayload payload;
+
+        try
+        {
+            payload = queuedCommand.Payload.Deserialize<AppActivationRevocationCommandPayload>(JsonOptions)
+                ?? throw new JsonException("Command payload was empty.");
+        }
+        catch (JsonException exception)
+        {
+            return await AcknowledgeAsync(
+                queuedCommand,
+                LocalServerInstallationCommandAcknowledgementStatuses.Rejected,
+                $"App activation revocation payload is invalid: {exception.Message}",
+                new CommandFailurePayload(
+                    "AppActivationRevocationPayloadInvalid",
+                    $"App activation revocation payload is invalid: {exception.Message}"),
+                cancellationToken);
+        }
+
+        var validationFailure = ValidateAppActivationRevocationPayload(
+            payload,
+            clientId,
+            installationId);
+
+        if (validationFailure is not null)
+        {
+            return await AcknowledgeAsync(
+                queuedCommand,
+                LocalServerInstallationCommandAcknowledgementStatuses.Rejected,
+                validationFailure.Detail,
+                new CommandFailurePayload(
+                    validationFailure.FailureCode,
+                    validationFailure.Detail),
+                cancellationToken);
+        }
+
+        var recordedAtUtc = _clock.UtcNow;
+        var record = new LocalServerAppActivationRevocationRecord(
+            payload.ActivationIssueId,
+            payload.ClientId,
+            payload.InstallationId.Trim(),
+            payload.AppServerInstallationId,
+            payload.ActivationRequestId,
+            payload.FingerprintHash.Trim(),
+            payload.ServerPublicKeySha256.Trim(),
+            payload.SigningKeyId.Trim(),
+            payload.RevokedAtUtc,
+            payload.RevokedBy.Trim(),
+            payload.Reason.Trim(),
+            queuedCommand.CommandId,
+            queuedCommand.CommandVersion,
+            recordedAtUtc);
+
+        await _appActivationRevocations.SaveAsync(record, cancellationToken);
+
+        return await AcknowledgeAsync(
+            queuedCommand,
+            LocalServerInstallationCommandAcknowledgementStatuses.Applied,
+            $"App activation issue {payload.ActivationIssueId} revocation recorded for app server {payload.AppServerInstallationId}.",
+            new AppActivationRevocationCommandAckPayload(
+                payload.ActivationIssueId,
+                payload.AppServerInstallationId,
+                payload.RevokedAtUtc,
+                recordedAtUtc,
+                "Recorded"),
+            cancellationToken);
+    }
+
     private async Task<ProcessedInstallationCommandResult> AcknowledgeAsync(
         InstallationCommandResponse queuedCommand,
         string resultStatus,
@@ -305,6 +393,58 @@ public sealed class ProcessInstallationCommandsHandler
         return payload is CommandFailurePayload failure ? failure.FailureCode : null;
     }
 
+    private static CommandFailurePayload? ValidateAppActivationRevocationPayload(
+        AppActivationRevocationCommandPayload payload,
+        Guid clientId,
+        string installationId)
+    {
+        if (payload.PayloadFormatVersion != "safarsuite-app-activation-revocation-command-v1")
+        {
+            return new CommandFailurePayload(
+                "AppActivationRevocationPayloadVersionUnsupported",
+                "App activation revocation payload version is not supported.");
+        }
+
+        if (payload.CommandType != LocalServerInstallationCommandTypes.RevokeAppActivation)
+        {
+            return new CommandFailurePayload(
+                "AppActivationRevocationCommandTypeMismatch",
+                "App activation revocation payload command type does not match the signed command type.");
+        }
+
+        if (payload.ActivationIssueId == Guid.Empty
+            || payload.ClientId == Guid.Empty
+            || string.IsNullOrWhiteSpace(payload.InstallationId)
+            || payload.AppServerInstallationId == Guid.Empty
+            || payload.ActivationRequestId == Guid.Empty
+            || string.IsNullOrWhiteSpace(payload.FingerprintHash)
+            || string.IsNullOrWhiteSpace(payload.ServerPublicKeySha256)
+            || string.IsNullOrWhiteSpace(payload.SigningKeyId)
+            || string.IsNullOrWhiteSpace(payload.RevokedBy)
+            || string.IsNullOrWhiteSpace(payload.Reason))
+        {
+            return new CommandFailurePayload(
+                "AppActivationRevocationPayloadIncomplete",
+                "App activation revocation payload is missing required identity or revocation fields.");
+        }
+
+        if (payload.ClientId != clientId)
+        {
+            return new CommandFailurePayload(
+                "AppActivationRevocationClientMismatch",
+                "App activation revocation payload belongs to another client.");
+        }
+
+        if (!payload.InstallationId.Trim().Equals(installationId, StringComparison.Ordinal))
+        {
+            return new CommandFailurePayload(
+                "AppActivationRevocationInstallationMismatch",
+                "App activation revocation payload belongs to another installation.");
+        }
+
+        return null;
+    }
+
     private sealed record SupportCommandPayload(
         string? RequestedBy,
         string? Reason)
@@ -332,4 +472,26 @@ public sealed class ProcessInstallationCommandsHandler
         DateOnly PaidUntil,
         DateOnly OfflineValidUntil,
         DateTimeOffset PulledAtUtc);
+
+    private sealed record AppActivationRevocationCommandPayload(
+        string PayloadFormatVersion,
+        string CommandType,
+        Guid ClientId,
+        string InstallationId,
+        Guid AppServerInstallationId,
+        Guid ActivationIssueId,
+        Guid ActivationRequestId,
+        string FingerprintHash,
+        string ServerPublicKeySha256,
+        string SigningKeyId,
+        DateTimeOffset RevokedAtUtc,
+        string RevokedBy,
+        string Reason);
+
+    private sealed record AppActivationRevocationCommandAckPayload(
+        Guid ActivationIssueId,
+        Guid AppServerInstallationId,
+        DateTimeOffset RevokedAtUtc,
+        DateTimeOffset RecordedAtUtc,
+        string RevocationStatus);
 }

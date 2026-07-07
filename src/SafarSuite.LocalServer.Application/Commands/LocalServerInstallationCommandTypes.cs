@@ -4,6 +4,7 @@ public static class LocalServerInstallationCommandTypes
 {
     public const string RequestDiagnostics = "request_diagnostics";
     public const string RefreshEntitlement = "refresh_entitlement";
+    public const string RevokeAppActivation = "revoke_app_activation";
 }
 
 public static class LocalServerInstallationCommandAcknowledgementStatuses

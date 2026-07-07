@@ -33,6 +33,8 @@ public static class ClientPortalAuditEventTypes
     public const string LocalServerRegistrationRejected = "LocalServerRegistrationRejected";
     public const string LocalServerDiagnosticsUploaded = "LocalServerDiagnosticsUploaded";
     public const string OfflineRenewalFileGenerated = "OfflineRenewalFileGenerated";
+    public const string AppActivationTokenIssued = "AppActivationTokenIssued";
+    public const string AppActivationTokenRevoked = "AppActivationTokenRevoked";
 }
 
 public static class ClientPortalAuditActors

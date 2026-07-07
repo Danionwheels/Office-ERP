@@ -83,11 +83,11 @@ public sealed class ListCloudInstallationAuditEventsHandler
     {
         return result.FailureCode switch
         {
-            "ControlCloudAuditNotConfigured" => ApplicationError.Unexpected(
+            "ControlCloudAuditNotConfigured" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud audit endpoint is not configured."),
-            "ControlCloudAuditUnavailable" => ApplicationError.Unexpected(
+            "ControlCloudAuditUnavailable" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud audit is unavailable."),
-            "ControlCloudAuditResponseInvalid" => ApplicationError.Unexpected(
+            "ControlCloudAuditResponseInvalid" => ApplicationError.ServiceUnavailable(
                 result.Detail ?? "Control Cloud returned an invalid audit response."),
             _ => ApplicationError.Unexpected(
                 result.Detail ?? "Control Cloud audit events could not be loaded.")
