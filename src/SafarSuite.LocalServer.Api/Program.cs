@@ -16,6 +16,7 @@ using SafarSuite.LocalServer.Application.Heartbeats.Ports;
 using SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatFromBootstrapConfiguration;
 using SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatToControlCloud;
 using SafarSuite.LocalServer.Application.ModuleGateway.EvaluateModuleAccess;
+using SafarSuite.LocalServer.Application.Pairing.Ports;
 using SafarSuite.LocalServer.Application.Registration.Ports;
 using SafarSuite.LocalServer.Application.Registration.RegisterInstallationFromBootstrapBundle;
 using SafarSuite.LocalServer.Application.Registration.RegisterInstallationWithControlCloud;
@@ -25,6 +26,7 @@ using SafarSuite.LocalServer.Infrastructure.Commands;
 using SafarSuite.LocalServer.Infrastructure.Diagnostics;
 using SafarSuite.LocalServer.Infrastructure.Entitlements;
 using SafarSuite.LocalServer.Infrastructure.Heartbeats;
+using SafarSuite.LocalServer.Infrastructure.Pairing;
 using SafarSuite.LocalServer.Infrastructure.Registration;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -45,6 +47,10 @@ var automationOptions =
     builder.Configuration.GetSection(LocalServerRuntimeAutomationOptions.SectionName).Get<LocalServerRuntimeAutomationOptions>()
     ?? new LocalServerRuntimeAutomationOptions();
 var runtimeAccessOptions = LocalServerRuntimeAccessOptions.FromConfiguration(builder.Configuration);
+var pairingOptions = LocalServerPairingOptions.FromConfiguration(builder.Configuration);
+var pairingStoreOptions =
+    builder.Configuration.GetSection(LocalServerPairingStoreOptions.SectionName).Get<LocalServerPairingStoreOptions>()
+    ?? new LocalServerPairingStoreOptions();
 
 builder.Services.AddSingleton(controlCloudOptions);
 builder.Services.AddSingleton(entitlementTrustOptions);
@@ -52,6 +58,8 @@ builder.Services.AddSingleton(bootstrapTrustOptions);
 builder.Services.AddSingleton(commandOptions);
 builder.Services.AddSingleton(automationOptions);
 builder.Services.AddSingleton(runtimeAccessOptions);
+builder.Services.AddSingleton(pairingOptions);
+builder.Services.AddSingleton(pairingStoreOptions);
 builder.Services.AddSingleton<ILocalServerClock, SystemLocalServerClock>();
 builder.Services.AddSingleton<LocalServerEntitlementPolicy>();
 builder.Services.AddSingleton<ILocalServerEntitlementCache, FileLocalServerEntitlementCache>();
@@ -60,6 +68,7 @@ builder.Services.AddSingleton<ILocalServerEntitlementImportAuditStore, FileLocal
 builder.Services.AddSingleton<ILocalServerEntitlementBundleVerifier, HmacLocalServerEntitlementBundleVerifier>();
 builder.Services.AddSingleton<ILocalServerInstallationCommandVerifier, HmacLocalServerInstallationCommandVerifier>();
 builder.Services.AddSingleton<ILocalServerAppActivationRevocationStore, FileLocalServerAppActivationRevocationStore>();
+builder.Services.AddSingleton<ILocalServerDevicePairingStore, FileLocalServerDevicePairingStore>();
 builder.Services.AddSingleton<ILocalServerBootstrapBundleVerifier, HmacLocalServerBootstrapBundleVerifier>();
 builder.Services.AddSingleton<ILocalServerBootstrapConfigurationStore, FileLocalServerBootstrapConfigurationStore>();
 builder.Services.AddSingleton<ILocalServerRuntimeCommandRunner, SystemLocalServerRuntimeCommandRunner>();

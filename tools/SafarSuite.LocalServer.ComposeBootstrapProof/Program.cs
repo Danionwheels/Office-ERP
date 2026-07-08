@@ -392,6 +392,24 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
         statusResponse,
         "read LocalServer bootstrap status");
 
+    using var discoveryResponse = await http.GetAsync(".well-known/safarsuite-local-server");
+    var discovery = await ReadJsonResponseAsync<LocalServerPairingDiscoveryResponse>(
+        discoveryResponse,
+        "read LocalServer pairing discovery");
+
+    var helloRequest = new LocalServerPairingHelloRequest(
+        LocalServerPairingFormats.HelloRequestVersion,
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)),
+        options.AppVersion,
+        "compose-proof");
+    using var helloResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/hello",
+        helloRequest,
+        bundleJsonOptions);
+    var hello = await ReadJsonResponseAsync<LocalServerPairingHelloResponse>(
+        helloResponse,
+        "read LocalServer pairing hello");
+
     var asOfDate = ResolveAsOfDate(options);
     using var accessResponse = await http.GetAsync(
         $"api/v1/local-server/modules/{Uri.EscapeDataString(options.RequiredModule)}/access?requestedBy=compose-proof&asOfDate={asOfDate:yyyy-MM-dd}");
@@ -409,6 +427,91 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
     {
         throw new InvalidOperationException(
             "LocalServer runtime status did not include both bootstrap configuration and cached entitlement.");
+    }
+
+    if (!discovery.HasBootstrapConfiguration
+        || discovery.ClientId != imported.ClientId
+        || !string.Equals(discovery.InstallationIdHint, imported.InstallationId, StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException(
+            "LocalServer pairing discovery did not report the imported bootstrap identity.");
+    }
+
+    if (hello.ClientId != imported.ClientId
+        || !string.Equals(hello.InstallationId, imported.InstallationId, StringComparison.Ordinal)
+        || !string.Equals(hello.ClientNonce, helloRequest.ClientNonce, StringComparison.Ordinal)
+        || !string.Equals(hello.PairingMode, LocalServerPairingModes.ManagerApproval, StringComparison.Ordinal)
+        || string.IsNullOrWhiteSpace(hello.ServerNonce)
+        || !string.Equals(hello.FormatVersion, LocalServerPairingFormats.HelloResponseVersion, StringComparison.Ordinal)
+        || string.IsNullOrWhiteSpace(hello.BootstrapPayloadSha256))
+    {
+        throw new InvalidOperationException(
+            "LocalServer pairing hello did not return a stable non-secret pairing identity.");
+    }
+
+    var devicePairingRequest = new LocalServerDevicePairingRequest(
+        LocalServerPairingFormats.DevicePairingRequestVersion,
+        imported.InstallationId,
+        "Compose Proof Device",
+        $"compose-proof-public-key-{Guid.NewGuid():N}",
+        DeviceFingerprintHash: $"compose-fingerprint-{Guid.NewGuid():N}",
+        WindowsUserHint: "compose-proof",
+        AppVersion: options.AppVersion,
+        HelloServerNonce: hello.ServerNonce,
+        HelloClientNonce: hello.ClientNonce,
+        RequestedAtUtc: DateTimeOffset.UtcNow);
+    using var pairingRequestResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/requests",
+        devicePairingRequest,
+        bundleJsonOptions);
+    var pairingRequest = await ReadJsonResponseAsync<LocalServerDevicePairingRequestResponse>(
+        pairingRequestResponse,
+        "create LocalServer device pairing request");
+
+    using var pendingDevicesResponse = await http.GetAsync("api/v1/local-server/devices/pending");
+    var pendingDevices = await ReadJsonResponseAsync<LocalServerDevicePairingRequestsResponse>(
+        pendingDevicesResponse,
+        "list pending LocalServer devices");
+
+    using var approveResponse = await http.PostAsJsonAsync(
+        $"api/v1/local-server/devices/{pairingRequest.DeviceId:D}/approve",
+        new ApproveLocalServerDeviceRequest(
+            "compose-proof-manager",
+            "ProofApprovedDevice"),
+        bundleJsonOptions);
+    var approvedDevice = await ReadJsonResponseAsync<ApproveLocalServerDeviceResponse>(
+        approveResponse,
+        "approve LocalServer device pairing request");
+
+    using var suspendResponse = await http.PostAsJsonAsync(
+        $"api/v1/local-server/devices/{pairingRequest.DeviceId:D}/suspend",
+        new ChangeLocalServerDeviceStatusRequest(
+            "compose-proof-manager",
+            "compose proof suspension"),
+        bundleJsonOptions);
+    var suspendedDevice = await ReadJsonResponseAsync<LocalServerDeviceResponse>(
+        suspendResponse,
+        "suspend LocalServer paired device");
+
+    using var revokeResponse = await http.PostAsJsonAsync(
+        $"api/v1/local-server/devices/{pairingRequest.DeviceId:D}/revoke",
+        new ChangeLocalServerDeviceStatusRequest(
+            "compose-proof-manager",
+            "compose proof revocation"),
+        bundleJsonOptions);
+    var revokedDevice = await ReadJsonResponseAsync<LocalServerDeviceResponse>(
+        revokeResponse,
+        "revoke LocalServer paired device");
+
+    if (!string.Equals(pairingRequest.PairingRequestStatus, LocalServerDevicePairingStatuses.Pending, StringComparison.Ordinal)
+        || !pendingDevices.Devices.Any(device => device.DeviceId == pairingRequest.DeviceId)
+        || !string.Equals(approvedDevice.Device.DeviceStatus, LocalServerDevicePairingStatuses.Approved, StringComparison.Ordinal)
+        || string.IsNullOrWhiteSpace(approvedDevice.DeviceCredential)
+        || !string.Equals(suspendedDevice.DeviceStatus, LocalServerDevicePairingStatuses.Suspended, StringComparison.Ordinal)
+        || !string.Equals(revokedDevice.DeviceStatus, LocalServerDevicePairingStatuses.Revoked, StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException(
+            "LocalServer device pairing lifecycle did not move through pending, approved, suspended, and revoked states.");
     }
 
     if (!moduleAccess.IsAllowed)
@@ -430,6 +533,11 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
         heartbeat.LicenseStatus,
         commands.PendingCommandCount,
         commands.AppliedCount,
+        discovery.HasBootstrapConfiguration,
+        hello.PairingMode,
+        pairingRequest.PairingRequestStatus,
+        approvedDevice.Device.DeviceStatus,
+        revokedDevice.DeviceStatus,
         status.HasBootstrapConfiguration,
         status.HasCachedEntitlement,
         moduleAccess.ModuleCode,
@@ -1345,6 +1453,9 @@ string BuildEnvironmentFile(ProofOptions options)
         "SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES=local-api,localhost",
         "SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES=127.0.0.1",
         "SAFARSUITE_LOCAL_API_CERTIFICATE_DAYS=825",
+        "SAFARSUITE_LOCAL_PAIRING_DISPLAY_NAME=SafarSuite - Compose Proof",
+        $"SAFARSUITE_LOCAL_PAIRING_HTTPS_URL={GetLocalApiHostBaseUrl(options)}",
+        "SAFARSUITE_LOCAL_PAIRING_MODE=ManagerApproval",
         $"SAFARSUITE_MODULE_GATEWAY_URL={localApiBaseUrl}",
         "SAFARSUITE_RUNTIME_MANIFEST_PATH=/etc/safarsuite/local-server/runtime-services.manifest.json",
         $"SAFARSUITE_LOCAL_DB_IMAGE={options.LocalDbImage}",
@@ -1410,6 +1521,9 @@ string BuildEnvironmentFileFromPackage(
         "SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES=local-api,localhost",
         "SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES=127.0.0.1",
         "SAFARSUITE_LOCAL_API_CERTIFICATE_DAYS=825",
+        "SAFARSUITE_LOCAL_PAIRING_DISPLAY_NAME=SafarSuite - Compose Proof",
+        $"SAFARSUITE_LOCAL_PAIRING_HTTPS_URL={GetLocalApiHostBaseUrl(options)}",
+        "SAFARSUITE_LOCAL_PAIRING_MODE=ManagerApproval",
         $"SAFARSUITE_MODULE_GATEWAY_URL={localApiBaseUrl}",
         "SAFARSUITE_RUNTIME_MANIFEST_PATH=/etc/safarsuite/local-server/runtime-services.manifest.json",
         $"SAFARSUITE_LOCAL_DB_IMAGE={options.LocalDbImage}",
@@ -1868,6 +1982,11 @@ internal sealed record LocalRuntimeProofResult(
     string LicenseStatus,
     int PendingCommandCount,
     int AppliedCommandCount,
+    bool PairingDiscoveryHasBootstrap,
+    string PairingMode,
+    string DevicePairingRequestStatus,
+    string ApprovedDeviceStatus,
+    string RevokedDeviceStatus,
     bool HasBootstrapConfiguration,
     bool HasCachedEntitlement,
     string ModuleCode,

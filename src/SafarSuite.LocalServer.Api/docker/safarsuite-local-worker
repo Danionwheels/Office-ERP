@@ -11,6 +11,7 @@ export LocalServer__EntitlementTrust__CacheStorePath="${LocalServer__Entitlement
 export LocalServer__EntitlementTrust__TrustStateStorePath="${LocalServer__EntitlementTrust__TrustStateStorePath:-$state_dir/entitlements/local-server-entitlement-trust-state.json}"
 export LocalServer__EntitlementTrust__ImportAuditStorePath="${LocalServer__EntitlementTrust__ImportAuditStorePath:-$state_dir/entitlements/local-server-entitlement-import-audit.json}"
 export LocalServer__Commands__AppActivationRevocationStorePath="${LocalServer__Commands__AppActivationRevocationStorePath:-$state_dir/commands/local-server-app-activation-revocations.json}"
+export LocalServer__Pairing__DeviceStorePath="${LocalServer__Pairing__DeviceStorePath:-$state_dir/pairing/local-server-device-pairings.json}"
 export LocalServer__Runtime__EnableBackgroundWorker="${LocalServer__Runtime__EnableBackgroundWorker:-true}"
 export LocalServer__Runtime__EnableCommandPolling="${LocalServer__Runtime__EnableCommandPolling:-false}"
 export LocalServer__Runtime__EnableEntitlementPull="${LocalServer__Runtime__EnableEntitlementPull:-true}"

@@ -16,7 +16,7 @@ Let a provider operator create a customer deployment package, hand off everythin
 - [x] Download each generated runtime artifact from the generated package.
 - [x] Download a customer setup guide containing the install command, package ids, bundle hash, versions, verification sequence, and artifact checksums.
 - [x] Promote the status controls into a guided setup checklist: deployment profile saved, setup packet ready, registration active, heartbeat received, entitlement pulled, diagnostics received, app activation issued.
-- [ ] Add customer-safe Windows/PowerShell handoff wording if the installer is run from a Windows terminal.
+- [x] Add customer-safe Windows/PowerShell handoff wording if the installer is run from a Windows terminal.
 - [ ] Let operators mark external handoff state without exposing setup-token plaintext after package creation.
 
 ## Notes
@@ -24,3 +24,5 @@ Let a provider operator create a customer deployment package, hand off everythin
 The first UX slice is intentionally browser-side and uses the existing bootstrap package response. It does not change Control Cloud package generation or persistence.
 
 The setup checklist is evidence-backed from existing cloud state instead of manual ticks. Entitlement pulled is complete only when the latest heartbeat carries an entitlement version, so the desk can distinguish cloud issuance from local-server pickup.
+
+The downloaded setup guide now calls out that the install command is Bash, gives PowerShell launch commands for Git Bash/WSL, and tells operators to regenerate the package if the guide or bundle is sent to the wrong destination.

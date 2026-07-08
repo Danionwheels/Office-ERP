@@ -324,10 +324,12 @@ Basic pieces already exist:
 - SafarSuite app shared Local API CA trust: app revocation checks now use a shared CA-pinned Local API HTTP client factory. The app backend currently hosts module-gateway access locally, so there is no duplicate outbound module-gateway client to secure.
 - SafarSuite app workspace module-gateway enforcement for menu/window access, backend writes, reporting execution/audit, product access catalog, runtime health/profile, and container proof.
 - Control Desk product access catalog persistence and publish path into the real app product kernel.
+- SafarSuite app to LocalServer pairing authority slice: shared discovery/hello/device pairing/profile contracts now exist, LocalServer exposes non-secret `/.well-known/safarsuite-local-server` discovery, `POST /api/v1/local-server/pairing/hello`, pending device request create/status, device lists, and approve/suspend/revoke endpoints backed by a local file ledger, and the Compose bootstrap proof runner validates discovery/hello identity plus device pairing lifecycle after bootstrap import.
 
 Known remaining gaps:
 
 - Production hardening for the app revocation hook and broader control lane: real provider-user MFA/password reset UX, production secret custody/rotation, customer-facing clean setup UX, and live deployment proof with production-grade secrets. Provider-operator file/PostgreSQL persistence, the provider-access smoke proof, and the first Control Desk manager surface now exist; see `docs/planning/control-cloud-provider-access-runbook-2026-07-07.md`.
+- App-to-LocalServer pairing implementation beyond the local authority lifecycle slice: signed local pairing key custody, first-manager setup-token consumption, real manager-session protection for device approval endpoints, final signed device credential verification, Windows app discovery UI, protected pairing-profile storage, and no-repeat client reconnect behavior; design captured in `docs/planning/safarsuite-app-local-server-pairing-flow.md`.
 - Production install proof for the generated bootstrap package with real secret custody/rotation, not proof-local values.
 - PostgreSQL-backed Control Cloud proof now exists through `tools/SafarSuite.ControlCloud.PostgresProof`; remaining deployment proof should focus on real secret custody/rotation and clean-machine packaging.
 - Successful build/push of the LocalServer image to the chosen registry; the first Dockerfile exists, has a pre-published local build target, and has passed a local container `/health` proof using a cached ASP.NET-derived base override, but the production-default base still depends on .NET runtime image access from MCR.
@@ -361,3 +363,4 @@ If the answer is unclear, update this blueprint or the relevant boundary documen
 - `docs/planning/control-cloud-deployment-tracker.md`
 - `docs/planning/offline-entitlement-control-rules.md`
 - `docs/planning/safarsuite-app-integration-handoff.md`
+- `docs/planning/safarsuite-app-local-server-pairing-flow.md`
