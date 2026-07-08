@@ -278,10 +278,10 @@ dotnet run --project tools\SafarSuite.ControlCloud.ProviderAccessSmoke\SafarSuit
 Expected result:
 
 ```text
-Provider access smoke passed 16 checks:
+Provider access smoke passed 17 checks:
 ```
 
-The smoke proves file-backed seed persistence, scoped operator session issuance, recovery-code MFA enforcement/consumption/exhaustion, TOTP MFA enforcement/replay protection/protected custody, legacy plaintext TOTP migration, failed-login counter reset after success, temporary provider login lockout after repeated MFA failures, session-signing key rotation acceptance/removal, file-backed secret loading, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
+The smoke proves file-backed seed persistence, scoped operator session issuance, recovery-code MFA enforcement/consumption/exhaustion, TOTP MFA enforcement/replay protection/protected custody, legacy plaintext TOTP migration, failed-login counter reset after success, temporary provider login lockout after repeated MFA failures, session-signing key rotation acceptance/removal, provider-access secret-file loading, Control Cloud receiver/entitlement/bootstrap/command/app-activation signing secret-file loading, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
 
 Run the live Control Desk proxy proof:
 

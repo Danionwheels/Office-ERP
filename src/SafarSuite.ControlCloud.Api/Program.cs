@@ -36,9 +36,11 @@ var builder = WebApplication.CreateBuilder(args);
 var receiverOptions =
     builder.Configuration.GetSection(ControlCloudReceiverOptions.SectionName).Get<ControlCloudReceiverOptions>()
     ?? new ControlCloudReceiverOptions();
+receiverOptions.HydrateFileBackedSecrets(builder.Environment.ContentRootPath);
 var entitlementSigningOptions =
     builder.Configuration.GetSection(ControlCloudEntitlementSigningOptions.SectionName).Get<ControlCloudEntitlementSigningOptions>()
     ?? new ControlCloudEntitlementSigningOptions();
+entitlementSigningOptions.HydrateFileBackedSecrets(builder.Environment.ContentRootPath);
 var commandQueueOptions =
     builder.Configuration.GetSection(ControlCloudCommandQueueOptions.SectionName).Get<ControlCloudCommandQueueOptions>()
     ?? new ControlCloudCommandQueueOptions();
@@ -54,6 +56,7 @@ var diagnosticsOptions =
 var appActivationSigningOptions =
     builder.Configuration.GetSection(ControlCloudAppActivationSigningOptions.SectionName).Get<ControlCloudAppActivationSigningOptions>()
     ?? new ControlCloudAppActivationSigningOptions();
+appActivationSigningOptions.HydrateFileBackedSecrets(builder.Environment.ContentRootPath);
 var clientPortalAccessOptions =
     builder.Configuration.GetSection(ClientPortalAccessOptions.SectionName).Get<ClientPortalAccessOptions>()
     ?? new ClientPortalAccessOptions();

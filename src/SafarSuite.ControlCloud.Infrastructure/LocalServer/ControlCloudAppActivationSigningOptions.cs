@@ -1,3 +1,5 @@
+using SafarSuite.ControlCloud.Infrastructure;
+
 namespace SafarSuite.ControlCloud.Infrastructure.LocalServer;
 
 public sealed class ControlCloudAppActivationSigningOptions
@@ -16,6 +18,8 @@ public sealed class ControlCloudAppActivationSigningOptions
         -----END PUBLIC KEY-----
         """;
 
+    public string PublicKeyPemFile { get; set; } = "";
+
     public string PrivateKeyPem { get; set; } =
         """
         -----BEGIN PRIVATE KEY-----
@@ -24,4 +28,20 @@ public sealed class ControlCloudAppActivationSigningOptions
         W/owZaiIeXw898m0imcDaAWjFC0BHj9C+eMngm/NzEiqS5bbd8dH2lBS
         -----END PRIVATE KEY-----
         """;
+
+    public string PrivateKeyPemFile { get; set; } = "";
+
+    public void HydrateFileBackedSecrets(string? contentRootPath = null)
+    {
+        PublicKeyPem = FileBackedSecretReader.ReadPemOrInline(
+            PublicKeyPem,
+            PublicKeyPemFile,
+            $"{SectionName}:PublicKeyPemFile",
+            contentRootPath);
+        PrivateKeyPem = FileBackedSecretReader.ReadPemOrInline(
+            PrivateKeyPem,
+            PrivateKeyPemFile,
+            $"{SectionName}:PrivateKeyPemFile",
+            contentRootPath);
+    }
 }

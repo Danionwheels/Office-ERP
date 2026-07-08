@@ -1819,11 +1819,14 @@ internal sealed record ProofOptions
                 "app-image" => options with { AppImage = value },
                 "control-desk-signing-key-id" => options with { ControlDeskSigningKeyId = value },
                 "control-desk-signing-secret" => options with { ControlDeskSigningSecret = value },
+                "control-desk-signing-secret-file" => options with { ControlDeskSigningSecret = ReadRequiredSecretFile(value, key) },
                 "provider-access-secret" => options with { ProviderAccessSecret = value },
+                "provider-access-secret-file" => options with { ProviderAccessSecret = ReadRequiredSecretFile(value, key) },
                 "use-provider-session-token" => options with { UseProviderSessionToken = bool.Parse(value) },
                 "use-provider-operator-session" => options with { UseProviderOperatorSession = bool.Parse(value) },
                 "provider-operator-email" => options with { ProviderOperatorEmail = value },
                 "provider-operator-password" => options with { ProviderOperatorPassword = value },
+                "provider-operator-password-file" => options with { ProviderOperatorPassword = ReadRequiredSecretFile(value, key) },
                 _ => throw new InvalidOperationException($"Unknown option '--{key}'.")
             };
         }
@@ -1837,6 +1840,29 @@ internal sealed record ProofOptions
         }
 
         return options;
+    }
+
+    private static string ReadRequiredSecretFile(
+        string path,
+        string optionName)
+    {
+        var resolvedPath = Path.GetFullPath(path.Trim());
+
+        if (!File.Exists(resolvedPath))
+        {
+            throw new InvalidOperationException(
+                $"--{optionName} points to a secret file that does not exist: {resolvedPath}");
+        }
+
+        var secret = File.ReadAllText(resolvedPath).Trim();
+
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            throw new InvalidOperationException(
+                $"--{optionName} points to an empty secret file: {resolvedPath}");
+        }
+
+        return secret;
     }
 
     private static string NormalizeLocalApiTlsMode(string value)
