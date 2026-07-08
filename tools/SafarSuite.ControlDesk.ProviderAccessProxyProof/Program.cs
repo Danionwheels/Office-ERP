@@ -95,6 +95,81 @@ try
     var initialPassword = $"ProxyProofPassword-{runId:N}!";
     var resetPassword = $"ProxyProofReset-{runId:N}!";
     var changedPassword = $"ProxyProofChanged-{runId:N}!";
+    var clientId = Guid.NewGuid();
+    var installationId = $"proxy-proof-{runId:N}";
+    var localServerVersion = "proxy-proof-localserver-0.1";
+    var pendingDeviceRequestId = Guid.NewGuid();
+
+    var envelope = CreateEntitlementSnapshotEnvelope(
+        options,
+        clientId,
+        runId);
+    var seed = await SendJsonAsync<ControlCloudReceiveEnvelopeResponse>(
+        controlCloudHttp,
+        HttpMethod.Post,
+        "api/v1/control-desk/messages",
+        envelope);
+
+    Require(
+        seed.Status.Equals("Accepted", StringComparison.OrdinalIgnoreCase)
+        || seed.Status.Equals("Duplicate", StringComparison.OrdinalIgnoreCase),
+        $"client entitlement seed should be accepted or duplicate, got '{seed.Status}'.");
+    checks.Add("seeded client projection into Control Cloud");
+
+    var bootstrapPackage = await SendJsonAsync<LocalServerBootstrapPackageResponse>(
+        controlDeskHttp,
+        HttpMethod.Post,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/bootstrap-package",
+        new CreateLocalServerBootstrapPackageRequest(
+            ExpiresInHours: 4,
+            CreatedBy: "control-desk-proxy-proof",
+            DeploymentMode: ControlCloudBootstrapModes.OnlineBootstrap,
+            LocalServerVersion: localServerVersion,
+            SafarSuiteAppVersion: "proxy-proof-app-0.1",
+            ClientDeploymentMode: SafarSuiteClientDeploymentModes.CloudSyncMultiBranch,
+            SiteId: "proxy-proof-hq",
+            SiteRole: SafarSuiteDeploymentSiteRoles.Hq,
+            ParentSiteId: null,
+            BranchCode: "HQ",
+            SyncTopologyId: $"proxy-proof-{runId:N}"));
+
+    Require(bootstrapPackage.ClientId == clientId, "Control Desk bootstrap package should target proof client.");
+    Require(bootstrapPackage.InstallationId == installationId, "Control Desk bootstrap package should target proof installation.");
+    checks.Add("created bootstrap package through Control Desk proxy");
+
+    var registration = await SendJsonAsync<LocalServerInstallationRegistrationResponse>(
+        controlCloudHttp,
+        HttpMethod.Post,
+        $"api/v1/local-server/installations/{Uri.EscapeDataString(installationId)}/registration",
+        new RegisterLocalServerInstallationRequest(
+            clientId,
+            bootstrapPackage.SetupToken,
+            localServerVersion,
+            bootstrapPackage.DeploymentProfile));
+
+    Require(registration.InstallationStatus.Equals("Active", StringComparison.OrdinalIgnoreCase), "proxied bootstrap package should register the installation.");
+    checks.Add("registered Control Desk-created installation package");
+
+    var firstManagerSetupToken = await SendJsonAsync<IssueLocalServerFirstManagerSetupTokenResponse>(
+        controlDeskHttp,
+        HttpMethod.Post,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/first-manager-setup-token",
+        new IssueLocalServerFirstManagerSetupTokenRequest(
+            pendingDeviceRequestId,
+            "Control Desk Proxy Proof Manager",
+            "proxy.manager@safarsuite.local",
+            "control-desk-proxy-proof",
+            ExpiresInHours: 4));
+
+    Require(firstManagerSetupToken.ClientId == clientId, "first-manager setup token should target proof client.");
+    Require(firstManagerSetupToken.InstallationId == installationId, "first-manager setup token should target proof installation.");
+    Require(firstManagerSetupToken.PendingDeviceRequestId == pendingDeviceRequestId, "first-manager setup token should bind the pending device request.");
+    Require(firstManagerSetupToken.SignedToken.Payload.TokenId == firstManagerSetupToken.TokenId, "signed token payload should expose the issued token id.");
+    Require(firstManagerSetupToken.SignedToken.Payload.PendingDeviceRequestId == pendingDeviceRequestId, "signed token payload should preserve the pending device request.");
+    Require(firstManagerSetupToken.SignedToken.Signature.PayloadSha256 == firstManagerSetupToken.PayloadSha256, "first-manager setup token response should expose the signed payload hash.");
+    Require(firstManagerSetupToken.SignedToken.Signature.KeyId == firstManagerSetupToken.SigningKeyId, "first-manager setup token response should expose the signing key.");
+    Require(!string.IsNullOrWhiteSpace(firstManagerSetupToken.SignedToken.Signature.Value), "first-manager setup token should include a signature.");
+    checks.Add("issued first-manager setup token through Control Desk proxy");
 
     _ = await SendJsonAsync<ProviderAccessOperatorsResponse>(
         controlDeskHttp,
@@ -303,6 +378,9 @@ try
             proofStatus = "Passed",
             controlCloudUrl = options.ControlCloudBaseUrl,
             controlDeskUrl = options.ControlDeskBaseUrl,
+            clientId,
+            installationId,
+            firstManagerSetupTokenId = firstManagerSetupToken.TokenId,
             operatorEmail,
             userId = createdOperator.UserId,
             limitedScopes = limitedOperatorSession.Scopes,
@@ -337,6 +415,141 @@ static ControlCloudDbContext CreateDbContext(string connectionString)
         .Options;
 
     return new ControlCloudDbContext(dbOptions);
+}
+
+static ControlCloudEnvelope CreateEntitlementSnapshotEnvelope(
+    ProofOptions options,
+    Guid clientId,
+    Guid runId)
+{
+    var now = DateTimeOffset.UtcNow;
+    var today = DateOnly.FromDateTime(now.UtcDateTime);
+    var paidUntil = today.AddDays(30);
+    var messageId = Guid.NewGuid();
+    var entitlementSnapshotId = Guid.NewGuid();
+    var payload = new EntitlementSnapshotIssuedProofPayload(
+        EventVersion: "1",
+        EntitlementSnapshotId: entitlementSnapshotId,
+        ClientId: clientId,
+        ContractId: Guid.NewGuid(),
+        SourceInvoiceId: Guid.NewGuid(),
+        SourceInvoiceNumber: $"PROXY-PROOF-{now:yyyyMMddHHmmss}",
+        Status: "Active",
+        PaidUntil: paidUntil,
+        GraceUntil: paidUntil.AddDays(7),
+        OfflineValidUntil: paidUntil.AddDays(14),
+        AllowedDevices: 10,
+        AllowedBranches: 1,
+        IssuedAtUtc: now,
+        Modules:
+        [
+            new EntitlementSnapshotIssuedProofModule("Accounting", IsEnabled: true),
+            new EntitlementSnapshotIssuedProofModule("Reports", IsEnabled: true)
+        ]);
+    var payloadJson = JsonSerializer.Serialize(payload, ProofJson.Options);
+    var idempotencyKey = $"{options.ControlDeskSourceSystem}:provider-access-proxy-proof:{runId:N}";
+
+    using var document = JsonDocument.Parse(payloadJson);
+    var envelope = new ControlCloudEnvelope(
+        EnvelopeVersion: "1",
+        MessageId: messageId,
+        MessageType: "EntitlementSnapshotIssued",
+        SubjectType: "EntitlementSnapshot",
+        SubjectId: entitlementSnapshotId.ToString("D"),
+        SourceSystem: options.ControlDeskSourceSystem,
+        SourceEnvironment: options.ControlDeskSourceEnvironment,
+        OccurredAtUtc: now,
+        PreparedAtUtc: now,
+        IdempotencyKey: idempotencyKey,
+        Payload: document.RootElement.Clone(),
+        Signature: new ControlCloudEnvelopeSignature(
+            "HMAC-SHA256",
+            options.ControlDeskSigningKeyId,
+            "",
+            ""));
+
+    return CanonicalizeControlDeskEnvelopeForHttp(options, envelope);
+}
+
+static ControlCloudEnvelope CanonicalizeControlDeskEnvelopeForHttp(
+    ProofOptions options,
+    ControlCloudEnvelope envelope)
+{
+    var envelopeJson = JsonSerializer.Serialize(envelope, ProofJson.Options);
+    using var document = JsonDocument.Parse(envelopeJson);
+    var payload = document.RootElement.GetProperty("payload").Clone();
+    var payloadSha256 = ComputeSha256(payload.GetRawText());
+    var signature = SignControlDeskEnvelope(
+        options.ControlDeskSigningSecret,
+        envelope.MessageId,
+        envelope.MessageType,
+        envelope.SubjectType,
+        envelope.SubjectId,
+        envelope.SourceSystem,
+        envelope.SourceEnvironment,
+        envelope.OccurredAtUtc,
+        envelope.PreparedAtUtc,
+        envelope.IdempotencyKey,
+        payloadSha256);
+
+    return envelope with
+    {
+        Payload = payload,
+        Signature = envelope.Signature with
+        {
+            PayloadSha256 = payloadSha256,
+            Value = signature
+        }
+    };
+}
+
+static string SignControlDeskEnvelope(
+    string signingSecret,
+    Guid messageId,
+    string messageType,
+    string subjectType,
+    string subjectId,
+    string sourceSystem,
+    string sourceEnvironment,
+    DateTimeOffset occurredAtUtc,
+    DateTimeOffset preparedAtUtc,
+    string idempotencyKey,
+    string payloadSha256)
+{
+    var signatureInput = string.Join(
+        "\n",
+        "1",
+        messageId.ToString("D"),
+        messageType,
+        subjectType,
+        subjectId,
+        sourceSystem,
+        sourceEnvironment,
+        occurredAtUtc.ToString("O"),
+        preparedAtUtc.ToString("O"),
+        idempotencyKey,
+        payloadSha256);
+
+    return Sign(signingSecret, signatureInput);
+}
+
+static string Sign(
+    string signingSecret,
+    string value)
+{
+    var secretBytes = Encoding.UTF8.GetBytes(signingSecret);
+    var valueBytes = Encoding.UTF8.GetBytes(value);
+    var signatureBytes = HMACSHA256.HashData(secretBytes, valueBytes);
+
+    return Convert.ToBase64String(signatureBytes);
+}
+
+static string ComputeSha256(string value)
+{
+    var bytes = Encoding.UTF8.GetBytes(value);
+    var hash = SHA256.HashData(bytes);
+
+    return Convert.ToHexString(hash).ToLowerInvariant();
 }
 
 static async Task RequireHealthyAsync(
@@ -661,6 +874,10 @@ internal sealed record ProofOptions(
     string ProviderAccessSecret,
     string ProviderSessionSigningSecret,
     string ProviderTotpProtectionSecret,
+    string ControlDeskSigningKeyId,
+    string ControlDeskSigningSecret,
+    string ControlDeskSourceSystem,
+    string ControlDeskSourceEnvironment,
     bool ShowHelp)
 {
     private const string DefaultConnectionString =
@@ -772,6 +989,10 @@ internal sealed record ProofOptions(
             ProviderAccessSecret: "local-development-provider-access-secret-change-before-cloud",
             ProviderSessionSigningSecret: "local-development-provider-session-signing-secret-change-before-cloud",
             ProviderTotpProtectionSecret: "local-development-provider-totp-protection-secret-change-before-cloud",
+            ControlDeskSigningKeyId: "local-dev",
+            ControlDeskSigningSecret: "local-development-signing-secret-change-before-cloud",
+            ControlDeskSourceSystem: "SafarSuite.ControlDesk",
+            ControlDeskSourceEnvironment: "ProviderAccessProxyProof",
             showHelp);
     }
 
@@ -895,3 +1116,23 @@ internal sealed record ProviderAccessSessionResponse(
     string Actor,
     IReadOnlyCollection<string> Scopes,
     DateTimeOffset ExpiresAtUtc);
+
+internal sealed record EntitlementSnapshotIssuedProofPayload(
+    string EventVersion,
+    Guid EntitlementSnapshotId,
+    Guid ClientId,
+    Guid ContractId,
+    Guid SourceInvoiceId,
+    string SourceInvoiceNumber,
+    string Status,
+    DateOnly PaidUntil,
+    DateOnly GraceUntil,
+    DateOnly OfflineValidUntil,
+    int AllowedDevices,
+    int AllowedBranches,
+    DateTimeOffset IssuedAtUtc,
+    IReadOnlyCollection<EntitlementSnapshotIssuedProofModule> Modules);
+
+internal sealed record EntitlementSnapshotIssuedProofModule(
+    string ModuleCode,
+    bool IsEnabled);

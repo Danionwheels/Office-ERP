@@ -28,6 +28,12 @@ public interface IControlCloudInstallationProvisioningClient
         IssueSafarSuiteAppActivationTokenRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<ControlCloudFirstManagerSetupTokenClientResult> IssueFirstManagerSetupTokenAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerFirstManagerSetupTokenRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<ControlCloudAppActivationIssuesClientResult> ListAppActivationIssuesAsync(
         Guid clientId,
         string? installationId,
@@ -41,6 +47,46 @@ public interface IControlCloudInstallationProvisioningClient
         Guid activationIssueId,
         RevokeSafarSuiteAppActivationIssueRequest request,
         CancellationToken cancellationToken = default);
+}
+
+public sealed class ControlCloudFirstManagerSetupTokenClientResult
+{
+    private ControlCloudFirstManagerSetupTokenClientResult(
+        IssueLocalServerFirstManagerSetupTokenResponse? response,
+        string? failureCode,
+        string? detail)
+    {
+        Response = response;
+        FailureCode = failureCode;
+        Detail = detail;
+    }
+
+    public bool IsSuccess => Response is not null;
+
+    public IssueLocalServerFirstManagerSetupTokenResponse? Response { get; }
+
+    public string? FailureCode { get; }
+
+    public string? Detail { get; }
+
+    public static ControlCloudFirstManagerSetupTokenClientResult Success(
+        IssueLocalServerFirstManagerSetupTokenResponse response)
+    {
+        return new ControlCloudFirstManagerSetupTokenClientResult(
+            response,
+            failureCode: null,
+            detail: null);
+    }
+
+    public static ControlCloudFirstManagerSetupTokenClientResult Failure(
+        string failureCode,
+        string detail)
+    {
+        return new ControlCloudFirstManagerSetupTokenClientResult(
+            response: null,
+            failureCode,
+            detail);
+    }
 }
 
 public sealed class ControlCloudAppActivationIssueClientResult

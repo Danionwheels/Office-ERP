@@ -35,6 +35,7 @@ public static class ClientPortalAuditEventTypes
     public const string OfflineRenewalFileGenerated = "OfflineRenewalFileGenerated";
     public const string AppActivationTokenIssued = "AppActivationTokenIssued";
     public const string AppActivationTokenRevoked = "AppActivationTokenRevoked";
+    public const string FirstManagerSetupTokenIssued = "FirstManagerSetupTokenIssued";
     public const string ProviderOperatorCreated = "ProviderOperatorCreated";
     public const string ProviderOperatorPasswordChanged = "ProviderOperatorPasswordChanged";
     public const string ProviderOperatorPasswordReset = "ProviderOperatorPasswordReset";

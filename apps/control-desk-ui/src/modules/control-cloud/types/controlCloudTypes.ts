@@ -97,6 +97,22 @@ export type CloudAppActivationRevocationFormInput = {
   reason: string;
 };
 
+export type CloudFirstManagerSetupTokenFormInput = {
+  pendingDeviceRequestId: string;
+  managerDisplayName: string;
+  managerEmail: string;
+  createdBy: string;
+  expiresInHours: string;
+};
+
+export type IssueCloudFirstManagerSetupTokenInput = {
+  pendingDeviceRequestId: string;
+  managerDisplayName: string;
+  managerEmail: string;
+  createdBy: string;
+  expiresInHours: number;
+};
+
 export type RevokeCloudAppActivationIssueInput = {
   revokedBy: string;
   reason: string;
@@ -325,6 +341,41 @@ export type LocalServerBootstrapPackageSignature = {
   keyId: string;
   payloadSha256: string;
   value: string;
+};
+
+export type LocalServerFirstManagerSetupTokenPayload = {
+  formatVersion: string;
+  tokenId: string;
+  clientId: string;
+  installationId: string;
+  pendingDeviceRequestId: string;
+  allowedActions: string[];
+  managerDisplayName: string;
+  managerEmail: string | null;
+  createdBy: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+};
+
+export type LocalServerSignedFirstManagerSetupToken = {
+  payloadJson: string;
+  payload: LocalServerFirstManagerSetupTokenPayload;
+  signature: LocalServerBootstrapPackageSignature;
+};
+
+export type IssuedLocalServerFirstManagerSetupToken = {
+  tokenId: string;
+  clientId: string;
+  installationId: string;
+  pendingDeviceRequestId: string;
+  managerDisplayName: string;
+  managerEmail: string | null;
+  createdBy: string;
+  signingKeyId: string;
+  payloadSha256: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+  signedToken: LocalServerSignedFirstManagerSetupToken;
 };
 
 export type LocalServerBootstrapPackagePayload = {

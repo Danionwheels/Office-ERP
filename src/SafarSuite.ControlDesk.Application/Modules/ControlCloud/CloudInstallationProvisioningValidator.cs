@@ -123,6 +123,9 @@ internal static class CloudInstallationProvisioningValidator
             "AppServerInstallationIdRequired" => ApplicationError.Validation("serverInstallationId", message),
             "AppFingerprintRequired" => ApplicationError.Validation("fingerprintHash", message),
             "AppServerPublicKeyRequired" => ApplicationError.Validation("serverPublicKey", message),
+            "PendingDeviceRequestIdRequired" => ApplicationError.Validation("pendingDeviceRequestId", message),
+            "ManagerDisplayNameRequired" => ApplicationError.Validation("managerDisplayName", message),
+            "FirstManagerSetupTokenInvalid" => ApplicationError.Validation("firstManagerSetupToken", message),
             "CloudBaseUrlInvalid" => ApplicationError.Validation("cloudBaseUrl", message),
             "InstallScriptUrlInvalid" => ApplicationError.Validation("installScriptUrl", message),
             _ => ApplicationError.Unexpected(message)

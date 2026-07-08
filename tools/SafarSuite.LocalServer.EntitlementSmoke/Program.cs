@@ -7,6 +7,7 @@ using SafarSuite.ControlCloud.Application.Common;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateInstallationSetupToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateLocalServerBootstrapPackage;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueLocalServerFirstManagerSetupToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Domain.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Domain.Modules.LocalServer;
@@ -265,13 +266,53 @@ var firstManagerDevice = new LocalServerDevicePairingRecord(
     clock.UtcNow.AddHours(24),
     clock.UtcNow);
 await pairingStore.SaveAsync(firstManagerDevice);
-var signedFirstManagerToken = CreateSignedFirstManagerSetupToken(
+var firstManagerCloudInstallations = new InMemoryClientInstallationRepository();
+await firstManagerCloudInstallations.AddAsync(ControlCloudClientInstallation.Register(
     clientId,
     installationId,
-    firstManagerPairingRequestId,
     clock.UtcNow,
-    "bootstrap-smoke",
-    "bootstrap-signing-secret-change-before-cloud");
+    ControlCloudInstallationDeploymentProfile.Create(
+        installationId,
+        ControlCloudBootstrapModes.OnlineBootstrap,
+        SafarSuiteClientDeploymentModes.CloudSyncMultiBranch,
+        "hq-main",
+        SafarSuiteDeploymentSiteRoles.Hq,
+        parentSiteId: null,
+        branchCode: "HQ",
+        syncTopologyId: "sync-main")));
+var cloudFirstManagerSetupTokenIssueRepository = new InMemoryFirstManagerSetupTokenIssueRepository();
+var cloudFirstManagerSetupTokenHandler = new IssueLocalServerFirstManagerSetupTokenHandler(
+    firstManagerCloudInstallations,
+    new HmacControlCloudFirstManagerSetupTokenSigner(
+        new ControlCloudEntitlementSigningOptions
+        {
+            ActiveKeyId = "bootstrap-smoke",
+            SigningKeys =
+            [
+                new ControlCloudEntitlementSigningKeyOptions
+                {
+                    KeyId = "bootstrap-smoke",
+                    Secret = "bootstrap-signing-secret-change-before-cloud"
+                }
+            ]
+        }),
+    cloudFirstManagerSetupTokenIssueRepository,
+    new InMemoryClientPortalAuditRecorder(),
+    new FixedControlCloudClock(clock.UtcNow));
+var cloudFirstManagerSetupTokenResult = await cloudFirstManagerSetupTokenHandler.HandleAsync(
+    new IssueLocalServerFirstManagerSetupTokenCommand(
+        clientId,
+        installationId,
+        firstManagerPairingRequestId,
+        "Owner",
+        "owner@safarsuite.local",
+        "Smoke",
+        ExpiresInHours: 24));
+
+Require(cloudFirstManagerSetupTokenResult.IsSuccess, "Control Cloud should issue a first-manager setup token for a registered installation.");
+var signedFirstManagerToken = cloudFirstManagerSetupTokenResult.Response!.SignedToken;
+var cloudFirstManagerIssue = await cloudFirstManagerSetupTokenIssueRepository.GetByTokenIdAsync(
+    signedFirstManagerToken.Payload.TokenId);
 var firstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify(
     signedFirstManagerToken,
     clock.UtcNow);
@@ -296,6 +337,8 @@ var missingFirstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify
     clock.UtcNow);
 
 Require(firstManagerTokenVerification.IsSuccess, "Signed first-manager setup token should verify with bootstrap trust.");
+Require(cloudFirstManagerIssue is not null, "Control Cloud should persist first-manager setup token issue metadata.");
+Require(cloudFirstManagerIssue?.PayloadSha256 == signedFirstManagerToken.Signature.PayloadSha256, "Persisted first-manager issue should retain the signed payload hash.");
 Require(firstManagerTokenVerification.Payload?.PendingDeviceRequestId == firstManagerPairingRequestId, "First-manager setup token should bind the pending device request id.");
 Require(badFirstManagerTokenVerification.FailureCode == "SignatureInvalid", "Bad first-manager setup token signature should be rejected.");
 Require(expiredFirstManagerTokenVerification.FailureCode == "FirstManagerSetupTokenExpired", "Expired first-manager setup token should be rejected.");
@@ -828,6 +871,8 @@ Console.WriteLine(JsonSerializer.Serialize(
         bootstrapDeploymentMode = bootstrapPackage.DeploymentProfile.ClientDeploymentMode,
         bootstrapSiteId = bootstrapPackage.DeploymentProfile.SiteId,
         bootstrapSiteRole = bootstrapPackage.DeploymentProfile.SiteRole,
+        cloudFirstManagerSetupTokenIssued = cloudFirstManagerSetupTokenResult.IsSuccess,
+        cloudFirstManagerSetupTokenIssuePersisted = cloudFirstManagerIssue is not null,
         firstManagerSetupTokenStatus = firstManagerTokenVerification.IsSuccess ? "Verified" : firstManagerTokenVerification.FailureCode,
         badFirstManagerSetupTokenRejected = badFirstManagerTokenVerification.FailureCode,
         expiredFirstManagerSetupTokenRejected = expiredFirstManagerTokenVerification.FailureCode,
@@ -1726,6 +1771,30 @@ internal sealed class InMemorySetupTokenRepository
         _setupTokensByHash[setupToken.TokenHash] = setupToken;
 
         return Task.CompletedTask;
+    }
+}
+
+internal sealed class InMemoryFirstManagerSetupTokenIssueRepository
+    : IControlCloudFirstManagerSetupTokenIssueRepository
+{
+    private readonly Dictionary<Guid, ControlCloudFirstManagerSetupTokenIssue> _issues = [];
+
+    public Task AddAsync(
+        ControlCloudFirstManagerSetupTokenIssue issue,
+        CancellationToken cancellationToken = default)
+    {
+        _issues[issue.TokenId] = issue;
+
+        return Task.CompletedTask;
+    }
+
+    public Task<ControlCloudFirstManagerSetupTokenIssue?> GetByTokenIdAsync(
+        Guid tokenId,
+        CancellationToken cancellationToken = default)
+    {
+        _issues.TryGetValue(tokenId, out var issue);
+
+        return Task.FromResult(issue);
     }
 }
 

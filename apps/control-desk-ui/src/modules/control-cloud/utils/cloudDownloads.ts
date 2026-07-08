@@ -1,5 +1,6 @@
 import type {
   IssuedSafarSuiteAppActivationToken,
+  IssuedLocalServerFirstManagerSetupToken,
   LocalServerBootstrapPackage,
   LocalServerBootstrapPackageArtifact,
   LocalServerDiagnosticReport
@@ -111,6 +112,16 @@ export function downloadAppActivationImport(
   downloadFile({
     content: JSON.stringify(issuedAppActivation.import, null, 2),
     fileName: `safarsuite-app-activation-${issuedAppActivation.installationId}-${issuedAppActivation.appServerInstallationId}.json`,
+    contentType: "application/json"
+  });
+}
+
+export function downloadFirstManagerSetupToken(
+  issuedToken: IssuedLocalServerFirstManagerSetupToken
+) {
+  downloadFile({
+    content: JSON.stringify(issuedToken.signedToken, null, 2),
+    fileName: `safarsuite-first-manager-${issuedToken.installationId}-${issuedToken.pendingDeviceRequestId}.json`,
     contentType: "application/json"
   });
 }

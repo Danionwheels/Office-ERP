@@ -6,12 +6,14 @@ import type {
 import type {
   CloudAppActivationRevocationFormInput,
   CloudAppActivationTokenFormInput,
+  CloudFirstManagerSetupTokenFormInput,
   CloudInstallationSupportCommandFormInput,
   CloudOutboxMessage,
   ControlCloudAuditEvent,
   ControlCloudConnectionState,
   ControlCloudInstallationStatus,
   IssuedSafarSuiteAppActivationToken,
+  IssuedLocalServerFirstManagerSetupToken,
   LocalServerBootstrapPackage,
   LocalServerBootstrapPackageSummary,
   LocalServerDiagnosticReport,
@@ -38,6 +40,8 @@ export type CloudInstallationStatusPanelProps = {
   queuedSupportCommand: QueuedCloudInstallationSupportCommand | null;
   appActivationValue: CloudAppActivationTokenFormInput;
   issuedAppActivation: IssuedSafarSuiteAppActivationToken | null;
+  firstManagerSetupTokenValue: CloudFirstManagerSetupTokenFormInput;
+  issuedFirstManagerSetupToken: IssuedLocalServerFirstManagerSetupToken | null;
   appActivationIssues: SafarSuiteAppActivationIssue[];
   appActivationIssueSearch: string;
   appActivationRevocationValue: CloudAppActivationRevocationFormInput;
@@ -58,6 +62,8 @@ export type CloudInstallationStatusPanelProps = {
   onQueueSupportCommand: () => Promise<void>;
   onAppActivationValueChange: (value: CloudAppActivationTokenFormInput) => void;
   onIssueAppActivationToken: () => Promise<void>;
+  onFirstManagerSetupTokenValueChange: (value: CloudFirstManagerSetupTokenFormInput) => void;
+  onIssueFirstManagerSetupToken: () => Promise<void>;
   onAppActivationIssueSearchChange: (value: string) => void;
   onRefreshAppActivationIssues: () => Promise<void>;
   onAppActivationRevocationValueChange: (value: CloudAppActivationRevocationFormInput) => void;

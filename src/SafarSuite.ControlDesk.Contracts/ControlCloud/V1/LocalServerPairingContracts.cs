@@ -178,10 +178,31 @@ public sealed record LocalServerFirstManagerSetupTokenPayloadResponse(
     DateTimeOffset IssuedAtUtc,
     DateTimeOffset ExpiresAtUtc);
 
+public sealed record IssueLocalServerFirstManagerSetupTokenRequest(
+    Guid PendingDeviceRequestId,
+    string ManagerDisplayName,
+    string? ManagerEmail = null,
+    string? CreatedBy = null,
+    int ExpiresInHours = 24);
+
 public sealed record LocalServerSignedFirstManagerSetupTokenResponse(
     string PayloadJson,
     LocalServerFirstManagerSetupTokenPayloadResponse Payload,
     LocalServerBootstrapPackageSignatureResponse Signature);
+
+public sealed record IssueLocalServerFirstManagerSetupTokenResponse(
+    Guid TokenId,
+    Guid ClientId,
+    string InstallationId,
+    Guid PendingDeviceRequestId,
+    string ManagerDisplayName,
+    string? ManagerEmail,
+    string CreatedBy,
+    string SigningKeyId,
+    string PayloadSha256,
+    DateTimeOffset IssuedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    LocalServerSignedFirstManagerSetupTokenResponse SignedToken);
 
 public sealed record ImportLocalServerFirstManagerSetupTokenResponse(
     Guid TokenId,

@@ -10,6 +10,7 @@ using SafarSuite.ControlCloud.Application.Modules.LocalServer.ExportOfflineRenew
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationStatus;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetLatestInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetPendingInstallationCommands;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueLocalServerFirstManagerSetupToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueSafarSuiteAppActivationToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListLocalServerBootstrapPackages;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListSafarSuiteAppActivationIssues;
@@ -93,6 +94,11 @@ public static class LocalServerCommandEndpoints
                 "/clients/{clientId:guid}/installations/{installationId}/app-activation-token",
                 IssueAppActivationTokenAsync)
             .WithName("IssueSafarSuiteAppActivationToken");
+
+        controlCloudGroup.MapPost(
+                "/clients/{clientId:guid}/installations/{installationId}/first-manager-setup-token",
+                IssueFirstManagerSetupTokenAsync)
+            .WithName("IssueLocalServerFirstManagerSetupToken");
 
         controlCloudGroup.MapGet(
                 "/clients/{clientId:guid}/installations/{installationId}/offline-renewal-file",
@@ -410,6 +416,41 @@ public static class LocalServerCommandEndpoints
 
         return result.IsSuccess
             ? Results.Ok(result.Issue!)
+            : ToFailureResult(result.FailureCode, result.Detail);
+    }
+
+    private static async Task<IResult> IssueFirstManagerSetupTokenAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerFirstManagerSetupTokenRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
+        IssueLocalServerFirstManagerSetupTokenHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.DeploymentPackagesWrite);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var result = await handler.HandleAsync(
+            new IssueLocalServerFirstManagerSetupTokenCommand(
+                clientId,
+                installationId,
+                request.PendingDeviceRequestId,
+                request.ManagerDisplayName,
+                request.ManagerEmail,
+                request.CreatedBy,
+                request.ExpiresInHours),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Results.Ok(result.Response!)
             : ToFailureResult(result.FailureCode, result.Detail);
     }
 
@@ -740,6 +781,9 @@ public static class LocalServerCommandEndpoints
             "ActivationIssueRevokedByRequired" => Results.BadRequest(response),
             "ActivationIssueRevocationReasonRequired" => Results.BadRequest(response),
             "ActivationIssueReplacementIdInvalid" => Results.BadRequest(response),
+            "PendingDeviceRequestIdRequired" => Results.BadRequest(response),
+            "ManagerDisplayNameRequired" => Results.BadRequest(response),
+            "FirstManagerSetupTokenInvalid" => Results.BadRequest(response),
             "CloudBaseUrlInvalid" => Results.BadRequest(response),
             "InstallScriptUrlInvalid" => Results.BadRequest(response),
             "BootstrapModeUnsupported" => Results.BadRequest(response),

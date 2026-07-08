@@ -5,7 +5,9 @@ import type {
   CloudOutboxMessage,
   CreateCloudInstallationProvisioningInput,
   RevokeCloudAppActivationIssueInput,
+  IssueCloudFirstManagerSetupTokenInput,
   IssueCloudAppActivationTokenInput,
+  IssuedLocalServerFirstManagerSetupToken,
   IssuedSafarSuiteAppActivationToken,
   LocalServerBootstrapPackage,
   LocalServerBootstrapPackageRegister,
@@ -210,6 +212,28 @@ export async function issueCloudAppActivationToken(
         fingerprintHash: input.fingerprintHash.trim(),
         serverPublicKey: input.serverPublicKey.trim(),
         requestedBy: input.requestedBy.trim()
+      })
+    }
+  );
+}
+
+export async function issueCloudFirstManagerSetupToken(
+  clientId: string,
+  installationId: string,
+  input: IssueCloudFirstManagerSetupTokenInput
+): Promise<IssuedLocalServerFirstManagerSetupToken> {
+  return apiRequest<IssuedLocalServerFirstManagerSetupToken>(
+    `/api/v1/control-cloud/clients/${clientId}/installations/${encodeURIComponent(
+      installationId
+    )}/first-manager-setup-token`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        pendingDeviceRequestId: input.pendingDeviceRequestId.trim(),
+        managerDisplayName: input.managerDisplayName.trim(),
+        managerEmail: optionalText(input.managerEmail),
+        createdBy: input.createdBy.trim(),
+        expiresInHours: input.expiresInHours
       })
     }
   );

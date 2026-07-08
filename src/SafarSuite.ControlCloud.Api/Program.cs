@@ -17,6 +17,7 @@ using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateLocalServerB
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationStatus;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetLatestInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetPendingInstallationCommands;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueLocalServerFirstManagerSetupToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueSafarSuiteAppActivationToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListLocalServerBootstrapPackages;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListSafarSuiteAppActivationIssues;
@@ -51,6 +52,9 @@ var setupTokenOptions =
 var bootstrapPackageOptions =
     builder.Configuration.GetSection(ControlCloudBootstrapPackageOptions.SectionName).Get<ControlCloudBootstrapPackageOptions>()
     ?? new ControlCloudBootstrapPackageOptions();
+var firstManagerSetupTokenOptions =
+    builder.Configuration.GetSection(ControlCloudFirstManagerSetupTokenOptions.SectionName).Get<ControlCloudFirstManagerSetupTokenOptions>()
+    ?? new ControlCloudFirstManagerSetupTokenOptions();
 var diagnosticsOptions =
     builder.Configuration.GetSection(ControlCloudDiagnosticsOptions.SectionName).Get<ControlCloudDiagnosticsOptions>()
     ?? new ControlCloudDiagnosticsOptions();
@@ -76,6 +80,7 @@ builder.Services.AddSingleton(entitlementSigningOptions);
 builder.Services.AddSingleton(commandQueueOptions);
 builder.Services.AddSingleton(setupTokenOptions);
 builder.Services.AddSingleton(bootstrapPackageOptions);
+builder.Services.AddSingleton(firstManagerSetupTokenOptions);
 builder.Services.AddSingleton(diagnosticsOptions);
 builder.Services.AddSingleton(appActivationSigningOptions);
 builder.Services.AddSingleton(clientPortalAccessOptions);
@@ -89,9 +94,11 @@ builder.Services.AddSingleton<IControlCloudClock, SystemControlCloudClock>();
 builder.Services.AddSingleton<IControlCloudSigningKeyStore, ConfiguredControlCloudSigningKeyStore>();
 builder.Services.AddSingleton<IControlCloudEntitlementBundleSigner, HmacControlCloudEntitlementBundleSigner>();
 builder.Services.AddSingleton<IControlCloudBootstrapPackageSigner, HmacControlCloudBootstrapPackageSigner>();
+builder.Services.AddSingleton<IControlCloudFirstManagerSetupTokenSigner, HmacControlCloudFirstManagerSetupTokenSigner>();
 builder.Services.AddSingleton<IControlCloudInstallationCommandSigner, HmacControlCloudInstallationCommandSigner>();
 builder.Services.AddSingleton<IControlCloudAppActivationTokenSigner, EcdsaControlCloudAppActivationTokenSigner>();
 builder.Services.AddSingleton<IControlCloudAppActivationIssueRepository, FileControlCloudAppActivationIssueRepository>();
+builder.Services.AddSingleton<IControlCloudFirstManagerSetupTokenIssueRepository, FileControlCloudFirstManagerSetupTokenIssueRepository>();
 builder.Services.AddSingleton<IControlCloudInstallationSetupTokenService, RandomControlCloudInstallationSetupTokenService>();
 builder.Services.AddSingleton<IClientPortalCredentialService, HmacClientPortalCredentialService>();
 builder.Services.AddSingleton<IProviderAccessTotpSecretProtector, ProviderAccessTotpSecretProtector>();
@@ -124,6 +131,7 @@ builder.Services.AddScoped<GetLatestInstallationDiagnosticsHandler>();
 builder.Services.AddScoped<GetClientPortalCommercialSummaryHandler>();
 builder.Services.AddScoped<GetClientPortalSignedEntitlementBundleHandler>();
 builder.Services.AddScoped<GetPendingInstallationCommandsHandler>();
+builder.Services.AddScoped<IssueLocalServerFirstManagerSetupTokenHandler>();
 builder.Services.AddScoped<IssueSafarSuiteAppActivationTokenHandler>();
 builder.Services.AddScoped<QueueInstallationCommandHandler>();
 builder.Services.AddScoped<ReceiveInstallationDiagnosticsHandler>();

@@ -91,6 +91,7 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAcce
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationDiagnostics;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudFirstManagerSetupToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudAppActivationIssues;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationBootstrapPackages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationAuditEvents;
@@ -269,6 +270,7 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<CreateCloudInstallationSetupTokenHandler>();
         services.AddScoped<CreateCloudInstallationBootstrapPackageHandler>();
         services.AddScoped<IssueCloudAppActivationTokenHandler>();
+        services.AddScoped<IssueCloudFirstManagerSetupTokenHandler>();
         services.AddScoped<RevokeCloudAppActivationIssueHandler>();
         services.AddScoped<QueueCloudInstallationSupportCommandHandler>();
         services.AddScoped<PublishPendingCloudOutboxMessagesHandler>();

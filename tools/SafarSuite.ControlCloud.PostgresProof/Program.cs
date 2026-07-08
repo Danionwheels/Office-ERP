@@ -186,6 +186,26 @@ try
     Require(registration.InstallationStatus.Equals("Active", StringComparison.OrdinalIgnoreCase), "registration should activate installation.");
     checks.Add("registered local-server installation");
 
+    var firstManagerPendingDeviceRequestId = Guid.NewGuid();
+    var firstManagerSetupToken = await SendJsonAsync<IssueLocalServerFirstManagerSetupTokenResponse>(
+        http,
+        HttpMethod.Post,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/first-manager-setup-token",
+        new IssueLocalServerFirstManagerSetupTokenRequest(
+            firstManagerPendingDeviceRequestId,
+            "Postgres Proof Manager",
+            "postgres.proof.manager@safarsuite.local",
+            "postgres-proof",
+            ExpiresInHours: 24),
+        adminSession.AccessToken);
+
+    Require(firstManagerSetupToken.ClientId == clientId, "first-manager setup token should target proof client.");
+    Require(firstManagerSetupToken.InstallationId == installationId, "first-manager setup token should target proof installation.");
+    Require(firstManagerSetupToken.PendingDeviceRequestId == firstManagerPendingDeviceRequestId, "first-manager setup token should bind the pending device request.");
+    Require(firstManagerSetupToken.SignedToken.Signature.Algorithm == "HMAC-SHA256", "first-manager setup token should use HMAC signature.");
+    Require(firstManagerSetupToken.SignedToken.Signature.PayloadSha256 == firstManagerSetupToken.PayloadSha256, "first-manager setup token response should expose the signed payload hash.");
+    checks.Add("issued provider-gated first-manager setup token");
+
     var signedBundle = await SendJsonAsync<ClientPortalSignedEntitlementBundleResponse>(
         http,
         HttpMethod.Get,

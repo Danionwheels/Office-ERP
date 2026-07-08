@@ -2,7 +2,7 @@
 
 Date added: 2026-07-09
 
-Status: First-manager LocalServer import wired
+Status: First-manager issue/import wired
 
 Purpose: define how a SafarSuite Windows app finds, trusts, activates against, and keeps using the client-site LocalServer without repeated client-side setup.
 
@@ -15,7 +15,7 @@ Purpose: define how a SafarSuite Windows app finds, trusts, activates against, a
 - [x] Extend the Compose bootstrap proof runner so the runtime proof validates pairing discovery and hello identity after bootstrap import.
 - [x] Add pending device request storage, pending-device listing, approval, suspension, revocation, and one-time proof credential issue on approval.
 - [x] Add first-manager setup-token import/consume on LocalServer with one-time replay protection and first-device approval.
-- [ ] Add Control Cloud/Control Desk first-manager setup-token issue/download flow.
+- [x] Add Control Cloud/Control Desk first-manager setup-token issue/download flow.
 - [ ] Add Windows app LAN/manual discovery and protected pairing profile storage in the SafarSuite app workspace.
 - [ ] Add Control Desk/Client Portal visibility for first device approved and pairing-mode status.
 
@@ -498,10 +498,12 @@ The same LocalServer pairing request, token import, manager approval, device cre
 3. Add pending pairing request storage, manager approval commands, device credential issue/revoke, and device audit.
 4. Add first-manager setup-token import/consume on LocalServer with token replay protection and first-device approval.
 5. Add Control Cloud/Control Desk first-manager setup-token issue/download flow.
-6. Add Windows app LAN discovery, manual URL, descriptor import, and fingerprint confirmation UI in the SafarSuite app workspace.
-7. Add protected client storage for pairing profiles and silent reconnect across IP changes.
-8. Add Control Desk/Client Portal visibility for first device approved and pairing-mode status.
-9. Add smoke proofs for online pairing, offline-assisted first manager, revoked device, changed IP same trust, changed certificate manager refresh, and server replacement block.
+6. Add real manager-session protection for local manager approval endpoints.
+7. Add final signed device credential verification on app-to-LocalServer calls.
+8. Add Windows app LAN discovery, manual URL, descriptor import, and fingerprint confirmation UI in the SafarSuite app workspace.
+9. Add protected client storage for pairing profiles and silent reconnect across IP changes.
+10. Add Control Desk/Client Portal visibility for first device approved and pairing-mode status.
+11. Add smoke proofs for online pairing, offline-assisted first manager, revoked device, changed IP same trust, changed certificate manager refresh, and server replacement block.
 
 ## Open Decisions
 

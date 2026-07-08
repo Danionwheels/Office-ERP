@@ -7,6 +7,7 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAcce
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationDiagnostics;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudFirstManagerSetupToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudAppActivationIssues;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationBootstrapPackages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationAuditEvents;
@@ -91,6 +92,9 @@ public static class ControlCloudEndpoints
         group.MapPost(
             "/clients/{clientId:guid}/installations/{installationId}/app-activation-token",
             IssueAppActivationTokenAsync);
+        group.MapPost(
+            "/clients/{clientId:guid}/installations/{installationId}/first-manager-setup-token",
+            IssueFirstManagerSetupTokenAsync);
         group.MapPost("/outbox-messages/publish", PublishOutboxMessagesAsync);
         group.MapPost("/outbox-messages/publish-local", PublishOutboxMessagesAsync);
 
@@ -417,6 +421,29 @@ public static class ControlCloudEndpoints
                 activationIssueId,
                 request.RevokedBy,
                 request.Reason),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
+    private static async Task<IResult> IssueFirstManagerSetupTokenAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerFirstManagerSetupTokenRequest request,
+        IssueCloudFirstManagerSetupTokenHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new IssueCloudFirstManagerSetupTokenCommand(
+                clientId,
+                installationId,
+                request.PendingDeviceRequestId,
+                request.ManagerDisplayName,
+                request.ManagerEmail,
+                request.CreatedBy,
+                request.ExpiresInHours),
             cancellationToken);
 
         return result.IsFailure

@@ -24,7 +24,8 @@ import {
   downloadAppActivationImport,
   downloadBootstrapBundle,
   downloadCustomerSetupGuide,
-  downloadDiagnosticsReport
+  downloadDiagnosticsReport,
+  downloadFirstManagerSetupToken
 } from "../utils/cloudDownloads";
 import {
   cloudConnectionStatusClass,
@@ -73,6 +74,8 @@ export function CloudInstallationStatusPanel({
   queuedSupportCommand,
   appActivationValue,
   issuedAppActivation,
+  firstManagerSetupTokenValue,
+  issuedFirstManagerSetupToken,
   appActivationIssues,
   appActivationIssueSearch,
   appActivationRevocationValue,
@@ -93,6 +96,8 @@ export function CloudInstallationStatusPanel({
   onQueueSupportCommand,
   onAppActivationValueChange,
   onIssueAppActivationToken,
+  onFirstManagerSetupTokenValueChange,
+  onIssueFirstManagerSetupToken,
   onAppActivationIssueSearchChange,
   onRefreshAppActivationIssues,
   onAppActivationRevocationValueChange,
@@ -160,6 +165,13 @@ export function CloudInstallationStatusPanel({
     && appActivationValue.serverInstallationId.trim() !== ""
     && appActivationValue.fingerprintHash.trim() !== ""
     && appActivationValue.serverPublicKey.trim() !== "";
+  const canIssueFirstManagerSetupToken =
+    !isBusy
+    && !cloudWritesBlocked
+    && client !== null
+    && deploymentValue.installationId.trim() !== ""
+    && firstManagerSetupTokenValue.pendingDeviceRequestId.trim() !== ""
+    && firstManagerSetupTokenValue.managerDisplayName.trim() !== "";
   const canRevokeAppActivationIssue =
     !isBusy
     && !cloudWritesBlocked
@@ -777,6 +789,135 @@ export function CloudInstallationStatusPanel({
                   </dl>
                 </article>
               ))}
+            </div>
+          )}
+        </div>
+
+        <div className="cloud-command-panel">
+          <div className="cloud-audit-heading">
+            <div>
+              <span>First manager</span>
+              <strong>{issuedFirstManagerSetupToken === null ? "Ready" : "Issued"}</strong>
+            </div>
+            <div className="cloud-diagnostics-actions">
+              <button
+                className="icon-button primary"
+                type="button"
+                disabled={!canIssueFirstManagerSetupToken}
+                onClick={onIssueFirstManagerSetupToken}
+                title="Issue first-manager setup token"
+              >
+                <KeyRound size={16} />
+                Issue
+              </button>
+            </div>
+          </div>
+
+          <div className="cloud-app-activation-grid">
+            <label>
+              <span>Pending request</span>
+              <input
+                type="text"
+                value={firstManagerSetupTokenValue.pendingDeviceRequestId}
+                maxLength={36}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  pendingDeviceRequestId: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Manager name</span>
+              <input
+                type="text"
+                value={firstManagerSetupTokenValue.managerDisplayName}
+                maxLength={160}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  managerDisplayName: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Manager email</span>
+              <input
+                type="email"
+                value={firstManagerSetupTokenValue.managerEmail}
+                maxLength={160}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  managerEmail: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Created by</span>
+              <input
+                type="text"
+                value={firstManagerSetupTokenValue.createdBy}
+                maxLength={160}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  createdBy: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Expires in hours</span>
+              <input
+                type="number"
+                min={1}
+                max={168}
+                value={firstManagerSetupTokenValue.expiresInHours}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  expiresInHours: event.target.value
+                })}
+              />
+            </label>
+          </div>
+
+          {issuedFirstManagerSetupToken !== null && (
+            <div className="cloud-provisioning-result">
+              <div className="cloud-provisioning-result-heading">
+                <div>
+                  <span>Setup token</span>
+                  <strong>{shortIdentifier(issuedFirstManagerSetupToken.tokenId)}</strong>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => downloadFirstManagerSetupToken(issuedFirstManagerSetupToken)}
+                  title="Download signed first-manager setup token"
+                >
+                  <Download size={16} />
+                  Download
+                </button>
+              </div>
+              <input readOnly value={issuedFirstManagerSetupToken.signedToken.signature.payloadSha256} />
+              <dl className="cloud-provisioning-facts">
+                <div>
+                  <dt>Pending request</dt>
+                  <dd>{issuedFirstManagerSetupToken.pendingDeviceRequestId}</dd>
+                </div>
+                <div>
+                  <dt>Manager</dt>
+                  <dd>{issuedFirstManagerSetupToken.managerDisplayName}</dd>
+                </div>
+                <div>
+                  <dt>Expires</dt>
+                  <dd>{formatNullableDateTime(issuedFirstManagerSetupToken.expiresAtUtc)}</dd>
+                </div>
+                <div>
+                  <dt>Signature</dt>
+                  <dd>{issuedFirstManagerSetupToken.signingKeyId}</dd>
+                </div>
+              </dl>
             </div>
           )}
         </div>

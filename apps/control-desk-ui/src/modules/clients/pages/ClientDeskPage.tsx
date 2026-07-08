@@ -80,6 +80,7 @@ import {
   getLatestCloudInstallationDiagnostics,
   getCloudInstallationStatus,
   issueCloudAppActivationToken,
+  issueCloudFirstManagerSetupToken,
   listCloudAppActivationIssues,
   listCloudInstallationBootstrapPackages,
   listCloudInstallationAuditEvents,
@@ -93,6 +94,7 @@ import { ProviderAccessPanel } from "../../control-cloud/components/ProviderAcce
 import type {
   CloudAppActivationTokenFormInput,
   CloudAppActivationRevocationFormInput,
+  CloudFirstManagerSetupTokenFormInput,
   CloudOutboxMessage,
   ControlCloudAuditEvent,
   ControlCloudConnectionState,
@@ -100,6 +102,7 @@ import type {
   CloudInstallationSupportCommandFormInput,
   ControlCloudInstallationStatus,
   IssuedSafarSuiteAppActivationToken,
+  IssuedLocalServerFirstManagerSetupToken,
   LocalServerBootstrapPackage,
   LocalServerBootstrapPackageSummary,
   LocalServerDiagnosticReport,
@@ -326,6 +329,10 @@ export function ClientDeskPage() {
     useState<CloudAppActivationTokenFormInput>(createDefaultAppActivationForm());
   const [issuedAppActivation, setIssuedAppActivation] =
     useState<IssuedSafarSuiteAppActivationToken | null>(null);
+  const [firstManagerSetupTokenForm, setFirstManagerSetupTokenForm] =
+    useState<CloudFirstManagerSetupTokenFormInput>(createDefaultFirstManagerSetupTokenForm());
+  const [issuedFirstManagerSetupToken, setIssuedFirstManagerSetupToken] =
+    useState<IssuedLocalServerFirstManagerSetupToken | null>(null);
   const [appActivationIssues, setAppActivationIssues] =
     useState<SafarSuiteAppActivationIssue[]>([]);
   const [appActivationIssueSearch, setAppActivationIssueSearch] = useState("");
@@ -2261,6 +2268,27 @@ export function ClientDeskPage() {
     });
   }
 
+  async function handleIssueCloudFirstManagerSetupToken() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
+      const issuedToken = await issueCloudFirstManagerSetupToken(
+        selectedClient.clientId,
+        savedDeployment.installationId,
+        toCloudFirstManagerSetupTokenInput(firstManagerSetupTokenForm));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; first-manager setup token was issued."
+      ));
+      setIssuedFirstManagerSetupToken(issuedToken);
+      await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
+      setMessage("First-manager setup token issued.");
+    });
+  }
+
   async function handleRevokeCloudAppActivationIssue(activationIssueId: string) {
     if (selectedClient === null) {
       return;
@@ -2499,8 +2527,10 @@ export function ClientDeskPage() {
     setClientDeployments([]);
     setDeploymentForm(createDefaultDeploymentForm(client));
     setAppActivationForm(createDefaultAppActivationForm());
+    setFirstManagerSetupTokenForm(createDefaultFirstManagerSetupTokenForm());
     setAppActivationRevocationForm(createDefaultAppActivationRevocationForm());
     setIssuedAppActivation(null);
+    setIssuedFirstManagerSetupToken(null);
     clearCloudProvisioningArtifacts();
     setClientStatement(null);
   }
@@ -2511,6 +2541,7 @@ export function ClientDeskPage() {
     setCloudBootstrapPackages([]);
     setQueuedSupportCommand(null);
     setIssuedAppActivation(null);
+    setIssuedFirstManagerSetupToken(null);
     setAppActivationIssues([]);
     setCloudAuditEvents([]);
     setCloudDiagnosticsReport(null);
@@ -3191,6 +3222,8 @@ export function ClientDeskPage() {
                   queuedSupportCommand={queuedSupportCommand}
                   appActivationValue={appActivationForm}
                   issuedAppActivation={issuedAppActivation}
+                  firstManagerSetupTokenValue={firstManagerSetupTokenForm}
+                  issuedFirstManagerSetupToken={issuedFirstManagerSetupToken}
                   appActivationIssues={appActivationIssues}
                   appActivationIssueSearch={appActivationIssueSearch}
                   appActivationRevocationValue={appActivationRevocationForm}
@@ -3211,6 +3244,8 @@ export function ClientDeskPage() {
                   onQueueSupportCommand={handleQueueCloudSupportCommand}
                   onAppActivationValueChange={handleAppActivationValueChange}
                   onIssueAppActivationToken={handleIssueCloudAppActivationToken}
+                  onFirstManagerSetupTokenValueChange={setFirstManagerSetupTokenForm}
+                  onIssueFirstManagerSetupToken={handleIssueCloudFirstManagerSetupToken}
                   onAppActivationIssueSearchChange={setAppActivationIssueSearch}
                   onRefreshAppActivationIssues={handleRefreshCloudAppActivationIssues}
                   onAppActivationRevocationValueChange={setAppActivationRevocationForm}
@@ -3322,6 +3357,16 @@ function createDefaultAppActivationForm(): CloudAppActivationTokenFormInput {
     fingerprintHash: "",
     serverPublicKey: "",
     requestedBy: "SafarSuite Control Desk"
+  };
+}
+
+function createDefaultFirstManagerSetupTokenForm(): CloudFirstManagerSetupTokenFormInput {
+  return {
+    pendingDeviceRequestId: "",
+    managerDisplayName: "First Manager",
+    managerEmail: "",
+    createdBy: "SafarSuite Control Desk",
+    expiresInHours: "24"
   };
 }
 
@@ -3606,6 +3651,18 @@ function toCloudAppActivationTokenInput(
     fingerprintHash: value.fingerprintHash.trim(),
     serverPublicKey: value.serverPublicKey.trim(),
     requestedBy: value.requestedBy.trim()
+  };
+}
+
+function toCloudFirstManagerSetupTokenInput(
+  value: CloudFirstManagerSetupTokenFormInput
+) {
+  return {
+    pendingDeviceRequestId: value.pendingDeviceRequestId.trim(),
+    managerDisplayName: value.managerDisplayName.trim(),
+    managerEmail: value.managerEmail.trim(),
+    createdBy: value.createdBy.trim(),
+    expiresInHours: parseSetupTokenHours(value.expiresInHours)
   };
 }
 

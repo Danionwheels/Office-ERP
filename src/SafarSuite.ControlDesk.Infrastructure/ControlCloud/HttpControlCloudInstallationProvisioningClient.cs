@@ -59,6 +59,15 @@ public sealed class HttpControlCloudInstallationProvisioningClient
         return IssueAppActivationTokenCoreAsync(clientId, installationId, request, cancellationToken);
     }
 
+    public Task<ControlCloudFirstManagerSetupTokenClientResult> IssueFirstManagerSetupTokenAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerFirstManagerSetupTokenRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return IssueFirstManagerSetupTokenCoreAsync(clientId, installationId, request, cancellationToken);
+    }
+
     public Task<ControlCloudAppActivationIssuesClientResult> ListAppActivationIssuesAsync(
         Guid clientId,
         string? installationId,
@@ -180,6 +189,32 @@ public sealed class HttpControlCloudInstallationProvisioningClient
         return result.IsSuccess
             ? ControlCloudAppActivationTokenClientResult.Success(result.Response!)
             : ControlCloudAppActivationTokenClientResult.Failure(result.FailureCode!, result.Detail!);
+    }
+
+    private async Task<ControlCloudFirstManagerSetupTokenClientResult> IssueFirstManagerSetupTokenCoreAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerFirstManagerSetupTokenRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!HasProviderAccess())
+        {
+            return ControlCloudFirstManagerSetupTokenClientResult.Failure(
+                "ControlCloudProviderAccessNotConfigured",
+                "Control Cloud provider access key is not configured.");
+        }
+
+        var result = await SendAsync<IssueLocalServerFirstManagerSetupTokenRequest, IssueLocalServerFirstManagerSetupTokenResponse>(
+            clientId,
+            installationId,
+            "first-manager-setup-token",
+            request,
+            "first-manager setup token",
+            cancellationToken);
+
+        return result.IsSuccess
+            ? ControlCloudFirstManagerSetupTokenClientResult.Success(result.Response!)
+            : ControlCloudFirstManagerSetupTokenClientResult.Failure(result.FailureCode!, result.Detail!);
     }
 
     private async Task<ControlCloudAppActivationIssuesClientResult> ListAppActivationIssuesCoreAsync(
