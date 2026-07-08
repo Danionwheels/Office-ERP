@@ -152,6 +152,26 @@ dotnet run --project tools/SafarSuite.LocalServer.ComposeBootstrapProof/SafarSui
   --provider-access-secret-file "$secretRoot/provider-access-shared-secret"
 ```
 
+`generate-real-cloud` now writes these clean-target helpers beside the package artifacts:
+
+```text
+clean-machine-install.sh
+clean-machine-verify.sh
+clean-machine-rerun-secret-proof.sh
+```
+
+Preferred clean-target path:
+
+```bash
+proof_root="$PWD/artifacts/codex/clean-machine-deployment-proof"
+package_dir="$proof_root/package"
+target_root="$proof_root/target"
+
+chmod +x "$package_dir"/clean-machine-*.sh
+SAFARSUITE_CLEAN_TARGET_ROOT="$target_root" "$package_dir/clean-machine-install.sh"
+SAFARSUITE_CLEAN_TARGET_ROOT="$target_root" "$package_dir/clean-machine-verify.sh"
+```
+
 Run the generated installer on the clean target from Git Bash, WSL, or the Linux VM:
 
 ```bash
@@ -246,6 +266,12 @@ dotnet run --project tools/SafarSuite.LocalServer.ComposeBootstrapProof/SafarSui
 ```
 
 Capture rerun-stability evidence on the clean target:
+
+```bash
+SAFARSUITE_CLEAN_TARGET_ROOT="$target_root" "$package_dir/clean-machine-rerun-secret-proof.sh"
+```
+
+Expanded manual equivalent:
 
 ```bash
 find "$target_root/var/secrets" "$target_root/var/certs-private/local-api" -type f -print0 |

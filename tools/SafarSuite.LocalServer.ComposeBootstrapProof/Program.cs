@@ -830,6 +830,9 @@ void WriteRealCloudProofFiles(
     ControlCloudReceiveEnvelopeResponse seed,
     LocalServerBootstrapPackageResponse package)
 {
+    var bootstrapBundleJson = JsonSerializer.Serialize(package.SignedBundle, bundleJsonOptions);
+    var bootstrapBundleSha256 = ComputeSha256(bootstrapBundleJson);
+
     Directory.CreateDirectory(Path.Combine(options.OutputDirectory, "certs", "local-api"));
     Directory.CreateDirectory(Path.Combine(options.OutputDirectory, "certs", "trust"));
     PrepareLocalApiCertificateArtifacts(options);
@@ -845,7 +848,7 @@ void WriteRealCloudProofFiles(
         GetArtifactContent(package, "runtime-services.manifest.json"));
     File.WriteAllText(
         Path.Combine(options.OutputDirectory, "bootstrap-bundle.json"),
-        JsonSerializer.Serialize(package.SignedBundle, jsonOptions));
+        bootstrapBundleJson);
     File.WriteAllText(
         Path.Combine(options.OutputDirectory, "control-cloud-bootstrap-package.json"),
         JsonSerializer.Serialize(package, jsonOptions));
@@ -858,6 +861,177 @@ void WriteRealCloudProofFiles(
     File.WriteAllText(
         Path.Combine(options.OutputDirectory, "proof-notes.txt"),
         BuildRealCloudProofNotes(options, package, seed));
+    File.WriteAllText(
+        Path.Combine(options.OutputDirectory, "clean-machine-install.sh"),
+        BuildCleanMachineInstallScript(options, package, bootstrapBundleSha256));
+    File.WriteAllText(
+        Path.Combine(options.OutputDirectory, "clean-machine-verify.sh"),
+        BuildCleanMachineVerifyScript(options));
+    File.WriteAllText(
+        Path.Combine(options.OutputDirectory, "clean-machine-rerun-secret-proof.sh"),
+        BuildCleanMachineRerunSecretProofScript());
+}
+
+string BuildCleanMachineInstallScript(
+    ProofOptions options,
+    LocalServerBootstrapPackageResponse package,
+    string bootstrapBundleSha256)
+{
+    var profile = package.DeploymentProfile;
+    var installScriptUrl = $"{options.ControlCloudApiBaseUrl.TrimEnd('/')}/install/safarsuite-local-server/install.sh";
+    var appActivationSigningKey = ReadAppActivationSigningKey(package);
+    var lines = new List<string>
+    {
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        "package_dir=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"",
+        "target_root=\"${SAFARSUITE_CLEAN_TARGET_ROOT:-$package_dir/../target}\"",
+        "",
+        "set_default() {",
+        "  name=\"$1\"",
+        "  value=\"$2\"",
+        "  if [ -z \"${!name:-}\" ]; then",
+        "    printf -v \"$name\" '%s' \"$value\"",
+        "    export \"$name\"",
+        "  fi",
+        "}",
+        ""
+    };
+
+    AddSetDefaultLines(
+        lines,
+        [
+            ("COMPOSE_PROFILES", "app-runtime"),
+            ("SAFARSUITE_INSTALL_SCRIPT_URL", installScriptUrl),
+            ("SAFARSUITE_CONTROL_CLOUD_URL", package.CloudBaseUrl.TrimEnd('/')),
+            ("SAFARSUITE_CLIENT_ID", package.ClientId.ToString("D")),
+            ("SAFARSUITE_INSTALLATION_ID", package.InstallationId),
+            ("SAFARSUITE_SETUP_TOKEN", package.SetupToken),
+            ("SAFARSUITE_BOOTSTRAP_MODE", profile.BootstrapMode),
+            ("SAFARSUITE_CLIENT_DEPLOYMENT_MODE", profile.ClientDeploymentMode),
+            ("SAFARSUITE_SITE_ID", profile.SiteId),
+            ("SAFARSUITE_SITE_ROLE", profile.SiteRole),
+            ("SAFARSUITE_PARENT_SITE_ID", profile.ParentSiteId ?? ""),
+            ("SAFARSUITE_BRANCH_CODE", profile.BranchCode ?? ""),
+            ("SAFARSUITE_SYNC_TOPOLOGY_ID", profile.SyncTopologyId ?? ""),
+            ("SAFARSUITE_LOCAL_SERVER_VERSION", package.LocalServerVersion),
+            ("SAFARSUITE_APP_VERSION", package.RuntimePlan?.SafarSuiteAppVersion ?? options.AppVersion),
+            ("SAFARSUITE_LOCAL_SERVER_IMAGE", options.LocalServerImage),
+            ("SAFARSUITE_APP_IMAGE", options.AppImage),
+            ("SAFARSUITE_LOCAL_SERVER_HTTP_PORT", options.LocalServerHttpPort.ToString()),
+            ("SAFARSUITE_APP_HTTP_PORT", options.AppHttpPort.ToString()),
+            ("SAFARSUITE_LOCAL_API_PUBLIC_URL", GetLocalApiHostBaseUrl(options)),
+            ("SAFARSUITE_LOCAL_API_TLS_MODE", options.LocalApiTlsMode),
+            ("SAFARSUITE_LOCAL_API_ASPNETCORE_URLS", GetLocalApiAspNetCoreUrls(options)),
+            ("SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES", "local-api,localhost"),
+            ("SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES", "127.0.0.1"),
+            ("SAFARSUITE_LOCAL_API_CERTIFICATE_DAYS", options.LocalApiCertificateDays.ToString()),
+            ("SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID", appActivationSigningKey.SigningKeyId),
+            ("SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM", EscapeDockerEnvValue(appActivationSigningKey.PublicKeyPem)),
+            ("SAFARSUITE_BOOTSTRAP_BUNDLE_SHA256", bootstrapBundleSha256),
+            ("SAFARSUITE_START_COMPOSE", "true"),
+            ("SAFARSUITE_IMPORT_BOOTSTRAP_BUNDLE_AFTER_START", "true")
+        ]);
+
+    lines.AddRange(
+    [
+        "set_default SAFARSUITE_LOCAL_SERVER_CONFIG_DIR \"$target_root/etc\"",
+        "set_default SAFARSUITE_LOCAL_SERVER_STATE_DIR \"$target_root/var\"",
+        "set_default SAFARSUITE_BOOTSTRAP_BUNDLE_FILE \"$package_dir/bootstrap-bundle.json\"",
+        "",
+        "mkdir -p \"$target_root/etc\" \"$target_root/var\"",
+        "curl -fsSL \"$SAFARSUITE_INSTALL_SCRIPT_URL\" -o \"$package_dir/safarsuite-install.sh\"",
+        "chmod +x \"$package_dir/safarsuite-install.sh\"",
+        "bash \"$package_dir/safarsuite-install.sh\""
+    ]);
+
+    return JoinScriptLines(lines);
+}
+
+string BuildCleanMachineVerifyScript(ProofOptions options)
+{
+    var modulePath = $"api/v1/local-server/modules/{Uri.EscapeDataString(options.RequiredModule)}/access?requestedBy=clean-machine-proof";
+    if (!string.IsNullOrWhiteSpace(options.AsOfDate))
+    {
+        modulePath += $"&asOfDate={Uri.EscapeDataString(options.AsOfDate)}";
+    }
+
+    return JoinScriptLines(
+    [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        "package_dir=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"",
+        "target_root=\"${SAFARSUITE_CLEAN_TARGET_ROOT:-$package_dir/../target}\"",
+        $"local_api_base_url=\"${{SAFARSUITE_LOCAL_API_PUBLIC_URL:-{GetLocalApiHostBaseUrl(options)}}}\"",
+        "curl_args=()",
+        "",
+        "if [[ \"$local_api_base_url\" == https://* ]]; then",
+        "  ca_file=\"${SAFARSUITE_LOCAL_API_CA_FILE:-$target_root/etc/certs/trust/local-api-ca.pem}\"",
+        "  if [ ! -f \"$ca_file\" ]; then",
+        "    echo \"Missing Local API CA certificate: $ca_file\" >&2",
+        "    exit 12",
+        "  fi",
+        "  curl_args=(--cacert \"$ca_file\")",
+        "fi",
+        "",
+        "curl -fsS \"${curl_args[@]}\" \"$local_api_base_url/health\"",
+        "curl -fsS \"${curl_args[@]}\" -X POST \"$local_api_base_url/api/v1/local-server/entitlement/pull\"",
+        "curl -fsS \"${curl_args[@]}\" -X POST \"$local_api_base_url/api/v1/local-server/heartbeat\"",
+        "curl -fsS \"${curl_args[@]}\" -X POST \"$local_api_base_url/api/v1/local-server/commands/process\"",
+        $"curl -fsS \"${{curl_args[@]}}\" \"$local_api_base_url/{modulePath}\"",
+        "echo \"Clean-machine runtime verification passed against $local_api_base_url.\""
+    ]);
+}
+
+string BuildCleanMachineRerunSecretProofScript()
+{
+    return JoinScriptLines(
+    [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        "package_dir=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"",
+        "target_root=\"${SAFARSUITE_CLEAN_TARGET_ROOT:-$package_dir/../target}\"",
+        "",
+        "write_secret_hashes() {",
+        "  output_file=\"$1\"",
+        "  secret_dir=\"$target_root/var/secrets\"",
+        "  cert_private_dir=\"$target_root/var/certs-private/local-api\"",
+        "",
+        "  if [ ! -d \"$secret_dir\" ] || [ ! -d \"$cert_private_dir\" ]; then",
+        "    echo \"Expected generated secret directories are missing under $target_root/var.\" >&2",
+        "    exit 13",
+        "  fi",
+        "",
+        "  find \"$secret_dir\" \"$cert_private_dir\" -type f -print0 |",
+        "    sort -z |",
+        "    xargs -0 sha256sum > \"$output_file\"",
+        "}",
+        "",
+        "\"$package_dir/clean-machine-install.sh\"",
+        "write_secret_hashes \"$target_root/first-secret-sha256.txt\"",
+        "\"$package_dir/clean-machine-install.sh\"",
+        "write_secret_hashes \"$target_root/second-secret-sha256.txt\"",
+        "diff -u \"$target_root/first-secret-sha256.txt\" \"$target_root/second-secret-sha256.txt\"",
+        "echo \"Clean-machine rerun secret hash proof passed; generated secret files were reused.\""
+    ]);
+}
+
+void AddSetDefaultLines(
+    List<string> lines,
+    IReadOnlyCollection<(string Name, string Value)> values)
+{
+    foreach (var (name, value) in values)
+    {
+        lines.Add($"set_default {name} {QuoteForShell(value)}");
+    }
+}
+
+string JoinScriptLines(IEnumerable<string> lines)
+{
+    return string.Join("\n", lines) + "\n";
 }
 
 LocalServerSignedBootstrapBundleResponse CreateBootstrapBundle(ProofOptions options)
@@ -1419,7 +1593,13 @@ string BuildRealCloudProofNotes(
         $"Seed status: {seed.Status}",
         $"Bootstrap package ID: {package.BootstrapPackageId:D}",
         "",
-        "Commands:",
+        "Clean target scripts:",
+        "chmod +x clean-machine-*.sh",
+        "SAFARSUITE_CLEAN_TARGET_ROOT=../target ./clean-machine-install.sh",
+        "./clean-machine-verify.sh",
+        "./clean-machine-rerun-secret-proof.sh",
+        "",
+        "Manual compose commands:",
         "docker compose --env-file local-server.env -f docker-compose.yml up -d",
         $"dotnet run --project tools/SafarSuite.LocalServer.ComposeBootstrapProof/SafarSuite.LocalServer.ComposeBootstrapProof.csproj -- verify-running-runtime --output {options.OutputDirectory} --local-port {options.LocalServerHttpPort}",
         $"curl -fsS {curlTrustArgument}{localApiHostBaseUrl}/health",
@@ -1452,6 +1632,11 @@ string EscapeDockerEnvValue(string value)
         .Replace("\"", "\\\"", StringComparison.Ordinal)
         .Replace("\r\n", "\n", StringComparison.Ordinal)
         .Replace("\n", "\\n", StringComparison.Ordinal) + "\"";
+}
+
+string QuoteForShell(string value)
+{
+    return $"'{value.Replace("'", "'\"'\"'", StringComparison.Ordinal)}'";
 }
 
 JsonElement? TryReadJsonElement(string value)
