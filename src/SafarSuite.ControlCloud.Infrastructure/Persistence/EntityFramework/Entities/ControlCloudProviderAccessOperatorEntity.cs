@@ -36,6 +36,12 @@ public sealed class ControlCloudProviderAccessOperatorEntity
 
     public long? LastTotpStep { get; set; }
 
+    public int FailedLoginAttemptCount { get; set; }
+
+    public DateTimeOffset? LastFailedLoginAtUtc { get; set; }
+
+    public DateTimeOffset? LockoutEndsAtUtc { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public string CreatedBy { get; set; } = "";

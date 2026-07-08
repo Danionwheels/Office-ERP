@@ -743,6 +743,10 @@ export function ProviderAccessPanel() {
                   <dt>MFA</dt>
                   <dd>{formatMfaSummary(selectedOperator)}</dd>
                 </div>
+                <div>
+                  <dt>Login guard</dt>
+                  <dd>{formatLoginGuard(selectedOperator)}</dd>
+                </div>
               </dl>
 
               <label className="provider-access-actor-field">
@@ -1004,6 +1008,16 @@ function formatMfaSummary(providerOperator: ProviderAccessOperator): string {
   }
 
   return parts.length > 0 ? parts.join(" + ") : "Not enabled";
+}
+
+function formatLoginGuard(providerOperator: ProviderAccessOperator): string {
+  if (providerOperator.lockoutEndsAtUtc !== null && providerOperator.lockoutEndsAtUtc !== undefined) {
+    return `Locked until ${formatNullableDateTime(providerOperator.lockoutEndsAtUtc)}`;
+  }
+
+  const failedCount = providerOperator.failedLoginAttemptCount ?? 0;
+
+  return failedCount > 0 ? `${failedCount} failed` : "Clear";
 }
 
 function toPanelError(caughtError: unknown): string {

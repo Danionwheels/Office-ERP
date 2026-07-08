@@ -13,6 +13,10 @@ public sealed class ProviderAccessSessionService
     private const string BearerPrefix = "Bearer ";
     private const string TokenType = "provider_access";
     private const string Issuer = "SafarSuite.ControlCloud";
+    private const int MinLockoutThreshold = 2;
+    private const int MaxLockoutThreshold = 20;
+    private const int MinLockoutMinutes = 1;
+    private const int MaxLockoutMinutes = 1440;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly ClientPortalProviderAccessOptions _options;
@@ -107,12 +111,19 @@ public sealed class ProviderAccessSessionService
             || !user.Status.Equals("Active", StringComparison.Ordinal)
             || string.IsNullOrWhiteSpace(user.PasswordHash)
             || string.IsNullOrWhiteSpace(password)
-            || !_credentials.VerifyPassword(password, user.PasswordHash))
+            || IsLockedOut(user))
         {
-            return ProviderAccessSessionResult.Failure(
-                "ProviderCredentialsInvalid",
-                "Provider operator credentials are invalid.",
-                StatusCodes.Status401Unauthorized);
+            return user is not null && IsLockedOut(user)
+                ? LockedOut(user.LockoutEndsAtUtc!.Value)
+                : InvalidCredentials();
+        }
+
+        if (!_credentials.VerifyPassword(password, user.PasswordHash))
+        {
+            return await RecordFailedLoginAsync(
+                    user,
+                    cancellationToken)
+                ?? InvalidCredentials();
         }
 
         var assignedScopes = ProviderAccessScopes.Normalize(user.Scopes, _options.DefaultScopes);
@@ -149,9 +160,12 @@ public sealed class ProviderAccessSessionService
 
         if (mfaResult is not null)
         {
-            return mfaResult;
+            return ShouldCountMfaFailure(mfaResult)
+                ? await RecordFailedLoginAsync(user, cancellationToken) ?? mfaResult
+                : mfaResult;
         }
 
+        ClearLoginFailures(user);
         user.LastLoginAtUtc = _clock.UtcNow;
         await _operators.SaveAsync(user, cancellationToken);
 
@@ -303,6 +317,80 @@ public sealed class ProviderAccessSessionService
             "ProviderMfaInvalid",
             "Provider operator MFA code is invalid.",
             StatusCodes.Status401Unauthorized);
+    }
+
+    private async Task<ProviderAccessSessionResult?> RecordFailedLoginAsync(
+        ProviderAccessOperator user,
+        CancellationToken cancellationToken)
+    {
+        var now = _clock.UtcNow;
+        var failedAttemptCount = user.LockoutEndsAtUtc is not null && user.LockoutEndsAtUtc <= now
+            ? 0
+            : Math.Max(0, user.FailedLoginAttemptCount);
+
+        user.FailedLoginAttemptCount = failedAttemptCount + 1;
+        user.LastFailedLoginAtUtc = now;
+
+        if (user.FailedLoginAttemptCount >= GetLockoutThreshold())
+        {
+            user.LockoutEndsAtUtc = now.AddMinutes(GetLockoutMinutes());
+        }
+
+        await _operators.SaveAsync(user, cancellationToken);
+
+        return IsLockedOut(user)
+            ? LockedOut(user.LockoutEndsAtUtc!.Value)
+            : null;
+    }
+
+    private void ClearLoginFailures(ProviderAccessOperator user)
+    {
+        user.FailedLoginAttemptCount = 0;
+        user.LastFailedLoginAtUtc = null;
+        user.LockoutEndsAtUtc = null;
+    }
+
+    private bool IsLockedOut(ProviderAccessOperator user)
+    {
+        return user.LockoutEndsAtUtc is not null
+            && user.LockoutEndsAtUtc > _clock.UtcNow;
+    }
+
+    private int GetLockoutThreshold()
+    {
+        return Math.Clamp(
+            _options.FailedLoginLockoutThreshold,
+            MinLockoutThreshold,
+            MaxLockoutThreshold);
+    }
+
+    private int GetLockoutMinutes()
+    {
+        return Math.Clamp(
+            _options.FailedLoginLockoutMinutes,
+            MinLockoutMinutes,
+            MaxLockoutMinutes);
+    }
+
+    private static bool ShouldCountMfaFailure(ProviderAccessSessionResult result)
+    {
+        return result.FailureCode is "ProviderMfaRequired" or "ProviderMfaInvalid";
+    }
+
+    private static ProviderAccessSessionResult InvalidCredentials()
+    {
+        return ProviderAccessSessionResult.Failure(
+            "ProviderCredentialsInvalid",
+            "Provider operator credentials are invalid.",
+            StatusCodes.Status401Unauthorized);
+    }
+
+    private static ProviderAccessSessionResult LockedOut(DateTimeOffset lockoutEndsAtUtc)
+    {
+        return ProviderAccessSessionResult.Failure(
+            "ProviderLoginLocked",
+            $"Provider operator login is temporarily locked until {lockoutEndsAtUtc:O}.",
+            StatusCodes.Status423Locked);
     }
 
     public ProviderAccessAuthorizationResult Authorize(

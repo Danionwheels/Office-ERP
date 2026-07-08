@@ -66,6 +66,13 @@ public sealed class ControlCloudProviderAccessOperatorEntityConfiguration
             .HasColumnName("last_totp_used_at_utc");
         builder.Property(providerOperator => providerOperator.LastTotpStep)
             .HasColumnName("last_totp_step");
+        builder.Property(providerOperator => providerOperator.FailedLoginAttemptCount)
+            .HasColumnName("failed_login_attempt_count")
+            .IsRequired();
+        builder.Property(providerOperator => providerOperator.LastFailedLoginAtUtc)
+            .HasColumnName("last_failed_login_at_utc");
+        builder.Property(providerOperator => providerOperator.LockoutEndsAtUtc)
+            .HasColumnName("lockout_ends_at_utc");
         builder.Property(providerOperator => providerOperator.CreatedAtUtc)
             .HasColumnName("created_at_utc")
             .IsRequired();

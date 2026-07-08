@@ -123,6 +123,9 @@ export type ProviderAccessOperator = {
   recoveryCodesUpdatedAtUtc?: string | null;
   recoveryCodesUpdatedBy?: string | null;
   lastRecoveryCodeUsedAtUtc?: string | null;
+  failedLoginAttemptCount?: number;
+  lastFailedLoginAtUtc?: string | null;
+  lockoutEndsAtUtc?: string | null;
 };
 
 export type ProviderAccessSession = {

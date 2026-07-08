@@ -43,7 +43,10 @@ public sealed record ProviderAccessOperatorResponse(
     int RecoveryCodeCount,
     DateTimeOffset? RecoveryCodesUpdatedAtUtc,
     string? RecoveryCodesUpdatedBy,
-    DateTimeOffset? LastRecoveryCodeUsedAtUtc);
+    DateTimeOffset? LastRecoveryCodeUsedAtUtc,
+    int FailedLoginAttemptCount,
+    DateTimeOffset? LastFailedLoginAtUtc,
+    DateTimeOffset? LockoutEndsAtUtc);
 
 public sealed record ProviderOperatorRecoveryCodesResponse(
     ProviderAccessOperatorResponse Operator,

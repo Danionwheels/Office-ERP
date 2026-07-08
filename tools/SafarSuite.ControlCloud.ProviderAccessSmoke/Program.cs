@@ -5,7 +5,10 @@ using SafarSuite.ControlCloud.Api.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Api.Modules.ProviderAccess;
 using SafarSuite.ControlCloud.Application.Common;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
+using SafarSuite.ControlCloud.Infrastructure;
 using SafarSuite.ControlCloud.Infrastructure.ClientPortal;
+using SafarSuite.ControlCloud.Infrastructure.InboundControlDesk;
+using SafarSuite.ControlCloud.Infrastructure.LocalServer;
 using SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework;
 
 var options = SmokeOptions.Parse(args);
@@ -32,6 +35,8 @@ try
         SharedSecret = "provider-access-smoke-secret",
         SessionSigningSecret = "provider-access-smoke-session-signing-secret",
         SessionMinutes = 30,
+        FailedLoginLockoutThreshold = 3,
+        FailedLoginLockoutMinutes = 15,
         OperatorStorePath = Path.Combine(workDirectory, "provider-access-operators.json"),
         Users =
         [
@@ -224,6 +229,94 @@ try
         "legacy plaintext TOTP secret should be rewritten as protected material after login.");
     checks.Add("migrated legacy plaintext provider TOTP secret on login");
 
+    var resetAfterFailureOperator = new ProviderAccessOperator
+    {
+        UserId = Guid.NewGuid().ToString("N"),
+        Email = "login-reset.provider@safarsuite.local",
+        FullName = "Login Reset Provider",
+        PasswordHash = credentials.HashPassword("LoginResetPass123!"),
+        Status = ProviderAccessOperatorStatuses.Active,
+        Scopes = [ProviderAccessScopes.ProviderOperatorsManage],
+        CreatedAtUtc = clock.UtcNow,
+        CreatedBy = "provider-access-smoke"
+    };
+
+    await fileStore.SaveAsync(resetAfterFailureOperator);
+
+    var failedPasswordSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "login-reset.provider@safarsuite.local",
+        "wrong-password",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10);
+    var successfulAfterFailureSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "login-reset.provider@safarsuite.local",
+        "LoginResetPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10);
+    var resetAfterFailureState = await fileStore.GetByEmailAsync("login-reset.provider@safarsuite.local");
+
+    Require(!failedPasswordSession.IsSuccess, "bad provider operator password should fail.");
+    Require(failedPasswordSession.FailureCode == "ProviderCredentialsInvalid", "bad password should return ProviderCredentialsInvalid before lockout threshold.");
+    Require(successfulAfterFailureSession.IsSuccess, "valid provider operator login should succeed after a non-locking failed attempt.");
+    Require(resetAfterFailureState?.FailedLoginAttemptCount == 0, "successful provider login should clear failed-login count.");
+    Require(resetAfterFailureState?.LastFailedLoginAtUtc is null, "successful provider login should clear failed-login timestamp.");
+    Require(resetAfterFailureState?.LockoutEndsAtUtc is null, "successful provider login should clear lockout state.");
+    checks.Add("reset provider login failure counters after successful login");
+
+    var lockoutSecret = ProviderAccessTotp.CreateSecret();
+    var lockoutOperator = new ProviderAccessOperator
+    {
+        UserId = Guid.NewGuid().ToString("N"),
+        Email = "lockout.provider@safarsuite.local",
+        FullName = "Lockout Provider",
+        PasswordHash = credentials.HashPassword("LockoutProviderPass123!"),
+        Status = ProviderAccessOperatorStatuses.Active,
+        Scopes = [ProviderAccessScopes.ProviderOperatorsManage],
+        TotpSecret = totpProtector.Protect(lockoutSecret),
+        TotpEnabledAtUtc = clock.UtcNow,
+        TotpUpdatedAtUtc = clock.UtcNow,
+        TotpUpdatedBy = "provider-access-smoke",
+        CreatedAtUtc = clock.UtcNow,
+        CreatedBy = "provider-access-smoke"
+    };
+
+    await fileStore.SaveAsync(lockoutOperator);
+
+    var firstBadMfaSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "lockout.provider@safarsuite.local",
+        "LockoutProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        totpCode: "000000");
+    var secondBadMfaSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "lockout.provider@safarsuite.local",
+        "LockoutProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        totpCode: "111111");
+    var lockingBadMfaSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "lockout.provider@safarsuite.local",
+        "LockoutProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        totpCode: "222222");
+    var lockedGoodMfaSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "lockout.provider@safarsuite.local",
+        "LockoutProviderPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        totpCode: ProviderAccessTotp.CreateCode(lockoutSecret, clock.UtcNow));
+    var lockedOperatorState = await fileStore.GetByEmailAsync("lockout.provider@safarsuite.local");
+
+    Require(firstBadMfaSession.FailureCode == "ProviderMfaInvalid", "first bad MFA attempt should return ProviderMfaInvalid.");
+    Require(secondBadMfaSession.FailureCode == "ProviderMfaInvalid", "second bad MFA attempt should return ProviderMfaInvalid.");
+    Require(lockingBadMfaSession.FailureCode == "ProviderLoginLocked", "threshold MFA failure should lock provider login.");
+    Require(lockedGoodMfaSession.FailureCode == "ProviderLoginLocked", "valid MFA should be blocked while provider login is locked.");
+    Require(lockedOperatorState?.FailedLoginAttemptCount == 3, "locked provider should store failed-login count.");
+    Require(lockedOperatorState?.LastFailedLoginAtUtc == clock.UtcNow, "locked provider should store last failed login timestamp.");
+    Require(lockedOperatorState?.LockoutEndsAtUtc == clock.UtcNow.AddMinutes(15), "locked provider should store lockout expiry.");
+    checks.Add("locked provider login after repeated MFA failures");
+
     var rotatedProviderOptions = CopyOptionsWithSessionSigningKeys(
         providerOptions,
         activeKeyId: "provider-access-smoke-session-signing-key-v2",
@@ -304,6 +397,8 @@ try
         "file-sourced provider TOTP protection secret should round-trip protected secrets.");
     checks.Add("loaded provider access shared, signing, and TOTP protection secrets from secret files");
 
+    VerifyCloudFileSourcedSecrets(workDirectory, checks);
+
     var deniedSession = await sessionService.CreateSessionFromCredentialsAsync(
         "seed.provider@safarsuite.local",
         "SeedProviderPass123!",
@@ -369,6 +464,9 @@ try
     Require(
         entityType.FindProperty("TotpSecret")?.GetColumnName() == "totp_secret",
         "EF provider operator model should map TOTP secrets.");
+    Require(
+        entityType.FindProperty("FailedLoginAttemptCount")?.GetColumnName() == "failed_login_attempt_count",
+        "EF provider operator model should map failed-login counters.");
     checks.Add("verified EF provider operator model mapping");
 
     var efStore = new EfProviderAccessOperatorStore(dbContext, providerOptions);
@@ -426,6 +524,9 @@ static ProviderAccessOperator CopyOperatorWithScopes(
         TotpUpdatedBy = source.TotpUpdatedBy,
         LastTotpUsedAtUtc = source.LastTotpUsedAtUtc,
         LastTotpStep = source.LastTotpStep,
+        FailedLoginAttemptCount = source.FailedLoginAttemptCount,
+        LastFailedLoginAtUtc = source.LastFailedLoginAtUtc,
+        LockoutEndsAtUtc = source.LockoutEndsAtUtc,
         CreatedAtUtc = source.CreatedAtUtc,
         CreatedBy = source.CreatedBy,
         UpdatedAtUtc = source.UpdatedAtUtc,
@@ -480,6 +581,78 @@ static ClientPortalProviderAccessOptions CreateFileSourcedOptions(
     return ClientPortalProviderAccessOptions.FromConfiguration(configuration, workDirectory);
 }
 
+static void VerifyCloudFileSourcedSecrets(
+    string workDirectory,
+    List<string> checks)
+{
+    var receiverSecretFile = Path.Combine(workDirectory, "control-cloud-receiver-signing-secret.txt");
+    var entitlementSecretFile = Path.Combine(workDirectory, "control-cloud-entitlement-signing-secret.txt");
+    var appActivationPublicKeyFile = Path.Combine(workDirectory, "control-cloud-app-activation-public.pem");
+    var appActivationPrivateKeyFile = Path.Combine(workDirectory, "control-cloud-app-activation-private.pem");
+
+    var defaultAppActivationOptions = new ControlCloudAppActivationSigningOptions();
+    File.WriteAllText(receiverSecretFile, "control-cloud-file-receiver-secret");
+    File.WriteAllText(entitlementSecretFile, "control-cloud-file-entitlement-secret");
+    File.WriteAllText(appActivationPublicKeyFile, defaultAppActivationOptions.PublicKeyPem);
+    File.WriteAllText(appActivationPrivateKeyFile, defaultAppActivationOptions.PrivateKeyPem);
+
+    var receiverOptions = new ControlCloudReceiverOptions
+    {
+        SigningKeys =
+        [
+            new ControlCloudReceiverSigningKeyOptions
+            {
+                KeyId = "control-desk-file-key",
+                Secret = "inline-receiver-secret-should-not-be-used",
+                SecretFile = receiverSecretFile
+            }
+        ]
+    };
+    receiverOptions.HydrateFileBackedSecrets(workDirectory);
+    var signingKeyStore = new ConfiguredControlCloudSigningKeyStore(receiverOptions);
+    Require(
+        signingKeyStore.TryGetSecret("control-desk-file-key", out var receiverSecret)
+        && receiverSecret == "control-cloud-file-receiver-secret",
+        "Control Cloud receiver signing key should load from the configured secret file.");
+
+    var entitlementOptions = new ControlCloudEntitlementSigningOptions
+    {
+        ActiveKeyId = "control-cloud-file-entitlement",
+        SigningKeys =
+        [
+            new ControlCloudEntitlementSigningKeyOptions
+            {
+                KeyId = "control-cloud-file-entitlement",
+                Secret = "inline-entitlement-secret-should-not-be-used",
+                SecretFile = entitlementSecretFile
+            }
+        ]
+    };
+    entitlementOptions.HydrateFileBackedSecrets(workDirectory);
+    Require(
+        entitlementOptions.SigningKeys.Single().Secret == "control-cloud-file-entitlement-secret",
+        "Control Cloud entitlement signing key should load from the configured secret file.");
+    _ = new HmacControlCloudEntitlementBundleSigner(entitlementOptions);
+    _ = new HmacControlCloudBootstrapPackageSigner(entitlementOptions);
+    _ = new HmacControlCloudInstallationCommandSigner(entitlementOptions);
+
+    var appActivationOptions = new ControlCloudAppActivationSigningOptions
+    {
+        ActiveKeyId = "control-cloud-file-app-activation",
+        PublicKeyPem = "inline-public-key-should-not-be-used",
+        PublicKeyPemFile = appActivationPublicKeyFile,
+        PrivateKeyPem = "inline-private-key-should-not-be-used",
+        PrivateKeyPemFile = appActivationPrivateKeyFile
+    };
+    appActivationOptions.HydrateFileBackedSecrets(workDirectory);
+    var appActivationSigner = new EcdsaControlCloudAppActivationTokenSigner(appActivationOptions);
+    Require(
+        appActivationSigner.PublicKeyPem.Contains("BEGIN PUBLIC KEY", StringComparison.Ordinal),
+        "Control Cloud app activation public key should load from the configured PEM file.");
+
+    checks.Add("loaded Control Cloud receiver, entitlement, bootstrap, command, and app activation signing secrets from files");
+}
+
 static ClientPortalProviderAccessOptions CopyOptionsWithSessionSigningKeys(
     ClientPortalProviderAccessOptions source,
     string activeKeyId,
@@ -496,6 +669,8 @@ static ClientPortalProviderAccessOptions CopyOptionsWithSessionSigningKeys(
         ActiveSessionSigningKeyId = activeKeyId,
         SessionSigningKeys = sessionSigningKeys,
         SessionMinutes = source.SessionMinutes,
+        FailedLoginLockoutThreshold = source.FailedLoginLockoutThreshold,
+        FailedLoginLockoutMinutes = source.FailedLoginLockoutMinutes,
         DefaultScopes = source.DefaultScopes,
         OperatorStorePath = source.OperatorStorePath,
         Users = source.Users

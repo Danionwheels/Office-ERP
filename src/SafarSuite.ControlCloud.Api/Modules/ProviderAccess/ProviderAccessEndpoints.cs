@@ -656,7 +656,10 @@ public static class ProviderAccessEndpoints
             providerOperator.RecoveryCodeHashes.Length,
             providerOperator.RecoveryCodesUpdatedAtUtc,
             providerOperator.RecoveryCodesUpdatedBy,
-            providerOperator.LastRecoveryCodeUsedAtUtc);
+            providerOperator.LastRecoveryCodeUsedAtUtc,
+            providerOperator.FailedLoginAttemptCount,
+            providerOperator.LastFailedLoginAtUtc,
+            providerOperator.LockoutEndsAtUtc);
     }
 
     private static async Task RecordAuditAsync(
@@ -797,7 +800,10 @@ public static class ProviderAccessEndpoints
         int RecoveryCodeCount,
         DateTimeOffset? RecoveryCodesUpdatedAtUtc,
         string? RecoveryCodesUpdatedBy,
-        DateTimeOffset? LastRecoveryCodeUsedAtUtc);
+        DateTimeOffset? LastRecoveryCodeUsedAtUtc,
+        int FailedLoginAttemptCount,
+        DateTimeOffset? LastFailedLoginAtUtc,
+        DateTimeOffset? LockoutEndsAtUtc);
 
     public sealed record ProviderOperatorRecoveryCodesResponse(
         ProviderAccessOperatorResponse Operator,

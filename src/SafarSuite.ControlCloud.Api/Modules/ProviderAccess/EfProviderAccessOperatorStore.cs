@@ -191,6 +191,9 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
             TotpUpdatedBy = entity.TotpUpdatedBy,
             LastTotpUsedAtUtc = entity.LastTotpUsedAtUtc,
             LastTotpStep = entity.LastTotpStep,
+            FailedLoginAttemptCount = entity.FailedLoginAttemptCount,
+            LastFailedLoginAtUtc = entity.LastFailedLoginAtUtc,
+            LockoutEndsAtUtc = entity.LockoutEndsAtUtc,
             CreatedAtUtc = entity.CreatedAtUtc,
             CreatedBy = entity.CreatedBy,
             UpdatedAtUtc = entity.UpdatedAtUtc,
@@ -230,6 +233,9 @@ public sealed class EfProviderAccessOperatorStore : IProviderAccessOperatorStore
             : providerOperator.TotpUpdatedBy.Trim();
         entity.LastTotpUsedAtUtc = providerOperator.LastTotpUsedAtUtc;
         entity.LastTotpStep = providerOperator.LastTotpStep;
+        entity.FailedLoginAttemptCount = Math.Max(0, providerOperator.FailedLoginAttemptCount);
+        entity.LastFailedLoginAtUtc = providerOperator.LastFailedLoginAtUtc;
+        entity.LockoutEndsAtUtc = providerOperator.LockoutEndsAtUtc;
         entity.CreatedAtUtc = providerOperator.CreatedAtUtc;
         entity.CreatedBy = providerOperator.CreatedBy.Trim();
         entity.UpdatedAtUtc = providerOperator.UpdatedAtUtc;

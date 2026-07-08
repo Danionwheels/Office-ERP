@@ -27,6 +27,10 @@ public sealed class ClientPortalProviderAccessOptions
 
     public int SessionMinutes { get; set; } = 60;
 
+    public int FailedLoginLockoutThreshold { get; set; } = 5;
+
+    public int FailedLoginLockoutMinutes { get; set; } = 15;
+
     public string[] DefaultScopes { get; set; } =
     [
         "app-activation:read",

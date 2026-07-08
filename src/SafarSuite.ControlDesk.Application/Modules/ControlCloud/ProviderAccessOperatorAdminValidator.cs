@@ -180,6 +180,7 @@ internal static class ProviderAccessOperatorAdminValidator
             "ProviderOperatorScopesUnsupported" => ApplicationError.Validation("scopes", message),
             "ProviderOperatorStatusUnsupported" => ApplicationError.Validation("status", message),
             "ProviderCredentialsInvalid" => ApplicationError.Validation(credentialTarget, message),
+            "ProviderLoginLocked" => ApplicationError.Validation(credentialTarget, message),
             "ProviderMfaRequired" => ApplicationError.Validation("totpCode", message),
             "ProviderMfaInvalid" => ApplicationError.Validation("totpCode", message),
             "ProviderMfaUnavailable" => ApplicationError.Validation("recoveryCode", message),

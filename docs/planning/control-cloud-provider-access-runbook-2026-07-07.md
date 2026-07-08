@@ -84,6 +84,8 @@ Provider access settings live under `ClientPortal:ProviderAccess`:
       "ActiveSessionSigningKeyId": "",
       "SessionSigningKeys": [],
       "SessionMinutes": 60,
+      "FailedLoginLockoutThreshold": 5,
+      "FailedLoginLockoutMinutes": 15,
       "DefaultScopes": [
         "app-activation:read",
         "app-activation:write",
@@ -104,6 +106,8 @@ Notes:
 - `SessionSigningKeys` is the preferred rotation shape. When populated, Control Cloud signs new sessions with `ActiveSessionSigningKeyId` and validates bearer sessions against every configured key in the array. Keep the previous key in the array for one maximum session lifetime, then remove it.
 - `TotpProtectionSecret` protects stored provider-operator TOTP secrets. Keep it stable across deploys; if it is lost or changed, reset each operator's TOTP enrollment.
 - `SessionMinutes` is clamped between 5 and 1440 minutes.
+- `FailedLoginLockoutThreshold` is clamped between 2 and 20 failed credential/MFA attempts.
+- `FailedLoginLockoutMinutes` is clamped between 1 and 1440 minutes.
 - `OperatorStorePath` is used only by file persistence.
 - `Users` is a seed list, not a long-term management surface. It is written only when the operator store is missing or empty.
 - With PostgreSQL, operators are stored in `cloud.provider_access_operators`.
@@ -116,7 +120,7 @@ dotnet tool restore
 dotnet tool run dotnet-ef database update --project src\SafarSuite.ControlCloud.Infrastructure\SafarSuite.ControlCloud.Infrastructure.csproj --startup-project src\SafarSuite.ControlCloud.Infrastructure\SafarSuite.ControlCloud.Infrastructure.csproj --context ControlCloudDbContext
 ```
 
-The provider-operator migrations are `20260707181435_AddProviderAccessOperators`, `20260708123000_AddProviderAccessOperatorRecoveryCodes`, and `20260708133000_AddProviderAccessOperatorTotp`.
+The provider-operator migrations are `20260707181435_AddProviderAccessOperators`, `20260708123000_AddProviderAccessOperatorRecoveryCodes`, `20260708133000_AddProviderAccessOperatorTotp`, and `20260708144500_AddProviderAccessOperatorLoginAbuseControls`.
 
 ## Bootstrap First Operator
 
@@ -274,10 +278,10 @@ dotnet run --project tools\SafarSuite.ControlCloud.ProviderAccessSmoke\SafarSuit
 Expected result:
 
 ```text
-Provider access smoke passed 14 checks:
+Provider access smoke passed 16 checks:
 ```
 
-The smoke proves file-backed seed persistence, scoped operator session issuance, recovery-code MFA enforcement/consumption/exhaustion, TOTP MFA enforcement/replay protection/protected custody, legacy plaintext TOTP migration, session-signing key rotation acceptance/removal, file-backed secret loading, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
+The smoke proves file-backed seed persistence, scoped operator session issuance, recovery-code MFA enforcement/consumption/exhaustion, TOTP MFA enforcement/replay protection/protected custody, legacy plaintext TOTP migration, failed-login counter reset after success, temporary provider login lockout after repeated MFA failures, session-signing key rotation acceptance/removal, file-backed secret loading, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
 
 Run the live Control Desk proxy proof:
 
@@ -305,6 +309,7 @@ For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBoot
 | `ProviderAccessScopeUnsupported` | The requested session scope is not in the supported scope catalog. | Fix the typo or add a new scope deliberately in code. |
 | `ProviderAccessScopeDenied` | The session/operator lacks the required scope. | Mint a session with the needed assigned scope or update the operator scopes. |
 | `ProviderAccessExpired` | Bearer session expired. | Mint a new session. |
+| `ProviderLoginLocked` | The operator exceeded the failed credential/MFA attempt threshold. | Wait until the reported lockout expiry, then retry with valid credentials and MFA. |
 | `ProviderMfaRequired` | The operator has MFA enabled and did not provide a TOTP code or recovery code. | Provide the current TOTP code or one unused recovery code. |
 | `ProviderMfaInvalid` | The supplied TOTP code or recovery code is invalid or already used. | Retry with a fresh TOTP code, use an unused recovery code, or reset MFA material. |
 | `ProviderMfaUnavailable` | Recovery-code MFA is enabled without TOTP and no unused recovery codes remain. | Reset recovery codes through a manager-scoped provider session. |
