@@ -79,6 +79,25 @@ public sealed class FileLocalServerDevicePairingStore
         }
     }
 
+    public async Task<LocalServerFirstManagerSetupTokenConsumptionRecord?> GetFirstManagerSetupTokenConsumptionAsync(
+        Guid tokenId,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var state = await ReadStateAsync(cancellationToken);
+
+            return state.ConsumedFirstManagerSetupTokens.FirstOrDefault(
+                record => record.TokenId == tokenId);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task SaveAsync(
         LocalServerDevicePairingRecord record,
         CancellationToken cancellationToken = default)
@@ -94,29 +113,146 @@ public sealed class FileLocalServerDevicePairingStore
                 .Append(record)
                 .OrderBy(item => item.RequestedAtUtc)
                 .ToArray();
-            var nextState = new LocalServerDevicePairingStoreState(records);
-            var directory = Path.GetDirectoryName(_storePath);
-
-            if (!string.IsNullOrWhiteSpace(directory))
+            var nextState = state with
             {
-                Directory.CreateDirectory(directory);
-            }
+                Records = records
+            };
 
-            await using var stream = new FileStream(
-                _storePath,
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.Read);
-            await JsonSerializer.SerializeAsync(
-                stream,
-                nextState,
-                JsonOptions,
-                cancellationToken);
+            await WriteStateAsync(nextState, cancellationToken);
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    public async Task SaveFirstManagerSetupTokenConsumptionAsync(
+        LocalServerFirstManagerSetupTokenConsumptionRecord record,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var state = await ReadStateAsync(cancellationToken);
+            var tokenRecords = state.ConsumedFirstManagerSetupTokens
+                .Where(existing => existing.TokenId != record.TokenId)
+                .Append(record)
+                .OrderBy(item => item.ConsumedAtUtc)
+                .ToArray();
+            var nextState = state with
+            {
+                ConsumedFirstManagerSetupTokens = tokenRecords
+            };
+
+            await WriteStateAsync(nextState, cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<LocalServerDevicePairingStoreWriteResult> SaveDeviceAndFirstManagerSetupTokenConsumptionAsync(
+        LocalServerDevicePairingRecord device,
+        LocalServerFirstManagerSetupTokenConsumptionRecord consumption,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var state = await ReadStateAsync(cancellationToken);
+
+            if (state.ConsumedFirstManagerSetupTokens.Any(existing => existing.TokenId == consumption.TokenId))
+            {
+                return LocalServerDevicePairingStoreWriteResult.Failure(
+                    "FirstManagerSetupTokenAlreadyConsumed",
+                    "First-manager setup token has already been consumed by this LocalServer.");
+            }
+
+            var currentDevice = state.Records.FirstOrDefault(
+                existing => existing.PairingRequestId == device.PairingRequestId
+                    && existing.DeviceId == device.DeviceId);
+
+            if (currentDevice is null)
+            {
+                return LocalServerDevicePairingStoreWriteResult.Failure(
+                    "PairingRequestNotFound",
+                    "First-manager setup token references a pairing request that was not found.");
+            }
+
+            if (currentDevice.ClientId != consumption.ClientId
+                || !string.Equals(currentDevice.InstallationId, consumption.InstallationId, StringComparison.Ordinal)
+                || currentDevice.PairingRequestId != consumption.PairingRequestId
+                || currentDevice.DeviceId != consumption.DeviceId)
+            {
+                return LocalServerDevicePairingStoreWriteResult.Failure(
+                    "PairingRequestMismatch",
+                    "First-manager setup token references a pairing request for another client, installation, or device.");
+            }
+
+            if (!string.Equals(
+                    currentDevice.PairingRequestStatus,
+                    LocalServerDevicePairingRecordStatuses.Pending,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    currentDevice.DeviceStatus,
+                    LocalServerDevicePairingRecordStatuses.Pending,
+                    StringComparison.Ordinal))
+            {
+                return LocalServerDevicePairingStoreWriteResult.Failure(
+                    "DeviceStatusInvalid",
+                    "First-manager setup token can only approve a pending device pairing request.");
+            }
+
+            var records = state.Records
+                .Where(existing => existing.PairingRequestId != device.PairingRequestId
+                    && existing.DeviceId != device.DeviceId)
+                .Append(device)
+                .OrderBy(item => item.RequestedAtUtc)
+                .ToArray();
+            var tokenRecords = state.ConsumedFirstManagerSetupTokens
+                .Append(consumption)
+                .OrderBy(item => item.ConsumedAtUtc)
+                .ToArray();
+            var nextState = state with
+            {
+                Records = records,
+                ConsumedFirstManagerSetupTokens = tokenRecords
+            };
+
+            await WriteStateAsync(nextState, cancellationToken);
+
+            return LocalServerDevicePairingStoreWriteResult.Success();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task WriteStateAsync(
+        LocalServerDevicePairingStoreState state,
+        CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(_storePath);
+
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        await using var stream = new FileStream(
+            _storePath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.Read);
+        await JsonSerializer.SerializeAsync(
+            stream,
+            state,
+            JsonOptions,
+            cancellationToken);
     }
 
     private async Task<LocalServerDevicePairingStoreState> ReadStateAsync(
@@ -133,11 +269,15 @@ public sealed class FileLocalServerDevicePairingStore
             FileAccess.Read,
             FileShare.ReadWrite);
 
-        return await JsonSerializer.DeserializeAsync<LocalServerDevicePairingStoreState>(
+        var state = await JsonSerializer.DeserializeAsync<LocalServerDevicePairingStoreState>(
             stream,
             JsonOptions,
             cancellationToken)
             ?? LocalServerDevicePairingStoreState.Empty;
+
+        return new LocalServerDevicePairingStoreState(
+            state.Records ?? [],
+            state.ConsumedFirstManagerSetupTokens ?? []);
     }
 
     private static string ResolveStorePath(string configuredPath)
@@ -152,8 +292,9 @@ public sealed class FileLocalServerDevicePairingStore
     }
 
     private sealed record LocalServerDevicePairingStoreState(
-        IReadOnlyCollection<LocalServerDevicePairingRecord> Records)
+        IReadOnlyCollection<LocalServerDevicePairingRecord> Records,
+        IReadOnlyCollection<LocalServerFirstManagerSetupTokenConsumptionRecord> ConsumedFirstManagerSetupTokens)
     {
-        public static LocalServerDevicePairingStoreState Empty { get; } = new([]);
+        public static LocalServerDevicePairingStoreState Empty { get; } = new([], []);
     }
 }

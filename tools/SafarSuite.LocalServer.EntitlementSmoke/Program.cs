@@ -28,14 +28,17 @@ using SafarSuite.LocalServer.Application.Entitlements.PullEntitlementFromControl
 using SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatFromBootstrapConfiguration;
 using SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatToControlCloud;
 using SafarSuite.LocalServer.Application.ModuleGateway.EvaluateModuleAccess;
+using SafarSuite.LocalServer.Application.Pairing.Ports;
 using SafarSuite.LocalServer.Application.Registration.RegisterInstallationFromBootstrapBundle;
 using SafarSuite.LocalServer.Application.Registration.RegisterInstallationWithControlCloud;
 using SafarSuite.LocalServer.Domain.Entitlements;
+using SafarSuite.LocalServer.Domain.Pairing;
 using SafarSuite.LocalServer.Domain.Registration;
 using SafarSuite.LocalServer.Infrastructure.Commands;
 using SafarSuite.LocalServer.Infrastructure.Diagnostics;
 using SafarSuite.LocalServer.Infrastructure.Entitlements;
 using SafarSuite.LocalServer.Infrastructure.Heartbeats;
+using SafarSuite.LocalServer.Infrastructure.Pairing;
 using SafarSuite.LocalServer.Infrastructure.Registration;
 
 var installationId = "office-main";
@@ -55,6 +58,9 @@ var appActivationRevocationPath = Path.Combine(
 var bootstrapConfigurationPath = Path.Combine(
     Path.GetTempPath(),
     $"safarsuite-local-bootstrap-configuration-smoke-{Guid.NewGuid():N}.json");
+var pairingStorePath = Path.Combine(
+    Path.GetTempPath(),
+    $"safarsuite-local-device-pairings-smoke-{Guid.NewGuid():N}.json");
 var trustOptions = new LocalServerEntitlementTrustOptions
 {
     CacheStorePath = cachePath,
@@ -87,6 +93,13 @@ var cache = new FileLocalServerEntitlementCache(trustOptions);
 var trustStateStore = new FileLocalServerEntitlementTrustStateStore(trustOptions);
 var importAuditStore = new FileLocalServerEntitlementImportAuditStore(trustOptions);
 var bootstrapConfigurationStore = new FileLocalServerBootstrapConfigurationStore(bootstrapTrustOptions);
+var pairingStore = new FileLocalServerDevicePairingStore(
+    new LocalServerPairingStoreOptions
+    {
+        DeviceStorePath = pairingStorePath
+    });
+var firstManagerSetupTokenVerifier = new HmacLocalServerFirstManagerSetupTokenVerifier(
+    bootstrapTrustOptions);
 var runtimeCommandRunner = new StaticRuntimeCommandRunner();
 var runtimeDiagnosticsCollector = new ManifestLocalServerRuntimeDiagnosticsCollector(
     bootstrapConfigurationStore,
@@ -229,6 +242,94 @@ Require(savedBootstrapConfiguration.RegistrationStatus == LocalServerBootstrapRe
 Require(savedBootstrapConfiguration.SignatureKeyId == "bootstrap-smoke", "Bootstrap configuration should retain the trusted signing key id.");
 Require(savedBootstrapConfiguration.Endpoints.HeartbeatUrl.EndsWith("/heartbeat", StringComparison.Ordinal), "Bootstrap configuration should carry the heartbeat endpoint.");
 Require(savedBootstrapConfiguration.DeploymentProfile.SyncTopologyId == "sync-main", "Bootstrap configuration should carry the signed sync topology.");
+
+var firstManagerPairingRequestId = Guid.NewGuid();
+var firstManagerDeviceId = Guid.NewGuid();
+var firstManagerDevice = new LocalServerDevicePairingRecord(
+    firstManagerPairingRequestId,
+    firstManagerDeviceId,
+    clientId,
+    installationId,
+    LocalServerPairingFormats.DevicePairingRequestVersion,
+    "Owner laptop",
+    "first-manager-device-public-key",
+    ComputeSha256("first-manager-device-public-key"),
+    "owner-laptop-fingerprint",
+    "owner",
+    "smoke-app",
+    "server-nonce",
+    "client-nonce",
+    LocalServerDevicePairingRecordStatuses.Pending,
+    LocalServerDevicePairingRecordStatuses.Pending,
+    clock.UtcNow,
+    clock.UtcNow.AddHours(24),
+    clock.UtcNow);
+await pairingStore.SaveAsync(firstManagerDevice);
+var signedFirstManagerToken = CreateSignedFirstManagerSetupToken(
+    clientId,
+    installationId,
+    firstManagerPairingRequestId,
+    clock.UtcNow,
+    "bootstrap-smoke",
+    "bootstrap-signing-secret-change-before-cloud");
+var firstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify(
+    signedFirstManagerToken,
+    clock.UtcNow);
+var badFirstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify(
+    signedFirstManagerToken with
+    {
+        Signature = signedFirstManagerToken.Signature with { Value = "invalid-first-manager-signature" }
+    },
+    clock.UtcNow);
+var expiredFirstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify(
+    CreateSignedFirstManagerSetupToken(
+        clientId,
+        installationId,
+        firstManagerPairingRequestId,
+        clock.UtcNow.AddHours(-2),
+        "bootstrap-smoke",
+        "bootstrap-signing-secret-change-before-cloud",
+        expiresAtUtc: clock.UtcNow.AddHours(-1)),
+    clock.UtcNow);
+var missingFirstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify(
+    null,
+    clock.UtcNow);
+
+Require(firstManagerTokenVerification.IsSuccess, "Signed first-manager setup token should verify with bootstrap trust.");
+Require(firstManagerTokenVerification.Payload?.PendingDeviceRequestId == firstManagerPairingRequestId, "First-manager setup token should bind the pending device request id.");
+Require(badFirstManagerTokenVerification.FailureCode == "SignatureInvalid", "Bad first-manager setup token signature should be rejected.");
+Require(expiredFirstManagerTokenVerification.FailureCode == "FirstManagerSetupTokenExpired", "Expired first-manager setup token should be rejected.");
+Require(missingFirstManagerTokenVerification.FailureCode == "FirstManagerSetupTokenRequired", "Missing first-manager setup token should be rejected.");
+var firstManagerDeviceCredential = $"safarsuite-device.{Guid.NewGuid():N}";
+var approvedFirstManagerDevice = firstManagerDevice.Approve(
+    "first-manager:owner@safarsuite.local",
+    "FirstManagerDevice",
+    Guid.NewGuid().ToString("N"),
+    ComputeSha256(firstManagerDeviceCredential),
+    clock.UtcNow);
+var firstManagerWriteResult = await pairingStore.SaveDeviceAndFirstManagerSetupTokenConsumptionAsync(
+    approvedFirstManagerDevice,
+    new LocalServerFirstManagerSetupTokenConsumptionRecord(
+        signedFirstManagerToken.Payload.TokenId,
+        clientId,
+        installationId,
+        firstManagerPairingRequestId,
+        firstManagerDeviceId,
+        signedFirstManagerToken.Payload.ManagerDisplayName,
+        signedFirstManagerToken.Payload.ManagerEmail,
+        signedFirstManagerToken.Payload.CreatedBy,
+        signedFirstManagerToken.Signature.KeyId,
+        signedFirstManagerToken.Signature.PayloadSha256,
+        signedFirstManagerToken.Payload.IssuedAtUtc,
+        signedFirstManagerToken.Payload.ExpiresAtUtc,
+        clock.UtcNow));
+var consumedFirstManagerToken = await pairingStore.GetFirstManagerSetupTokenConsumptionAsync(
+    signedFirstManagerToken.Payload.TokenId);
+var persistedFirstManagerDevice = await pairingStore.GetByDeviceIdAsync(firstManagerDeviceId);
+
+Require(firstManagerWriteResult.Succeeded, "First-manager setup token should atomically approve the device and record consumption.");
+Require(consumedFirstManagerToken is not null, "Consumed first-manager setup token should be persisted.");
+Require(persistedFirstManagerDevice?.DeviceStatus == LocalServerDevicePairingRecordStatuses.Approved, "First-manager setup token should approve the pending device.");
 
 var badBootstrapBundle = bootstrapPackage.SignedBundle with
 {
@@ -727,6 +828,12 @@ Console.WriteLine(JsonSerializer.Serialize(
         bootstrapDeploymentMode = bootstrapPackage.DeploymentProfile.ClientDeploymentMode,
         bootstrapSiteId = bootstrapPackage.DeploymentProfile.SiteId,
         bootstrapSiteRole = bootstrapPackage.DeploymentProfile.SiteRole,
+        firstManagerSetupTokenStatus = firstManagerTokenVerification.IsSuccess ? "Verified" : firstManagerTokenVerification.FailureCode,
+        badFirstManagerSetupTokenRejected = badFirstManagerTokenVerification.FailureCode,
+        expiredFirstManagerSetupTokenRejected = expiredFirstManagerTokenVerification.FailureCode,
+        missingFirstManagerSetupTokenRejected = missingFirstManagerTokenVerification.FailureCode,
+        firstManagerDeviceStatus = persistedFirstManagerDevice?.DeviceStatus,
+        firstManagerSetupTokenConsumed = consumedFirstManagerToken is not null,
         cachedVersion = verifiedCachedEntitlement.EntitlementVersion,
         importedBundleIssueId = importedEntitlement.BundleIssueId,
         pulledAtUtc = pullResult.PulledAtUtc,
@@ -1041,6 +1148,46 @@ static ClientPortalSignedEntitlementBundleResponse CreateSignedBundle(
         new ClientPortalEntitlementBundleSignatureResponse(
             "HMAC-SHA256",
             "local-entitlement-dev",
+            payloadSha256,
+            signature));
+}
+
+static LocalServerSignedFirstManagerSetupTokenResponse CreateSignedFirstManagerSetupToken(
+    Guid clientId,
+    string installationId,
+    Guid pendingDeviceRequestId,
+    DateTimeOffset issuedAtUtc,
+    string signingKeyId,
+    string signingSecret,
+    DateTimeOffset? expiresAtUtc = null)
+{
+    var payload = new LocalServerFirstManagerSetupTokenPayloadResponse(
+        LocalServerPairingFormats.FirstManagerSetupTokenVersion,
+        Guid.NewGuid(),
+        clientId,
+        installationId,
+        pendingDeviceRequestId,
+        [
+            LocalServerFirstManagerSetupTokenActions.CreateFirstManager,
+            LocalServerFirstManagerSetupTokenActions.ApproveFirstDevice
+        ],
+        "Owner",
+        "owner@safarsuite.local",
+        "entitlement-smoke",
+        issuedAtUtc,
+        expiresAtUtc ?? issuedAtUtc.AddHours(1));
+    var payloadJson = JsonSerializer.Serialize(
+        payload,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    var payloadSha256 = ComputeSha256(payloadJson);
+    var signature = Sign(signingSecret, payloadJson);
+
+    return new LocalServerSignedFirstManagerSetupTokenResponse(
+        payloadJson,
+        payload,
+        new LocalServerBootstrapPackageSignatureResponse(
+            "HMAC-SHA256",
+            signingKeyId,
             payloadSha256,
             signature));
 }

@@ -37,6 +37,9 @@ public static class LocalServerRuntimeEndpoints
         group.MapGet("/pairing/requests/{pairingRequestId:guid}", GetDevicePairingRequestAsync)
             .WithName("GetLocalServerDevicePairingRequest");
 
+        group.MapPost("/pairing/first-manager-token/import", ImportFirstManagerSetupTokenAsync)
+            .WithName("ImportLocalServerFirstManagerSetupToken");
+
         group.MapGet("/devices", ListDevicesAsync)
             .WithName("ListLocalServerDevices");
 
@@ -283,6 +286,135 @@ public static class LocalServerRuntimeEndpoints
         return record is null
             ? NotFound("PairingRequestNotFound", "Device pairing request was not found.")
             : Results.Ok(ToPairingRequestResponse(record));
+    }
+
+    private static async Task<IResult> ImportFirstManagerSetupTokenAsync(
+        LocalServerSignedFirstManagerSetupTokenResponse? request,
+        ILocalServerFirstManagerSetupTokenVerifier verifier,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        CancellationToken cancellationToken)
+    {
+        var importedAtUtc = DateTimeOffset.UtcNow;
+        var verification = verifier.Verify(request, importedAtUtc);
+
+        if (!verification.IsSuccess)
+        {
+            return ToFailureResult(verification.FailureCode, verification.Detail);
+        }
+
+        var payload = verification.Payload!;
+        var signature = verification.Signature!;
+        var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
+
+        if (configuration is null)
+        {
+            return ToFailureResult(
+                "BootstrapConfigurationMissing",
+                "A verified bootstrap configuration is required before importing a first-manager setup token.");
+        }
+
+        if (payload.ClientId != configuration.ClientId)
+        {
+            return ToFailureResult(
+                "ClientMismatch",
+                "First-manager setup token belongs to another client.");
+        }
+
+        if (!string.Equals(payload.InstallationId, configuration.InstallationId, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "InstallationMismatch",
+                "First-manager setup token belongs to another LocalServer installation.");
+        }
+
+        var existingConsumption = await pairingStore.GetFirstManagerSetupTokenConsumptionAsync(
+            payload.TokenId,
+            cancellationToken);
+
+        if (existingConsumption is not null)
+        {
+            return ToFailureResult(
+                "FirstManagerSetupTokenAlreadyConsumed",
+                "First-manager setup token has already been consumed by this LocalServer.");
+        }
+
+        var record = await pairingStore.GetByPairingRequestIdAsync(
+            payload.PendingDeviceRequestId,
+            cancellationToken);
+
+        if (record is null)
+        {
+            return NotFound(
+                "PairingRequestNotFound",
+                "First-manager setup token references a pairing request that was not found.");
+        }
+
+        if (record.ClientId != configuration.ClientId
+            || !string.Equals(record.InstallationId, configuration.InstallationId, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "PairingRequestMismatch",
+                "First-manager setup token references a pairing request for another client or installation.");
+        }
+
+        if (!string.Equals(record.PairingRequestStatus, LocalServerDevicePairingRecordStatuses.Pending, StringComparison.Ordinal)
+            || !string.Equals(record.DeviceStatus, LocalServerDevicePairingRecordStatuses.Pending, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "DeviceStatusInvalid",
+                "First-manager setup token can only approve a pending device pairing request.");
+        }
+
+        var deviceCredential = GenerateDeviceCredential();
+        var deviceCredentialId = Guid.NewGuid().ToString("N");
+        var approved = record.Approve(
+            BuildFirstManagerActor(payload),
+            "FirstManagerDevice",
+            deviceCredentialId,
+            Sha256Hex(deviceCredential),
+            importedAtUtc);
+        var consumption = new LocalServerFirstManagerSetupTokenConsumptionRecord(
+            payload.TokenId,
+            payload.ClientId,
+            payload.InstallationId,
+            payload.PendingDeviceRequestId,
+            record.DeviceId,
+            NormalizeRequired(payload.ManagerDisplayName, 160) ?? "First Manager",
+            NormalizeOptional(payload.ManagerEmail, 160),
+            NormalizeRequired(payload.CreatedBy, 160) ?? "SafarSuite Control Cloud",
+            signature.KeyId.Trim(),
+            signature.PayloadSha256,
+            payload.IssuedAtUtc,
+            payload.ExpiresAtUtc,
+            importedAtUtc);
+
+        var writeResult = await pairingStore.SaveDeviceAndFirstManagerSetupTokenConsumptionAsync(
+            approved,
+            consumption,
+            cancellationToken);
+
+        if (!writeResult.Succeeded)
+        {
+            return string.Equals(writeResult.FailureCode, "PairingRequestNotFound", StringComparison.Ordinal)
+                ? NotFound(writeResult.FailureCode!, writeResult.Detail!)
+                : ToFailureResult(writeResult.FailureCode, writeResult.Detail);
+        }
+
+        return Results.Ok(new ImportLocalServerFirstManagerSetupTokenResponse(
+            payload.TokenId,
+            payload.ClientId,
+            payload.InstallationId,
+            payload.PendingDeviceRequestId,
+            approved.DeviceId,
+            consumption.ManagerDisplayName,
+            consumption.ManagerEmail,
+            consumption.CreatedBy,
+            ToDeviceResponse(approved),
+            deviceCredential,
+            signature.KeyId.Trim(),
+            signature.PayloadSha256,
+            importedAtUtc));
     }
 
     private static async Task<IResult> ListDevicesAsync(
@@ -929,6 +1061,16 @@ public static class LocalServerRuntimeEndpoints
         return $"safarsuite-device.{Base64UrlEncode(RandomNumberGenerator.GetBytes(32))}";
     }
 
+    private static string BuildFirstManagerActor(
+        LocalServerFirstManagerSetupTokenPayloadResponse payload)
+    {
+        var manager = NormalizeRequired(payload.ManagerEmail, 160)
+            ?? NormalizeRequired(payload.ManagerDisplayName, 160)
+            ?? "first-manager";
+
+        return $"first-manager:{manager}";
+    }
+
     private static string Sha256Hex(string value)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value.Trim()));
@@ -984,6 +1126,7 @@ public static class LocalServerRuntimeEndpoints
             "CommandClientMismatch" => Results.Conflict(response),
             "CommandInstallationMismatch" => Results.Conflict(response),
             "CommandStatusInvalid" => Results.Conflict(response),
+            "FirstManagerSetupTokenAlreadyConsumed" => Results.Conflict(response),
             "AppActivationRevocationClientMismatch" => Results.Conflict(response),
             "AppActivationRevocationInstallationMismatch" => Results.Conflict(response),
             _ when code.EndsWith("Required", StringComparison.Ordinal) => Results.BadRequest(response),

@@ -449,6 +449,81 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
             "LocalServer pairing hello did not return a stable non-secret pairing identity.");
     }
 
+    var firstManagerDevicePairingRequest = new LocalServerDevicePairingRequest(
+        LocalServerPairingFormats.DevicePairingRequestVersion,
+        imported.InstallationId,
+        "Compose First Manager Device",
+        $"compose-first-manager-public-key-{Guid.NewGuid():N}",
+        DeviceFingerprintHash: $"compose-first-manager-fingerprint-{Guid.NewGuid():N}",
+        WindowsUserHint: "compose-first-manager",
+        AppVersion: options.AppVersion,
+        HelloServerNonce: hello.ServerNonce,
+        HelloClientNonce: hello.ClientNonce,
+        RequestedAtUtc: DateTimeOffset.UtcNow);
+    using var firstManagerPairingRequestResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/requests",
+        firstManagerDevicePairingRequest,
+        bundleJsonOptions);
+    var firstManagerPairingRequest = await ReadJsonResponseAsync<LocalServerDevicePairingRequestResponse>(
+        firstManagerPairingRequestResponse,
+        "create first-manager LocalServer device pairing request");
+
+    var firstManagerToken = CreateFirstManagerSetupToken(
+        options,
+        imported.ClientId,
+        imported.InstallationId,
+        firstManagerPairingRequest.PairingRequestId);
+    var wrongClientFirstManagerToken = CreateFirstManagerSetupToken(
+        options,
+        Guid.NewGuid(),
+        imported.InstallationId,
+        firstManagerPairingRequest.PairingRequestId);
+    using var wrongClientFirstManagerImportResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/first-manager-token/import",
+        wrongClientFirstManagerToken,
+        bundleJsonOptions);
+
+    if (wrongClientFirstManagerImportResponse.IsSuccessStatusCode)
+    {
+        throw new InvalidOperationException(
+            "First-manager setup token for a wrong client was accepted.");
+    }
+
+    var wrongInstallationFirstManagerToken = CreateFirstManagerSetupToken(
+        options,
+        imported.ClientId,
+        $"wrong-{imported.InstallationId}",
+        firstManagerPairingRequest.PairingRequestId);
+    using var wrongInstallationFirstManagerImportResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/first-manager-token/import",
+        wrongInstallationFirstManagerToken,
+        bundleJsonOptions);
+
+    if (wrongInstallationFirstManagerImportResponse.IsSuccessStatusCode)
+    {
+        throw new InvalidOperationException(
+            "First-manager setup token for a wrong installation was accepted.");
+    }
+
+    using var firstManagerImportResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/first-manager-token/import",
+        firstManagerToken,
+        bundleJsonOptions);
+    var firstManagerImport = await ReadJsonResponseAsync<ImportLocalServerFirstManagerSetupTokenResponse>(
+        firstManagerImportResponse,
+        "import first-manager setup token");
+
+    using var firstManagerReplayResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/first-manager-token/import",
+        firstManagerToken,
+        bundleJsonOptions);
+
+    if (firstManagerReplayResponse.IsSuccessStatusCode)
+    {
+        throw new InvalidOperationException(
+            "Replayed first-manager setup token was accepted.");
+    }
+
     var devicePairingRequest = new LocalServerDevicePairingRequest(
         LocalServerPairingFormats.DevicePairingRequestVersion,
         imported.InstallationId,
@@ -503,7 +578,11 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
         revokeResponse,
         "revoke LocalServer paired device");
 
-    if (!string.Equals(pairingRequest.PairingRequestStatus, LocalServerDevicePairingStatuses.Pending, StringComparison.Ordinal)
+    if (!string.Equals(firstManagerImport.Device.DeviceStatus, LocalServerDevicePairingStatuses.Approved, StringComparison.Ordinal)
+        || string.IsNullOrWhiteSpace(firstManagerImport.DeviceCredential)
+        || firstManagerImport.TokenId != firstManagerToken.Payload.TokenId
+        || firstManagerImport.PairingRequestId != firstManagerPairingRequest.PairingRequestId
+        || !string.Equals(pairingRequest.PairingRequestStatus, LocalServerDevicePairingStatuses.Pending, StringComparison.Ordinal)
         || !pendingDevices.Devices.Any(device => device.DeviceId == pairingRequest.DeviceId)
         || !string.Equals(approvedDevice.Device.DeviceStatus, LocalServerDevicePairingStatuses.Approved, StringComparison.Ordinal)
         || string.IsNullOrWhiteSpace(approvedDevice.DeviceCredential)
@@ -535,6 +614,7 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
         commands.AppliedCount,
         discovery.HasBootstrapConfiguration,
         hello.PairingMode,
+        firstManagerImport.Device.DeviceStatus,
         pairingRequest.PairingRequestStatus,
         approvedDevice.Device.DeviceStatus,
         revokedDevice.DeviceStatus,
@@ -1550,6 +1630,41 @@ string BuildEnvironmentFileFromPackage(
         "");
 }
 
+LocalServerSignedFirstManagerSetupTokenResponse CreateFirstManagerSetupToken(
+    ProofOptions options,
+    Guid clientId,
+    string installationId,
+    Guid pendingDeviceRequestId)
+{
+    var issuedAtUtc = DateTimeOffset.UtcNow;
+    var payload = new LocalServerFirstManagerSetupTokenPayloadResponse(
+        LocalServerPairingFormats.FirstManagerSetupTokenVersion,
+        Guid.NewGuid(),
+        clientId,
+        installationId,
+        pendingDeviceRequestId,
+        [
+            LocalServerFirstManagerSetupTokenActions.CreateFirstManager,
+            LocalServerFirstManagerSetupTokenActions.ApproveFirstDevice
+        ],
+        "Compose Proof Manager",
+        "compose.manager@safarsuite.local",
+        "compose-bootstrap-proof",
+        issuedAtUtc,
+        issuedAtUtc.AddHours(1));
+    var payloadJson = JsonSerializer.Serialize(payload, bundleJsonOptions);
+    var signature = new LocalServerBootstrapPackageSignatureResponse(
+        "HMAC-SHA256",
+        options.SigningKeyId,
+        ComputeSha256(payloadJson),
+        Sign(options.SigningSecret, payloadJson));
+
+    return new LocalServerSignedFirstManagerSetupTokenResponse(
+        payloadJson,
+        payload,
+        signature);
+}
+
 SafarSuiteAppActivationSigningKeyResponse ReadAppActivationSigningKey(
     LocalServerBootstrapPackageResponse package)
 {
@@ -1984,6 +2099,7 @@ internal sealed record LocalRuntimeProofResult(
     int AppliedCommandCount,
     bool PairingDiscoveryHasBootstrap,
     string PairingMode,
+    string FirstManagerDeviceStatus,
     string DevicePairingRequestStatus,
     string ApprovedDeviceStatus,
     string RevokedDeviceStatus,

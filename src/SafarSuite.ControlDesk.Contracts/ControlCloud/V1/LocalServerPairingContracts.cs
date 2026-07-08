@@ -7,6 +7,7 @@ public static class LocalServerPairingFormats
     public const string HelloResponseVersion = "safarsuite-local-pairing-hello-v1";
     public const string DevicePairingRequestVersion = "safarsuite-local-device-pairing-request-v1";
     public const string PairingProfileVersion = "safarsuite-local-pairing-profile-v1";
+    public const string FirstManagerSetupTokenVersion = "safarsuite-first-manager-setup-token-v1";
 }
 
 public static class LocalServerPairingModes
@@ -24,6 +25,12 @@ public static class LocalServerDevicePairingStatuses
     public const string Revoked = "Revoked";
     public const string Blocked = "Blocked";
     public const string Retired = "Retired";
+}
+
+public static class LocalServerFirstManagerSetupTokenActions
+{
+    public const string CreateFirstManager = "CreateFirstManager";
+    public const string ApproveFirstDevice = "ApproveFirstDevice";
 }
 
 public sealed record LocalServerPairingDiscoveryResponse(
@@ -157,3 +164,36 @@ public sealed record LocalServerPairingProfile(
     IReadOnlyCollection<string> UrlCandidates,
     DateTimeOffset ApprovedAtUtc,
     DateTimeOffset LastSeenAtUtc);
+
+public sealed record LocalServerFirstManagerSetupTokenPayloadResponse(
+    string FormatVersion,
+    Guid TokenId,
+    Guid ClientId,
+    string InstallationId,
+    Guid PendingDeviceRequestId,
+    IReadOnlyCollection<string> AllowedActions,
+    string ManagerDisplayName,
+    string? ManagerEmail,
+    string CreatedBy,
+    DateTimeOffset IssuedAtUtc,
+    DateTimeOffset ExpiresAtUtc);
+
+public sealed record LocalServerSignedFirstManagerSetupTokenResponse(
+    string PayloadJson,
+    LocalServerFirstManagerSetupTokenPayloadResponse Payload,
+    LocalServerBootstrapPackageSignatureResponse Signature);
+
+public sealed record ImportLocalServerFirstManagerSetupTokenResponse(
+    Guid TokenId,
+    Guid ClientId,
+    string InstallationId,
+    Guid PairingRequestId,
+    Guid DeviceId,
+    string ManagerDisplayName,
+    string? ManagerEmail,
+    string CreatedBy,
+    LocalServerDeviceResponse Device,
+    string DeviceCredential,
+    string SignatureKeyId,
+    string PayloadSha256,
+    DateTimeOffset ImportedAtUtc);
