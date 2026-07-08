@@ -360,6 +360,31 @@ export type LocalServerBootstrapPackage = LocalServerBootstrapPackagePayload & {
   signedBundle: LocalServerSignedBootstrapBundle;
 };
 
+export type LocalServerBootstrapPackageSummary = {
+  bootstrapPackageId: string;
+  setupTokenId: string;
+  clientId: string;
+  installationId: string;
+  packageStatus: string;
+  tokenStatus: string;
+  createdBy: string;
+  deploymentMode: string;
+  deploymentProfile: LocalServerDeploymentProfile;
+  createdAtUtc: string;
+  generatedAtUtc: string;
+  setupTokenExpiresAtUtc: string;
+  consumedAtUtc: string | null;
+  consumedLocalServerVersion: string | null;
+  localServerVersion: string;
+  safarSuiteAppVersion: string;
+  bundleFileName: string;
+  bundleSha256: string;
+};
+
+export type LocalServerBootstrapPackageRegister = {
+  packages: LocalServerBootstrapPackageSummary[];
+};
+
 export type LocalServerDiagnosticCheck = {
   code: string;
   status: string;

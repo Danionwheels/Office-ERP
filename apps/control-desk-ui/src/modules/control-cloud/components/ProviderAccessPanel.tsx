@@ -54,6 +54,16 @@ const providerScopeOptions: ProviderScopeOption[] = [
     detail: "Issue and revoke app activation mappings."
   },
   {
+    scope: "deployment-packages:read",
+    label: "Packages read",
+    detail: "View generated deployment packages."
+  },
+  {
+    scope: "deployment-packages:write",
+    label: "Packages write",
+    detail: "Create setup tokens and deployment packages."
+  },
+  {
     scope: "client-portal:manage",
     label: "Client portal",
     detail: "Create, resend, and revoke client portal invitations."
@@ -75,7 +85,7 @@ const emptyCreateOperatorForm: ProviderAccessOperatorCreateInput = {
   email: "",
   fullName: "",
   password: "",
-  scopes: ["app-activation:read"],
+  scopes: ["app-activation:read", "deployment-packages:read"],
   createdBy: "SafarSuite Control Desk"
 };
 

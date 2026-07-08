@@ -81,6 +81,7 @@ import {
   getCloudInstallationStatus,
   issueCloudAppActivationToken,
   listCloudAppActivationIssues,
+  listCloudInstallationBootstrapPackages,
   listCloudInstallationAuditEvents,
   listCloudOutboxMessages,
   publishCloudOutboxMessages,
@@ -100,6 +101,7 @@ import type {
   ControlCloudInstallationStatus,
   IssuedSafarSuiteAppActivationToken,
   LocalServerBootstrapPackage,
+  LocalServerBootstrapPackageSummary,
   LocalServerDiagnosticReport,
   LocalServerSetupToken,
   PublishCloudOutboxMessagesResult,
@@ -314,6 +316,8 @@ export function ClientDeskPage() {
   const [cloudSetupToken, setCloudSetupToken] = useState<LocalServerSetupToken | null>(null);
   const [cloudBootstrapPackage, setCloudBootstrapPackage] =
     useState<LocalServerBootstrapPackage | null>(null);
+  const [cloudBootstrapPackages, setCloudBootstrapPackages] =
+    useState<LocalServerBootstrapPackageSummary[]>([]);
   const [supportCommandForm, setSupportCommandForm] =
     useState<CloudInstallationSupportCommandFormInput>(createDefaultSupportCommandForm());
   const [queuedSupportCommand, setQueuedSupportCommand] =
@@ -1064,6 +1068,44 @@ export function ClientDeskPage() {
     }
 
     return true;
+  }
+
+  async function loadCloudBootstrapPackages(
+    clientId = selectedClient?.clientId,
+    installationId = cloudInstallationId
+  ): Promise<boolean> {
+    const normalizedInstallationId = installationId.trim();
+
+    if (clientId === undefined || normalizedInstallationId === "") {
+      setCloudBootstrapPackages([]);
+
+      return false;
+    }
+
+    try {
+      const packages = await listCloudInstallationBootstrapPackages(
+        clientId,
+        normalizedInstallationId,
+        20);
+      setCloudBootstrapPackages(packages);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud deployment package register."
+      ));
+
+      return true;
+    } catch (caughtError) {
+      const cloudIssue = toCloudConnectionIssue(caughtError);
+
+      if (cloudIssue !== null) {
+        setCloudBootstrapPackages([]);
+        setCloudConnectionState(cloudIssue);
+
+        return false;
+      }
+
+      throw caughtError;
+    }
   }
 
   async function loadCloudAppActivationIssues(
@@ -1975,6 +2017,7 @@ export function ClientDeskPage() {
     await runCloudAction(async () => {
       const found = await loadCloudInstallationStatus();
       await loadCloudInstallationAuditEvents();
+      await loadCloudBootstrapPackages();
       await loadCloudAppActivationIssues();
       await loadCloudOutboxMessages();
       setMessage(found
@@ -1994,6 +2037,19 @@ export function ClientDeskPage() {
       setMessage(found
         ? "Cloud installation history refreshed."
         : "Select an installation before refreshing cloud history.");
+    });
+  }
+
+  async function handleRefreshCloudBootstrapPackages() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      const found = await loadCloudBootstrapPackages();
+      setMessage(found
+        ? "Deployment package register refreshed."
+        : "Select an installation before refreshing deployment packages.");
     });
   }
 
@@ -2126,6 +2182,7 @@ export function ClientDeskPage() {
       ));
       setCloudSetupToken(setupToken);
       setCloudBootstrapPackage(null);
+      await loadCloudBootstrapPackages(selectedClient.clientId, savedDeployment.installationId);
       await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
       setMessage("Cloud setup token created.");
     });
@@ -2148,6 +2205,7 @@ export function ClientDeskPage() {
       ));
       setCloudBootstrapPackage(bootstrapPackage);
       setCloudSetupToken(null);
+      await loadCloudBootstrapPackages(selectedClient.clientId, savedDeployment.installationId);
       await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
       setMessage("Cloud bootstrap package created.");
     });
@@ -2450,6 +2508,7 @@ export function ClientDeskPage() {
   function clearCloudProvisioningArtifacts() {
     setCloudSetupToken(null);
     setCloudBootstrapPackage(null);
+    setCloudBootstrapPackages([]);
     setQueuedSupportCommand(null);
     setIssuedAppActivation(null);
     setAppActivationIssues([]);
@@ -3127,6 +3186,7 @@ export function ClientDeskPage() {
                   status={cloudInstallationStatus}
                   setupToken={cloudSetupToken}
                   bootstrapPackage={cloudBootstrapPackage}
+                  bootstrapPackages={cloudBootstrapPackages}
                   supportCommandValue={supportCommandForm}
                   queuedSupportCommand={queuedSupportCommand}
                   appActivationValue={appActivationForm}
@@ -3146,6 +3206,7 @@ export function ClientDeskPage() {
                   onSaveDeployment={handleSaveClientDeployment}
                   onCreateSetupToken={handleCreateCloudSetupToken}
                   onCreateBootstrapPackage={handleCreateCloudBootstrapPackage}
+                  onRefreshBootstrapPackages={handleRefreshCloudBootstrapPackages}
                   onSupportCommandValueChange={handleSupportCommandValueChange}
                   onQueueSupportCommand={handleQueueCloudSupportCommand}
                   onAppActivationValueChange={handleAppActivationValueChange}

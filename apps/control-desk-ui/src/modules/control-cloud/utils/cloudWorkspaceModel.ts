@@ -24,6 +24,7 @@ export function statusClass(value: string): string {
     || normalized === "healthy"
     || normalized === "registered"
     || normalized === "ok"
+    || normalized === "consumed"
     || normalized === "sent"
   ) {
     return "active";

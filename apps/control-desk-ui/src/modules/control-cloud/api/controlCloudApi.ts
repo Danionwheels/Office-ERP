@@ -8,6 +8,8 @@ import type {
   IssueCloudAppActivationTokenInput,
   IssuedSafarSuiteAppActivationToken,
   LocalServerBootstrapPackage,
+  LocalServerBootstrapPackageRegister,
+  LocalServerBootstrapPackageSummary,
   LocalServerDiagnosticReport,
   LocalServerSetupToken,
   PublishCloudOutboxMessagesResult,
@@ -128,6 +130,20 @@ export async function createCloudInstallationBootstrapPackage(
       })
     }
   );
+}
+
+export async function listCloudInstallationBootstrapPackages(
+  clientId: string,
+  installationId: string,
+  take = 20
+): Promise<LocalServerBootstrapPackageSummary[]> {
+  const response = await apiRequest<LocalServerBootstrapPackageRegister>(
+    `/api/v1/control-cloud/clients/${clientId}/installations/${encodeURIComponent(
+      installationId
+    )}/bootstrap-packages?take=${take}`
+  );
+
+  return response.packages;
 }
 
 export async function listCloudInstallationAuditEvents(

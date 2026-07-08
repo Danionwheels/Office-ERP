@@ -43,6 +43,7 @@ import {
   toAppActivationRequestJson
 } from "../utils/cloudWorkspaceModel";
 import { CloudControlBoard } from "./shared/CloudControlBoard";
+import type { LocalServerBootstrapPackageSummary } from "../types/controlCloudTypes";
 
 export function CloudInstallationStatusPanel({
   client,
@@ -55,6 +56,7 @@ export function CloudInstallationStatusPanel({
   status,
   setupToken,
   bootstrapPackage,
+  bootstrapPackages,
   supportCommandValue,
   queuedSupportCommand,
   appActivationValue,
@@ -74,6 +76,7 @@ export function CloudInstallationStatusPanel({
   onSaveDeployment,
   onCreateSetupToken,
   onCreateBootstrapPackage,
+  onRefreshBootstrapPackages,
   onSupportCommandValueChange,
   onQueueSupportCommand,
   onAppActivationValueChange,
@@ -571,6 +574,81 @@ export function CloudInstallationStatusPanel({
             </dl>
           </div>
         )}
+
+        <div className="cloud-bootstrap-register">
+          <div className="cloud-audit-heading">
+            <div>
+              <span>Deployment packages</span>
+              <strong>{bootstrapPackages.length} loaded</strong>
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              disabled={isBusy || client === null || deploymentValue.installationId.trim() === ""}
+              onClick={onRefreshBootstrapPackages}
+              title="Refresh deployment package register"
+            >
+              <RefreshCw size={16} />
+              Packages
+            </button>
+          </div>
+
+          {bootstrapPackages.length === 0 ? (
+            <div className="client-empty-state">No deployment packages loaded</div>
+          ) : (
+            <div className="cloud-bootstrap-package-list">
+              {bootstrapPackages.slice(0, 6).map((packageSummary) => (
+                <article
+                  className="cloud-bootstrap-package"
+                  key={packageSummary.bootstrapPackageId}
+                >
+                  <header>
+                    <div>
+                      <strong>
+                        {packageSummary.bundleFileName.trim()
+                          || shortIdentifier(packageSummary.bootstrapPackageId)}
+                      </strong>
+                      <span>
+                        {shortIdentifier(packageSummary.bootstrapPackageId)}
+                        {" / setup "}
+                        {shortIdentifier(packageSummary.setupTokenId)}
+                      </span>
+                    </div>
+                    <span className={`status-pill ${statusClass(packageSummary.packageStatus)}`}>
+                      {packageSummary.packageStatus}
+                    </span>
+                  </header>
+                  <dl>
+                    <div>
+                      <dt>Generated</dt>
+                      <dd>{formatNullableDateTime(packageSummary.generatedAtUtc)}</dd>
+                    </div>
+                    <div>
+                      <dt>Expires</dt>
+                      <dd>{formatNullableDateTime(packageSummary.setupTokenExpiresAtUtc)}</dd>
+                    </div>
+                    <div>
+                      <dt>Consumed</dt>
+                      <dd>{formatPackageConsumption(packageSummary)}</dd>
+                    </div>
+                    <div>
+                      <dt>Runtime</dt>
+                      <dd>{formatPackageRuntime(packageSummary)}</dd>
+                    </div>
+                    <div>
+                      <dt>Site</dt>
+                      <dd>{formatNullableText(packageSummary.deploymentProfile.siteId)}</dd>
+                    </div>
+                    <div>
+                      <dt>Bundle SHA</dt>
+                      <dd>{formatPackageHash(packageSummary.bundleSha256)}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="cloud-command-panel">
           <div className="cloud-audit-heading">
@@ -1271,4 +1349,29 @@ export function CloudInstallationStatusPanel({
       )}
     </section>
   );
+}
+
+function formatPackageConsumption(packageSummary: LocalServerBootstrapPackageSummary): string {
+  if (packageSummary.consumedAtUtc === null) {
+    return "Not consumed";
+  }
+
+  const consumedVersion = formatNullableText(packageSummary.consumedLocalServerVersion);
+
+  return consumedVersion === "Not set"
+    ? formatNullableDateTime(packageSummary.consumedAtUtc)
+    : `${formatNullableDateTime(packageSummary.consumedAtUtc)} / ${consumedVersion}`;
+}
+
+function formatPackageRuntime(packageSummary: LocalServerBootstrapPackageSummary): string {
+  const localServerVersion = formatNullableText(packageSummary.localServerVersion);
+  const safarSuiteVersion = formatNullableText(packageSummary.safarSuiteAppVersion);
+
+  return safarSuiteVersion === "Not set"
+    ? localServerVersion
+    : `${localServerVersion} / ${safarSuiteVersion}`;
+}
+
+function formatPackageHash(value: string): string {
+  return value.trim() === "" ? "Not set" : shortIdentifier(value);
 }

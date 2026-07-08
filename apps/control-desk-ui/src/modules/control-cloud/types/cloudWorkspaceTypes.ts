@@ -13,6 +13,7 @@ import type {
   ControlCloudInstallationStatus,
   IssuedSafarSuiteAppActivationToken,
   LocalServerBootstrapPackage,
+  LocalServerBootstrapPackageSummary,
   LocalServerDiagnosticReport,
   LocalServerDeploymentProfile,
   LocalServerSetupToken,
@@ -32,6 +33,7 @@ export type CloudInstallationStatusPanelProps = {
   status: ControlCloudInstallationStatus | null;
   setupToken: LocalServerSetupToken | null;
   bootstrapPackage: LocalServerBootstrapPackage | null;
+  bootstrapPackages: LocalServerBootstrapPackageSummary[];
   supportCommandValue: CloudInstallationSupportCommandFormInput;
   queuedSupportCommand: QueuedCloudInstallationSupportCommand | null;
   appActivationValue: CloudAppActivationTokenFormInput;
@@ -51,6 +53,7 @@ export type CloudInstallationStatusPanelProps = {
   onSaveDeployment: () => Promise<void>;
   onCreateSetupToken: () => Promise<void>;
   onCreateBootstrapPackage: () => Promise<void>;
+  onRefreshBootstrapPackages: () => Promise<void>;
   onSupportCommandValueChange: (value: CloudInstallationSupportCommandFormInput) => void;
   onQueueSupportCommand: () => Promise<void>;
   onAppActivationValueChange: (value: CloudAppActivationTokenFormInput) => void;

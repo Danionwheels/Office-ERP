@@ -5060,6 +5060,76 @@ td {
   font-size: 12px;
 }
 
+.cloud-bootstrap-register {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #d6dde5;
+  padding-top: 8px;
+}
+
+.cloud-bootstrap-package-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cloud-bootstrap-package {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d6dde5;
+  border-radius: 6px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.cloud-bootstrap-package header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cloud-bootstrap-package header div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cloud-bootstrap-package strong,
+.cloud-bootstrap-package span,
+.cloud-bootstrap-package dt,
+.cloud-bootstrap-package dd {
+  overflow-wrap: anywhere;
+}
+
+.cloud-bootstrap-package strong {
+  color: #20252b;
+  font-size: 12px;
+}
+
+.cloud-bootstrap-package span,
+.cloud-bootstrap-package dt {
+  color: #5c6570;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.cloud-bootstrap-package dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.cloud-bootstrap-package dl div {
+  min-width: 0;
+}
+
+.cloud-bootstrap-package dd {
+  margin: 0;
+  color: #20252b;
+  font-size: 12px;
+}
+
 .cloud-command-grid label {
   display: grid;
   gap: 4px;
@@ -13506,6 +13576,7 @@ td {
   .cloud-app-identity-map,
   .cloud-app-activation-grid,
   .cloud-app-activation-issue dl,
+  .cloud-bootstrap-package dl,
   .cloud-command-grid,
   .cloud-diagnostics-facts,
   .cloud-diagnostics-checks,
@@ -13795,6 +13866,7 @@ td {
   .cloud-app-identity-map,
   .cloud-app-activation-grid,
   .cloud-app-activation-issue dl,
+  .cloud-bootstrap-package dl,
   .cloud-command-grid,
   .cloud-diagnostics-facts,
   .cloud-diagnostics-checks,
