@@ -79,6 +79,8 @@ Provider access settings live under `ClientPortal:ProviderAccess`:
       "SharedSecretFile": "",
       "SessionSigningSecret": "change-before-production",
       "SessionSigningSecretFile": "",
+      "TotpProtectionSecret": "change-before-production",
+      "TotpProtectionSecretFile": "",
       "ActiveSessionSigningKeyId": "",
       "SessionSigningKeys": [],
       "SessionMinutes": 60,
@@ -97,9 +99,10 @@ Provider access settings live under `ClientPortal:ProviderAccess`:
 
 Notes:
 
-- Prefer `SharedSecretFile`, `SessionSigningSecretFile`, and per-key `SecretFile` for production so app configuration points at mounted secret files instead of carrying secret text.
+- Prefer `SharedSecretFile`, `SessionSigningSecretFile`, `TotpProtectionSecretFile`, and per-key `SecretFile` for production so app configuration points at mounted secret files instead of carrying secret text.
 - `SessionSigningSecret` is the legacy single-secret signing setting and is still supported for bearer sessions.
 - `SessionSigningKeys` is the preferred rotation shape. When populated, Control Cloud signs new sessions with `ActiveSessionSigningKeyId` and validates bearer sessions against every configured key in the array. Keep the previous key in the array for one maximum session lifetime, then remove it.
+- `TotpProtectionSecret` protects stored provider-operator TOTP secrets. Keep it stable across deploys; if it is lost or changed, reset each operator's TOTP enrollment.
 - `SessionMinutes` is clamped between 5 and 1440 minutes.
 - `OperatorStorePath` is used only by file persistence.
 - `Users` is a seed list, not a long-term management surface. It is written only when the operator store is missing or empty.
@@ -159,6 +162,7 @@ Use file-backed provider-access secrets when deploying Control Cloud with Docker
   "ClientPortal": {
     "ProviderAccess": {
       "SharedSecretFile": "/run/secrets/safarsuite-provider-access-shared-secret",
+      "TotpProtectionSecretFile": "/run/secrets/safarsuite-provider-totp-protection-secret",
       "ActiveSessionSigningKeyId": "provider-session-2026-07",
       "SessionSigningKeys": [
         {
@@ -237,7 +241,7 @@ $totp.secret
 $totp.otpAuthUri
 ```
 
-The TOTP secret and `otpauth://` URI are returned only in this reset response. Store the operator backing store with the same care as other provider-access secrets.
+The TOTP secret and `otpauth://` URI are returned only in this reset response. Control Cloud stores a protected TOTP payload keyed by `TotpProtectionSecret`; any legacy plaintext TOTP material is rewritten to the protected format after a successful TOTP login.
 
 Update scopes:
 
@@ -270,10 +274,10 @@ dotnet run --project tools\SafarSuite.ControlCloud.ProviderAccessSmoke\SafarSuit
 Expected result:
 
 ```text
-Provider access smoke passed 13 checks:
+Provider access smoke passed 14 checks:
 ```
 
-The smoke proves file-backed seed persistence, scoped operator session issuance, recovery-code MFA enforcement/consumption/exhaustion, TOTP MFA enforcement/replay protection, session-signing key rotation acceptance/removal, file-backed secret loading, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
+The smoke proves file-backed seed persistence, scoped operator session issuance, recovery-code MFA enforcement/consumption/exhaustion, TOTP MFA enforcement/replay protection/protected custody, legacy plaintext TOTP migration, session-signing key rotation acceptance/removal, file-backed secret loading, over-scoped login rejection, unsupported-scope rejection, file-store save/reload, file-store validation, EF table mapping, and EF store validation before database access.
 
 Run the live Control Desk proxy proof:
 
@@ -287,7 +291,7 @@ Expected result:
 Control Desk provider-access proxy proof passed 19 checks:
 ```
 
-The proxy proof applies Control Cloud PostgreSQL migrations, starts Control Cloud and Control Desk on temporary local ports, points Control Desk at the Control Cloud provider access gate, performs list/create/scope/status/password-reset/recovery-code-reset/TOTP-reset operations through `/api/v1/control-cloud/provider-access/operators`, mints provider bearer sessions through `/api/v1/control-cloud/provider-access/operator-sessions`, proves an under-scoped override session is enforced ahead of the configured shared-secret fallback, proves a manager-scoped override session can list operators, changes a provider operator password through `/api/v1/control-cloud/provider-access/operator-password`, signs in with the self-changed password and a TOTP code, and verifies the final provider operator row in PostgreSQL.
+The proxy proof applies Control Cloud PostgreSQL migrations, starts Control Cloud and Control Desk on temporary local ports, points Control Desk at the Control Cloud provider access gate, performs list/create/scope/status/password-reset/recovery-code-reset/TOTP-reset operations through `/api/v1/control-cloud/provider-access/operators`, mints provider bearer sessions through `/api/v1/control-cloud/provider-access/operator-sessions`, proves an under-scoped override session is enforced ahead of the configured shared-secret fallback, proves a manager-scoped override session can list operators, changes a provider operator password through `/api/v1/control-cloud/provider-access/operator-password`, signs in with the self-changed password and a TOTP code, and verifies the final provider operator row plus protected TOTP payload in PostgreSQL.
 
 For live app-runtime activation proof, `tools\SafarSuite.LocalServer.ComposeBootstrapProof activate-app-runtime` defaults to `POST /api/v1/provider-access/operator-sessions` and then sends the returned bearer token to Control Cloud.
 

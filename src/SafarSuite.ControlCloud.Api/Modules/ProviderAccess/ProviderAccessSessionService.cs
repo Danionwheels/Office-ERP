@@ -19,17 +19,20 @@ public sealed class ProviderAccessSessionService
     private readonly IControlCloudClock _clock;
     private readonly IClientPortalCredentialService _credentials;
     private readonly IProviderAccessOperatorStore _operators;
+    private readonly IProviderAccessTotpSecretProtector _totpSecrets;
 
     public ProviderAccessSessionService(
         ClientPortalProviderAccessOptions options,
         IControlCloudClock clock,
         IClientPortalCredentialService credentials,
-        IProviderAccessOperatorStore operators)
+        IProviderAccessOperatorStore operators,
+        IProviderAccessTotpSecretProtector totpSecrets)
     {
         _options = options;
         _clock = clock;
         _credentials = credentials;
         _operators = operators;
+        _totpSecrets = totpSecrets;
     }
 
     public ProviderAccessSessionResult CreateSession(
@@ -185,8 +188,16 @@ public sealed class ProviderAccessSessionService
 
         if (hasTotp && suppliedTotpCode)
         {
+            if (!TryGetTotpSecret(user, out var totpSecret, out var shouldProtectTotpSecret))
+            {
+                return ProviderAccessSessionResult.Failure(
+                    "ProviderMfaUnavailable",
+                    "Provider operator MFA secret is unavailable.",
+                    StatusCodes.Status401Unauthorized);
+            }
+
             if (ProviderAccessTotp.TryVerifyCode(
-                user.TotpSecret!,
+                totpSecret,
                 totpCode,
                 _clock.UtcNow,
                 user.LastTotpStep,
@@ -194,6 +205,12 @@ public sealed class ProviderAccessSessionService
             {
                 user.LastTotpUsedAtUtc = _clock.UtcNow;
                 user.LastTotpStep = acceptedStep;
+
+                if (shouldProtectTotpSecret)
+                {
+                    user.TotpSecret = _totpSecrets.Protect(totpSecret);
+                }
+
                 return null;
             }
 
@@ -239,6 +256,23 @@ public sealed class ProviderAccessSessionService
             "ProviderMfaRequired",
             "Provider operator recovery code is required.",
             StatusCodes.Status401Unauthorized);
+    }
+
+    private bool TryGetTotpSecret(
+        ProviderAccessOperator user,
+        out string secret,
+        out bool shouldProtect)
+    {
+        secret = "";
+        shouldProtect = false;
+
+        if (!_totpSecrets.TryUnprotect(user.TotpSecret ?? "", out secret))
+        {
+            return false;
+        }
+
+        shouldProtect = !_totpSecrets.IsProtected(user.TotpSecret ?? "");
+        return true;
     }
 
     private ProviderAccessSessionResult? TryConsumeRecoveryCode(

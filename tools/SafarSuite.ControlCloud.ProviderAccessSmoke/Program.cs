@@ -51,6 +51,7 @@ try
         ]
     };
 
+    var totpProtector = new ProviderAccessTotpSecretProtector(providerOptions);
     var fileStore = new FileProviderAccessOperatorStore(providerOptions);
     var seededOperators = await fileStore.ListAsync();
     Require(seededOperators.Count == 1, "file store should seed one provider operator.");
@@ -66,7 +67,8 @@ try
         providerOptions,
         clock,
         credentials,
-        fileStore);
+        fileStore,
+        totpProtector);
     var session = await sessionService.CreateSessionFromCredentialsAsync(
         "seed.provider@safarsuite.local",
         "SeedProviderPass123!",
@@ -141,7 +143,7 @@ try
         PasswordHash = credentials.HashPassword("TotpProviderPass123!"),
         Status = ProviderAccessOperatorStatuses.Active,
         Scopes = [ProviderAccessScopes.ProviderOperatorsManage],
-        TotpSecret = totpSecret,
+        TotpSecret = totpProtector.Protect(totpSecret),
         TotpEnabledAtUtc = clock.UtcNow,
         TotpUpdatedAtUtc = clock.UtcNow,
         TotpUpdatedBy = "provider-access-smoke",
@@ -183,9 +185,44 @@ try
     Require(totpSession.IsSuccess, "TOTP-enabled operator should issue a session with a valid TOTP code.");
     Require(!replayedTotpSession.IsSuccess, "TOTP-enabled operator should reject a replayed TOTP code.");
     Require(replayedTotpSession.FailureCode == "ProviderMfaInvalid", "replayed TOTP code should return ProviderMfaInvalid.");
+    Require(usedTotpOperator?.TotpSecret != totpSecret, "stored TOTP secret should not be plaintext.");
+    Require(totpProtector.IsProtected(usedTotpOperator?.TotpSecret ?? ""), "stored TOTP secret should use the protected payload format.");
     Require(usedTotpOperator?.LastTotpUsedAtUtc == clock.UtcNow, "TOTP use should be timestamped.");
     Require(usedTotpOperator?.LastTotpStep is not null, "TOTP use should store the accepted step.");
-    checks.Add("enforced provider TOTP MFA and replay guard");
+    checks.Add("enforced provider TOTP MFA, replay guard, and protected custody");
+
+    var legacyTotpSecret = ProviderAccessTotp.CreateSecret();
+    var legacyTotpOperator = new ProviderAccessOperator
+    {
+        UserId = Guid.NewGuid().ToString("N"),
+        Email = "legacy-totp.provider@safarsuite.local",
+        FullName = "Legacy TOTP Provider",
+        PasswordHash = credentials.HashPassword("LegacyTotpPass123!"),
+        Status = ProviderAccessOperatorStatuses.Active,
+        Scopes = [ProviderAccessScopes.ProviderOperatorsManage],
+        TotpSecret = legacyTotpSecret,
+        TotpEnabledAtUtc = clock.UtcNow,
+        TotpUpdatedAtUtc = clock.UtcNow,
+        TotpUpdatedBy = "provider-access-smoke",
+        CreatedAtUtc = clock.UtcNow,
+        CreatedBy = "provider-access-smoke"
+    };
+
+    await fileStore.SaveAsync(legacyTotpOperator);
+
+    var legacyTotpSession = await sessionService.CreateSessionFromCredentialsAsync(
+        "legacy-totp.provider@safarsuite.local",
+        "LegacyTotpPass123!",
+        [ProviderAccessScopes.ProviderOperatorsManage],
+        expiresInMinutes: 10,
+        totpCode: ProviderAccessTotp.CreateCode(legacyTotpSecret, clock.UtcNow));
+    var migratedLegacyTotpOperator = await fileStore.GetByEmailAsync("legacy-totp.provider@safarsuite.local");
+
+    Require(legacyTotpSession.IsSuccess, "legacy plaintext TOTP secret should remain usable during migration.");
+    Require(
+        totpProtector.IsProtected(migratedLegacyTotpOperator?.TotpSecret ?? ""),
+        "legacy plaintext TOTP secret should be rewritten as protected material after login.");
+    checks.Add("migrated legacy plaintext provider TOTP secret on login");
 
     var rotatedProviderOptions = CopyOptionsWithSessionSigningKeys(
         providerOptions,
@@ -206,7 +243,8 @@ try
         rotatedProviderOptions,
         clock,
         credentials,
-        fileStore);
+        fileStore,
+        new ProviderAccessTotpSecretProtector(rotatedProviderOptions));
     var rotatedAuthorization = AuthorizeBearerToken(
         rotatedSessionService,
         session.AccessToken!,
@@ -229,7 +267,8 @@ try
         retiredProviderOptions,
         clock,
         credentials,
-        fileStore);
+        fileStore,
+        new ProviderAccessTotpSecretProtector(retiredProviderOptions));
     var retiredAuthorization = AuthorizeBearerToken(
         retiredSessionService,
         session.AccessToken!,
@@ -240,11 +279,13 @@ try
     checks.Add("rejected provider session after previous signing key removal");
 
     var fileSourcedProviderOptions = CreateFileSourcedOptions(workDirectory, providerOptions.OperatorStorePath);
+    var fileSourcedTotpProtector = new ProviderAccessTotpSecretProtector(fileSourcedProviderOptions);
     var fileSourcedSessionService = new ProviderAccessSessionService(
         fileSourcedProviderOptions,
         clock,
         credentials,
-        fileStore);
+        fileStore,
+        fileSourcedTotpProtector);
     var fileSourcedSession = fileSourcedSessionService.CreateSession(
         "provider-access-smoke-file-shared-secret",
         "provider-access-smoke-file-custody",
@@ -257,7 +298,11 @@ try
 
     Require(fileSourcedSession.IsSuccess, "file-sourced provider access secrets should issue a shared-secret session.");
     Require(fileSourcedAuthorization.IsSuccess, "file-sourced provider signing key should authorize the issued session.");
-    checks.Add("loaded provider access shared secret and signing key ring from secret files");
+    Require(
+        fileSourcedTotpProtector.TryUnprotect(fileSourcedTotpProtector.Protect(totpSecret), out var fileSourcedTotpSecret)
+        && fileSourcedTotpSecret == totpSecret,
+        "file-sourced provider TOTP protection secret should round-trip protected secrets.");
+    checks.Add("loaded provider access shared, signing, and TOTP protection secrets from secret files");
 
     var deniedSession = await sessionService.CreateSessionFromCredentialsAsync(
         "seed.provider@safarsuite.local",
@@ -408,10 +453,12 @@ static ClientPortalProviderAccessOptions CreateFileSourcedOptions(
     var sharedSecretFile = Path.Combine(workDirectory, "provider-access-shared-secret.txt");
     var activeSigningKeyFile = Path.Combine(workDirectory, "provider-access-session-signing-key-v2.txt");
     var previousSigningKeyFile = Path.Combine(workDirectory, "provider-access-session-signing-key-v1.txt");
+    var totpProtectionSecretFile = Path.Combine(workDirectory, "provider-access-totp-protection-secret.txt");
 
     File.WriteAllText(sharedSecretFile, "provider-access-smoke-file-shared-secret");
     File.WriteAllText(activeSigningKeyFile, "provider-access-smoke-file-session-signing-secret-v2");
     File.WriteAllText(previousSigningKeyFile, "provider-access-smoke-file-session-signing-secret-v1");
+    File.WriteAllText(totpProtectionSecretFile, "provider-access-smoke-file-totp-protection-secret");
 
     var configuration = new ConfigurationBuilder()
         .AddInMemoryCollection(new Dictionary<string, string?>
@@ -423,6 +470,8 @@ static ClientPortalProviderAccessOptions CreateFileSourcedOptions(
             ["ClientPortal:ProviderAccess:SessionSigningKeys:0:SecretFile"] = activeSigningKeyFile,
             ["ClientPortal:ProviderAccess:SessionSigningKeys:1:KeyId"] = "provider-access-smoke-file-key-v1",
             ["ClientPortal:ProviderAccess:SessionSigningKeys:1:SecretFile"] = previousSigningKeyFile,
+            ["ClientPortal:ProviderAccess:TotpProtectionSecret"] = "inline-provider-totp-secret-should-not-be-used",
+            ["ClientPortal:ProviderAccess:TotpProtectionSecretFile"] = totpProtectionSecretFile,
             ["ClientPortal:ProviderAccess:SessionMinutes"] = "30",
             ["ClientPortal:ProviderAccess:OperatorStorePath"] = operatorStorePath
         })
@@ -442,6 +491,8 @@ static ClientPortalProviderAccessOptions CopyOptionsWithSessionSigningKeys(
         SharedSecretFile = source.SharedSecretFile,
         SessionSigningSecret = "",
         SessionSigningSecretFile = "",
+        TotpProtectionSecret = source.TotpProtectionSecret,
+        TotpProtectionSecretFile = source.TotpProtectionSecretFile,
         ActiveSessionSigningKeyId = activeKeyId,
         SessionSigningKeys = sessionSigningKeys,
         SessionMinutes = source.SessionMinutes,

@@ -90,6 +90,7 @@ builder.Services.AddSingleton<IControlCloudAppActivationTokenSigner, EcdsaContro
 builder.Services.AddSingleton<IControlCloudAppActivationIssueRepository, FileControlCloudAppActivationIssueRepository>();
 builder.Services.AddSingleton<IControlCloudInstallationSetupTokenService, RandomControlCloudInstallationSetupTokenService>();
 builder.Services.AddSingleton<IClientPortalCredentialService, HmacClientPortalCredentialService>();
+builder.Services.AddSingleton<IProviderAccessTotpSecretProtector, ProviderAccessTotpSecretProtector>();
 AddClientPortalInvitationDelivery(builder.Services, clientPortalInvitationDeliveryOptions);
 builder.Services.AddSingleton<FileClientPortalAuditRecorder>();
 builder.Services.AddSingleton<IClientPortalAuditRecorder>(

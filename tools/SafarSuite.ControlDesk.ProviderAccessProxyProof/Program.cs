@@ -49,6 +49,7 @@ try
                 environment["ControlCloud__BootstrapPackages__CloudBaseUrl"] = options.ControlCloudBaseUrl;
                 environment["ClientPortal__ProviderAccess__SharedSecret"] = options.ProviderAccessSecret;
                 environment["ClientPortal__ProviderAccess__SessionSigningSecret"] = options.ProviderSessionSigningSecret;
+                environment["ClientPortal__ProviderAccess__TotpProtectionSecret"] = options.ProviderTotpProtectionSecret;
             },
             TimeSpan.FromSeconds(options.ApiStartTimeoutSeconds));
         checks.Add("started Control Cloud API with PostgreSQL provider access");
@@ -286,8 +287,9 @@ try
         options.ConnectionString,
         createdOperator.UserId,
         operatorEmail,
-        "Control Desk Proxy Proof Operator");
-    checks.Add("verified final provider operator state in PostgreSQL");
+        "Control Desk Proxy Proof Operator",
+        totpEnrollment.Secret);
+    checks.Add("verified final provider operator state and protected TOTP custody in PostgreSQL");
 
     Console.WriteLine($"Control Desk provider-access proxy proof passed {checks.Count} checks:");
     foreach (var check in checks)
@@ -423,7 +425,8 @@ static async Task VerifyPersistedOperatorAsync(
     string connectionString,
     string userId,
     string email,
-    string expectedUpdatedBy)
+    string expectedUpdatedBy,
+    string plainTotpSecret)
 {
     await using var dbContext = CreateDbContext(connectionString);
     var normalizedEmail = NormalizeEmail(email);
@@ -437,6 +440,16 @@ static async Task VerifyPersistedOperatorAsync(
     Require(entity!.Status.Equals(ProviderAccessStatuses.Active, StringComparison.OrdinalIgnoreCase), "PostgreSQL operator status should be Active.");
     Require(entity.UpdatedBy == expectedUpdatedBy, "PostgreSQL operator should keep the latest password actor.");
     Require(entity.LastLoginAtUtc is not null, "PostgreSQL operator should record the proof login after password reset.");
+    Require(
+        !string.IsNullOrWhiteSpace(entity.TotpSecret),
+        "PostgreSQL operator should persist TOTP secret material.");
+    var protectedTotpSecret = entity.TotpSecret!;
+    Require(
+        protectedTotpSecret.StartsWith("pa-totp-v1.", StringComparison.Ordinal),
+        "PostgreSQL operator should store protected TOTP secret material.");
+    Require(
+        !protectedTotpSecret.Contains(plainTotpSecret, StringComparison.Ordinal),
+        "PostgreSQL operator should not store the raw TOTP enrollment secret.");
 
     var scopes = JsonSerializer.Deserialize<string[]>(entity.ScopesJson, ProofJson.Options) ?? [];
     Require(scopes.Contains(ProviderAccessScopes.AppActivationRead), "PostgreSQL operator should keep app-activation:read scope.");
@@ -647,6 +660,7 @@ internal sealed record ProofOptions(
     int ApiStartTimeoutSeconds,
     string ProviderAccessSecret,
     string ProviderSessionSigningSecret,
+    string ProviderTotpProtectionSecret,
     bool ShowHelp)
 {
     private const string DefaultConnectionString =
@@ -757,6 +771,7 @@ internal sealed record ProofOptions(
             apiStartTimeoutSeconds,
             ProviderAccessSecret: "local-development-provider-access-secret-change-before-cloud",
             ProviderSessionSigningSecret: "local-development-provider-session-signing-secret-change-before-cloud",
+            ProviderTotpProtectionSecret: "local-development-provider-totp-protection-secret-change-before-cloud",
             showHelp);
     }
 

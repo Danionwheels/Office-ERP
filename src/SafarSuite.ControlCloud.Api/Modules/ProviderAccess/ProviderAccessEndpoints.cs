@@ -544,6 +544,7 @@ public static class ProviderAccessEndpoints
         HttpRequest httpRequest,
         ProviderAccessSessionService sessions,
         IProviderAccessOperatorStore operators,
+        IProviderAccessTotpSecretProtector totpSecrets,
         IClientPortalAuditRecorder audit,
         IControlCloudClock clock,
         CancellationToken cancellationToken)
@@ -567,7 +568,7 @@ public static class ProviderAccessEndpoints
         var actor = NormalizeActor(request.UpdatedBy, authorization.Principal!.Actor);
         var secret = ProviderAccessTotp.CreateSecret();
 
-        providerOperator.TotpSecret = secret;
+        providerOperator.TotpSecret = totpSecrets.Protect(secret);
         providerOperator.TotpEnabledAtUtc ??= clock.UtcNow;
         providerOperator.TotpUpdatedAtUtc = clock.UtcNow;
         providerOperator.TotpUpdatedBy = actor;

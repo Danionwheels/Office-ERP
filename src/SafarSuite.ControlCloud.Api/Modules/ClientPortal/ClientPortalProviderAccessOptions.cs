@@ -16,6 +16,11 @@ public sealed class ClientPortalProviderAccessOptions
 
     public string SessionSigningSecretFile { get; set; } = "";
 
+    public string TotpProtectionSecret { get; set; } =
+        "local-development-provider-totp-protection-secret-change-before-cloud";
+
+    public string TotpProtectionSecretFile { get; set; } = "";
+
     public string ActiveSessionSigningKeyId { get; set; } = "";
 
     public ProviderAccessSessionSigningKeyOptions[] SessionSigningKeys { get; set; } = [];
@@ -67,6 +72,11 @@ public sealed class ClientPortalProviderAccessOptions
             options.SessionSigningSecret,
             options.SessionSigningSecretFile,
             $"{SectionName}:SessionSigningSecretFile",
+            contentRootPath);
+        options.TotpProtectionSecret = ReadSecretOrInline(
+            options.TotpProtectionSecret,
+            options.TotpProtectionSecretFile,
+            $"{SectionName}:TotpProtectionSecretFile",
             contentRootPath);
 
         for (var index = 0; index < options.SessionSigningKeys.Length; index++)
