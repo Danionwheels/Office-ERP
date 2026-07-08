@@ -36,6 +36,27 @@ public sealed class EfControlCloudInstallationSetupTokenRepository
             cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<ControlCloudInstallationSetupToken>> ListBootstrapPackagesAsync(
+        Guid clientId,
+        string installationId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedInstallationId = installationId.Trim();
+
+        var entities = await _dbContext.InstallationSetupTokens
+            .AsNoTracking()
+            .Where(setupToken => setupToken.ClientId == clientId
+                && setupToken.InstallationId == normalizedInstallationId
+                && setupToken.BootstrapPackageId != null)
+            .OrderByDescending(setupToken => setupToken.BootstrapPackageGeneratedAtUtc)
+            .ThenByDescending(setupToken => setupToken.CreatedAtUtc)
+            .Take(take)
+            .ToArrayAsync(cancellationToken);
+
+        return entities.Select(ToDomain).ToArray();
+    }
+
     public async Task SaveAsync(
         ControlCloudInstallationSetupToken setupToken,
         CancellationToken cancellationToken = default)
@@ -68,6 +89,12 @@ public sealed class EfControlCloudInstallationSetupTokenRepository
         entity.ExpiresAtUtc = setupToken.ExpiresAtUtc;
         entity.ConsumedAtUtc = setupToken.ConsumedAtUtc;
         entity.ConsumedLocalServerVersion = setupToken.ConsumedLocalServerVersion;
+        entity.BootstrapPackageId = setupToken.BootstrapPackageId;
+        entity.BootstrapPackageGeneratedAtUtc = setupToken.BootstrapPackageGeneratedAtUtc;
+        entity.PackageLocalServerVersion = setupToken.PackageLocalServerVersion;
+        entity.PackageSafarSuiteAppVersion = setupToken.PackageSafarSuiteAppVersion;
+        entity.PackageBundleFileName = setupToken.PackageBundleFileName;
+        entity.PackageBundleSha256 = setupToken.PackageBundleSha256;
     }
 
     private static ControlCloudInstallationSetupToken ToDomain(
@@ -90,7 +117,13 @@ public sealed class EfControlCloudInstallationSetupTokenRepository
             entity.CreatedAtUtc,
             entity.ExpiresAtUtc,
             entity.ConsumedAtUtc,
-            entity.ConsumedLocalServerVersion);
+            entity.ConsumedLocalServerVersion,
+            entity.BootstrapPackageId,
+            entity.BootstrapPackageGeneratedAtUtc,
+            entity.PackageLocalServerVersion,
+            entity.PackageSafarSuiteAppVersion,
+            entity.PackageBundleFileName,
+            entity.PackageBundleSha256);
     }
 
     private static ControlCloudInstallationSetupTokenEntity FromDomain(
@@ -114,7 +147,13 @@ public sealed class EfControlCloudInstallationSetupTokenRepository
             CreatedAtUtc = setupToken.CreatedAtUtc,
             ExpiresAtUtc = setupToken.ExpiresAtUtc,
             ConsumedAtUtc = setupToken.ConsumedAtUtc,
-            ConsumedLocalServerVersion = setupToken.ConsumedLocalServerVersion
+            ConsumedLocalServerVersion = setupToken.ConsumedLocalServerVersion,
+            BootstrapPackageId = setupToken.BootstrapPackageId,
+            BootstrapPackageGeneratedAtUtc = setupToken.BootstrapPackageGeneratedAtUtc,
+            PackageLocalServerVersion = setupToken.PackageLocalServerVersion,
+            PackageSafarSuiteAppVersion = setupToken.PackageSafarSuiteAppVersion,
+            PackageBundleFileName = setupToken.PackageBundleFileName,
+            PackageBundleSha256 = setupToken.PackageBundleSha256
         };
     }
 }

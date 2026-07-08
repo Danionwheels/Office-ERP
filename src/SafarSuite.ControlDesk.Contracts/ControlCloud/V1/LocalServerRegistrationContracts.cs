@@ -134,6 +134,29 @@ public sealed record LocalServerBootstrapPackageResponse(
     LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null,
     SafarSuiteAppActivationSigningKeyResponse? AppActivationSigningKey = null);
 
+public sealed record LocalServerBootstrapPackageRegisterResponse(
+    IReadOnlyCollection<LocalServerBootstrapPackageSummaryResponse> Packages);
+
+public sealed record LocalServerBootstrapPackageSummaryResponse(
+    Guid BootstrapPackageId,
+    Guid SetupTokenId,
+    Guid ClientId,
+    string InstallationId,
+    string PackageStatus,
+    string TokenStatus,
+    string CreatedBy,
+    string DeploymentMode,
+    LocalServerDeploymentProfileResponse DeploymentProfile,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset GeneratedAtUtc,
+    DateTimeOffset SetupTokenExpiresAtUtc,
+    DateTimeOffset? ConsumedAtUtc,
+    string? ConsumedLocalServerVersion,
+    string LocalServerVersion,
+    string SafarSuiteAppVersion,
+    string BundleFileName,
+    string BundleSha256);
+
 public sealed record RegisterLocalServerInstallationRequest(
     Guid ClientId,
     string SetupToken,

@@ -16,6 +16,12 @@ public interface IControlCloudInstallationProvisioningClient
         CreateLocalServerBootstrapPackageRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<ControlCloudBootstrapPackageRegisterClientResult> ListBootstrapPackagesAsync(
+        Guid clientId,
+        string installationId,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<ControlCloudAppActivationTokenClientResult> IssueAppActivationTokenAsync(
         Guid clientId,
         string installationId,
@@ -232,6 +238,46 @@ public sealed class ControlCloudBootstrapPackageClientResult
     {
         return new ControlCloudBootstrapPackageClientResult(
             bootstrapPackage: null,
+            failureCode,
+            detail);
+    }
+}
+
+public sealed class ControlCloudBootstrapPackageRegisterClientResult
+{
+    private ControlCloudBootstrapPackageRegisterClientResult(
+        LocalServerBootstrapPackageRegisterResponse? response,
+        string? failureCode,
+        string? detail)
+    {
+        Response = response;
+        FailureCode = failureCode;
+        Detail = detail;
+    }
+
+    public bool IsSuccess => Response is not null;
+
+    public LocalServerBootstrapPackageRegisterResponse? Response { get; }
+
+    public string? FailureCode { get; }
+
+    public string? Detail { get; }
+
+    public static ControlCloudBootstrapPackageRegisterClientResult Success(
+        LocalServerBootstrapPackageRegisterResponse response)
+    {
+        return new ControlCloudBootstrapPackageRegisterClientResult(
+            response,
+            failureCode: null,
+            detail: null);
+    }
+
+    public static ControlCloudBootstrapPackageRegisterClientResult Failure(
+        string failureCode,
+        string detail)
+    {
+        return new ControlCloudBootstrapPackageRegisterClientResult(
+            response: null,
             failureCode,
             detail);
     }

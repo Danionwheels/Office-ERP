@@ -10,6 +10,8 @@ internal static class ProviderAccessOperatorAdminValidator
         "app-activation:read",
         "app-activation:write",
         "client-portal:manage",
+        "deployment-packages:read",
+        "deployment-packages:write",
         "provider-operators:manage"
     ];
 

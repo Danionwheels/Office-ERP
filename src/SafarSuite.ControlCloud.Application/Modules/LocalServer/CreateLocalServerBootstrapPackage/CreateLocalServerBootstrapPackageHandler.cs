@@ -22,22 +22,28 @@ public sealed class CreateLocalServerBootstrapPackageHandler
     };
 
     private readonly CreateInstallationSetupTokenHandler _setupTokenHandler;
+    private readonly IControlCloudInstallationSetupTokenRepository _setupTokens;
     private readonly IControlCloudBootstrapPackageSigner _bootstrapPackageSigner;
     private readonly IControlCloudAppActivationTokenSigner _appActivationTokenSigner;
     private readonly IClientPortalAuditRecorder _audit;
+    private readonly IControlCloudUnitOfWork _unitOfWork;
     private readonly IControlCloudClock _clock;
 
     public CreateLocalServerBootstrapPackageHandler(
         CreateInstallationSetupTokenHandler setupTokenHandler,
+        IControlCloudInstallationSetupTokenRepository setupTokens,
         IControlCloudBootstrapPackageSigner bootstrapPackageSigner,
         IControlCloudAppActivationTokenSigner appActivationTokenSigner,
         IClientPortalAuditRecorder audit,
+        IControlCloudUnitOfWork unitOfWork,
         IControlCloudClock clock)
     {
         _setupTokenHandler = setupTokenHandler;
+        _setupTokens = setupTokens;
         _bootstrapPackageSigner = bootstrapPackageSigner;
         _appActivationTokenSigner = appActivationTokenSigner;
         _audit = audit;
+        _unitOfWork = unitOfWork;
         _clock = clock;
     }
 
@@ -153,6 +159,16 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             signedBundleResponse,
             ToResponse(runtimePlan),
             ToResponse(appActivationSigningKey));
+
+        setupToken.AttachBootstrapPackage(
+            package.BootstrapPackageId,
+            package.GeneratedAtUtc,
+            package.LocalServerVersion,
+            runtimePlan.SafarSuiteAppVersion,
+            package.BundleFileName,
+            package.BundleSha256);
+        await _setupTokens.SaveAsync(setupToken, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await ControlCloudAuditWriter.TryRecordAsync(
             _audit,

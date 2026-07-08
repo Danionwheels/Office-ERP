@@ -6,6 +6,8 @@ public static class ProviderAccessScopes
     public const string AppActivationRead = "app-activation:read";
     public const string AppActivationWrite = "app-activation:write";
     public const string ClientPortalManage = "client-portal:manage";
+    public const string DeploymentPackagesRead = "deployment-packages:read";
+    public const string DeploymentPackagesWrite = "deployment-packages:write";
     public const string ProviderOperatorsManage = "provider-operators:manage";
 
     private static readonly string[] SupportedScopes =
@@ -14,6 +16,8 @@ public static class ProviderAccessScopes
         AppActivationRead,
         AppActivationWrite,
         ClientPortalManage,
+        DeploymentPackagesRead,
+        DeploymentPackagesWrite,
         ProviderOperatorsManage
     ];
 

@@ -68,11 +68,29 @@ public sealed class ControlCloudInstallationSetupTokenEntityConfiguration
         builder.Property(setupToken => setupToken.ConsumedLocalServerVersion)
             .HasColumnName("consumed_local_server_version")
             .HasMaxLength(80);
+        builder.Property(setupToken => setupToken.BootstrapPackageId)
+            .HasColumnName("bootstrap_package_id");
+        builder.Property(setupToken => setupToken.BootstrapPackageGeneratedAtUtc)
+            .HasColumnName("bootstrap_package_generated_at_utc");
+        builder.Property(setupToken => setupToken.PackageLocalServerVersion)
+            .HasColumnName("package_local_server_version")
+            .HasMaxLength(80);
+        builder.Property(setupToken => setupToken.PackageSafarSuiteAppVersion)
+            .HasColumnName("package_safar_suite_app_version")
+            .HasMaxLength(80);
+        builder.Property(setupToken => setupToken.PackageBundleFileName)
+            .HasColumnName("package_bundle_file_name")
+            .HasMaxLength(260);
+        builder.Property(setupToken => setupToken.PackageBundleSha256)
+            .HasColumnName("package_bundle_sha256")
+            .HasMaxLength(128);
 
         builder.HasIndex(setupToken => setupToken.TokenHash)
             .IsUnique()
             .HasDatabaseName("ux_installation_setup_tokens_token_hash");
         builder.HasIndex(setupToken => new { setupToken.ClientId, setupToken.InstallationId, setupToken.Status })
             .HasDatabaseName("ix_installation_setup_tokens_client_installation_status");
+        builder.HasIndex(setupToken => new { setupToken.ClientId, setupToken.InstallationId, setupToken.BootstrapPackageGeneratedAtUtc })
+            .HasDatabaseName("ix_installation_setup_tokens_bootstrap_package_register");
     }
 }

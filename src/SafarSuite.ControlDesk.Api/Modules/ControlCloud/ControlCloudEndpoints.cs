@@ -8,6 +8,7 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallati
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudAppActivationIssues;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationBootstrapPackages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationAuditEvents;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListProviderAccessOperators;
@@ -69,6 +70,9 @@ public static class ControlCloudEndpoints
         group.MapPost(
             "/clients/{clientId:guid}/installations/{installationId}/bootstrap-package",
             CreateBootstrapPackageAsync);
+        group.MapGet(
+            "/clients/{clientId:guid}/installations/{installationId}/bootstrap-packages",
+            ListBootstrapPackagesAsync);
         group.MapGet(
             "/clients/{clientId:guid}/installations/{installationId}/audit-events",
             ListInstallationAuditEventsAsync);
@@ -315,6 +319,25 @@ public static class ControlCloudEndpoints
                 request.ParentSiteId,
                 request.BranchCode,
                 request.SyncTopologyId),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
+    private static async Task<IResult> ListBootstrapPackagesAsync(
+        Guid clientId,
+        string installationId,
+        int? take,
+        ListCloudInstallationBootstrapPackagesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListCloudInstallationBootstrapPackagesQuery(
+                clientId,
+                installationId,
+                take ?? 50),
             cancellationToken);
 
         return result.IsFailure

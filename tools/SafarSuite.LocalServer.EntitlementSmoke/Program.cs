@@ -774,16 +774,19 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
 {
     var cloudClock = new FixedControlCloudClock(
         new DateTimeOffset(2026, 8, 1, 10, 0, 0, TimeSpan.Zero));
+    var setupTokenRepository = new InMemorySetupTokenRepository();
+    var unitOfWork = new PassthroughControlCloudUnitOfWork();
     var setupTokenHandler = new CreateInstallationSetupTokenHandler(
         new StaticCommercialProjectionRepository(clientId),
         new InMemoryClientInstallationRepository(),
-        new InMemorySetupTokenRepository(),
+        setupTokenRepository,
         new StaticSetupTokenService(),
         new InMemoryClientPortalAuditRecorder(),
-        new PassthroughControlCloudUnitOfWork(),
+        unitOfWork,
         cloudClock);
     var bootstrapHandler = new CreateLocalServerBootstrapPackageHandler(
         setupTokenHandler,
+        setupTokenRepository,
         new HmacControlCloudBootstrapPackageSigner(
             new ControlCloudEntitlementSigningOptions
             {
@@ -803,6 +806,7 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
                 ActiveKeyId = "app-activation-smoke"
             }),
         new InMemoryClientPortalAuditRecorder(),
+        unitOfWork,
         cloudClock);
     var result = await bootstrapHandler.HandleAsync(
         new CreateLocalServerBootstrapPackageCommand(
@@ -1547,6 +1551,23 @@ internal sealed class InMemorySetupTokenRepository
         _setupTokensByHash[setupToken.TokenHash] = setupToken;
 
         return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyCollection<ControlCloudInstallationSetupToken>> ListBootstrapPackagesAsync(
+        Guid clientId,
+        string installationId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var setupTokens = _setupTokensByHash.Values
+            .Where(setupToken => setupToken.ClientId == clientId
+                && string.Equals(setupToken.InstallationId, installationId.Trim(), StringComparison.Ordinal)
+                && setupToken.HasBootstrapPackage)
+            .OrderByDescending(setupToken => setupToken.BootstrapPackageGeneratedAtUtc ?? setupToken.CreatedAtUtc)
+            .Take(take)
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyCollection<ControlCloudInstallationSetupToken>>(setupTokens);
     }
 
     public Task SaveAsync(

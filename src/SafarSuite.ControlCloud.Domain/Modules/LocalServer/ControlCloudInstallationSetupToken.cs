@@ -19,7 +19,13 @@ public sealed class ControlCloudInstallationSetupToken
         DateTimeOffset createdAtUtc,
         DateTimeOffset expiresAtUtc,
         DateTimeOffset? consumedAtUtc,
-        string? consumedLocalServerVersion)
+        string? consumedLocalServerVersion,
+        Guid? bootstrapPackageId,
+        DateTimeOffset? bootstrapPackageGeneratedAtUtc,
+        string? packageLocalServerVersion,
+        string? packageSafarSuiteAppVersion,
+        string? packageBundleFileName,
+        string? packageBundleSha256)
     {
         SetupTokenId = setupTokenId;
         ClientId = clientId;
@@ -40,6 +46,12 @@ public sealed class ControlCloudInstallationSetupToken
         ExpiresAtUtc = expiresAtUtc;
         ConsumedAtUtc = consumedAtUtc;
         ConsumedLocalServerVersion = NormalizeOptionalText(consumedLocalServerVersion, 80);
+        BootstrapPackageId = bootstrapPackageId == Guid.Empty ? null : bootstrapPackageId;
+        BootstrapPackageGeneratedAtUtc = bootstrapPackageGeneratedAtUtc;
+        PackageLocalServerVersion = NormalizeOptionalText(packageLocalServerVersion, 80);
+        PackageSafarSuiteAppVersion = NormalizeOptionalText(packageSafarSuiteAppVersion, 80);
+        PackageBundleFileName = NormalizeOptionalText(packageBundleFileName, 260);
+        PackageBundleSha256 = NormalizeOptionalText(packageBundleSha256, 128);
     }
 
     public Guid SetupTokenId { get; }
@@ -65,6 +77,20 @@ public sealed class ControlCloudInstallationSetupToken
     public DateTimeOffset? ConsumedAtUtc { get; private set; }
 
     public string? ConsumedLocalServerVersion { get; private set; }
+
+    public Guid? BootstrapPackageId { get; private set; }
+
+    public DateTimeOffset? BootstrapPackageGeneratedAtUtc { get; private set; }
+
+    public string? PackageLocalServerVersion { get; private set; }
+
+    public string? PackageSafarSuiteAppVersion { get; private set; }
+
+    public string? PackageBundleFileName { get; private set; }
+
+    public string? PackageBundleSha256 { get; private set; }
+
+    public bool HasBootstrapPackage => BootstrapPackageId.HasValue;
 
     public static ControlCloudInstallationSetupToken Create(
         Guid setupTokenId,
@@ -116,7 +142,13 @@ public sealed class ControlCloudInstallationSetupToken
             createdAtUtc,
             expiresAtUtc,
             consumedAtUtc: null,
-            consumedLocalServerVersion: null);
+            consumedLocalServerVersion: null,
+            bootstrapPackageId: null,
+            bootstrapPackageGeneratedAtUtc: null,
+            packageLocalServerVersion: null,
+            packageSafarSuiteAppVersion: null,
+            packageBundleFileName: null,
+            packageBundleSha256: null);
     }
 
     public static ControlCloudInstallationSetupToken Restore(
@@ -136,7 +168,13 @@ public sealed class ControlCloudInstallationSetupToken
         DateTimeOffset createdAtUtc,
         DateTimeOffset expiresAtUtc,
         DateTimeOffset? consumedAtUtc,
-        string? consumedLocalServerVersion)
+        string? consumedLocalServerVersion,
+        Guid? bootstrapPackageId = null,
+        DateTimeOffset? bootstrapPackageGeneratedAtUtc = null,
+        string? packageLocalServerVersion = null,
+        string? packageSafarSuiteAppVersion = null,
+        string? packageBundleFileName = null,
+        string? packageBundleSha256 = null)
     {
         return new ControlCloudInstallationSetupToken(
             setupTokenId,
@@ -155,7 +193,13 @@ public sealed class ControlCloudInstallationSetupToken
             createdAtUtc,
             expiresAtUtc,
             consumedAtUtc,
-            consumedLocalServerVersion);
+            consumedLocalServerVersion,
+            bootstrapPackageId,
+            bootstrapPackageGeneratedAtUtc,
+            packageLocalServerVersion,
+            packageSafarSuiteAppVersion,
+            packageBundleFileName,
+            packageBundleSha256);
     }
 
     public bool IsPendingAt(DateTimeOffset now)
@@ -177,6 +221,27 @@ public sealed class ControlCloudInstallationSetupToken
         Status = ControlCloudInstallationSetupTokenStatuses.Consumed;
         ConsumedAtUtc = consumedAtUtc;
         ConsumedLocalServerVersion = NormalizeOptionalText(localServerVersion, 80);
+    }
+
+    public void AttachBootstrapPackage(
+        Guid bootstrapPackageId,
+        DateTimeOffset generatedAtUtc,
+        string localServerVersion,
+        string safarSuiteAppVersion,
+        string bundleFileName,
+        string bundleSha256)
+    {
+        if (bootstrapPackageId == Guid.Empty)
+        {
+            throw new ArgumentException("Bootstrap package id is required.", nameof(bootstrapPackageId));
+        }
+
+        BootstrapPackageId = bootstrapPackageId;
+        BootstrapPackageGeneratedAtUtc = generatedAtUtc;
+        PackageLocalServerVersion = NormalizeRequiredText(localServerVersion, nameof(localServerVersion), 80);
+        PackageSafarSuiteAppVersion = NormalizeRequiredText(safarSuiteAppVersion, nameof(safarSuiteAppVersion), 80);
+        PackageBundleFileName = NormalizeRequiredText(bundleFileName, nameof(bundleFileName), 260);
+        PackageBundleSha256 = NormalizeRequiredText(bundleSha256, nameof(bundleSha256), 128);
     }
 
     private static string NormalizeRequiredText(

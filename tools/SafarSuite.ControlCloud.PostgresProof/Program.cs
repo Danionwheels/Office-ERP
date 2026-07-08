@@ -66,10 +66,15 @@ try
         new CreateProviderAccessSessionRequest(
             options.ProviderAccessSecret,
             "postgres-proof-bootstrap",
-            [ProviderAccessScopes.ProviderOperatorsManage],
+            [
+                ProviderAccessScopes.DeploymentPackagesRead,
+                ProviderAccessScopes.DeploymentPackagesWrite,
+                ProviderAccessScopes.ProviderOperatorsManage
+            ],
             15));
 
     RequireBearerSession(adminSession, ProviderAccessScopes.ProviderOperatorsManage);
+    Require(adminSession.Scopes.Contains(ProviderAccessScopes.DeploymentPackagesWrite), "admin session should include deployment package write scope.");
     checks.Add("minted bootstrap provider bearer session");
 
     var providerOperator = await SendJsonAsync<ProviderAccessOperatorResponse>(
@@ -83,6 +88,8 @@ try
             [
                 ProviderAccessScopes.AppActivationRead,
                 ProviderAccessScopes.AppActivationWrite,
+                ProviderAccessScopes.DeploymentPackagesRead,
+                ProviderAccessScopes.DeploymentPackagesWrite,
                 ProviderAccessScopes.ProviderOperatorsManage
             ],
             "postgres-proof-bootstrap"),
@@ -144,11 +151,27 @@ try
             SiteRole: deploymentProfile.SiteRole,
             ParentSiteId: deploymentProfile.ParentSiteId,
             BranchCode: deploymentProfile.BranchCode,
-            SyncTopologyId: deploymentProfile.SyncTopologyId));
+            SyncTopologyId: deploymentProfile.SyncTopologyId),
+        adminSession.AccessToken);
 
     Require(bootstrapPackage.ClientId == clientId, "bootstrap package should target proof client.");
     Require(bootstrapPackage.InstallationId == installationId, "bootstrap package should target proof installation.");
     checks.Add("created PostgreSQL-backed bootstrap package and setup token");
+
+    var packageRegister = await SendJsonAsync<LocalServerBootstrapPackageRegisterResponse>(
+        http,
+        HttpMethod.Get,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/bootstrap-packages?take=10",
+        body: null,
+        adminSession.AccessToken);
+
+    Require(
+        packageRegister.Packages.Any(package =>
+            package.BootstrapPackageId == bootstrapPackage.BootstrapPackageId
+            && package.BundleSha256 == bootstrapPackage.BundleSha256
+            && package.PackageStatus == "Pending"),
+        "bootstrap package register should include the generated pending package.");
+    checks.Add("listed PostgreSQL-backed bootstrap package register through provider gate");
 
     var registration = await SendJsonAsync<LocalServerInstallationRegistrationResponse>(
         http,
@@ -261,6 +284,7 @@ try
         installationId,
         operatorEmail,
         bootstrapPackage.SetupTokenId,
+        bootstrapPackage.BootstrapPackageId,
         signedBundle.Payload.BundleIssueId,
         heartbeat.HeartbeatId,
         queuedCommand.CommandId);
@@ -368,6 +392,7 @@ static async Task VerifyPersistedRowsAsync(
     string installationId,
     string operatorEmail,
     Guid setupTokenId,
+    Guid bootstrapPackageId,
     Guid bundleIssueId,
     Guid heartbeatId,
     Guid commandId)
@@ -391,8 +416,10 @@ static async Task VerifyPersistedRowsAsync(
     Require(
         await dbContext.InstallationSetupTokens.AnyAsync(setupToken =>
             setupToken.SetupTokenId == setupTokenId
+            && setupToken.BootstrapPackageId == bootstrapPackageId
+            && setupToken.PackageBundleSha256 != null
             && setupToken.ConsumedAtUtc != null),
-        "consumed installation setup token should be persisted.");
+        "consumed installation setup token and package metadata should be persisted.");
     Require(
         await dbContext.ClientInstallations.AnyAsync(installation =>
             installation.ClientId == clientId
@@ -881,6 +908,8 @@ internal static class ProviderAccessScopes
 {
     public const string AppActivationRead = "app-activation:read";
     public const string AppActivationWrite = "app-activation:write";
+    public const string DeploymentPackagesRead = "deployment-packages:read";
+    public const string DeploymentPackagesWrite = "deployment-packages:write";
     public const string ProviderOperatorsManage = "provider-operators:manage";
 }
 

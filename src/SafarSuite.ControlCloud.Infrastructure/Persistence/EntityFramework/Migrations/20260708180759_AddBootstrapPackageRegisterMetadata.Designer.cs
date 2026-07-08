@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework;
@@ -11,9 +12,11 @@ using SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework;
 namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Migrations
 {
     [DbContext(typeof(ControlCloudDbContext))]
-    partial class ControlCloudDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260708180759_AddBootstrapPackageRegisterMetadata")]
+    partial class AddBootstrapPackageRegisterMetadata
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

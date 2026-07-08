@@ -18,6 +18,7 @@ using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationSta
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetLatestInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetPendingInstallationCommands;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueSafarSuiteAppActivationToken;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListLocalServerBootstrapPackages;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListSafarSuiteAppActivationIssues;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.QueueInstallationCommand;
@@ -113,6 +114,7 @@ builder.Services.AddScoped<CreateClientPortalInvitationHandler>();
 builder.Services.AddScoped<CreateClientPortalSessionHandler>();
 builder.Services.AddScoped<ExportOfflineRenewalFileHandler>();
 builder.Services.AddScoped<ListControlCloudAuditEventsHandler>();
+builder.Services.AddScoped<ListLocalServerBootstrapPackagesHandler>();
 builder.Services.AddScoped<ListSafarSuiteAppActivationIssuesHandler>();
 builder.Services.AddScoped<ListClientPortalInvitationsHandler>();
 builder.Services.AddScoped<ResendClientPortalInvitationHandler>();

@@ -135,10 +135,16 @@ async Task GenerateRealCloudProofFilesAsync(ProofOptions options)
         ParentSiteId: null,
         BranchCode: "HQ",
         SyncTopologyId: "compose-proof");
-    var bootstrapResponse = await http.PostAsJsonAsync(
-        $"api/v1/control-cloud/clients/{options.ClientId:D}/installations/{Uri.EscapeDataString(options.InstallationId)}/bootstrap-package",
+    using var bootstrapMessage = new HttpRequestMessage(
+        HttpMethod.Post,
+        $"api/v1/control-cloud/clients/{options.ClientId:D}/installations/{Uri.EscapeDataString(options.InstallationId)}/bootstrap-package");
+    bootstrapMessage.Headers.TryAddWithoutValidation(
+        "X-SafarSuite-Provider-Key",
+        options.ProviderAccessSecret);
+    bootstrapMessage.Content = JsonContent.Create(
         bootstrapRequest,
-        bundleJsonOptions);
+        options: bundleJsonOptions);
+    var bootstrapResponse = await http.SendAsync(bootstrapMessage);
     var package = await ReadJsonResponseAsync<LocalServerBootstrapPackageResponse>(
         bootstrapResponse,
         "create Control Cloud bootstrap package");

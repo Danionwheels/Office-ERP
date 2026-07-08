@@ -51,6 +51,8 @@ The panel can sign in a named provider operator, store the short-lived bearer se
 | `app-activation:read` | Read app activation issue/register state. |
 | `app-activation:write` | Issue, revoke, or replace app activation mappings. |
 | `client-portal:manage` | Create, list, resend, or revoke client portal invitations. |
+| `deployment-packages:read` | Read generated setup/bootstrap package register state. |
+| `deployment-packages:write` | Create setup tokens, generate bootstrap packages, and download bootstrap bundles. |
 | `provider-operators:manage` | List, create, reset password, update scopes, and suspend/reactivate provider operators. |
 | `*` | Break-glass all-scope value. Do not use for routine operators. |
 
@@ -90,6 +92,8 @@ Provider access settings live under `ClientPortal:ProviderAccess`:
         "app-activation:read",
         "app-activation:write",
         "client-portal:manage",
+        "deployment-packages:read",
+        "deployment-packages:write",
         "provider-operators:manage"
       ],
       "OperatorStorePath": "App_Data/provider-access-operators.json",
@@ -150,7 +154,7 @@ $operator = Invoke-RestMethod -Method Post -Uri "$base/api/v1/provider-access/op
   email = "ops.one@safarsuite.local"
   fullName = "Ops One"
   password = "ChangeThisProviderPassword123!"
-  scopes = @("app-activation:read", "app-activation:write", "client-portal:manage")
+  scopes = @("app-activation:read", "app-activation:write", "client-portal:manage", "deployment-packages:read", "deployment-packages:write")
   createdBy = "provider-bootstrap"
 } | ConvertTo-Json -Depth 5)
 ```

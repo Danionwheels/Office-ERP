@@ -8,6 +8,12 @@ public interface IControlCloudInstallationSetupTokenRepository
         string tokenHash,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<ControlCloudInstallationSetupToken>> ListBootstrapPackagesAsync(
+        Guid clientId,
+        string installationId,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(
         ControlCloudInstallationSetupToken setupToken,
         CancellationToken cancellationToken = default);

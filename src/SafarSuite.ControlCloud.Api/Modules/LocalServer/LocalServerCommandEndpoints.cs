@@ -11,6 +11,7 @@ using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationSta
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetLatestInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetPendingInstallationCommands;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueSafarSuiteAppActivationToken;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListLocalServerBootstrapPackages;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListSafarSuiteAppActivationIssues;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.QueueInstallationCommand;
@@ -62,6 +63,11 @@ public static class LocalServerCommandEndpoints
                 "/clients/{clientId:guid}/installations/{installationId}/bootstrap-package",
                 CreateBootstrapPackageAsync)
             .WithName("CreateLocalServerBootstrapPackage");
+
+        controlCloudGroup.MapGet(
+                "/clients/{clientId:guid}/installations/{installationId}/bootstrap-packages",
+                ListBootstrapPackagesAsync)
+            .WithName("ListLocalServerBootstrapPackages");
 
         controlCloudGroup.MapPost(
                 "/clients/{clientId:guid}/installations/{installationId}/bootstrap-package/download",
@@ -171,9 +177,21 @@ public static class LocalServerCommandEndpoints
         Guid clientId,
         string installationId,
         CreateLocalServerSetupTokenRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
         CreateInstallationSetupTokenHandler handler,
         CancellationToken cancellationToken)
     {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.DeploymentPackagesWrite);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
         var result = await handler.HandleAsync(
             new CreateInstallationSetupTokenCommand(
                 clientId,
@@ -213,10 +231,22 @@ public static class LocalServerCommandEndpoints
         Guid clientId,
         string installationId,
         CreateLocalServerBootstrapPackageRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
         CreateLocalServerBootstrapPackageHandler handler,
         ControlCloudBootstrapPackageOptions options,
         CancellationToken cancellationToken)
     {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.DeploymentPackagesWrite);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
         var result = await handler.HandleAsync(
             new CreateLocalServerBootstrapPackageCommand(
                 clientId,
@@ -238,6 +268,37 @@ public static class LocalServerCommandEndpoints
 
         return result.IsSuccess
             ? Results.Ok(result.BootstrapPackage!)
+            : ToFailureResult(result.FailureCode, result.Detail);
+    }
+
+    private static async Task<IResult> ListBootstrapPackagesAsync(
+        Guid clientId,
+        string installationId,
+        int? take,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
+        ListLocalServerBootstrapPackagesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.DeploymentPackagesRead);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var result = await handler.HandleAsync(
+            new ListLocalServerBootstrapPackagesQuery(
+                clientId,
+                installationId,
+                take ?? 50),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Results.Ok(result.Response!)
             : ToFailureResult(result.FailureCode, result.Detail);
     }
 
@@ -370,10 +431,22 @@ public static class LocalServerCommandEndpoints
         Guid clientId,
         string installationId,
         CreateLocalServerBootstrapPackageRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
         CreateLocalServerBootstrapPackageHandler handler,
         ControlCloudBootstrapPackageOptions options,
         CancellationToken cancellationToken)
     {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.DeploymentPackagesWrite);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
         var result = await handler.HandleAsync(
             new CreateLocalServerBootstrapPackageCommand(
                 clientId,
@@ -662,6 +735,7 @@ public static class LocalServerCommandEndpoints
             "AppServerPublicKeyRequired" => Results.BadRequest(response),
             "ActivationIssueQueryInvalid" => Results.BadRequest(response),
             "ActivationIssueTakeInvalid" => Results.BadRequest(response),
+            "BootstrapPackageTakeInvalid" => Results.BadRequest(response),
             "ActivationIssueIdRequired" => Results.BadRequest(response),
             "ActivationIssueRevokedByRequired" => Results.BadRequest(response),
             "ActivationIssueRevocationReasonRequired" => Results.BadRequest(response),

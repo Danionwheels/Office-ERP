@@ -41,6 +41,15 @@ public sealed class HttpControlCloudInstallationProvisioningClient
         return CreateBootstrapPackageCoreAsync(clientId, installationId, request, cancellationToken);
     }
 
+    public Task<ControlCloudBootstrapPackageRegisterClientResult> ListBootstrapPackagesAsync(
+        Guid clientId,
+        string installationId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        return ListBootstrapPackagesCoreAsync(clientId, installationId, take, cancellationToken);
+    }
+
     public Task<ControlCloudAppActivationTokenClientResult> IssueAppActivationTokenAsync(
         Guid clientId,
         string installationId,
@@ -116,6 +125,35 @@ public sealed class HttpControlCloudInstallationProvisioningClient
         return result.IsSuccess
             ? ControlCloudBootstrapPackageClientResult.Success(result.Response!)
             : ControlCloudBootstrapPackageClientResult.Failure(result.FailureCode!, result.Detail!);
+    }
+
+    private async Task<ControlCloudBootstrapPackageRegisterClientResult> ListBootstrapPackagesCoreAsync(
+        Guid clientId,
+        string installationId,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        if (!HasProviderAccess())
+        {
+            return ControlCloudBootstrapPackageRegisterClientResult.Failure(
+                "ControlCloudProviderAccessNotConfigured",
+                "Control Cloud provider access key is not configured.");
+        }
+
+        var result = await GetInstallationScopedAsync<LocalServerBootstrapPackageRegisterResponse>(
+            clientId,
+            installationId,
+            "bootstrap-packages",
+            new Dictionary<string, string?>
+            {
+                ["take"] = take.ToString()
+            },
+            "bootstrap package register",
+            cancellationToken);
+
+        return result.IsSuccess
+            ? ControlCloudBootstrapPackageRegisterClientResult.Success(result.Response!)
+            : ControlCloudBootstrapPackageRegisterClientResult.Failure(result.FailureCode!, result.Detail!);
     }
 
     private async Task<ControlCloudAppActivationTokenClientResult> IssueAppActivationTokenCoreAsync(
@@ -339,6 +377,64 @@ public sealed class HttpControlCloudInstallationProvisioningClient
             var requestUri = new Uri(
                 baseUri,
                 $"/api/v1/control-cloud/clients/{clientId:D}/{action}{query}");
+            using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
+            AddProviderAccessHeader(message);
+            using var response = await _httpClient.SendAsync(message, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content
+                    .ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken);
+
+                return responseBody is null
+                    ? ProvisioningHttpResult<TResponse>.Failure(
+                        "ControlCloudInstallationProvisioningResponseInvalid",
+                        $"Control Cloud returned an empty {actionLabel} response.")
+                    : ProvisioningHttpResult<TResponse>.Success(responseBody);
+            }
+
+            var error = await ReadErrorAsync(response, cancellationToken);
+
+            return ProvisioningHttpResult<TResponse>.Failure(
+                error.Code ?? ToDefaultFailureCode(response.StatusCode),
+                error.Detail);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return ProvisioningHttpResult<TResponse>.Failure(
+                "ControlCloudInstallationProvisioningUnavailable",
+                $"Timed out while reading the Control Cloud {actionLabel}.");
+        }
+        catch (HttpRequestException exception)
+        {
+            return ProvisioningHttpResult<TResponse>.Failure(
+                "ControlCloudInstallationProvisioningUnavailable",
+                exception.Message);
+        }
+    }
+
+    private async Task<ProvisioningHttpResult<TResponse>> GetInstallationScopedAsync<TResponse>(
+        Guid clientId,
+        string installationId,
+        string action,
+        IReadOnlyDictionary<string, string?> queryParameters,
+        string actionLabel,
+        CancellationToken cancellationToken)
+        where TResponse : class
+    {
+        if (!Uri.TryCreate(_options.Value.BaseUrl, UriKind.Absolute, out var baseUri))
+        {
+            return ProvisioningHttpResult<TResponse>.Failure(
+                "ControlCloudInstallationProvisioningNotConfigured",
+                "Control Cloud provisioning base URL is not configured.");
+        }
+
+        try
+        {
+            var query = BuildQueryString(queryParameters);
+            var requestUri = new Uri(
+                baseUri,
+                $"/api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId.Trim())}/{action}{query}");
             using var message = new HttpRequestMessage(HttpMethod.Get, requestUri);
             AddProviderAccessHeader(message);
             using var response = await _httpClient.SendAsync(message, cancellationToken);

@@ -50,6 +50,34 @@ public sealed class FileControlCloudInstallationSetupTokenRepository
         await SaveAsync(setupToken, cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<ControlCloudInstallationSetupToken>> ListBootstrapPackagesAsync(
+        Guid clientId,
+        string installationId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var normalizedInstallationId = installationId.Trim();
+            var setupTokens = await ReadAllAsync(cancellationToken);
+
+            return setupTokens.Values
+                .Where(setupToken => setupToken.ClientId == clientId
+                    && string.Equals(setupToken.InstallationId, normalizedInstallationId, StringComparison.Ordinal)
+                    && setupToken.HasBootstrapPackage)
+                .OrderByDescending(setupToken => setupToken.BootstrapPackageGeneratedAtUtc ?? setupToken.CreatedAtUtc)
+                .ThenByDescending(setupToken => setupToken.CreatedAtUtc)
+                .Take(take)
+                .ToArray();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task SaveAsync(
         ControlCloudInstallationSetupToken setupToken,
         CancellationToken cancellationToken = default)
@@ -105,7 +133,13 @@ public sealed class FileControlCloudInstallationSetupTokenRepository
                 record.CreatedAtUtc,
                 record.ExpiresAtUtc,
                 record.ConsumedAtUtc,
-                record.ConsumedLocalServerVersion))
+                record.ConsumedLocalServerVersion,
+                record.BootstrapPackageId,
+                record.BootstrapPackageGeneratedAtUtc,
+                record.PackageLocalServerVersion,
+                record.PackageSafarSuiteAppVersion,
+                record.PackageBundleFileName,
+                record.PackageBundleSha256))
             .GroupBy(setupToken => setupToken.SetupTokenId)
             .ToDictionary(group => group.Key, group => group.Last());
     }
@@ -140,7 +174,13 @@ public sealed class FileControlCloudInstallationSetupTokenRepository
                 setupToken.CreatedAtUtc,
                 setupToken.ExpiresAtUtc,
                 setupToken.ConsumedAtUtc,
-                setupToken.ConsumedLocalServerVersion))
+                setupToken.ConsumedLocalServerVersion,
+                setupToken.BootstrapPackageId,
+                setupToken.BootstrapPackageGeneratedAtUtc,
+                setupToken.PackageLocalServerVersion,
+                setupToken.PackageSafarSuiteAppVersion,
+                setupToken.PackageBundleFileName,
+                setupToken.PackageBundleSha256))
             .ToArray();
 
         await using var stream = new FileStream(
@@ -179,5 +219,11 @@ public sealed class FileControlCloudInstallationSetupTokenRepository
         DateTimeOffset CreatedAtUtc,
         DateTimeOffset ExpiresAtUtc,
         DateTimeOffset? ConsumedAtUtc,
-        string? ConsumedLocalServerVersion);
+        string? ConsumedLocalServerVersion,
+        Guid? BootstrapPackageId = null,
+        DateTimeOffset? BootstrapPackageGeneratedAtUtc = null,
+        string? PackageLocalServerVersion = null,
+        string? PackageSafarSuiteAppVersion = null,
+        string? PackageBundleFileName = null,
+        string? PackageBundleSha256 = null);
 }
