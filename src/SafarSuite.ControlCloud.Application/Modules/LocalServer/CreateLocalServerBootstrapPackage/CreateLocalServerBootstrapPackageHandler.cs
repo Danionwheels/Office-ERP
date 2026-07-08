@@ -632,6 +632,10 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         SAFARSUITE_PENDING_COMMANDS_URL={{SAFARSUITE_PENDING_COMMANDS_URL}}
         SAFARSUITE_DIAGNOSTICS_URL={{SAFARSUITE_DIAGNOSTICS_URL}}
         DeploymentSecrets__Provider=Environment
+        LocalServer__BootstrapTrust__SigningKeys__0__KeyId=change-me-before-start
+        LocalServer__BootstrapTrust__SigningKeys__0__Secret=change-me-before-start
+        LocalServer__EntitlementTrust__SigningKeys__0__KeyId=change-me-before-start
+        LocalServer__EntitlementTrust__SigningKeys__0__Secret=change-me-before-start
         ActivationSigning__SigningKeyId={{SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID}}
         ActivationSigning__PublicKeyPem={{SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM}}
         DeviceCredentials__SigningKeyId=safarsuite-app-device-local

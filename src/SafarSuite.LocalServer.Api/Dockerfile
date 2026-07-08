@@ -16,7 +16,8 @@ COPY src/SafarSuite.LocalServer.Api/docker/safarsuite-local-api /usr/local/bin/s
 COPY src/SafarSuite.LocalServer.Api/docker/safarsuite-local-worker /usr/local/bin/safarsuite-local-worker
 COPY src/SafarSuite.LocalServer.Api/docker/safarsuite-local-agent /usr/local/bin/safarsuite-local-agent
 
-RUN chmod +x /usr/local/bin/safarsuite-local-api /usr/local/bin/safarsuite-local-worker /usr/local/bin/safarsuite-local-agent \
+RUN sed -i 's/\r$//' /usr/local/bin/safarsuite-local-api /usr/local/bin/safarsuite-local-worker /usr/local/bin/safarsuite-local-agent \
+    && chmod +x /usr/local/bin/safarsuite-local-api /usr/local/bin/safarsuite-local-worker /usr/local/bin/safarsuite-local-agent \
     && mkdir -p /etc/safarsuite/local-server/certs /var/lib/safarsuite/local-server \
     && chown -R app:app /etc/safarsuite /var/lib/safarsuite /app
 

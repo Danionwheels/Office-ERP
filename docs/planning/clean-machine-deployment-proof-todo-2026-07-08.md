@@ -11,13 +11,47 @@ Prove that a fresh customer-style setup can go from Control Cloud bootstrap pack
 ## Todo
 
 - [x] Define the proof environment: clean Docker/VM-like target, PostgreSQL-backed Control Cloud, file-backed provider/deployment secrets.
-- [ ] Generate one customer installation profile, setup token, and bootstrap package from Control Cloud.
-- [ ] Run the generated installer against the clean target using the app-runtime profile.
-- [ ] Verify LocalServer registration, entitlement pull, heartbeat, command polling, and diagnostics upload.
-- [ ] Verify app activation import and module access through the local module gateway.
-- [ ] Rerun the installer and confirm durable generated secrets are reused instead of rotated.
-- [ ] Capture the exact command sequence, expected outputs, artifacts, and failure triage notes.
+- [x] Generate one customer installation profile, setup token, and bootstrap package from Control Cloud.
+- [x] Run the generated installer against the clean target using the app-runtime profile.
+- [x] Verify LocalServer registration, entitlement pull, heartbeat, command polling, and diagnostics upload.
+- [x] Verify app activation import and module access through the local module gateway.
+- [x] Rerun the installer and confirm durable generated secrets are reused instead of rotated.
+- [x] Capture the exact command sequence, expected outputs, artifacts, and failure triage notes.
 - [ ] Decide what must move from "proof script" into the Control Desk customer setup UX.
+
+## 2026-07-08 Final Live Proof Notes
+
+Passed artifacts:
+
+- Package root: `artifacts/codex/clean-machine-live-proof-20260708/package`.
+- Target root: `artifacts/codex/clean-machine-live-proof-20260708/target`.
+- Final Local API URL: `https://127.0.0.1:19080`.
+- Final app runtime URL: `http://127.0.0.1:19081`.
+
+Verified runtime surface:
+
+- LocalServer bootstrap registration: `Registered`.
+- Entitlement pull: `Active`, cached entitlement version `639190761734034536`.
+- Heartbeat: `Received`.
+- Module access: `Accounting` allowed through the module gateway.
+- Diagnostics command: `request_diagnostics` applied and acknowledged; latest report `d93de61f-223d-4de5-b185-61e1f7af1b42` is `Received` with `Active` license status.
+- App activation: `Active`, signing key `clean-proof-app-activation-2026-07`, with `Accounting` allowed.
+- Rerun proof: `clean-machine-rerun-secret-proof.sh` passed and generated secret hashes matched across installer reruns.
+
+Fixes made during the run:
+
+- LocalServer runtime image now strips CRLF from shell entrypoint shims before `chmod`, fixing `/usr/bin/env: 'sh\r': No such file or directory`.
+- Compose proof tool now loads PEM trust anchors with `X509Certificate2.CreateFromPem`, so generated CA files are readable by the verifier.
+- Generated LocalServer env now includes bootstrap and entitlement trust keys matching the real Control Cloud bootstrap/entitlement signing key.
+- Clean-machine install and verify scripts add `--ssl-no-revoke` when Git for Windows curl uses Schannel, while retaining CA-pinned TLS.
+- Generated local CA config now marks the CA certificate with `basicConstraints = CA:TRUE`.
+- LocalServer bootstrap import is idempotent for the same already-registered signed bundle, so reruns do not re-consume setup tokens.
+
+Open items from this run:
+
+- For Docker-host callbacks, local Control Cloud should bind to `0.0.0.0:5159` when the bundle advertises `http://host.docker.internal:5159`.
+- For this proof, Control Cloud HMAC receiver and entitlement secrets were supplied inline to avoid ambiguity from development inline defaults plus file-backed overrides.
+- The next product slice is deciding what moves from proof scripts into the Control Desk customer setup UX.
 
 ## Proof Environment V1
 

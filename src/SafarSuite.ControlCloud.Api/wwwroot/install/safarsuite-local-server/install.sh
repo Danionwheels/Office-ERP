@@ -34,6 +34,25 @@ wait_for_local_api() {
   exit 7
 }
 
+local_api_has_current_bootstrap() {
+  api_base_url="$1"
+
+  bootstrap_status="$(curl -fsS "${local_api_curl_args[@]}" "$api_base_url/api/v1/local-server/bootstrap" 2>/dev/null || true)"
+  if [ -z "$bootstrap_status" ]; then
+    return 1
+  fi
+
+  printf '%s' "$bootstrap_status" | grep -Fq '"hasBootstrapConfiguration":true' &&
+    printf '%s' "$bootstrap_status" | grep -Fq "\"installationId\":\"$installation_id\""
+}
+
+append_local_api_curl_compat_args() {
+  if curl --version 2>/dev/null | head -n 1 | grep -qi 'Schannel' &&
+     curl --help all 2>/dev/null | grep -q -- '--ssl-no-revoke'; then
+    local_api_curl_args+=(--ssl-no-revoke)
+  fi
+}
+
 generate_secret() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 32
@@ -91,13 +110,19 @@ write_local_api_ca_certificate_config() {
   ca_config_file="$1"
   subject_cn="$2"
 
-  cat > "$ca_config_file" <<EOF
+cat > "$ca_config_file" <<EOF
 [req]
 distinguished_name = req_distinguished_name
+x509_extensions = v3_ca
 prompt = no
 
 [req_distinguished_name]
 CN = $subject_cn
+
+[v3_ca]
+basicConstraints = critical, CA:TRUE, pathlen:0
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
 EOF
 }
 
@@ -283,6 +308,10 @@ local_db_image="${SAFARSUITE_LOCAL_DB_IMAGE:-postgres:16-alpine}"
 local_db_name="${SAFARSUITE_LOCAL_DB_NAME:-safarsuite_local}"
 local_db_user="${SAFARSUITE_LOCAL_DB_USER:-safarsuite}"
 local_db_password="${SAFARSUITE_LOCAL_DB_PASSWORD:-}"
+entitlement_trust_signing_key_id="${SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID:-${LocalServer__EntitlementTrust__SigningKeys__0__KeyId:-local-entitlement-dev}}"
+entitlement_trust_signing_secret="${SAFARSUITE_ENTITLEMENT_SIGNING_SECRET:-${LocalServer__EntitlementTrust__SigningKeys__0__Secret:-local-entitlement-signing-secret-change-before-cloud}}"
+bootstrap_trust_signing_key_id="${SAFARSUITE_BOOTSTRAP_TRUST_SIGNING_KEY_ID:-${SAFARSUITE_BOOTSTRAP_SIGNING_KEY_ID:-${LocalServer__BootstrapTrust__SigningKeys__0__KeyId:-$entitlement_trust_signing_key_id}}}"
+bootstrap_trust_signing_secret="${SAFARSUITE_BOOTSTRAP_TRUST_SIGNING_SECRET:-${SAFARSUITE_BOOTSTRAP_SIGNING_SECRET:-${LocalServer__BootstrapTrust__SigningKeys__0__Secret:-$entitlement_trust_signing_secret}}}"
 app_activation_signing_key_id="${SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID:-${ActivationSigning__SigningKeyId:-}}"
 app_activation_public_key_pem="${SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM:-${ActivationSigning__PublicKeyPem:-}}"
 app_device_signing_key_id="${SAFARSUITE_APP_DEVICE_SIGNING_KEY_ID:-${DeviceCredentials__SigningKeyId:-safarsuite-app-device-local}}"
@@ -352,6 +381,7 @@ if [ "$local_api_tls_mode" = "GeneratedLocalCa" ]; then
     "$local_api_certificate_ip_addresses" \
     "$local_api_certificate_days"
   local_api_curl_args=(--cacert "$local_api_host_trust_dir/local-api-ca.pem")
+  append_local_api_curl_compat_args
 elif [ "$local_api_tls_mode" = "SuppliedCertificate" ]; then
   if [ -z "$local_api_certificate_path" ]; then
     echo "SAFARSUITE_LOCAL_API_CERTIFICATE_PATH is required when SAFARSUITE_LOCAL_API_TLS_MODE=SuppliedCertificate." >&2
@@ -429,6 +459,10 @@ SAFARSUITE_HEARTBEAT_URL=$heartbeat_url
 SAFARSUITE_PENDING_COMMANDS_URL=$pending_commands_url
 SAFARSUITE_DIAGNOSTICS_URL=$diagnostics_url
 DeploymentSecrets__Provider=Environment
+LocalServer__BootstrapTrust__SigningKeys__0__KeyId=$bootstrap_trust_signing_key_id
+LocalServer__BootstrapTrust__SigningKeys__0__Secret=$bootstrap_trust_signing_secret
+LocalServer__EntitlementTrust__SigningKeys__0__KeyId=$entitlement_trust_signing_key_id
+LocalServer__EntitlementTrust__SigningKeys__0__Secret=$entitlement_trust_signing_secret
 ActivationSigning__SigningKeyId=$app_activation_signing_key_id
 ActivationSigning__PublicKeyPem=$app_activation_public_key_pem
 DeviceCredentials__SigningKeyId=$app_device_signing_key_id
@@ -640,12 +674,16 @@ if [ "$should_import_bundle_after_start" = "true" ]; then
 
   wait_for_local_api "$local_api_public_url"
 
-  curl -fsS \
-    "${local_api_curl_args[@]}" \
-    -X POST "$local_api_public_url/api/v1/local-server/bootstrap-package/import" \
-    -H "Content-Type: application/json" \
-    --data-binary "@$bundle_file" \
-    -o "$state_dir/bootstrap-import-response.json"
+  if local_api_has_current_bootstrap "$local_api_public_url"; then
+    echo "SafarSuite local-server bootstrap already exists for $installation_id; skipping bundle import."
+  else
+    curl -fsS \
+      "${local_api_curl_args[@]}" \
+      -X POST "$local_api_public_url/api/v1/local-server/bootstrap-package/import" \
+      -H "Content-Type: application/json" \
+      --data-binary "@$bundle_file" \
+      -o "$state_dir/bootstrap-import-response.json"
+  fi
 fi
 
 echo "SafarSuite local-server bootstrap config written to $config_file"

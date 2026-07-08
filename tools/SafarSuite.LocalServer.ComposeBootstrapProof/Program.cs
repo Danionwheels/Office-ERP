@@ -595,7 +595,7 @@ HttpClient CreateLocalApiHttpClient(ProofOptions options)
         "certs",
         "trust",
         "local-api-ca.pem");
-    var trustedCa = X509CertificateLoader.LoadCertificateFromFile(caCertificatePath);
+    var trustedCa = LoadLocalApiCertificate(caCertificatePath);
     var handler = new HttpClientHandler
     {
         ServerCertificateCustomValidationCallback = (request, certificate, chain, errors) =>
@@ -606,6 +606,13 @@ HttpClient CreateLocalApiHttpClient(ProofOptions options)
     {
         BaseAddress = new Uri($"{GetLocalApiHostBaseUrl(options)}/")
     };
+}
+
+X509Certificate2 LoadLocalApiCertificate(string certificatePath)
+{
+    return certificatePath.EndsWith(".pem", StringComparison.OrdinalIgnoreCase)
+        ? X509Certificate2.CreateFromPem(File.ReadAllText(certificatePath))
+        : X509CertificateLoader.LoadCertificateFromFile(certificatePath);
 }
 
 bool ValidateLocalApiServerCertificate(
@@ -927,6 +934,8 @@ string BuildCleanMachineInstallScript(
             ("SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES", "local-api,localhost"),
             ("SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES", "127.0.0.1"),
             ("SAFARSUITE_LOCAL_API_CERTIFICATE_DAYS", options.LocalApiCertificateDays.ToString()),
+            ("SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID", package.SignedBundle.Signature.KeyId),
+            ("SAFARSUITE_ENTITLEMENT_SIGNING_SECRET", options.SigningSecret),
             ("SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID", appActivationSigningKey.SigningKeyId),
             ("SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM", EscapeDockerEnvValue(appActivationSigningKey.PublicKeyPem)),
             ("SAFARSUITE_BOOTSTRAP_BUNDLE_SHA256", bootstrapBundleSha256),
@@ -974,6 +983,10 @@ string BuildCleanMachineVerifyScript(ProofOptions options)
         "    exit 12",
         "  fi",
         "  curl_args=(--cacert \"$ca_file\")",
+        "  if curl --version 2>/dev/null | head -n 1 | grep -qi 'Schannel' &&",
+        "     curl --help all 2>/dev/null | grep -q -- '--ssl-no-revoke'; then",
+        "    curl_args+=(--ssl-no-revoke)",
+        "  fi",
         "fi",
         "",
         "curl -fsS \"${curl_args[@]}\" \"$local_api_base_url/health\"",
@@ -1337,6 +1350,10 @@ string BuildEnvironmentFile(ProofOptions options)
         $"SAFARSUITE_HEARTBEAT_URL={CreateEndpoints(options).HeartbeatUrl}",
         $"SAFARSUITE_PENDING_COMMANDS_URL={CreateEndpoints(options).PendingCommandsUrl}",
         $"SAFARSUITE_DIAGNOSTICS_URL={CreateEndpoints(options).DiagnosticsUrl}",
+        $"LocalServer__BootstrapTrust__SigningKeys__0__KeyId={options.SigningKeyId}",
+        $"LocalServer__BootstrapTrust__SigningKeys__0__Secret={options.SigningSecret}",
+        $"LocalServer__EntitlementTrust__SigningKeys__0__KeyId={options.SigningKeyId}",
+        $"LocalServer__EntitlementTrust__SigningKeys__0__Secret={options.SigningSecret}",
         "DeploymentSecrets__Provider=Environment",
         $"ActivationSigning__SigningKeyId={AppProofActivationSigningKeyId}",
         $"ActivationSigning__PublicKeyPem={AppProofActivationPublicKeyPemEscaped}",
@@ -1398,6 +1415,10 @@ string BuildEnvironmentFileFromPackage(
         $"SAFARSUITE_HEARTBEAT_URL={endpoints.HeartbeatUrl}",
         $"SAFARSUITE_PENDING_COMMANDS_URL={endpoints.PendingCommandsUrl}",
         $"SAFARSUITE_DIAGNOSTICS_URL={endpoints.DiagnosticsUrl}",
+        $"LocalServer__BootstrapTrust__SigningKeys__0__KeyId={package.SignedBundle.Signature.KeyId}",
+        $"LocalServer__BootstrapTrust__SigningKeys__0__Secret={options.SigningSecret}",
+        $"LocalServer__EntitlementTrust__SigningKeys__0__KeyId={package.SignedBundle.Signature.KeyId}",
+        $"LocalServer__EntitlementTrust__SigningKeys__0__Secret={options.SigningSecret}",
         "DeploymentSecrets__Provider=Environment",
         $"ActivationSigning__SigningKeyId={appActivationSigningKey.SigningKeyId}",
         $"ActivationSigning__PublicKeyPem={EscapeDockerEnvValue(appActivationSigningKey.PublicKeyPem)}",
@@ -2002,6 +2023,9 @@ internal sealed record ProofOptions
                 "local-server-image" => options with { LocalServerImage = value },
                 "local-db-image" => options with { LocalDbImage = value },
                 "app-image" => options with { AppImage = value },
+                "signing-key-id" => options with { SigningKeyId = value },
+                "signing-secret" => options with { SigningSecret = value },
+                "signing-secret-file" => options with { SigningSecret = ReadRequiredSecretFile(value, key) },
                 "control-desk-signing-key-id" => options with { ControlDeskSigningKeyId = value },
                 "control-desk-signing-secret" => options with { ControlDeskSigningSecret = value },
                 "control-desk-signing-secret-file" => options with { ControlDeskSigningSecret = ReadRequiredSecretFile(value, key) },
