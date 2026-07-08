@@ -45,8 +45,28 @@ generate_secret() {
     return
   fi
 
-  echo "Unable to generate SAFARSUITE_LOCAL_API_ACCESS_KEY; set it before running install." >&2
+  echo "Unable to generate a deployment secret; set it before running install." >&2
   exit 8
+}
+
+read_or_generate_secret() {
+  secret_file="$1"
+  provided_value="$2"
+
+  if [ -n "$provided_value" ] && [ "$provided_value" != "change-me-before-start" ]; then
+    printf '%s' "$provided_value"
+    return
+  fi
+
+  if [ -f "$secret_file" ]; then
+    cat "$secret_file"
+    return
+  fi
+
+  generated_secret="$(generate_secret)"
+  printf '%s' "$generated_secret" > "$secret_file"
+  chmod 600 "$secret_file"
+  printf '%s' "$generated_secret"
 }
 
 normalize_local_api_tls_mode() {
@@ -262,11 +282,14 @@ runtime_manifest_path="${SAFARSUITE_RUNTIME_MANIFEST_PATH:-$local_server_contain
 local_db_image="${SAFARSUITE_LOCAL_DB_IMAGE:-postgres:16-alpine}"
 local_db_name="${SAFARSUITE_LOCAL_DB_NAME:-safarsuite_local}"
 local_db_user="${SAFARSUITE_LOCAL_DB_USER:-safarsuite}"
-local_db_password="${SAFARSUITE_LOCAL_DB_PASSWORD:-change-me-before-start}"
-
-if [ -z "$local_api_access_key" ]; then
-  local_api_access_key="$(generate_secret)"
-fi
+local_db_password="${SAFARSUITE_LOCAL_DB_PASSWORD:-}"
+app_activation_signing_key_id="${SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID:-${ActivationSigning__SigningKeyId:-}}"
+app_activation_public_key_pem="${SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM:-${ActivationSigning__PublicKeyPem:-}}"
+app_device_signing_key_id="${SAFARSUITE_APP_DEVICE_SIGNING_KEY_ID:-${DeviceCredentials__SigningKeyId:-safarsuite-app-device-local}}"
+app_device_signing_secret="${SAFARSUITE_APP_DEVICE_SIGNING_SECRET:-${DeviceCredentials__SigningSecret:-}}"
+app_session_signing_key_id="${SAFARSUITE_APP_SESSION_SIGNING_KEY_ID:-${UserSessions__SigningKeyId:-safarsuite-app-session-local}}"
+app_session_signing_secret="${SAFARSUITE_APP_SESSION_SIGNING_SECRET:-${UserSessions__SigningSecret:-}}"
+first_manager_allow_setup_code_fallback="${SAFARSUITE_FIRST_MANAGER_ALLOW_SETUP_CODE_FALLBACK:-${FirstManagerBootstrap__AllowSetupCodeFallback:-false}}"
 
 if [ -n "$bundle_file" ] && [ -n "$bundle_sha256" ]; then
   if ! command -v sha256sum >/dev/null 2>&1; then
@@ -285,13 +308,19 @@ fi
 local_api_host_cert_dir="$config_dir/certs/local-api"
 local_api_host_trust_dir="$config_dir/certs/trust"
 local_api_host_private_dir="$state_dir/certs-private/local-api"
+deployment_secret_dir="$state_dir/secrets"
 local_api_container_cert_dir="$local_server_container_config_dir/certs/local-api"
 local_api_container_trust_dir="$local_server_container_config_dir/certs/trust"
 local_api_curl_args=()
 
-mkdir -p "$config_dir" "$state_dir" "$local_api_host_cert_dir" "$local_api_host_trust_dir" "$local_api_host_private_dir"
-chmod 700 "$config_dir" "$state_dir" "$local_api_host_private_dir"
+mkdir -p "$config_dir" "$state_dir" "$local_api_host_cert_dir" "$local_api_host_trust_dir" "$local_api_host_private_dir" "$deployment_secret_dir"
+chmod 700 "$config_dir" "$state_dir" "$local_api_host_private_dir" "$deployment_secret_dir"
 chmod 755 "$config_dir/certs" "$local_api_host_cert_dir" "$local_api_host_trust_dir"
+
+local_api_access_key="$(read_or_generate_secret "$deployment_secret_dir/local-api-access-key" "$local_api_access_key")"
+local_db_password="$(read_or_generate_secret "$deployment_secret_dir/local-db-password" "$local_db_password")"
+app_device_signing_secret="$(read_or_generate_secret "$deployment_secret_dir/app-device-signing-secret" "$app_device_signing_secret")"
+app_session_signing_secret="$(read_or_generate_secret "$deployment_secret_dir/app-session-signing-secret" "$app_session_signing_secret")"
 
 if [ "$local_api_tls_mode" = "GeneratedLocalCa" ]; then
   local_api_certificate_password_file="$local_api_host_private_dir/local-api-server.pfx.password"
@@ -399,6 +428,14 @@ SAFARSUITE_ENTITLEMENT_BUNDLE_URL=$entitlement_url
 SAFARSUITE_HEARTBEAT_URL=$heartbeat_url
 SAFARSUITE_PENDING_COMMANDS_URL=$pending_commands_url
 SAFARSUITE_DIAGNOSTICS_URL=$diagnostics_url
+DeploymentSecrets__Provider=Environment
+ActivationSigning__SigningKeyId=$app_activation_signing_key_id
+ActivationSigning__PublicKeyPem=$app_activation_public_key_pem
+DeviceCredentials__SigningKeyId=$app_device_signing_key_id
+DeviceCredentials__SigningSecret=$app_device_signing_secret
+UserSessions__SigningKeyId=$app_session_signing_key_id
+UserSessions__SigningSecret=$app_session_signing_secret
+FirstManagerBootstrap__AllowSetupCodeFallback=$first_manager_allow_setup_code_fallback
 EOF
 
 cat > "$runtime_manifest_file" <<EOF
