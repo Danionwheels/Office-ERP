@@ -2,7 +2,9 @@ import { useRef, useState } from "react";
 import {
   Activity,
   Cloud,
+  Copy,
   Download,
+  FileText,
   History,
   KeyRound,
   MapPin,
@@ -17,8 +19,11 @@ import {
 } from "lucide-react";
 import type { CloudInstallationStatusPanelProps } from "../types/cloudWorkspaceTypes";
 import {
+  copyTextToClipboard,
+  downloadBootstrapArtifact,
   downloadAppActivationImport,
   downloadBootstrapBundle,
+  downloadCustomerSetupGuide,
   downloadDiagnosticsReport
 } from "../utils/cloudDownloads";
 import {
@@ -43,7 +48,14 @@ import {
   toAppActivationRequestJson
 } from "../utils/cloudWorkspaceModel";
 import { CloudControlBoard } from "./shared/CloudControlBoard";
-import type { LocalServerBootstrapPackageSummary } from "../types/controlCloudTypes";
+import type {
+  ControlCloudInstallationStatus,
+  IssuedSafarSuiteAppActivationToken,
+  LocalServerBootstrapPackage,
+  LocalServerBootstrapPackageSummary,
+  LocalServerDiagnosticReport,
+  SafarSuiteAppActivationIssue
+} from "../types/controlCloudTypes";
 
 export function CloudInstallationStatusPanel({
   client,
@@ -94,6 +106,7 @@ export function CloudInstallationStatusPanel({
 }: CloudInstallationStatusPanelProps) {
   const appActivationRequestInputRef = useRef<HTMLInputElement>(null);
   const [appActivationImportError, setAppActivationImportError] = useState("");
+  const [installCommandCopyState, setInstallCommandCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const latestHeartbeat = status?.latestHeartbeat ?? null;
   const latestEntitlement = status?.latestEntitlement ?? null;
   const commandStatus = status?.commandStatus ?? null;
@@ -118,6 +131,26 @@ export function CloudInstallationStatusPanel({
     latestHeartbeat,
     status
   });
+  const setupSteps = getCustomerSetupSteps({
+    selectedDeploymentId,
+    deploymentValue,
+    status,
+    bootstrapPackage,
+    bootstrapPackages,
+    latestHeartbeat,
+    latestEntitlement,
+    diagnosticsReport,
+    issuedAppActivation,
+    appActivationIssues
+  });
+  const completedSetupSteps = setupSteps.filter((step) => step.done).length;
+  const warningSetupSteps = setupSteps.filter((step) => step.tone === "warning").length;
+  const setupReadinessTone = completedSetupSteps === setupSteps.length
+    ? warningSetupSteps > 0 ? "warning" : "ready"
+    : "neutral";
+  const setupReadinessStatus = completedSetupSteps === setupSteps.length
+    ? warningSetupSteps > 0 ? "Review" : "Complete"
+    : `${completedSetupSteps}/${setupSteps.length} ready`;
   const outboxCounts = getCloudOutboxCounts(outboxMessages);
   const canIssueAppActivationToken =
     !isBusy
@@ -156,6 +189,21 @@ export function CloudInstallationStatusPanel({
       setAppActivationImportError(error instanceof Error
         ? error.message
         : "Activation request JSON could not be read.");
+    }
+  }
+
+  async function handleCopyInstallCommand() {
+    if (bootstrapPackage === null) {
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(bootstrapPackage.installCommand);
+      setInstallCommandCopyState("copied");
+      window.setTimeout(() => setInstallCommandCopyState("idle"), 1800);
+    } catch {
+      setInstallCommandCopyState("failed");
+      window.setTimeout(() => setInstallCommandCopyState("idle"), 2400);
     }
   }
 
@@ -220,6 +268,36 @@ export function CloudInstallationStatusPanel({
       </div>
 
       <CloudControlBoard rows={cloudControlRows} />
+
+      <div className={`cloud-setup-readiness ${setupReadinessTone}`}>
+        <div className="cloud-audit-heading">
+          <div>
+            <span>Customer setup</span>
+            <strong>{setupReadinessStatus}</strong>
+          </div>
+          <span className={`status-pill ${setupReadinessTone === "ready" ? "active" : setupReadinessTone === "warning" ? "pending" : "draft"}`}>
+            {warningSetupSteps > 0
+              ? `${warningSetupSteps} review`
+              : `${completedSetupSteps}/${setupSteps.length}`}
+          </span>
+        </div>
+        <div className="cloud-setup-step-grid">
+          {setupSteps.map((step) => (
+            <article className={`cloud-setup-step ${step.tone}`} key={step.key}>
+              <span className={`cloud-setup-step-icon ${step.done ? "ready" : step.tone}`}>
+                {step.done ? <ShieldCheck size={15} /> : <ShieldOff size={15} />}
+              </span>
+              <div>
+                <strong>{step.label}</strong>
+                <span>{step.detail}</span>
+              </div>
+              <span className={`status-pill ${step.done ? "active" : step.tone === "warning" ? "pending" : "draft"}`}>
+                {step.status}
+              </span>
+            </article>
+          ))}
+        </div>
+      </div>
 
       <div className="cloud-audit-panel">
         <div className="cloud-audit-heading">
@@ -543,15 +621,39 @@ export function CloudInstallationStatusPanel({
                 <span>Bootstrap package</span>
                 <strong>{bootstrapPackage.bundleFileName}</strong>
               </div>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => downloadBootstrapBundle(bootstrapPackage)}
-                title="Download signed bootstrap bundle"
-              >
-                <Download size={16} />
-                Download
-              </button>
+              <div className="cloud-setup-packet-actions">
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={handleCopyInstallCommand}
+                  title="Copy install command"
+                >
+                  <Copy size={16} />
+                  {installCommandCopyState === "copied"
+                    ? "Copied"
+                    : installCommandCopyState === "failed" ? "Failed" : "Copy"}
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => downloadCustomerSetupGuide(
+                    bootstrapPackage,
+                    client?.code ?? null)}
+                  title="Download customer setup guide"
+                >
+                  <FileText size={16} />
+                  Guide
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => downloadBootstrapBundle(bootstrapPackage)}
+                  title="Download signed bootstrap bundle"
+                >
+                  <Download size={16} />
+                  Bundle
+                </button>
+              </div>
             </div>
             <textarea rows={3} readOnly value={bootstrapPackage.installCommand} />
             <dl className="cloud-provisioning-facts">
@@ -571,7 +673,36 @@ export function CloudInstallationStatusPanel({
                 <dt>Signature</dt>
                 <dd>{bootstrapPackage.signedBundle.signature.keyId}</dd>
               </div>
+              <div>
+                <dt>Artifacts</dt>
+                <dd>{bootstrapPackage.artifacts.length}</dd>
+              </div>
             </dl>
+            {bootstrapPackage.artifacts.length > 0 && (
+              <div className="cloud-setup-artifact-list">
+                {bootstrapPackage.artifacts.map((artifact) => (
+                  <div
+                    className="cloud-setup-artifact"
+                    key={`${artifact.artifactType}-${artifact.fileName}`}
+                  >
+                    <div>
+                      <strong>{artifact.fileName}</strong>
+                      <span>{artifact.artifactType} / {artifact.targetPath}</span>
+                    </div>
+                    <span>{formatPackageHash(artifact.sha256)}</span>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => downloadBootstrapArtifact(artifact)}
+                      title={`Download ${artifact.fileName}`}
+                    >
+                      <Download size={16} />
+                      File
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1349,6 +1480,183 @@ export function CloudInstallationStatusPanel({
       )}
     </section>
   );
+}
+
+type CustomerSetupStep = {
+  key: string;
+  label: string;
+  status: string;
+  detail: string;
+  done: boolean;
+  tone: "neutral" | "ready" | "warning";
+};
+
+type CustomerSetupStepsInput = {
+  selectedDeploymentId: string;
+  deploymentValue: CloudInstallationStatusPanelProps["deploymentValue"];
+  status: ControlCloudInstallationStatus | null;
+  bootstrapPackage: LocalServerBootstrapPackage | null;
+  bootstrapPackages: LocalServerBootstrapPackageSummary[];
+  latestHeartbeat: ControlCloudInstallationStatus["latestHeartbeat"];
+  latestEntitlement: ControlCloudInstallationStatus["latestEntitlement"];
+  diagnosticsReport: LocalServerDiagnosticReport | null;
+  issuedAppActivation: IssuedSafarSuiteAppActivationToken | null;
+  appActivationIssues: SafarSuiteAppActivationIssue[];
+};
+
+function getCustomerSetupSteps({
+  selectedDeploymentId,
+  deploymentValue,
+  status,
+  bootstrapPackage,
+  bootstrapPackages,
+  latestHeartbeat,
+  latestEntitlement,
+  diagnosticsReport,
+  issuedAppActivation,
+  appActivationIssues
+}: CustomerSetupStepsInput): CustomerSetupStep[] {
+  const installationId = deploymentValue.installationId.trim();
+  const deploymentSaved = selectedDeploymentId.trim() !== "";
+  const latestRegisteredPackage = bootstrapPackages[0] ?? null;
+  const packageStatus = bootstrapPackage === null
+    ? latestRegisteredPackage?.packageStatus ?? "Waiting"
+    : "Ready";
+  const packageReady = bootstrapPackage !== null || isUsablePackage(latestRegisteredPackage);
+  const registrationReady = status !== null;
+  const heartbeatReady = latestHeartbeat !== null;
+  const heartbeatEntitlementVersion = latestHeartbeat?.entitlementVersion ?? null;
+  const entitlementPulled = heartbeatEntitlementVersion !== null;
+  const diagnosticsErrorCount = diagnosticsReport?.bundle.recentErrors?.length ?? 0;
+  const activeAppActivationIssue = appActivationIssues.find((issue) =>
+    !isRevokedAppActivationIssue(issue)
+  );
+  const appActivationReady = issuedAppActivation !== null || activeAppActivationIssue !== undefined;
+
+  return [
+    {
+      key: "deployment",
+      label: "Deployment profile",
+      status: deploymentSaved ? "Saved" : "Waiting",
+      detail: deploymentSaved
+        ? deploymentValue.displayName.trim() || installationId
+        : installationId === "" ? "Installation not set" : "Save deployment profile",
+      done: deploymentSaved,
+      tone: deploymentSaved ? "ready" : "neutral"
+    },
+    {
+      key: "package",
+      label: "Setup packet",
+      status: packageReady ? packageStatus : "Waiting",
+      detail: formatSetupPackageDetail(bootstrapPackage, latestRegisteredPackage),
+      done: packageReady,
+      tone: packageReady
+        ? isExpiredPackage(latestRegisteredPackage) && bootstrapPackage === null ? "warning" : "ready"
+        : "neutral"
+    },
+    {
+      key: "registration",
+      label: "Local server",
+      status: status?.installationStatus ?? "Waiting",
+      detail: status === null
+        ? "No registration loaded"
+        : `Registered ${formatNullableDateTime(status.registeredAtUtc)}`,
+      done: registrationReady,
+      tone: registrationReady ? "ready" : "neutral"
+    },
+    {
+      key: "heartbeat",
+      label: "Heartbeat",
+      status: latestHeartbeat?.heartbeatStatus ?? "Waiting",
+      detail: latestHeartbeat === null
+        ? "No heartbeat loaded"
+        : `${latestHeartbeat.licenseStatus} at ${formatNullableDateTime(latestHeartbeat.receivedAtUtc)}`,
+      done: heartbeatReady,
+      tone: heartbeatReady ? "ready" : "neutral"
+    },
+    {
+      key: "entitlement",
+      label: "Entitlement pulled",
+      status: entitlementPulled
+        ? `v${heartbeatEntitlementVersion}`
+        : latestEntitlement === null ? "Waiting" : "Issued",
+      detail: entitlementPulled
+        ? `Heartbeat confirmed entitlement v${heartbeatEntitlementVersion}`
+        : latestEntitlement === null
+          ? "No entitlement evidence loaded"
+          : `Cloud issued v${latestEntitlement.entitlementVersion}`,
+      done: entitlementPulled,
+      tone: entitlementPulled ? "ready" : latestEntitlement === null ? "neutral" : "warning"
+    },
+    {
+      key: "diagnostics",
+      label: "Diagnostics",
+      status: diagnosticsReport?.status ?? "Waiting",
+      detail: diagnosticsReport === null
+        ? "No diagnostics loaded"
+        : `${diagnosticsReport.bundle.checks.length} checks, ${diagnosticsErrorCount} recent errors`,
+      done: diagnosticsReport !== null,
+      tone: diagnosticsReport === null
+        ? "neutral"
+        : diagnosticsErrorCount > 0 || isWarningStatus(diagnosticsReport.status) ? "warning" : "ready"
+    },
+    {
+      key: "app-activation",
+      label: "SafarSuite app",
+      status: issuedAppActivation !== null ? "Issued" : activeAppActivationIssue?.status ?? "Waiting",
+      detail: formatAppActivationSetupDetail(issuedAppActivation, activeAppActivationIssue),
+      done: appActivationReady,
+      tone: appActivationReady ? "ready" : "neutral"
+    }
+  ];
+}
+
+function isUsablePackage(packageSummary: LocalServerBootstrapPackageSummary | null): boolean {
+  return packageSummary !== null && !isExpiredPackage(packageSummary);
+}
+
+function isExpiredPackage(packageSummary: LocalServerBootstrapPackageSummary | null): boolean {
+  return packageSummary?.packageStatus.trim().toLowerCase() === "expired";
+}
+
+function isWarningStatus(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+
+  return normalized !== "healthy"
+    && normalized !== "active"
+    && normalized !== "registered"
+    && normalized !== "ok"
+    && normalized !== "received";
+}
+
+function formatSetupPackageDetail(
+  bootstrapPackage: LocalServerBootstrapPackage | null,
+  packageSummary: LocalServerBootstrapPackageSummary | null
+): string {
+  if (bootstrapPackage !== null) {
+    return `${bootstrapPackage.bundleFileName} generated ${formatNullableDateTime(bootstrapPackage.generatedAtUtc)}`;
+  }
+
+  if (packageSummary === null) {
+    return "No package generated";
+  }
+
+  return `${packageSummary.bundleFileName || shortIdentifier(packageSummary.bootstrapPackageId)} generated ${formatNullableDateTime(packageSummary.generatedAtUtc)}`;
+}
+
+function formatAppActivationSetupDetail(
+  issuedAppActivation: IssuedSafarSuiteAppActivationToken | null,
+  activeIssue: SafarSuiteAppActivationIssue | undefined
+): string {
+  if (issuedAppActivation !== null) {
+    return `${shortIdentifier(issuedAppActivation.installationId)} -> ${shortIdentifier(issuedAppActivation.appServerInstallationId)}`;
+  }
+
+  if (activeIssue !== undefined) {
+    return `${shortIdentifier(activeIssue.installationId)} -> ${shortIdentifier(activeIssue.appServerInstallationId)}`;
+  }
+
+  return "No active app activation loaded";
 }
 
 function formatPackageConsumption(packageSummary: LocalServerBootstrapPackageSummary): string {
