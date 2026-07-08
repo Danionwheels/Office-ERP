@@ -23,17 +23,20 @@ public sealed class CreateLocalServerBootstrapPackageHandler
 
     private readonly CreateInstallationSetupTokenHandler _setupTokenHandler;
     private readonly IControlCloudBootstrapPackageSigner _bootstrapPackageSigner;
+    private readonly IControlCloudAppActivationTokenSigner _appActivationTokenSigner;
     private readonly IClientPortalAuditRecorder _audit;
     private readonly IControlCloudClock _clock;
 
     public CreateLocalServerBootstrapPackageHandler(
         CreateInstallationSetupTokenHandler setupTokenHandler,
         IControlCloudBootstrapPackageSigner bootstrapPackageSigner,
+        IControlCloudAppActivationTokenSigner appActivationTokenSigner,
         IClientPortalAuditRecorder audit,
         IControlCloudClock clock)
     {
         _setupTokenHandler = setupTokenHandler;
         _bootstrapPackageSigner = bootstrapPackageSigner;
+        _appActivationTokenSigner = appActivationTokenSigner;
         _audit = audit;
         _clock = clock;
     }
@@ -89,7 +92,10 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         var safarSuiteAppVersion = NormalizeText(command.SafarSuiteAppVersion) ?? localServerVersion;
         var endpoints = BuildEndpoints(cloudBaseUrl, setupToken.ClientId, setupToken.InstallationId);
         var runtimePlan = BuildRuntimePlan(localServerVersion, safarSuiteAppVersion);
-        var artifacts = BuildArtifacts(cloudBaseUrl, runtimePlan);
+        var appActivationSigningKey = new ControlCloudBootstrapAppActivationSigningKey(
+            _appActivationTokenSigner.SigningKeyId,
+            _appActivationTokenSigner.PublicKeyPem);
+        var artifacts = BuildArtifacts(cloudBaseUrl, runtimePlan, appActivationSigningKey);
         var deploymentProfile = ToResponse(setupToken.DeploymentProfile);
         var generatedAtUtc = _clock.UtcNow;
         var bootstrapPackageId = Guid.NewGuid();
@@ -101,7 +107,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             setupTokenResult.PlainSetupToken!,
             setupToken.DeploymentProfile,
             localServerVersion,
-            safarSuiteAppVersion);
+            safarSuiteAppVersion,
+            appActivationSigningKey);
         var payload = new ControlCloudBootstrapPackagePayload(
             ControlCloudLocalServerBootstrapPackageFormat.Version,
             bootstrapPackageId,
@@ -119,7 +126,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             installCommand,
             artifacts,
             runtimePlan,
-            endpoints);
+            endpoints,
+            appActivationSigningKey);
         var signedBundle = _bootstrapPackageSigner.Sign(payload);
         var signedBundleResponse = ToResponse(signedBundle);
         var package = new LocalServerBootstrapPackageResponse(
@@ -143,7 +151,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             ControlCloudLocalServerBootstrapPackageFormat.BundleContentType,
             ComputeSha256(JsonSerializer.Serialize(signedBundleResponse, BootstrapBundleJsonOptions)),
             signedBundleResponse,
-            ToResponse(runtimePlan));
+            ToResponse(runtimePlan),
+            ToResponse(appActivationSigningKey));
 
         await ControlCloudAuditWriter.TryRecordAsync(
             _audit,
@@ -185,7 +194,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         string setupToken,
         ControlCloudInstallationDeploymentProfile deploymentProfile,
         string localServerVersion,
-        string safarSuiteAppVersion)
+        string safarSuiteAppVersion,
+        ControlCloudBootstrapAppActivationSigningKey appActivationSigningKey)
     {
         return string.Join(
             " ",
@@ -210,16 +220,27 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             $"SAFARSUITE_SYNC_TOPOLOGY_ID={QuoteForShell(deploymentProfile.SyncTopologyId ?? "")}",
             $"SAFARSUITE_LOCAL_SERVER_VERSION={QuoteForShell(localServerVersion)}",
             $"SAFARSUITE_APP_VERSION={QuoteForShell(safarSuiteAppVersion)}",
+            $"SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID={QuoteForShell(appActivationSigningKey.SigningKeyId)}",
+            $"SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM={QuoteForShell(EscapeDockerEnvValue(appActivationSigningKey.PublicKeyPem))}",
             "bash",
             "safarsuite-install.sh");
     }
 
     private static IReadOnlyCollection<ControlCloudBootstrapPackageArtifact> BuildArtifacts(
         string cloudBaseUrl,
-        ControlCloudBootstrapRuntimePlan runtimePlan)
+        ControlCloudBootstrapRuntimePlan runtimePlan,
+        ControlCloudBootstrapAppActivationSigningKey appActivationSigningKey)
     {
         var dockerComposeContent = NormalizeTemplate(DockerComposeTemplate);
-        var envTemplateContent = NormalizeTemplate(EnvironmentTemplate);
+        var envTemplateContent = NormalizeTemplate(EnvironmentTemplate)
+            .Replace(
+                "{{SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID}}",
+                appActivationSigningKey.SigningKeyId,
+                StringComparison.Ordinal)
+            .Replace(
+                "{{SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM}}",
+                EscapeDockerEnvValue(appActivationSigningKey.PublicKeyPem),
+                StringComparison.Ordinal);
         var runtimeManifestContent = NormalizeTemplate(JsonSerializer.Serialize(
             ToResponse(runtimePlan),
             RuntimeManifestJsonOptions));
@@ -368,7 +389,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                 signedBundle.Payload.InstallCommand,
                 signedBundle.Payload.Artifacts.Select(ToResponse).ToArray(),
                 ToResponse(signedBundle.Payload.Endpoints),
-                ToResponse(signedBundle.Payload.RuntimePlan)),
+                ToResponse(signedBundle.Payload.RuntimePlan),
+                ToResponse(signedBundle.Payload.AppActivationSigningKey)),
             new LocalServerBootstrapPackageSignatureResponse(
                 signedBundle.Signature.Algorithm,
                 signedBundle.Signature.KeyId,
@@ -415,6 +437,14 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             deploymentProfile.SyncTopologyId);
     }
 
+    private static SafarSuiteAppActivationSigningKeyResponse ToResponse(
+        ControlCloudBootstrapAppActivationSigningKey signingKey)
+    {
+        return new SafarSuiteAppActivationSigningKeyResponse(
+            signingKey.SigningKeyId,
+            signingKey.PublicKeyPem);
+    }
+
     private static LocalServerBootstrapRuntimeServiceResponse ToResponse(
         ControlCloudBootstrapRuntimeService service)
     {
@@ -456,6 +486,15 @@ public sealed class CreateLocalServerBootstrapPackageHandler
     private static string NormalizeTemplate(string template)
     {
         return template.Replace("\r\n", "\n", StringComparison.Ordinal);
+    }
+
+    private static string EscapeDockerEnvValue(string value)
+    {
+        return "\"" + value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal) + "\"";
     }
 
     private const string DockerComposeTemplate =

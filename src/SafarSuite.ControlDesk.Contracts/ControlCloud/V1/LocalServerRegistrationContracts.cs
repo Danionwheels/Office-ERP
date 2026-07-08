@@ -102,7 +102,8 @@ public sealed record LocalServerBootstrapPackagePayloadResponse(
     string InstallCommand,
     IReadOnlyCollection<LocalServerBootstrapPackageArtifactResponse> Artifacts,
     LocalServerBootstrapPackageEndpointsResponse Endpoints,
-    LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null);
+    LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null,
+    SafarSuiteAppActivationSigningKeyResponse? AppActivationSigningKey = null);
 
 public sealed record LocalServerSignedBootstrapBundleResponse(
     string PayloadJson,
@@ -130,7 +131,8 @@ public sealed record LocalServerBootstrapPackageResponse(
     string BundleContentType,
     string BundleSha256,
     LocalServerSignedBootstrapBundleResponse SignedBundle,
-    LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null);
+    LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null,
+    SafarSuiteAppActivationSigningKeyResponse? AppActivationSigningKey = null);
 
 public sealed record RegisterLocalServerInstallationRequest(
     Guid ClientId,

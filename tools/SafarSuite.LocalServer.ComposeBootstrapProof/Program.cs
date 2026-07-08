@@ -13,7 +13,12 @@ var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 {
     WriteIndented = true
 };
-// Stub mode fallback. Real Control Cloud mode reads this verifier key from Control Cloud.
+// Stub mode fallback. Real Control Cloud mode reads this verifier key from the signed bootstrap package.
+const string AppProofActivationPublicKeyPem =
+    "-----BEGIN PUBLIC KEY-----\n"
+    + "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEplJxLk27PAx9Jh5gFKq/cL5e9V67\n"
+    + "GFv6MGWoiHl8PPfJtIpnA2gFoxQtAR4/QvnjJ4JvzcxIqkuW23fHR9pQUg==\n"
+    + "-----END PUBLIC KEY-----";
 const string AppProofActivationPublicKeyPemEscaped =
     "\"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEplJxLk27PAx9Jh5gFKq/cL5e9V67\\nGFv6MGWoiHl8PPfJtIpnA2gFoxQtAR4/QvnjJ4JvzcxIqkuW23fHR9pQUg==\\n-----END PUBLIC KEY-----\\n\"";
 const string AppProofActivationSigningKeyId = "compose-proof-ecdsa-p256-2026-07";
@@ -137,12 +142,8 @@ async Task GenerateRealCloudProofFilesAsync(ProofOptions options)
     var package = await ReadJsonResponseAsync<LocalServerBootstrapPackageResponse>(
         bootstrapResponse,
         "create Control Cloud bootstrap package");
-    var signingKeyResponse = await http.GetAsync("api/v1/control-cloud/app-activation/signing-key");
-    var signingKey = await ReadJsonResponseAsync<SafarSuiteAppActivationSigningKeyResponse>(
-        signingKeyResponse,
-        "read Control Cloud app activation signing key");
 
-    WriteRealCloudProofFiles(options, envelope, seed, package, signingKey);
+    WriteRealCloudProofFiles(options, envelope, seed, package);
 }
 
 async Task ActivateAppRuntimeAsync(ProofOptions options)
@@ -827,8 +828,7 @@ void WriteRealCloudProofFiles(
     ProofOptions options,
     ControlCloudEnvelope seedEnvelope,
     ControlCloudReceiveEnvelopeResponse seed,
-    LocalServerBootstrapPackageResponse package,
-    SafarSuiteAppActivationSigningKeyResponse appActivationSigningKey)
+    LocalServerBootstrapPackageResponse package)
 {
     Directory.CreateDirectory(Path.Combine(options.OutputDirectory, "certs", "local-api"));
     Directory.CreateDirectory(Path.Combine(options.OutputDirectory, "certs", "trust"));
@@ -839,7 +839,7 @@ void WriteRealCloudProofFiles(
         GetArtifactContent(package, "docker-compose.yml"));
     File.WriteAllText(
         Path.Combine(options.OutputDirectory, "local-server.env"),
-        BuildEnvironmentFileFromPackage(options, package, appActivationSigningKey));
+        BuildEnvironmentFileFromPackage(options, package));
     File.WriteAllText(
         Path.Combine(options.OutputDirectory, "runtime-services.manifest.json"),
         GetArtifactContent(package, "runtime-services.manifest.json"));
@@ -879,7 +879,10 @@ LocalServerSignedBootstrapBundleResponse CreateBootstrapBundle(ProofOptions opti
         "",
         Array.Empty<LocalServerBootstrapPackageArtifactResponse>(),
         CreateEndpoints(options),
-        CreateRuntimePlan(options));
+        CreateRuntimePlan(options),
+        new SafarSuiteAppActivationSigningKeyResponse(
+            AppProofActivationSigningKeyId,
+            AppProofActivationPublicKeyPem));
     var payloadJson = JsonSerializer.Serialize(payload, bundleJsonOptions);
     var signature = new LocalServerBootstrapPackageSignatureResponse(
         "HMAC-SHA256",
@@ -1173,12 +1176,12 @@ string BuildEnvironmentFile(ProofOptions options)
 
 string BuildEnvironmentFileFromPackage(
     ProofOptions options,
-    LocalServerBootstrapPackageResponse package,
-    SafarSuiteAppActivationSigningKeyResponse appActivationSigningKey)
+    LocalServerBootstrapPackageResponse package)
 {
     var profile = package.DeploymentProfile;
     var endpoints = package.Endpoints;
     var localApiBaseUrl = GetLocalApiContainerBaseUrl(options);
+    var appActivationSigningKey = ReadAppActivationSigningKey(package);
 
     return string.Join(
         Environment.NewLine,
@@ -1230,6 +1233,15 @@ string BuildEnvironmentFileFromPackage(
         "UserSessions__SigningSecret=app-profile-proof-session-secret-change-before-production",
         "FirstManagerBootstrap__AllowSetupCodeFallback=false",
         "");
+}
+
+SafarSuiteAppActivationSigningKeyResponse ReadAppActivationSigningKey(
+    LocalServerBootstrapPackageResponse package)
+{
+    return package.AppActivationSigningKey
+        ?? package.SignedBundle.Payload.AppActivationSigningKey
+        ?? throw new InvalidOperationException(
+            "The Control Cloud bootstrap package did not include app activation signing-key metadata. Regenerate the package with a current Control Cloud build before generating app-runtime proof files.");
 }
 
 void PrepareLocalApiCertificateArtifacts(ProofOptions options)

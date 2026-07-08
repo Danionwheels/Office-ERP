@@ -138,6 +138,12 @@ Require(bootstrapPackage.DeploymentProfile.ClientDeploymentMode == SafarSuiteCli
 Require(bootstrapPackage.DeploymentProfile.SiteId == "hq-main", "Bootstrap package should carry the site id.");
 Require(bootstrapPackage.DeploymentProfile.SiteRole == SafarSuiteDeploymentSiteRoles.Hq, "Bootstrap package should carry the site role.");
 Require(bootstrapPackage.SignedBundle.Payload.DeploymentProfile.SyncTopologyId == "sync-main", "Signed bootstrap bundle should carry the sync topology id.");
+Require(bootstrapPackage.AppActivationSigningKey?.SigningKeyId == "app-activation-smoke", "Bootstrap package should carry the app activation signing key id.");
+Require(bootstrapPackage.SignedBundle.Payload.AppActivationSigningKey?.SigningKeyId == "app-activation-smoke", "Signed bootstrap bundle should carry the app activation signing key id.");
+Require(
+    !string.IsNullOrWhiteSpace(bootstrapPackage.AppActivationSigningKey?.PublicKeyPem)
+    && bootstrapPackage.AppActivationSigningKey.PublicKeyPem == bootstrapPackage.SignedBundle.Payload.AppActivationSigningKey?.PublicKeyPem,
+    "Bootstrap package and signed payload should carry the same app activation public key.");
 Require(bootstrapPackage.RuntimePlan?.Services.Count == 4, "Bootstrap package should describe local runtime services.");
 var bootstrapRuntimePlan = bootstrapPackage.RuntimePlan
     ?? throw new InvalidOperationException("Bootstrap runtime plan should exist.");
@@ -177,8 +183,9 @@ Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CA_CE
 Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES=local-api,localhost", StringComparison.Ordinal), "Bootstrap environment template should expose local API certificate DNS names.");
 Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES=127.0.0.1", StringComparison.Ordinal), "Bootstrap environment template should expose local API certificate IP addresses.");
 Require(environmentTemplateArtifact.Content.Contains("DeploymentSecrets__Provider=Environment", StringComparison.Ordinal), "Bootstrap environment template should select environment-backed app runtime secrets.");
-Require(environmentTemplateArtifact.Content.Contains("ActivationSigning__SigningKeyId={{SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID}}", StringComparison.Ordinal), "Bootstrap environment template should expose the app activation signing key id placeholder.");
-Require(environmentTemplateArtifact.Content.Contains("ActivationSigning__PublicKeyPem={{SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM}}", StringComparison.Ordinal), "Bootstrap environment template should expose the app activation public key placeholder.");
+Require(environmentTemplateArtifact.Content.Contains("ActivationSigning__SigningKeyId=app-activation-smoke", StringComparison.Ordinal), "Bootstrap environment template should carry the app activation signing key id.");
+Require(environmentTemplateArtifact.Content.Contains("ActivationSigning__PublicKeyPem=\"-----BEGIN PUBLIC KEY-----\\n", StringComparison.Ordinal), "Bootstrap environment template should carry the escaped app activation public key.");
+Require(!environmentTemplateArtifact.Content.Contains("{{SAFARSUITE_APP_ACTIVATION_", StringComparison.Ordinal), "Bootstrap environment template should not leave app activation signing placeholders unresolved.");
 Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__SigningSecret=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the app device signing secret placeholder.");
 Require(environmentTemplateArtifact.Content.Contains("UserSessions__SigningSecret=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the app session signing secret placeholder.");
 Require(environmentTemplateArtifact.Content.Contains("FirstManagerBootstrap__AllowSetupCodeFallback=false", StringComparison.Ordinal), "Bootstrap environment template should keep first-manager fallback setup codes disabled.");
@@ -188,6 +195,8 @@ Require(runtimeManifestArtifact.Content.Contains("\"composeProfile\": \"app-runt
 Require(runtimeManifestArtifact.Content.Contains("\"publishedPortEnvironmentVariable\": \"SAFARSUITE_APP_HTTP_PORT\"", StringComparison.Ordinal), "Bootstrap runtime manifest should describe the app port variable.");
 Require(bootstrapPackage.Endpoints.DiagnosticsUrl?.EndsWith("/diagnostics", StringComparison.Ordinal) == true, "Bootstrap package should include the diagnostics endpoint.");
 Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_APP_VERSION", StringComparison.Ordinal), "Bootstrap install command should carry SafarSuite app version.");
+Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID", StringComparison.Ordinal), "Bootstrap install command should carry the app activation signing key id.");
+Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM", StringComparison.Ordinal), "Bootstrap install command should carry the app activation public key.");
 Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_CLIENT_DEPLOYMENT_MODE", StringComparison.Ordinal), "Bootstrap install command should carry client deployment mode.");
 Require(bootstrapPackage.BundleContentType == ControlCloudLocalServerBootstrapPackageFormat.BundleContentType, "Bootstrap package should expose the signed bundle content type.");
 Require(bootstrapPackage.BundleFileName.StartsWith("safarsuite-bootstrap-", StringComparison.Ordinal), "Bootstrap package should use a stable signed bundle filename prefix.");
@@ -787,6 +796,11 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
                         Secret = "bootstrap-signing-secret-change-before-cloud"
                     }
                 ]
+            }),
+        new EcdsaControlCloudAppActivationTokenSigner(
+            new ControlCloudAppActivationSigningOptions
+            {
+                ActiveKeyId = "app-activation-smoke"
             }),
         new InMemoryClientPortalAuditRecorder(),
         cloudClock);
