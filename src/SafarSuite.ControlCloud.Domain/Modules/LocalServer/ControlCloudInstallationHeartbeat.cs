@@ -14,7 +14,19 @@ public sealed record ControlCloudInstallationHeartbeat(
     DateOnly? GraceUntil,
     DateOnly? OfflineValidUntil,
     string? LocalServerVersion,
-    string? Detail);
+    string? Detail,
+    ControlCloudInstallationPairingStatus? PairingStatus = null);
+
+public sealed record ControlCloudInstallationPairingStatus(
+    string PairingMode,
+    int TotalDeviceCount,
+    int PendingDeviceCount,
+    int ApprovedDeviceCount,
+    int SuspendedDeviceCount,
+    int RevokedDeviceCount,
+    bool FirstManagerDeviceApproved,
+    DateTimeOffset? FirstManagerDeviceApprovedAtUtc,
+    DateTimeOffset? LastDeviceUpdatedAtUtc);
 
 public static class ControlCloudInstallationHeartbeatStatuses
 {

@@ -707,7 +707,8 @@ public static class LocalServerCommandEndpoints
                 request.GraceUntil,
                 request.OfflineValidUntil,
                 request.Detail,
-                request.DeploymentProfile),
+                request.DeploymentProfile,
+                request.PairingStatus),
             cancellationToken);
 
         if (result.IsSuccess)
@@ -854,7 +855,8 @@ public static class LocalServerCommandEndpoints
             heartbeat.OfflineValidUntil,
             heartbeat.LocalServerVersion,
             heartbeat.Detail,
-            ToResponse(deploymentProfile));
+            ToResponse(deploymentProfile),
+            ToResponse(heartbeat.PairingStatus));
     }
 
     private static LocalServerDeploymentProfileResponse ToResponse(
@@ -868,6 +870,23 @@ public static class LocalServerCommandEndpoints
             deploymentProfile.ParentSiteId,
             deploymentProfile.BranchCode,
             deploymentProfile.SyncTopologyId);
+    }
+
+    private static LocalServerPairingStatusResponse? ToResponse(
+        ControlCloudInstallationPairingStatus? pairingStatus)
+    {
+        return pairingStatus is null
+            ? null
+            : new LocalServerPairingStatusResponse(
+                pairingStatus.PairingMode,
+                pairingStatus.TotalDeviceCount,
+                pairingStatus.PendingDeviceCount,
+                pairingStatus.ApprovedDeviceCount,
+                pairingStatus.SuspendedDeviceCount,
+                pairingStatus.RevokedDeviceCount,
+                pairingStatus.FirstManagerDeviceApproved,
+                pairingStatus.FirstManagerDeviceApprovedAtUtc,
+                pairingStatus.LastDeviceUpdatedAtUtc);
     }
 
     private static LocalServerDiagnosticReportResponse ToResponse(

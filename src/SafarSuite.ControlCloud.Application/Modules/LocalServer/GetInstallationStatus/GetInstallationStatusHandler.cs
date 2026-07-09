@@ -114,7 +114,8 @@ public sealed class GetInstallationStatusHandler
             heartbeat.OfflineValidUntil,
             heartbeat.LocalServerVersion,
             heartbeat.Detail,
-            ToResponse(deploymentProfile));
+            ToResponse(deploymentProfile),
+            ToResponse(heartbeat.PairingStatus));
     }
 
     private static LocalServerDeploymentProfileResponse ToResponse(
@@ -128,6 +129,23 @@ public sealed class GetInstallationStatusHandler
             deploymentProfile.ParentSiteId,
             deploymentProfile.BranchCode,
             deploymentProfile.SyncTopologyId);
+    }
+
+    private static LocalServerPairingStatusResponse? ToResponse(
+        ControlCloudInstallationPairingStatus? pairingStatus)
+    {
+        return pairingStatus is null
+            ? null
+            : new LocalServerPairingStatusResponse(
+                pairingStatus.PairingMode,
+                pairingStatus.TotalDeviceCount,
+                pairingStatus.PendingDeviceCount,
+                pairingStatus.ApprovedDeviceCount,
+                pairingStatus.SuspendedDeviceCount,
+                pairingStatus.RevokedDeviceCount,
+                pairingStatus.FirstManagerDeviceApproved,
+                pairingStatus.FirstManagerDeviceApprovedAtUtc,
+                pairingStatus.LastDeviceUpdatedAtUtc);
     }
 
     private static ControlCloudInstallationEntitlementStatusResponse ToResponse(

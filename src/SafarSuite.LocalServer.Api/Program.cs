@@ -78,6 +78,7 @@ builder.Services.AddSingleton<ILocalServerAppActivationRevocationStore, FileLoca
 builder.Services.AddSingleton<ILocalServerDevicePairingStore, FileLocalServerDevicePairingStore>();
 builder.Services.AddSingleton<ILocalServerFirstManagerSetupTokenVerifier, HmacLocalServerFirstManagerSetupTokenVerifier>();
 builder.Services.AddSingleton<ILocalServerDeviceCredentialService, HmacLocalServerDeviceCredentialService>();
+builder.Services.AddSingleton<ILocalServerHeartbeatPairingStatusProvider, LocalServerHeartbeatPairingStatusProvider>();
 builder.Services.AddSingleton<ILocalServerBootstrapBundleVerifier, HmacLocalServerBootstrapBundleVerifier>();
 builder.Services.AddSingleton<ILocalServerBootstrapConfigurationStore, FileLocalServerBootstrapConfigurationStore>();
 builder.Services.AddSingleton<ILocalServerRuntimeCommandRunner, SystemLocalServerRuntimeCommandRunner>();

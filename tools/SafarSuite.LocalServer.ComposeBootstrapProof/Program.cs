@@ -810,7 +810,8 @@ WebApplication CreateStubApplication(ProofOptions options)
                 request.OfflineValidUntil,
                 request.LocalServerVersion,
                 request.Detail,
-                request.DeploymentProfile ?? CreateDeploymentProfile(options))));
+                request.DeploymentProfile ?? CreateDeploymentProfile(options),
+                request.PairingStatus)));
 
     app.MapGet(
         "/api/v1/local-server/installations/{installationId}/entitlement-bundle",

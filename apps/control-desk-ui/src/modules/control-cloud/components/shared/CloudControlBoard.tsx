@@ -6,6 +6,7 @@ import {
   History,
   KeyRound,
   ListChecks,
+  Network,
   ServerCog,
   ShieldCheck,
   type LucideIcon
@@ -16,6 +17,7 @@ const controlIcons: Record<CloudControlKey, LucideIcon> = {
   cloudLink: Cloud,
   installation: Cloud,
   heartbeat: Activity,
+  pairing: Network,
   entitlement: ShieldCheck,
   appActivation: KeyRound,
   commands: ListChecks,

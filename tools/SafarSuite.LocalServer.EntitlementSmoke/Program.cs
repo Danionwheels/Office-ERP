@@ -1540,7 +1540,8 @@ internal sealed class StaticHeartbeatHttpMessageHandler : HttpMessageHandler
             heartbeatRequest.GraceUntil,
             heartbeatRequest.OfflineValidUntil,
             heartbeatRequest.LocalServerVersion,
-            heartbeatRequest.Detail);
+            heartbeatRequest.Detail,
+            PairingStatus: heartbeatRequest.PairingStatus);
 
         return new HttpResponseMessage(HttpStatusCode.OK)
         {

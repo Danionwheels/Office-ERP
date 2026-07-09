@@ -82,6 +82,7 @@ export type CloudControlKey =
   | "cloudLink"
   | "installation"
   | "heartbeat"
+  | "pairing"
   | "entitlement"
   | "appActivation"
   | "commands"

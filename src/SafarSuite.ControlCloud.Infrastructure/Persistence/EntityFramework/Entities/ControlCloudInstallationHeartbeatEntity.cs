@@ -29,4 +29,22 @@ public sealed class ControlCloudInstallationHeartbeatEntity
     public string? LocalServerVersion { get; set; }
 
     public string? Detail { get; set; }
+
+    public string? PairingMode { get; set; }
+
+    public int? PairingTotalDeviceCount { get; set; }
+
+    public int? PairingPendingDeviceCount { get; set; }
+
+    public int? PairingApprovedDeviceCount { get; set; }
+
+    public int? PairingSuspendedDeviceCount { get; set; }
+
+    public int? PairingRevokedDeviceCount { get; set; }
+
+    public bool? PairingFirstManagerDeviceApproved { get; set; }
+
+    public DateTimeOffset? PairingFirstManagerDeviceApprovedAtUtc { get; set; }
+
+    public DateTimeOffset? PairingLastDeviceUpdatedAtUtc { get; set; }
 }

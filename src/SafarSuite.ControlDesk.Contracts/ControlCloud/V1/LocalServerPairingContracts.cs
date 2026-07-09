@@ -40,6 +40,17 @@ public static class LocalServerFirstManagerSetupTokenActions
     public const string ApproveFirstDevice = "ApproveFirstDevice";
 }
 
+public sealed record LocalServerPairingStatusResponse(
+    string PairingMode,
+    int TotalDeviceCount,
+    int PendingDeviceCount,
+    int ApprovedDeviceCount,
+    int SuspendedDeviceCount,
+    int RevokedDeviceCount,
+    bool FirstManagerDeviceApproved,
+    DateTimeOffset? FirstManagerDeviceApprovedAtUtc,
+    DateTimeOffset? LastDeviceUpdatedAtUtc);
+
 public sealed record LocalServerPairingDiscoveryResponse(
     string FormatVersion,
     bool HasBootstrapConfiguration,

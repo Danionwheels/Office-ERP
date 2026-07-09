@@ -77,7 +77,8 @@ public sealed class ReportHeartbeatToControlCloudHandler
             entitlementState.WarningStartsAt,
             entitlementState.GraceUntil,
             entitlementState.OfflineValidUntil,
-            command.Detail);
+            command.Detail,
+            PairingStatus: command.PairingStatus);
         var report = await _cloudClient.ReportHeartbeatAsync(
             installationId,
             request,

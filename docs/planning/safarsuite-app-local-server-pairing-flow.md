@@ -2,7 +2,7 @@
 
 Date added: 2026-07-09
 
-Status: Manager sessions and signed device credentials wired
+Status: Control Desk pairing status visibility wired
 
 Purpose: define how a SafarSuite Windows app finds, trusts, activates against, and keeps using the client-site LocalServer without repeated client-side setup.
 
@@ -18,8 +18,9 @@ Purpose: define how a SafarSuite Windows app finds, trusts, activates against, a
 - [x] Add Control Cloud/Control Desk first-manager setup-token issue/download flow.
 - [x] Add signed device credentials plus verification endpoint for approved devices.
 - [x] Add local manager bearer sessions and require them for device list/approval/suspend/revoke routes.
+- [x] Add Control Desk visibility for first device approved and pairing-mode status through heartbeat/status.
 - [ ] Add Windows app LAN/manual discovery and protected pairing profile storage in the SafarSuite app workspace.
-- [ ] Add Control Desk/Client Portal visibility for first device approved and pairing-mode status.
+- [ ] Add Client Portal visibility for first device approved and pairing-mode status.
 
 ## Decision Summary
 

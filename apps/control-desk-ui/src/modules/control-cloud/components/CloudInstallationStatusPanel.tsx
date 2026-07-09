@@ -113,6 +113,7 @@ export function CloudInstallationStatusPanel({
   const [appActivationImportError, setAppActivationImportError] = useState("");
   const [installCommandCopyState, setInstallCommandCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const latestHeartbeat = status?.latestHeartbeat ?? null;
+  const pairingStatus = latestHeartbeat?.pairingStatus ?? null;
   const latestEntitlement = status?.latestEntitlement ?? null;
   const commandStatus = status?.commandStatus ?? null;
   const deploymentProfile = status?.deploymentProfile ?? latestHeartbeat?.deploymentProfile ?? null;
@@ -1578,6 +1579,26 @@ export function CloudInstallationStatusPanel({
               <dd>{formatNullableText(deploymentProfile?.siteRole)}</dd>
             </div>
             <div>
+              <dt>Pairing</dt>
+              <dd>{pairingStatus?.pairingMode ?? "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Devices</dt>
+              <dd>
+                {pairingStatus === null
+                  ? "Not reported"
+                  : `${pairingStatus.approvedDeviceCount}/${pairingStatus.totalDeviceCount} approved`}
+              </dd>
+            </div>
+            <div>
+              <dt>First manager</dt>
+              <dd>
+                {pairingStatus === null
+                  ? "Not reported"
+                  : pairingStatus.firstManagerDeviceApproved ? "Approved" : "Needed"}
+              </dd>
+            </div>
+            <div>
               <dt>Paid until</dt>
               <dd>
                 {latestHeartbeat?.paidUntil
@@ -1668,6 +1689,8 @@ function getCustomerSetupSteps({
   const heartbeatReady = latestHeartbeat !== null;
   const heartbeatEntitlementVersion = latestHeartbeat?.entitlementVersion ?? null;
   const entitlementPulled = heartbeatEntitlementVersion !== null;
+  const pairingStatus = latestHeartbeat?.pairingStatus ?? null;
+  const pairingReady = pairingStatus?.firstManagerDeviceApproved === true;
   const diagnosticsErrorCount = diagnosticsReport?.bundle.recentErrors?.length ?? 0;
   const activeAppActivationIssue = appActivationIssues.find((issue) =>
     !isRevokedAppActivationIssue(issue)
@@ -1714,6 +1737,18 @@ function getCustomerSetupSteps({
         : `${latestHeartbeat.licenseStatus} at ${formatNullableDateTime(latestHeartbeat.receivedAtUtc)}`,
       done: heartbeatReady,
       tone: heartbeatReady ? "ready" : "neutral"
+    },
+    {
+      key: "device-pairing",
+      label: "Device pairing",
+      status: pairingStatus === null
+        ? "Waiting"
+        : pairingReady ? "First manager ready" : "Manager needed",
+      detail: pairingStatus === null
+        ? "No pairing status reported"
+        : `${pairingStatus.approvedDeviceCount} approved, ${pairingStatus.pendingDeviceCount} pending`,
+      done: pairingReady,
+      tone: pairingStatus === null ? "neutral" : pairingReady ? "ready" : "warning"
     },
     {
       key: "entitlement",

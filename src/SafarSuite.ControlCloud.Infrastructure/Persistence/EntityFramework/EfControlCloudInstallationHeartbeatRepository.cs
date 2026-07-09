@@ -56,7 +56,8 @@ public sealed class EfControlCloudInstallationHeartbeatRepository
             entity.GraceUntil,
             entity.OfflineValidUntil,
             entity.LocalServerVersion,
-            entity.Detail);
+            entity.Detail,
+            ToPairingStatus(entity));
     }
 
     private static ControlCloudInstallationHeartbeatEntity FromDomain(
@@ -77,7 +78,36 @@ public sealed class EfControlCloudInstallationHeartbeatRepository
             GraceUntil = heartbeat.GraceUntil,
             OfflineValidUntil = heartbeat.OfflineValidUntil,
             LocalServerVersion = heartbeat.LocalServerVersion,
-            Detail = heartbeat.Detail
+            Detail = heartbeat.Detail,
+            PairingMode = heartbeat.PairingStatus?.PairingMode,
+            PairingTotalDeviceCount = heartbeat.PairingStatus?.TotalDeviceCount,
+            PairingPendingDeviceCount = heartbeat.PairingStatus?.PendingDeviceCount,
+            PairingApprovedDeviceCount = heartbeat.PairingStatus?.ApprovedDeviceCount,
+            PairingSuspendedDeviceCount = heartbeat.PairingStatus?.SuspendedDeviceCount,
+            PairingRevokedDeviceCount = heartbeat.PairingStatus?.RevokedDeviceCount,
+            PairingFirstManagerDeviceApproved = heartbeat.PairingStatus?.FirstManagerDeviceApproved,
+            PairingFirstManagerDeviceApprovedAtUtc = heartbeat.PairingStatus?.FirstManagerDeviceApprovedAtUtc,
+            PairingLastDeviceUpdatedAtUtc = heartbeat.PairingStatus?.LastDeviceUpdatedAtUtc
         };
+    }
+
+    private static ControlCloudInstallationPairingStatus? ToPairingStatus(
+        ControlCloudInstallationHeartbeatEntity entity)
+    {
+        if (string.IsNullOrWhiteSpace(entity.PairingMode))
+        {
+            return null;
+        }
+
+        return new ControlCloudInstallationPairingStatus(
+            entity.PairingMode,
+            entity.PairingTotalDeviceCount ?? 0,
+            entity.PairingPendingDeviceCount ?? 0,
+            entity.PairingApprovedDeviceCount ?? 0,
+            entity.PairingSuspendedDeviceCount ?? 0,
+            entity.PairingRevokedDeviceCount ?? 0,
+            entity.PairingFirstManagerDeviceApproved ?? false,
+            entity.PairingFirstManagerDeviceApprovedAtUtc,
+            entity.PairingLastDeviceUpdatedAtUtc);
     }
 }

@@ -142,6 +142,7 @@ export function getCloudControlRows({
     : status.installationStatus;
   const pendingCommandCount = commandStatus?.pendingCommandCount ?? 0;
   const diagnosticsErrorCount = diagnosticsReport?.bundle.recentErrors?.length ?? 0;
+  const pairingStatus = latestHeartbeat?.pairingStatus ?? null;
   const deploymentMode = deploymentProfile?.clientDeploymentMode
     ?? deploymentValue.clientDeploymentMode
     ?? "Not set";
@@ -178,6 +179,19 @@ export function getCloudControlRows({
         ? "Local server heartbeat has not been loaded"
         : `${latestHeartbeat.licenseStatus} at ${formatNullableDateTime(latestHeartbeat.receivedAtUtc)}`,
       tone: latestHeartbeat === null ? "warning" : getCloudTone(latestHeartbeat.heartbeatStatus)
+    },
+    {
+      key: "pairing",
+      label: "Device pairing",
+      status: pairingStatus === null
+        ? "Not reported"
+        : pairingStatus.firstManagerDeviceApproved ? pairingStatus.pairingMode : "First manager needed",
+      detail: pairingStatus === null
+        ? "Pairing status will appear after the next heartbeat"
+        : `${pairingStatus.approvedDeviceCount} approved, ${pairingStatus.pendingDeviceCount} pending, ${pairingStatus.revokedDeviceCount} revoked`,
+      tone: pairingStatus === null
+        ? "neutral"
+        : pairingStatus.firstManagerDeviceApproved ? "ready" : "warning"
     },
     {
       key: "entitlement",

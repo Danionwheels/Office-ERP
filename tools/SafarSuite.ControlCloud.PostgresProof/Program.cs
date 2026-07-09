@@ -218,6 +218,16 @@ try
         && module.IsEnabled), "entitlement bundle should include enabled Accounting module.");
     checks.Add("issued signed entitlement bundle through PostgreSQL-backed cloud");
 
+    var heartbeatPairingStatus = new LocalServerPairingStatusResponse(
+        PairingMode: LocalServerPairingModes.ManagerApproval,
+        TotalDeviceCount: 2,
+        PendingDeviceCount: 1,
+        ApprovedDeviceCount: 1,
+        SuspendedDeviceCount: 0,
+        RevokedDeviceCount: 0,
+        FirstManagerDeviceApproved: true,
+        FirstManagerDeviceApprovedAtUtc: DateTimeOffset.UtcNow.AddMinutes(-1),
+        LastDeviceUpdatedAtUtc: DateTimeOffset.UtcNow);
     var heartbeat = await SendJsonAsync<LocalServerHeartbeatResponse>(
         http,
         HttpMethod.Post,
@@ -233,9 +243,11 @@ try
             GraceUntil: signedBundle.Payload.GraceUntil,
             OfflineValidUntil: signedBundle.Payload.OfflineValidUntil,
             Detail: "postgres proof heartbeat",
-            DeploymentProfile: deploymentProfile));
+            DeploymentProfile: deploymentProfile,
+            PairingStatus: heartbeatPairingStatus));
 
     Require(heartbeat.HeartbeatStatus.Equals("Received", StringComparison.OrdinalIgnoreCase), "heartbeat should be received.");
+    Require(heartbeat.PairingStatus?.FirstManagerDeviceApproved == true, "heartbeat should echo pairing first-manager approval.");
     checks.Add("reported local-server heartbeat");
 
     var commandPayload = JsonSerializer.SerializeToElement(
@@ -293,6 +305,8 @@ try
 
     Require(status.InstallationStatus.Equals("Active", StringComparison.OrdinalIgnoreCase), "installation status should be active.");
     Require(status.LatestHeartbeat?.HeartbeatId == heartbeat.HeartbeatId, "installation status should include latest heartbeat.");
+    Require(status.LatestHeartbeat?.PairingStatus?.ApprovedDeviceCount == 1, "installation status should include pairing device counts.");
+    Require(status.LatestHeartbeat?.PairingStatus?.FirstManagerDeviceApproved == true, "installation status should include first-manager approval state.");
     Require(status.LatestEntitlement?.BundleIssueId == signedBundle.Payload.BundleIssueId, "installation status should include latest entitlement issue.");
     Require(status.CommandStatus.LatestAcknowledgementStatus == "Applied", "installation status should include command acknowledgement.");
     checks.Add("read cloud installation status summary");
@@ -455,8 +469,10 @@ static async Task VerifyPersistedRowsAsync(
     Require(
         await dbContext.InstallationHeartbeats.AnyAsync(heartbeat =>
             heartbeat.HeartbeatId == heartbeatId
-            && heartbeat.InstallationId == installationId),
-        "installation heartbeat should be persisted.");
+            && heartbeat.InstallationId == installationId
+            && heartbeat.PairingFirstManagerDeviceApproved == true
+            && heartbeat.PairingApprovedDeviceCount == 1),
+        "installation heartbeat with pairing status should be persisted.");
     Require(
         await dbContext.InstallationCommands.AnyAsync(command =>
             command.CommandId == commandId

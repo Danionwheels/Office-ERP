@@ -594,6 +594,19 @@ export type LocalServerHeartbeat = {
   localServerVersion: string | null;
   detail: string | null;
   deploymentProfile?: LocalServerDeploymentProfile | null;
+  pairingStatus?: LocalServerPairingStatus | null;
+};
+
+export type LocalServerPairingStatus = {
+  pairingMode: string;
+  totalDeviceCount: number;
+  pendingDeviceCount: number;
+  approvedDeviceCount: number;
+  suspendedDeviceCount: number;
+  revokedDeviceCount: number;
+  firstManagerDeviceApproved: boolean;
+  firstManagerDeviceApprovedAtUtc: string | null;
+  lastDeviceUpdatedAtUtc: string | null;
 };
 
 export type ControlCloudInstallationEntitlementStatus = {
