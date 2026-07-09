@@ -49,6 +49,8 @@ try
     var installationId = $"postgres-proof-{runId:N}";
     var operatorEmail = $"postgres.proof.{runId:N}@safarsuite.local";
     var operatorPassword = $"PostgresProofPassword-{runId:N}!";
+    var portalEmail = $"postgres.portal.{runId:N}@safarsuite.local";
+    var portalPassword = $"PostgresPortalPassword-{runId:N}!";
     var localServerVersion = "postgres-proof-localserver-0.1";
     var deploymentProfile = new LocalServerDeploymentProfileResponse(
         ControlCloudBootstrapModes.OnlineBootstrap,
@@ -67,6 +69,7 @@ try
             options.ProviderAccessSecret,
             "postgres-proof-bootstrap",
             [
+                ProviderAccessScopes.ClientPortalManage,
                 ProviderAccessScopes.DeploymentPackagesRead,
                 ProviderAccessScopes.DeploymentPackagesWrite,
                 ProviderAccessScopes.ProviderOperatorsManage
@@ -74,6 +77,7 @@ try
             15));
 
     RequireBearerSession(adminSession, ProviderAccessScopes.ProviderOperatorsManage);
+    Require(adminSession.Scopes.Contains(ProviderAccessScopes.ClientPortalManage), "admin session should include client portal manage scope.");
     Require(adminSession.Scopes.Contains(ProviderAccessScopes.DeploymentPackagesWrite), "admin session should include deployment package write scope.");
     checks.Add("minted bootstrap provider bearer session");
 
@@ -310,6 +314,50 @@ try
     Require(status.LatestEntitlement?.BundleIssueId == signedBundle.Payload.BundleIssueId, "installation status should include latest entitlement issue.");
     Require(status.CommandStatus.LatestAcknowledgementStatus == "Applied", "installation status should include command acknowledgement.");
     checks.Add("read cloud installation status summary");
+
+    var portalInvitation = await SendJsonAsync<ClientPortalInvitationResponse>(
+        http,
+        HttpMethod.Post,
+        "api/v1/client-portal/invitations",
+        new CreateClientPortalInvitationRequest(
+            clientId,
+            portalEmail,
+            "Postgres Proof Portal",
+            "ClientViewer",
+            ExpiresInDays: 7,
+            CreatedBy: "postgres-proof-bootstrap"),
+        adminSession.AccessToken);
+
+    Require(portalInvitation.ClientId == clientId, "portal invitation should target proof client.");
+    Require(!string.IsNullOrWhiteSpace(portalInvitation.InvitationToken), "portal invitation should include an invitation token.");
+    checks.Add("created client portal invitation through provider gate");
+
+    var acceptedPortal = await SendJsonAsync<AcceptClientPortalInvitationResponse>(
+        http,
+        HttpMethod.Post,
+        "api/v1/client-portal/invitations/accept",
+        new AcceptClientPortalInvitationRequest(
+            portalInvitation.InvitationToken!,
+            portalPassword,
+            "Postgres Proof Portal"));
+
+    Require(acceptedPortal.ClientId == clientId, "accepted portal session should target proof client.");
+    Require(!string.IsNullOrWhiteSpace(acceptedPortal.AccessToken), "accepted portal session should include access token.");
+    checks.Add("accepted client portal invitation");
+
+    var portalStatus = await SendJsonAsync<ControlCloudInstallationStatusResponse>(
+        http,
+        HttpMethod.Get,
+        $"api/v1/client-portal/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/status",
+        body: null,
+        acceptedPortal.AccessToken);
+
+    Require(portalStatus.InstallationStatus.Equals("Active", StringComparison.OrdinalIgnoreCase), "portal installation status should be active.");
+    Require(portalStatus.LatestHeartbeat?.HeartbeatId == heartbeat.HeartbeatId, "portal installation status should include latest heartbeat.");
+    Require(portalStatus.LatestHeartbeat?.PairingStatus?.ApprovedDeviceCount == 1, "portal installation status should include approved pairing device count.");
+    Require(portalStatus.LatestHeartbeat?.PairingStatus?.PendingDeviceCount == 1, "portal installation status should include pending pairing device count.");
+    Require(portalStatus.LatestHeartbeat?.PairingStatus?.FirstManagerDeviceApproved == true, "portal installation status should include first-manager approval state.");
+    checks.Add("read client portal installation pairing status");
 
     await VerifyPersistedRowsAsync(
         options.ConnectionString,
@@ -944,6 +992,7 @@ internal static class ProviderAccessScopes
 {
     public const string AppActivationRead = "app-activation:read";
     public const string AppActivationWrite = "app-activation:write";
+    public const string ClientPortalManage = "client-portal:manage";
     public const string DeploymentPackagesRead = "deployment-packages:read";
     public const string DeploymentPackagesWrite = "deployment-packages:write";
     public const string ProviderOperatorsManage = "provider-operators:manage";

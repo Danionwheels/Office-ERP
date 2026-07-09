@@ -21,6 +21,11 @@ const elements = {
   lastHeartbeat: document.querySelector("#lastHeartbeat"),
   localServerVersion: document.querySelector("#localServerVersion"),
   commandState: document.querySelector("#commandState"),
+  pairingState: document.querySelector("#pairingState"),
+  pairingMode: document.querySelector("#pairingMode"),
+  firstManagerState: document.querySelector("#firstManagerState"),
+  pairingDevices: document.querySelector("#pairingDevices"),
+  pairingLastUpdate: document.querySelector("#pairingLastUpdate"),
   invoiceCount: document.querySelector("#invoiceCount"),
   invoiceRows: document.querySelector("#invoiceRows"),
   moduleCount: document.querySelector("#moduleCount"),
@@ -188,6 +193,7 @@ function renderInstallationStatus(status) {
     elements.lastHeartbeat.textContent = "-";
     elements.localServerVersion.textContent = "-";
     elements.commandState.textContent = "-";
+    renderPairingStatus(null);
     return;
   }
 
@@ -199,16 +205,42 @@ function renderInstallationStatus(status) {
   elements.commandState.textContent =
     `${commandStatus?.pendingCommandCount ?? 0} pending`
     + ` / ${commandStatus?.latestCommandStatus ?? "no command"}`;
+  renderPairingStatus(heartbeat?.pairingStatus ?? null);
 
   if (heartbeat?.licenseStatus !== undefined && heartbeat.licenseStatus !== null) {
     elements.licenseState.textContent = heartbeat.licenseStatus;
   }
 }
 
+function renderPairingStatus(pairingStatus) {
+  if (pairingStatus === null) {
+    elements.pairingState.textContent = "Not reported";
+    elements.pairingMode.textContent = "-";
+    elements.firstManagerState.textContent = "-";
+    elements.pairingDevices.textContent = "-";
+    elements.pairingLastUpdate.textContent = "-";
+    return;
+  }
+
+  elements.pairingState.textContent = pairingStatus.firstManagerDeviceApproved
+    ? "Ready"
+    : "Manager needed";
+  elements.pairingMode.textContent = pairingStatus.pairingMode ?? "Not reported";
+  elements.firstManagerState.textContent = pairingStatus.firstManagerDeviceApproved
+    ? "Approved"
+    : "Needed";
+  elements.pairingDevices.textContent = formatPairingDevices(pairingStatus);
+  elements.pairingLastUpdate.textContent = formatDateTime(pairingStatus.lastDeviceUpdatedAtUtc);
+}
+
 function renderAcceptedSession(accepted) {
   elements.accountState.textContent = "Session ready";
   elements.licenseState.textContent = accepted.role;
   elements.installationState.textContent = "Log in ready";
+  elements.lastHeartbeat.textContent = "-";
+  elements.localServerVersion.textContent = "-";
+  elements.commandState.textContent = "-";
+  renderPairingStatus(null);
 }
 
 function renderInvoices(invoices, currencyCode) {
@@ -261,6 +293,26 @@ function modulePill(text, className) {
   item.className = className;
 
   return item;
+}
+
+function formatPairingDevices(pairingStatus) {
+  const approvedCount = pairingStatus.approvedDeviceCount ?? 0;
+  const totalCount = pairingStatus.totalDeviceCount ?? 0;
+  const pendingCount = pairingStatus.pendingDeviceCount ?? 0;
+  const revokedCount = pairingStatus.revokedDeviceCount ?? 0;
+  const details = [];
+
+  if (pendingCount > 0) {
+    details.push(`${pendingCount} pending`);
+  }
+
+  if (revokedCount > 0) {
+    details.push(`${revokedCount} revoked`);
+  }
+
+  return details.length === 0
+    ? `${approvedCount}/${totalCount} approved`
+    : `${approvedCount}/${totalCount} approved, ${details.join(", ")}`;
 }
 
 function setBusy(isBusy) {

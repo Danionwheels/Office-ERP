@@ -164,7 +164,7 @@ button {
 
 .portal-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -279,6 +279,16 @@ td {
   background: #f7f8f9;
 }
 
+@media (max-width: 1120px) {
+  .portal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portal-card dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 900px) {
   .lookup-panel,
   .portal-grid,
@@ -286,9 +296,6 @@ td {
     grid-template-columns: 1fr;
   }
 
-  .portal-card dl {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 560px) {

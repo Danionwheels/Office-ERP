@@ -2,7 +2,7 @@
 
 Date added: 2026-07-09
 
-Status: Control Desk pairing status visibility wired
+Status: Client Portal pairing status visibility wired
 
 Purpose: define how a SafarSuite Windows app finds, trusts, activates against, and keeps using the client-site LocalServer without repeated client-side setup.
 
@@ -19,8 +19,8 @@ Purpose: define how a SafarSuite Windows app finds, trusts, activates against, a
 - [x] Add signed device credentials plus verification endpoint for approved devices.
 - [x] Add local manager bearer sessions and require them for device list/approval/suspend/revoke routes.
 - [x] Add Control Desk visibility for first device approved and pairing-mode status through heartbeat/status.
+- [x] Add Client Portal visibility for first device approved and pairing-mode status.
 - [ ] Add Windows app LAN/manual discovery and protected pairing profile storage in the SafarSuite app workspace.
-- [ ] Add Client Portal visibility for first device approved and pairing-mode status.
 
 ## Decision Summary
 
@@ -509,7 +509,7 @@ The same LocalServer pairing request, token import, manager approval, device cre
 7. Add final signed device credential verification on app-to-LocalServer calls. Done for the LocalServer authority: approved devices now receive HMAC-signed compact credentials and can verify them through `POST /api/v1/local-server/device-credentials/verify`.
 8. Add Windows app LAN discovery, manual URL, descriptor import, and fingerprint confirmation UI in the SafarSuite app workspace.
 9. Add protected client storage for pairing profiles and silent reconnect across IP changes.
-10. Add Control Desk/Client Portal visibility for first device approved and pairing-mode status.
+10. Add Control Desk/Client Portal visibility for first device approved and pairing-mode status. Done: Control Desk and the static Client Portal preview both read the shared installation status pairing snapshot.
 11. Add smoke proofs for online pairing, offline-assisted first manager, revoked device, changed IP same trust, changed certificate manager refresh, and server replacement block.
 
 ## Open Decisions
