@@ -101,6 +101,13 @@ var pairingStore = new FileLocalServerDevicePairingStore(
     });
 var firstManagerSetupTokenVerifier = new HmacLocalServerFirstManagerSetupTokenVerifier(
     bootstrapTrustOptions);
+var deviceCredentialService = new HmacLocalServerDeviceCredentialService(
+    new LocalServerDeviceCredentialOptions
+    {
+        SigningKeyId = "device-smoke",
+        SigningSecret = "device-signing-secret-change-before-cloud",
+        ExpiresInDays = 3650
+    });
 var runtimeCommandRunner = new StaticRuntimeCommandRunner();
 var runtimeDiagnosticsCollector = new ManifestLocalServerRuntimeDiagnosticsCollector(
     bootstrapConfigurationStore,
@@ -198,11 +205,13 @@ Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTI
 Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES=127.0.0.1", StringComparison.Ordinal), "Bootstrap environment template should expose local API certificate IP addresses.");
 Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_PAIRING_MODE=ManagerApproval", StringComparison.Ordinal), "Bootstrap environment template should expose the LocalServer pairing mode.");
 Require(environmentTemplateArtifact.Content.Contains("LocalServer__Pairing__RequestExpiresInHours=24", StringComparison.Ordinal), "Bootstrap environment template should expose the default pairing request expiry window.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_SECRET=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the local manager session signing secret placeholder.");
 Require(environmentTemplateArtifact.Content.Contains("DeploymentSecrets__Provider=Environment", StringComparison.Ordinal), "Bootstrap environment template should select environment-backed app runtime secrets.");
 Require(environmentTemplateArtifact.Content.Contains("ActivationSigning__SigningKeyId=app-activation-smoke", StringComparison.Ordinal), "Bootstrap environment template should carry the app activation signing key id.");
 Require(environmentTemplateArtifact.Content.Contains("ActivationSigning__PublicKeyPem=\"-----BEGIN PUBLIC KEY-----\\n", StringComparison.Ordinal), "Bootstrap environment template should carry the escaped app activation public key.");
 Require(!environmentTemplateArtifact.Content.Contains("{{SAFARSUITE_APP_ACTIVATION_", StringComparison.Ordinal), "Bootstrap environment template should not leave app activation signing placeholders unresolved.");
 Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__SigningSecret=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the app device signing secret placeholder.");
+Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__ExpiresInDays=3650", StringComparison.Ordinal), "Bootstrap environment template should carry the app device credential lifetime.");
 Require(environmentTemplateArtifact.Content.Contains("UserSessions__SigningSecret=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the app session signing secret placeholder.");
 Require(environmentTemplateArtifact.Content.Contains("FirstManagerBootstrap__AllowSetupCodeFallback=false", StringComparison.Ordinal), "Bootstrap environment template should keep first-manager fallback setup codes disabled.");
 Require(runtimeManifestArtifact.Content.Contains("\"serviceName\": \"safarsuite-app\"", StringComparison.Ordinal), "Bootstrap runtime manifest should include the SafarSuite app service.");
@@ -343,11 +352,20 @@ Require(firstManagerTokenVerification.Payload?.PendingDeviceRequestId == firstMa
 Require(badFirstManagerTokenVerification.FailureCode == "SignatureInvalid", "Bad first-manager setup token signature should be rejected.");
 Require(expiredFirstManagerTokenVerification.FailureCode == "FirstManagerSetupTokenExpired", "Expired first-manager setup token should be rejected.");
 Require(missingFirstManagerTokenVerification.FailureCode == "FirstManagerSetupTokenRequired", "Missing first-manager setup token should be rejected.");
-var firstManagerDeviceCredential = $"safarsuite-device.{Guid.NewGuid():N}";
+var firstManagerDeviceCredentialId = Guid.NewGuid();
+var signedFirstManagerDeviceCredential = deviceCredentialService.Issue(
+    firstManagerDevice,
+    firstManagerDeviceCredentialId,
+    "FirstManagerDevice",
+    clock.UtcNow);
+var firstManagerDeviceCredential = signedFirstManagerDeviceCredential.CompactToken;
+var firstManagerDeviceCredentialVerification = deviceCredentialService.Verify(
+    firstManagerDeviceCredential,
+    clock.UtcNow);
 var approvedFirstManagerDevice = firstManagerDevice.Approve(
     "first-manager:owner@safarsuite.local",
     "FirstManagerDevice",
-    Guid.NewGuid().ToString("N"),
+    firstManagerDeviceCredentialId.ToString("D"),
     ComputeSha256(firstManagerDeviceCredential),
     clock.UtcNow);
 var firstManagerWriteResult = await pairingStore.SaveDeviceAndFirstManagerSetupTokenConsumptionAsync(
@@ -373,6 +391,8 @@ var persistedFirstManagerDevice = await pairingStore.GetByDeviceIdAsync(firstMan
 Require(firstManagerWriteResult.Succeeded, "First-manager setup token should atomically approve the device and record consumption.");
 Require(consumedFirstManagerToken is not null, "Consumed first-manager setup token should be persisted.");
 Require(persistedFirstManagerDevice?.DeviceStatus == LocalServerDevicePairingRecordStatuses.Approved, "First-manager setup token should approve the pending device.");
+Require(firstManagerDeviceCredentialVerification.IsSuccess, "Signed first-manager device credential should verify.");
+Require(firstManagerDeviceCredentialVerification.Payload?.DeviceId == firstManagerDeviceId, "Signed first-manager device credential should bind the approved device.");
 
 var badBootstrapBundle = bootstrapPackage.SignedBundle with
 {
@@ -878,6 +898,7 @@ Console.WriteLine(JsonSerializer.Serialize(
         expiredFirstManagerSetupTokenRejected = expiredFirstManagerTokenVerification.FailureCode,
         missingFirstManagerSetupTokenRejected = missingFirstManagerTokenVerification.FailureCode,
         firstManagerDeviceStatus = persistedFirstManagerDevice?.DeviceStatus,
+        firstManagerDeviceCredentialVerified = firstManagerDeviceCredentialVerification.IsSuccess,
         firstManagerSetupTokenConsumed = consumedFirstManagerToken is not null,
         cachedVersion = verifiedCachedEntitlement.EntitlementVersion,
         importedBundleIssueId = importedEntitlement.BundleIssueId,

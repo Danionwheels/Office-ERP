@@ -3,6 +3,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Security;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Net.Http.Json;
@@ -524,6 +525,59 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
             "Replayed first-manager setup token was accepted.");
     }
 
+    using var firstManagerCredentialVerifyResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/device-credentials/verify",
+        new VerifyLocalServerDeviceCredentialRequest(firstManagerImport.DeviceCredential),
+        bundleJsonOptions);
+    var firstManagerCredentialVerify = await ReadJsonResponseAsync<VerifyLocalServerDeviceCredentialResponse>(
+        firstManagerCredentialVerifyResponse,
+        "verify first-manager LocalServer device credential");
+
+    if (!firstManagerCredentialVerify.IsManagerCapable
+        || firstManagerCredentialVerify.DeviceId != firstManagerImport.DeviceId
+        || firstManagerCredentialVerify.ClientId != imported.ClientId
+        || !string.Equals(firstManagerCredentialVerify.InstallationId, imported.InstallationId, StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException(
+            "First-manager signed device credential did not verify as manager-capable.");
+    }
+
+    using var badManagerSessionResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/manager-sessions",
+        new CreateLocalServerManagerSessionRequest(
+            firstManagerImport.DeviceId,
+            $"{firstManagerImport.DeviceCredential}-invalid",
+            "compose-proof-manager"),
+        bundleJsonOptions);
+
+    if (badManagerSessionResponse.IsSuccessStatusCode)
+    {
+        throw new InvalidOperationException(
+            "Invalid first-manager device credential created a manager session.");
+    }
+
+    using var managerSessionResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/manager-sessions",
+        new CreateLocalServerManagerSessionRequest(
+            firstManagerImport.DeviceId,
+            firstManagerImport.DeviceCredential,
+            "compose-proof-manager"),
+        bundleJsonOptions);
+    var managerSession = await ReadJsonResponseAsync<LocalServerManagerSessionResponse>(
+        managerSessionResponse,
+        "create LocalServer manager session");
+
+    if (!string.Equals(managerSession.TokenType, "Bearer", StringComparison.OrdinalIgnoreCase)
+        || string.IsNullOrWhiteSpace(managerSession.AccessToken)
+        || managerSession.DeviceId != firstManagerImport.DeviceId
+        || managerSession.ClientId != imported.ClientId
+        || !string.Equals(managerSession.InstallationId, imported.InstallationId, StringComparison.Ordinal)
+        || managerSession.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+    {
+        throw new InvalidOperationException(
+            "LocalServer manager session response did not bind the first-manager device and installation.");
+    }
+
     var devicePairingRequest = new LocalServerDevicePairingRequest(
         LocalServerPairingFormats.DevicePairingRequestVersion,
         imported.InstallationId,
@@ -543,6 +597,31 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
         pairingRequestResponse,
         "create LocalServer device pairing request");
 
+    using var anonymousPendingDevicesResponse = await http.GetAsync("api/v1/local-server/devices/pending");
+
+    if (anonymousPendingDevicesResponse.StatusCode != HttpStatusCode.Unauthorized)
+    {
+        throw new InvalidOperationException(
+            $"Unauthenticated pending-device list returned {(int)anonymousPendingDevicesResponse.StatusCode}; expected 401.");
+    }
+
+    using var anonymousApproveResponse = await http.PostAsJsonAsync(
+        $"api/v1/local-server/devices/{pairingRequest.DeviceId:D}/approve",
+        new ApproveLocalServerDeviceRequest(
+            "spoofed-manager",
+            "ProofApprovedDevice"),
+        bundleJsonOptions);
+
+    if (anonymousApproveResponse.StatusCode != HttpStatusCode.Unauthorized)
+    {
+        throw new InvalidOperationException(
+            $"Unauthenticated device approval returned {(int)anonymousApproveResponse.StatusCode}; expected 401.");
+    }
+
+    http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+        "Bearer",
+        managerSession.AccessToken);
+
     using var pendingDevicesResponse = await http.GetAsync("api/v1/local-server/devices/pending");
     var pendingDevices = await ReadJsonResponseAsync<LocalServerDevicePairingRequestsResponse>(
         pendingDevicesResponse,
@@ -557,6 +636,14 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
     var approvedDevice = await ReadJsonResponseAsync<ApproveLocalServerDeviceResponse>(
         approveResponse,
         "approve LocalServer device pairing request");
+
+    using var approvedCredentialVerifyResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/device-credentials/verify",
+        new VerifyLocalServerDeviceCredentialRequest(approvedDevice.DeviceCredential),
+        bundleJsonOptions);
+    var approvedCredentialVerify = await ReadJsonResponseAsync<VerifyLocalServerDeviceCredentialResponse>(
+        approvedCredentialVerifyResponse,
+        "verify approved LocalServer device credential");
 
     using var suspendResponse = await http.PostAsJsonAsync(
         $"api/v1/local-server/devices/{pairingRequest.DeviceId:D}/suspend",
@@ -580,17 +667,29 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
 
     if (!string.Equals(firstManagerImport.Device.DeviceStatus, LocalServerDevicePairingStatuses.Approved, StringComparison.Ordinal)
         || string.IsNullOrWhiteSpace(firstManagerImport.DeviceCredential)
+        || firstManagerImport.SignedDeviceCredential is null
         || firstManagerImport.TokenId != firstManagerToken.Payload.TokenId
         || firstManagerImport.PairingRequestId != firstManagerPairingRequest.PairingRequestId
         || !string.Equals(pairingRequest.PairingRequestStatus, LocalServerDevicePairingStatuses.Pending, StringComparison.Ordinal)
         || !pendingDevices.Devices.Any(device => device.DeviceId == pairingRequest.DeviceId)
         || !string.Equals(approvedDevice.Device.DeviceStatus, LocalServerDevicePairingStatuses.Approved, StringComparison.Ordinal)
         || string.IsNullOrWhiteSpace(approvedDevice.DeviceCredential)
+        || approvedDevice.SignedDeviceCredential is null
+        || approvedCredentialVerify.DeviceId != pairingRequest.DeviceId
+        || approvedCredentialVerify.IsManagerCapable
+        || !string.Equals(approvedDevice.Device.ApprovedBy, managerSession.Actor, StringComparison.Ordinal)
         || !string.Equals(suspendedDevice.DeviceStatus, LocalServerDevicePairingStatuses.Suspended, StringComparison.Ordinal)
+        || !string.Equals(suspendedDevice.SuspendedBy, managerSession.Actor, StringComparison.Ordinal)
         || !string.Equals(revokedDevice.DeviceStatus, LocalServerDevicePairingStatuses.Revoked, StringComparison.Ordinal))
     {
         throw new InvalidOperationException(
             "LocalServer device pairing lifecycle did not move through pending, approved, suspended, and revoked states.");
+    }
+
+    if (!string.Equals(revokedDevice.RevokedBy, managerSession.Actor, StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException(
+            "LocalServer device management audit actor was not derived from the manager session.");
     }
 
     if (!moduleAccess.IsAllowed)
@@ -1123,6 +1222,9 @@ string BuildCleanMachineInstallScript(
             ("SAFARSUITE_LOCAL_SERVER_HTTP_PORT", options.LocalServerHttpPort.ToString()),
             ("SAFARSUITE_APP_HTTP_PORT", options.AppHttpPort.ToString()),
             ("SAFARSUITE_LOCAL_API_PUBLIC_URL", GetLocalApiHostBaseUrl(options)),
+            ("SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_KEY_ID", "compose-proof-manager-session"),
+            ("SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_SECRET", "compose-proof-manager-session-secret-change-before-production"),
+            ("SAFARSUITE_LOCAL_MANAGER_SESSION_MINUTES", "60"),
             ("SAFARSUITE_LOCAL_API_TLS_MODE", options.LocalApiTlsMode),
             ("SAFARSUITE_LOCAL_API_ASPNETCORE_URLS", GetLocalApiAspNetCoreUrls(options)),
             ("SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES", "local-api,localhost"),
@@ -1525,6 +1627,9 @@ string BuildEnvironmentFile(ProofOptions options)
         $"SAFARSUITE_APP_HTTP_PORT={options.AppHttpPort}",
         $"SAFARSUITE_LOCAL_API_BASE_URL={localApiBaseUrl}",
         "SAFARSUITE_LOCAL_API_ACCESS_KEY=compose-proof-local-api-access-key",
+        "SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_KEY_ID=compose-proof-manager-session",
+        "SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_SECRET=compose-proof-manager-session-secret-change-before-production",
+        "SAFARSUITE_LOCAL_MANAGER_SESSION_MINUTES=60",
         $"SAFARSUITE_LOCAL_API_TLS_MODE={options.LocalApiTlsMode}",
         $"SAFARSUITE_LOCAL_API_ASPNETCORE_URLS={GetLocalApiAspNetCoreUrls(options)}",
         $"SAFARSUITE_LOCAL_API_CERTIFICATE_PATH={GetLocalApiCertificatePath(options)}",
@@ -1556,6 +1661,7 @@ string BuildEnvironmentFile(ProofOptions options)
         $"ActivationSigning__PublicKeyPem={AppProofActivationPublicKeyPemEscaped}",
         "DeviceCredentials__SigningKeyId=app-profile-proof-device",
         "DeviceCredentials__SigningSecret=app-profile-proof-device-secret-change-before-production",
+        "DeviceCredentials__ExpiresInDays=3650",
         "UserSessions__SigningKeyId=app-profile-proof-session",
         "UserSessions__SigningSecret=app-profile-proof-session-secret-change-before-production",
         "FirstManagerBootstrap__AllowSetupCodeFallback=false",
@@ -1593,6 +1699,9 @@ string BuildEnvironmentFileFromPackage(
         $"SAFARSUITE_APP_HTTP_PORT={options.AppHttpPort}",
         $"SAFARSUITE_LOCAL_API_BASE_URL={localApiBaseUrl}",
         "SAFARSUITE_LOCAL_API_ACCESS_KEY=compose-proof-local-api-access-key",
+        "SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_KEY_ID=compose-proof-manager-session",
+        "SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_SECRET=compose-proof-manager-session-secret-change-before-production",
+        "SAFARSUITE_LOCAL_MANAGER_SESSION_MINUTES=60",
         $"SAFARSUITE_LOCAL_API_TLS_MODE={options.LocalApiTlsMode}",
         $"SAFARSUITE_LOCAL_API_ASPNETCORE_URLS={GetLocalApiAspNetCoreUrls(options)}",
         $"SAFARSUITE_LOCAL_API_CERTIFICATE_PATH={GetLocalApiCertificatePath(options)}",
@@ -1624,6 +1733,7 @@ string BuildEnvironmentFileFromPackage(
         $"ActivationSigning__PublicKeyPem={EscapeDockerEnvValue(appActivationSigningKey.PublicKeyPem)}",
         "DeviceCredentials__SigningKeyId=app-profile-proof-device",
         "DeviceCredentials__SigningSecret=app-profile-proof-device-secret-change-before-production",
+        "DeviceCredentials__ExpiresInDays=3650",
         "UserSessions__SigningKeyId=app-profile-proof-session",
         "UserSessions__SigningSecret=app-profile-proof-session-secret-change-before-production",
         "FirstManagerBootstrap__AllowSetupCodeFallback=false",

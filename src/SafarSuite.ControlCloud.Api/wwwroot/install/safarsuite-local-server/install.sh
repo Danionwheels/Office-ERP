@@ -274,6 +274,9 @@ local_server_container_state_dir="${SAFARSUITE_LOCAL_SERVER_CONTAINER_STATE_DIR:
 safarsuite_app_image="${SAFARSUITE_APP_IMAGE:-ghcr.io/danionwheels/localserver:$safarsuite_app_version}"
 safarsuite_app_http_port="${SAFARSUITE_APP_HTTP_PORT:-5280}"
 local_api_access_key="${SAFARSUITE_LOCAL_API_ACCESS_KEY:-}"
+manager_session_signing_key_id="${SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_KEY_ID:-${LocalServer__ManagerSessions__SigningKeyId:-safarsuite-local-manager-session}}"
+manager_session_signing_secret="${SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_SECRET:-${LocalServer__ManagerSessions__SigningSecret:-}}"
+manager_session_minutes="${SAFARSUITE_LOCAL_MANAGER_SESSION_MINUTES:-${LocalServer__ManagerSessions__SessionMinutes:-60}}"
 local_api_tls_mode="$(normalize_local_api_tls_mode "${SAFARSUITE_LOCAL_API_TLS_MODE:-GeneratedLocalCa}")"
 if [ -n "${SAFARSUITE_LOCAL_API_BASE_URL:-}" ]; then
   local_api_base_url="$SAFARSUITE_LOCAL_API_BASE_URL"
@@ -316,6 +319,7 @@ app_activation_signing_key_id="${SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID:-${Act
 app_activation_public_key_pem="${SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM:-${ActivationSigning__PublicKeyPem:-}}"
 app_device_signing_key_id="${SAFARSUITE_APP_DEVICE_SIGNING_KEY_ID:-${DeviceCredentials__SigningKeyId:-safarsuite-app-device-local}}"
 app_device_signing_secret="${SAFARSUITE_APP_DEVICE_SIGNING_SECRET:-${DeviceCredentials__SigningSecret:-}}"
+app_device_credential_expires_days="${SAFARSUITE_APP_DEVICE_CREDENTIAL_EXPIRES_DAYS:-${DeviceCredentials__ExpiresInDays:-3650}}"
 app_session_signing_key_id="${SAFARSUITE_APP_SESSION_SIGNING_KEY_ID:-${UserSessions__SigningKeyId:-safarsuite-app-session-local}}"
 app_session_signing_secret="${SAFARSUITE_APP_SESSION_SIGNING_SECRET:-${UserSessions__SigningSecret:-}}"
 first_manager_allow_setup_code_fallback="${SAFARSUITE_FIRST_MANAGER_ALLOW_SETUP_CODE_FALLBACK:-${FirstManagerBootstrap__AllowSetupCodeFallback:-false}}"
@@ -347,6 +351,7 @@ chmod 700 "$config_dir" "$state_dir" "$local_api_host_private_dir" "$deployment_
 chmod 755 "$config_dir/certs" "$local_api_host_cert_dir" "$local_api_host_trust_dir"
 
 local_api_access_key="$(read_or_generate_secret "$deployment_secret_dir/local-api-access-key" "$local_api_access_key")"
+manager_session_signing_secret="$(read_or_generate_secret "$deployment_secret_dir/local-manager-session-signing-secret" "$manager_session_signing_secret")"
 local_db_password="$(read_or_generate_secret "$deployment_secret_dir/local-db-password" "$local_db_password")"
 app_device_signing_secret="$(read_or_generate_secret "$deployment_secret_dir/app-device-signing-secret" "$app_device_signing_secret")"
 app_session_signing_secret="$(read_or_generate_secret "$deployment_secret_dir/app-session-signing-secret" "$app_session_signing_secret")"
@@ -447,6 +452,9 @@ SAFARSUITE_LOCAL_API_CA_CERTIFICATE_PATH=$local_api_ca_certificate_path
 SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES=$local_api_certificate_dns_names
 SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES=$local_api_certificate_ip_addresses
 SAFARSUITE_LOCAL_API_CERTIFICATE_DAYS=$local_api_certificate_days
+SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_KEY_ID=$manager_session_signing_key_id
+SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_SECRET=$manager_session_signing_secret
+SAFARSUITE_LOCAL_MANAGER_SESSION_MINUTES=$manager_session_minutes
 SAFARSUITE_MODULE_GATEWAY_URL=$module_gateway_url
 SAFARSUITE_RUNTIME_MANIFEST_PATH=$runtime_manifest_path
 SAFARSUITE_LOCAL_DB_IMAGE=$local_db_image
@@ -467,6 +475,7 @@ ActivationSigning__SigningKeyId=$app_activation_signing_key_id
 ActivationSigning__PublicKeyPem=$app_activation_public_key_pem
 DeviceCredentials__SigningKeyId=$app_device_signing_key_id
 DeviceCredentials__SigningSecret=$app_device_signing_secret
+DeviceCredentials__ExpiresInDays=$app_device_credential_expires_days
 UserSessions__SigningKeyId=$app_session_signing_key_id
 UserSessions__SigningSecret=$app_session_signing_secret
 FirstManagerBootstrap__AllowSetupCodeFallback=$first_manager_allow_setup_code_fallback

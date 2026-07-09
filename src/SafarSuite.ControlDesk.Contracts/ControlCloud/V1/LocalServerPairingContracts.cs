@@ -6,8 +6,15 @@ public static class LocalServerPairingFormats
     public const string HelloRequestVersion = "safarsuite-local-pairing-hello-request-v1";
     public const string HelloResponseVersion = "safarsuite-local-pairing-hello-v1";
     public const string DevicePairingRequestVersion = "safarsuite-local-device-pairing-request-v1";
+    public const string DeviceCredentialVersion = "safarsuite-local-device-credential-v1";
     public const string PairingProfileVersion = "safarsuite-local-pairing-profile-v1";
     public const string FirstManagerSetupTokenVersion = "safarsuite-first-manager-setup-token-v1";
+    public const string ManagerSessionVersion = "safarsuite-local-manager-session-v1";
+}
+
+public static class LocalServerDeviceCredentialHeaders
+{
+    public const string DeviceCredential = "X-SafarSuite-Device-Credential";
 }
 
 public static class LocalServerPairingModes
@@ -110,13 +117,32 @@ public sealed record LocalServerDevicePairingRequestsResponse(
 public sealed record LocalServerDeviceRegisterResponse(
     IReadOnlyCollection<LocalServerDeviceResponse> Devices);
 
+public sealed record CreateLocalServerManagerSessionRequest(
+    Guid DeviceId,
+    string DeviceCredential,
+    string? RequestedBy = null);
+
+public sealed record LocalServerManagerSessionResponse(
+    string TokenType,
+    string AccessToken,
+    Guid SessionId,
+    Guid ClientId,
+    string InstallationId,
+    Guid DeviceId,
+    string Actor,
+    string? AssignedRole,
+    string SigningKeyId,
+    DateTimeOffset IssuedAtUtc,
+    DateTimeOffset ExpiresAtUtc);
+
 public sealed record ApproveLocalServerDeviceRequest(
     string ApprovedBy,
     string AssignedRole = "ManagerApprovedDevice");
 
 public sealed record ApproveLocalServerDeviceResponse(
     LocalServerDeviceResponse Device,
-    string? DeviceCredential);
+    string? DeviceCredential,
+    LocalServerSignedDeviceCredentialResponse? SignedDeviceCredential = null);
 
 public sealed record ChangeLocalServerDeviceStatusRequest(
     string Actor,
@@ -164,6 +190,40 @@ public sealed record LocalServerPairingProfile(
     IReadOnlyCollection<string> UrlCandidates,
     DateTimeOffset ApprovedAtUtc,
     DateTimeOffset LastSeenAtUtc);
+
+public sealed record LocalServerDeviceCredentialPayloadResponse(
+    string FormatVersion,
+    Guid CredentialId,
+    Guid ClientId,
+    string InstallationId,
+    Guid PairingRequestId,
+    Guid DeviceId,
+    string DevicePublicKeySha256,
+    string AssignedRole,
+    DateTimeOffset IssuedAtUtc,
+    DateTimeOffset? ExpiresAtUtc);
+
+public sealed record LocalServerSignedDeviceCredentialResponse(
+    string PayloadJson,
+    LocalServerDeviceCredentialPayloadResponse Payload,
+    LocalServerBootstrapPackageSignatureResponse Signature,
+    string CompactToken);
+
+public sealed record VerifyLocalServerDeviceCredentialRequest(
+    string? DeviceCredential = null);
+
+public sealed record VerifyLocalServerDeviceCredentialResponse(
+    Guid ClientId,
+    string InstallationId,
+    Guid PairingRequestId,
+    Guid DeviceId,
+    string DeviceStatus,
+    string AssignedRole,
+    string DeviceCredentialId,
+    bool IsManagerCapable,
+    DateTimeOffset IssuedAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    DateTimeOffset VerifiedAtUtc);
 
 public sealed record LocalServerFirstManagerSetupTokenPayloadResponse(
     string FormatVersion,
@@ -217,4 +277,5 @@ public sealed record ImportLocalServerFirstManagerSetupTokenResponse(
     string DeviceCredential,
     string SignatureKeyId,
     string PayloadSha256,
-    DateTimeOffset ImportedAtUtc);
+    DateTimeOffset ImportedAtUtc,
+    LocalServerSignedDeviceCredentialResponse? SignedDeviceCredential = null);

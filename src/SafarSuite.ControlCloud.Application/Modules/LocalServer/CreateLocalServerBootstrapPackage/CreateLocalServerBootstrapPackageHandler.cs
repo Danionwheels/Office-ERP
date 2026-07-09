@@ -644,6 +644,9 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         SAFARSUITE_LOCAL_PAIRING_PUBLIC_KEY=
         SAFARSUITE_LOCAL_PAIRING_KEY_SHA256=
         LocalServer__Pairing__RequestExpiresInHours=24
+        SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_KEY_ID=safarsuite-local-manager-session
+        SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_SECRET=change-me-before-start
+        SAFARSUITE_LOCAL_MANAGER_SESSION_MINUTES=60
         SAFARSUITE_MODULE_GATEWAY_URL=https://local-api:8080
         SAFARSUITE_RUNTIME_MANIFEST_PATH=/etc/safarsuite/local-server/runtime-services.manifest.json
         SAFARSUITE_LOCAL_DB_IMAGE=postgres:16-alpine
@@ -664,6 +667,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         ActivationSigning__PublicKeyPem={{SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM}}
         DeviceCredentials__SigningKeyId=safarsuite-app-device-local
         DeviceCredentials__SigningSecret=change-me-before-start
+        DeviceCredentials__ExpiresInDays=3650
         UserSessions__SigningKeyId=safarsuite-app-session-local
         UserSessions__SigningSecret=change-me-before-start
         FirstManagerBootstrap__AllowSetupCodeFallback=false

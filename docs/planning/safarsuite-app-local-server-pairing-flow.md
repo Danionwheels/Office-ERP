@@ -2,7 +2,7 @@
 
 Date added: 2026-07-09
 
-Status: First-manager issue/import wired
+Status: Manager sessions and signed device credentials wired
 
 Purpose: define how a SafarSuite Windows app finds, trusts, activates against, and keeps using the client-site LocalServer without repeated client-side setup.
 
@@ -16,6 +16,8 @@ Purpose: define how a SafarSuite Windows app finds, trusts, activates against, a
 - [x] Add pending device request storage, pending-device listing, approval, suspension, revocation, and one-time proof credential issue on approval.
 - [x] Add first-manager setup-token import/consume on LocalServer with one-time replay protection and first-device approval.
 - [x] Add Control Cloud/Control Desk first-manager setup-token issue/download flow.
+- [x] Add signed device credentials plus verification endpoint for approved devices.
+- [x] Add local manager bearer sessions and require them for device list/approval/suspend/revoke routes.
 - [ ] Add Windows app LAN/manual discovery and protected pairing profile storage in the SafarSuite app workspace.
 - [ ] Add Control Desk/Client Portal visibility for first device approved and pairing-mode status.
 
@@ -429,11 +431,15 @@ GET  /api/v1/local-server/audit/device-access
 Device-protected:
 
 ```text
+POST /api/v1/local-server/device-credentials/verify
+POST /api/v1/local-server/pairing/manager-sessions
 POST /api/v1/local-server/sessions/login
 POST /api/v1/local-server/sessions/refresh
 POST /api/v1/local-server/device-credentials/refresh
 GET  /api/v1/local-server/modules/{moduleCode}/access
 ```
+
+`POST /api/v1/local-server/pairing/manager-sessions` accepts an approved manager-capable signed device credential and returns a short-lived bearer token. The manager-protected device routes require that bearer token; request-body actors are not trusted as authority.
 
 These endpoint names are draft contract names. The real app workspace should own the Windows UI, while this workspace should own shared contracts and LocalServer authority behavior.
 
@@ -498,8 +504,8 @@ The same LocalServer pairing request, token import, manager approval, device cre
 3. Add pending pairing request storage, manager approval commands, device credential issue/revoke, and device audit.
 4. Add first-manager setup-token import/consume on LocalServer with token replay protection and first-device approval.
 5. Add Control Cloud/Control Desk first-manager setup-token issue/download flow.
-6. Add real manager-session protection for local manager approval endpoints.
-7. Add final signed device credential verification on app-to-LocalServer calls.
+6. Add real manager-session protection for local manager approval endpoints. Done: approved device credentials can mint short-lived local manager bearer sessions, and device list/approval/suspend/revoke routes require that session.
+7. Add final signed device credential verification on app-to-LocalServer calls. Done for the LocalServer authority: approved devices now receive HMAC-signed compact credentials and can verify them through `POST /api/v1/local-server/device-credentials/verify`.
 8. Add Windows app LAN discovery, manual URL, descriptor import, and fingerprint confirmation UI in the SafarSuite app workspace.
 9. Add protected client storage for pairing profiles and silent reconnect across IP changes.
 10. Add Control Desk/Client Portal visibility for first device approved and pairing-mode status.

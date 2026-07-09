@@ -48,9 +48,13 @@ var automationOptions =
     ?? new LocalServerRuntimeAutomationOptions();
 var runtimeAccessOptions = LocalServerRuntimeAccessOptions.FromConfiguration(builder.Configuration);
 var pairingOptions = LocalServerPairingOptions.FromConfiguration(builder.Configuration);
+var managerSessionOptions = LocalServerManagerSessionOptions.FromConfiguration(builder.Configuration);
 var pairingStoreOptions =
     builder.Configuration.GetSection(LocalServerPairingStoreOptions.SectionName).Get<LocalServerPairingStoreOptions>()
     ?? new LocalServerPairingStoreOptions();
+var deviceCredentialOptions =
+    builder.Configuration.GetSection(LocalServerDeviceCredentialOptions.SectionName).Get<LocalServerDeviceCredentialOptions>()
+    ?? new LocalServerDeviceCredentialOptions();
 
 builder.Services.AddSingleton(controlCloudOptions);
 builder.Services.AddSingleton(entitlementTrustOptions);
@@ -59,7 +63,10 @@ builder.Services.AddSingleton(commandOptions);
 builder.Services.AddSingleton(automationOptions);
 builder.Services.AddSingleton(runtimeAccessOptions);
 builder.Services.AddSingleton(pairingOptions);
+builder.Services.AddSingleton(managerSessionOptions);
 builder.Services.AddSingleton(pairingStoreOptions);
+builder.Services.AddSingleton(deviceCredentialOptions);
+builder.Services.AddSingleton<LocalServerManagerSessionService>();
 builder.Services.AddSingleton<ILocalServerClock, SystemLocalServerClock>();
 builder.Services.AddSingleton<LocalServerEntitlementPolicy>();
 builder.Services.AddSingleton<ILocalServerEntitlementCache, FileLocalServerEntitlementCache>();
@@ -70,6 +77,7 @@ builder.Services.AddSingleton<ILocalServerInstallationCommandVerifier, HmacLocal
 builder.Services.AddSingleton<ILocalServerAppActivationRevocationStore, FileLocalServerAppActivationRevocationStore>();
 builder.Services.AddSingleton<ILocalServerDevicePairingStore, FileLocalServerDevicePairingStore>();
 builder.Services.AddSingleton<ILocalServerFirstManagerSetupTokenVerifier, HmacLocalServerFirstManagerSetupTokenVerifier>();
+builder.Services.AddSingleton<ILocalServerDeviceCredentialService, HmacLocalServerDeviceCredentialService>();
 builder.Services.AddSingleton<ILocalServerBootstrapBundleVerifier, HmacLocalServerBootstrapBundleVerifier>();
 builder.Services.AddSingleton<ILocalServerBootstrapConfigurationStore, FileLocalServerBootstrapConfigurationStore>();
 builder.Services.AddSingleton<ILocalServerRuntimeCommandRunner, SystemLocalServerRuntimeCommandRunner>();

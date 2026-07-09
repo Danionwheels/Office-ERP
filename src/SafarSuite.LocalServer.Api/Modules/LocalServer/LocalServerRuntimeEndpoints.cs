@@ -40,6 +40,12 @@ public static class LocalServerRuntimeEndpoints
         group.MapPost("/pairing/first-manager-token/import", ImportFirstManagerSetupTokenAsync)
             .WithName("ImportLocalServerFirstManagerSetupToken");
 
+        group.MapPost("/pairing/manager-sessions", CreateManagerSessionAsync)
+            .WithName("CreateLocalServerManagerSession");
+
+        group.MapPost("/device-credentials/verify", VerifyDeviceCredentialAsync)
+            .WithName("VerifyLocalServerDeviceCredential");
+
         group.MapGet("/devices", ListDevicesAsync)
             .WithName("ListLocalServerDevices");
 
@@ -293,6 +299,7 @@ public static class LocalServerRuntimeEndpoints
         ILocalServerFirstManagerSetupTokenVerifier verifier,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
+        ILocalServerDeviceCredentialService deviceCredentialService,
         CancellationToken cancellationToken)
     {
         var importedAtUtc = DateTimeOffset.UtcNow;
@@ -366,12 +373,17 @@ public static class LocalServerRuntimeEndpoints
                 "First-manager setup token can only approve a pending device pairing request.");
         }
 
-        var deviceCredential = GenerateDeviceCredential();
-        var deviceCredentialId = Guid.NewGuid().ToString("N");
+        var deviceCredentialId = Guid.NewGuid();
+        var signedDeviceCredential = deviceCredentialService.Issue(
+            record,
+            deviceCredentialId,
+            "FirstManagerDevice",
+            importedAtUtc);
+        var deviceCredential = signedDeviceCredential.CompactToken;
         var approved = record.Approve(
             BuildFirstManagerActor(payload),
             "FirstManagerDevice",
-            deviceCredentialId,
+            deviceCredentialId.ToString("D"),
             Sha256Hex(deviceCredential),
             importedAtUtc);
         var consumption = new LocalServerFirstManagerSetupTokenConsumptionRecord(
@@ -414,14 +426,201 @@ public static class LocalServerRuntimeEndpoints
             deviceCredential,
             signature.KeyId.Trim(),
             signature.PayloadSha256,
-            importedAtUtc));
+            importedAtUtc,
+            signedDeviceCredential));
+    }
+
+    private static async Task<IResult> CreateManagerSessionAsync(
+        CreateLocalServerManagerSessionRequest? request,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        LocalServerManagerSessionService managerSessionService,
+        ILocalServerDeviceCredentialService deviceCredentialService,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return ToFailureResult(
+                "ManagerSessionRequestRequired",
+                "A manager session request is required.");
+        }
+
+        if (request.DeviceId == Guid.Empty)
+        {
+            return ToFailureResult(
+                "DeviceIdRequired",
+                "A paired manager device id is required before creating a manager session.");
+        }
+
+        var credential = NormalizeRequired(request.DeviceCredential, 8192);
+        if (credential is null)
+        {
+            return ToFailureResult(
+                "DeviceCredentialRequired",
+                "A paired manager device credential is required before creating a manager session.");
+        }
+
+        var credentialVerification = deviceCredentialService.Verify(
+            credential,
+            DateTimeOffset.UtcNow);
+
+        if (!credentialVerification.IsSuccess)
+        {
+            return ToFailureResult(
+                credentialVerification.FailureCode,
+                credentialVerification.Detail);
+        }
+
+        var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
+        if (configuration is null)
+        {
+            return ToFailureResult(
+                "BootstrapConfigurationMissing",
+                "A verified bootstrap configuration is required before creating a manager session.");
+        }
+
+        var payload = credentialVerification.Payload!;
+
+        if (payload.ClientId != configuration.ClientId
+            || !string.Equals(payload.InstallationId, configuration.InstallationId, StringComparison.Ordinal)
+            || payload.DeviceId != request.DeviceId)
+        {
+            return ToFailureResult(
+                "ManagerDeviceCredentialsInvalid",
+                "Manager device credentials are invalid.");
+        }
+
+        var device = await pairingStore.GetByDeviceIdAsync(request.DeviceId, cancellationToken);
+        var credentialId = payload.CredentialId.ToString("D");
+
+        if (device is null
+            || device.ClientId != configuration.ClientId
+            || !string.Equals(device.InstallationId, configuration.InstallationId, StringComparison.Ordinal)
+            || device.PairingRequestId != payload.PairingRequestId
+            || !string.Equals(device.DeviceCredentialId, credentialId, StringComparison.Ordinal)
+            || !string.Equals(device.DeviceCredentialSha256, Sha256Hex(credential), StringComparison.Ordinal)
+            || !string.Equals(device.DevicePublicKeySha256, payload.DevicePublicKeySha256, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "ManagerDeviceCredentialsInvalid",
+                "Manager device credentials are invalid.");
+        }
+
+        var issueResult = managerSessionService.Issue(
+            configuration,
+            device,
+            request.RequestedBy,
+            DateTimeOffset.UtcNow);
+
+        return issueResult.IsSuccess
+            ? Results.Ok(issueResult.Session)
+            : ToFailureResult(issueResult.FailureCode, issueResult.Detail);
+    }
+
+    private static async Task<IResult> VerifyDeviceCredentialAsync(
+        HttpRequest httpRequest,
+        VerifyLocalServerDeviceCredentialRequest? request,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        ILocalServerDeviceCredentialService deviceCredentialService,
+        CancellationToken cancellationToken)
+    {
+        var credential = NormalizeRequired(
+            request?.DeviceCredential ?? ReadDeviceCredentialHeader(httpRequest),
+            8192);
+
+        if (credential is null)
+        {
+            return ToFailureResult(
+                "DeviceCredentialRequired",
+                "A device credential is required before verifying device access.");
+        }
+
+        var verifiedAtUtc = DateTimeOffset.UtcNow;
+        var credentialVerification = deviceCredentialService.Verify(
+            credential,
+            verifiedAtUtc);
+
+        if (!credentialVerification.IsSuccess)
+        {
+            return ToFailureResult(
+                credentialVerification.FailureCode,
+                credentialVerification.Detail);
+        }
+
+        var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
+        if (configuration is null)
+        {
+            return ToFailureResult(
+                "BootstrapConfigurationMissing",
+                "A verified bootstrap configuration is required before verifying device access.");
+        }
+
+        var payload = credentialVerification.Payload!;
+        if (payload.ClientId != configuration.ClientId
+            || !string.Equals(payload.InstallationId, configuration.InstallationId, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "DeviceCredentialScopeMismatch",
+                "Device credential belongs to another client or LocalServer installation.");
+        }
+
+        var device = await pairingStore.GetByDeviceIdAsync(payload.DeviceId, cancellationToken);
+        var credentialId = payload.CredentialId.ToString("D");
+
+        if (device is null
+            || device.ClientId != configuration.ClientId
+            || !string.Equals(device.InstallationId, configuration.InstallationId, StringComparison.Ordinal)
+            || device.PairingRequestId != payload.PairingRequestId
+            || !string.Equals(device.DeviceCredentialId, credentialId, StringComparison.Ordinal)
+            || !string.Equals(device.DeviceCredentialSha256, Sha256Hex(credential), StringComparison.Ordinal)
+            || !string.Equals(device.DevicePublicKeySha256, payload.DevicePublicKeySha256, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "DeviceCredentialInvalid",
+                "Device credential is not valid for this LocalServer device.");
+        }
+
+        if (!string.Equals(device.DeviceStatus, LocalServerDevicePairingRecordStatuses.Approved, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "DeviceCredentialStatusInvalid",
+                "Device credential is not active for an approved device.");
+        }
+
+        return Results.Ok(new VerifyLocalServerDeviceCredentialResponse(
+            device.ClientId,
+            device.InstallationId,
+            device.PairingRequestId,
+            device.DeviceId,
+            device.DeviceStatus,
+            device.AssignedRole ?? payload.AssignedRole,
+            device.DeviceCredentialId ?? credentialId,
+            IsManagerCapableDevice(device),
+            payload.IssuedAtUtc,
+            payload.ExpiresAtUtc,
+            verifiedAtUtc));
     }
 
     private static async Task<IResult> ListDevicesAsync(
+        HttpRequest httpRequest,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
+        LocalServerManagerSessionService managerSessionService,
         CancellationToken cancellationToken)
     {
+        var session = await AuthorizeManagerSessionAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            managerSessionService,
+            cancellationToken);
+
+        if (session.Failure is not null)
+        {
+            return session.Failure;
+        }
+
         var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
 
         if (configuration is null)
@@ -440,10 +639,24 @@ public static class LocalServerRuntimeEndpoints
     }
 
     private static async Task<IResult> ListPendingDevicesAsync(
+        HttpRequest httpRequest,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
+        LocalServerManagerSessionService managerSessionService,
         CancellationToken cancellationToken)
     {
+        var session = await AuthorizeManagerSessionAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            managerSessionService,
+            cancellationToken);
+
+        if (session.Failure is not null)
+        {
+            return session.Failure;
+        }
+
         var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
 
         if (configuration is null)
@@ -463,12 +676,27 @@ public static class LocalServerRuntimeEndpoints
     }
 
     private static async Task<IResult> ApproveDeviceAsync(
+        HttpRequest httpRequest,
         Guid deviceId,
         ApproveLocalServerDeviceRequest request,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
+        LocalServerManagerSessionService managerSessionService,
+        ILocalServerDeviceCredentialService deviceCredentialService,
         CancellationToken cancellationToken)
     {
+        var session = await AuthorizeManagerSessionAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            managerSessionService,
+            cancellationToken);
+
+        if (session.Failure is not null)
+        {
+            return session.Failure;
+        }
+
         var deviceResult = await GetDeviceForManagerActionAsync(
             deviceId,
             configurationStore,
@@ -496,38 +724,51 @@ public static class LocalServerRuntimeEndpoints
                 DeviceCredential: null));
         }
 
-        var approvedBy = NormalizeRequired(request.ApprovedBy, 160);
-
-        if (string.IsNullOrWhiteSpace(approvedBy))
-        {
-            return ToFailureResult(
-                "ApprovedByRequired",
-                "An approving manager or actor is required before approving a device.");
-        }
-
-        var deviceCredential = GenerateDeviceCredential();
-        var deviceCredentialId = Guid.NewGuid().ToString("N");
-        var approved = record.Approve(
-            approvedBy,
-            NormalizeRequired(request.AssignedRole, 80) ?? "ManagerApprovedDevice",
+        var approvedAtUtc = DateTimeOffset.UtcNow;
+        var assignedRole = NormalizeRequired(request.AssignedRole, 80) ?? "ManagerApprovedDevice";
+        var deviceCredentialId = Guid.NewGuid();
+        var signedDeviceCredential = deviceCredentialService.Issue(
+            record,
             deviceCredentialId,
+            assignedRole,
+            approvedAtUtc);
+        var deviceCredential = signedDeviceCredential.CompactToken;
+        var approved = record.Approve(
+            session.Actor!,
+            assignedRole,
+            deviceCredentialId.ToString("D"),
             Sha256Hex(deviceCredential),
-            DateTimeOffset.UtcNow);
+            approvedAtUtc);
 
         await pairingStore.SaveAsync(approved, cancellationToken);
 
         return Results.Ok(new ApproveLocalServerDeviceResponse(
             ToDeviceResponse(approved),
-            deviceCredential));
+            deviceCredential,
+            signedDeviceCredential));
     }
 
     private static async Task<IResult> SuspendDeviceAsync(
+        HttpRequest httpRequest,
         Guid deviceId,
         ChangeLocalServerDeviceStatusRequest request,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
+        LocalServerManagerSessionService managerSessionService,
         CancellationToken cancellationToken)
     {
+        var session = await AuthorizeManagerSessionAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            managerSessionService,
+            cancellationToken);
+
+        if (session.Failure is not null)
+        {
+            return session.Failure;
+        }
+
         var deviceResult = await GetDeviceForManagerActionAsync(
             deviceId,
             configurationStore,
@@ -548,17 +789,8 @@ public static class LocalServerRuntimeEndpoints
                 "Only approved devices can be suspended.");
         }
 
-        var actor = NormalizeRequired(request.Actor, 160);
-
-        if (string.IsNullOrWhiteSpace(actor))
-        {
-            return ToFailureResult(
-                "ActorRequired",
-                "An actor is required before suspending a device.");
-        }
-
         var suspended = record.Suspend(
-            actor,
+            session.Actor!,
             NormalizeRequired(request.Reason, 500) ?? "Device suspended by local manager.",
             DateTimeOffset.UtcNow);
 
@@ -568,12 +800,26 @@ public static class LocalServerRuntimeEndpoints
     }
 
     private static async Task<IResult> RevokeDeviceAsync(
+        HttpRequest httpRequest,
         Guid deviceId,
         ChangeLocalServerDeviceStatusRequest request,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
+        LocalServerManagerSessionService managerSessionService,
         CancellationToken cancellationToken)
     {
+        var session = await AuthorizeManagerSessionAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            managerSessionService,
+            cancellationToken);
+
+        if (session.Failure is not null)
+        {
+            return session.Failure;
+        }
+
         var deviceResult = await GetDeviceForManagerActionAsync(
             deviceId,
             configurationStore,
@@ -592,17 +838,8 @@ public static class LocalServerRuntimeEndpoints
             return Results.Ok(ToDeviceResponse(record));
         }
 
-        var actor = NormalizeRequired(request.Actor, 160);
-
-        if (string.IsNullOrWhiteSpace(actor))
-        {
-            return ToFailureResult(
-                "ActorRequired",
-                "An actor is required before revoking a device.");
-        }
-
         var revoked = record.Revoke(
-            actor,
+            session.Actor!,
             NormalizeRequired(request.Reason, 500) ?? "Device revoked by local manager.",
             DateTimeOffset.UtcNow);
 
@@ -864,6 +1101,27 @@ public static class LocalServerRuntimeEndpoints
             ClockMovedBackwards: trustState?.ClockMovedBackwards ?? false);
     }
 
+    private static async Task<ManagerSessionLookup> AuthorizeManagerSessionAsync(
+        HttpRequest httpRequest,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        LocalServerManagerSessionService managerSessionService,
+        CancellationToken cancellationToken)
+    {
+        var validation = await managerSessionService.ValidateAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            cancellationToken);
+
+        return validation.IsSuccess
+            ? new ManagerSessionLookup(validation.Actor, validation.Device, null)
+            : new ManagerSessionLookup(
+                null,
+                null,
+                ToFailureResult(validation.FailureCode, validation.Detail));
+    }
+
     private static async Task<DeviceManagerLookup> GetDeviceForManagerActionAsync(
         Guid deviceId,
         ILocalServerBootstrapConfigurationStore configurationStore,
@@ -1056,9 +1314,34 @@ public static class LocalServerRuntimeEndpoints
         return NormalizeRequired(value, maxLength);
     }
 
-    private static string GenerateDeviceCredential()
+    private static string? ReadDeviceCredentialHeader(HttpRequest request)
     {
-        return $"safarsuite-device.{Base64UrlEncode(RandomNumberGenerator.GetBytes(32))}";
+        var header = request.Headers[LocalServerDeviceCredentialHeaders.DeviceCredential].ToString().Trim();
+
+        if (!string.IsNullOrWhiteSpace(header))
+        {
+            return header;
+        }
+
+        var authorization = request.Headers.Authorization.ToString().Trim();
+        const string bearerPrefix = "Bearer ";
+
+        if (authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var token = authorization[bearerPrefix.Length..].Trim();
+
+            return string.IsNullOrWhiteSpace(token)
+                ? null
+                : token;
+        }
+
+        return null;
+    }
+
+    private static bool IsManagerCapableDevice(LocalServerDevicePairingRecord device)
+    {
+        return string.Equals(device.AssignedRole, "FirstManagerDevice", StringComparison.Ordinal)
+            || string.Equals(device.AssignedRole, "ManagerApprovedDevice", StringComparison.Ordinal);
     }
 
     private static string BuildFirstManagerActor(
@@ -1129,6 +1412,23 @@ public static class LocalServerRuntimeEndpoints
             "FirstManagerSetupTokenAlreadyConsumed" => Results.Conflict(response),
             "AppActivationRevocationClientMismatch" => Results.Conflict(response),
             "AppActivationRevocationInstallationMismatch" => Results.Conflict(response),
+            "DeviceCredentialRequired" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "DeviceCredentialInvalid" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "DeviceCredentialSigningKeyUnknown" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "DeviceCredentialSignatureInvalid" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "DeviceCredentialExpired" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "DeviceCredentialScopeMismatch" => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
+            "DeviceCredentialStatusInvalid" => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
+            "ManagerSessionSigningNotConfigured" => Results.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable),
+            "ManagerSessionRequired" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "ManagerSessionInvalid" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "ManagerSessionExpired" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "ManagerSessionDeviceInvalid" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "ManagerDeviceCredentialInvalid" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "ManagerDeviceCredentialsInvalid" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
+            "ManagerDeviceNotApproved" => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
+            "ManagerSessionDeviceNotApproved" => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
+            "ManagerSessionScopeMismatch" => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
             _ when code.EndsWith("Required", StringComparison.Ordinal) => Results.BadRequest(response),
             _ when code.EndsWith("Invalid", StringComparison.Ordinal) => Results.BadRequest(response),
             _ when code.EndsWith("Unsupported", StringComparison.Ordinal) => Results.BadRequest(response),
@@ -1170,6 +1470,11 @@ public static class LocalServerRuntimeEndpoints
 
     private sealed record DeviceManagerLookup(
         LocalServerDevicePairingRecord? Record,
+        IResult? Failure);
+
+    private sealed record ManagerSessionLookup(
+        string? Actor,
+        LocalServerDevicePairingRecord? Device,
         IResult? Failure);
 }
 
