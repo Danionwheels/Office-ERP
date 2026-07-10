@@ -862,6 +862,7 @@ public static class LocalServerCommandEndpoints
             "InstallationCommandMismatch" => Results.Conflict(response),
             "SetupTokenScopeMismatch" => Results.Conflict(response),
             "SetupTokenNotUsable" => Results.Conflict(response),
+            "BootstrapSigningSecretNotReady" => Results.Conflict(response),
             "SetupTokenNotFound" => Results.Json(response, statusCode: StatusCodes.Status401Unauthorized),
             "AppServerInstallationIdRequired" => Results.BadRequest(response),
             "AppFingerprintRequired" => Results.BadRequest(response),

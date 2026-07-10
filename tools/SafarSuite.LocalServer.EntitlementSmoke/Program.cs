@@ -1009,6 +1009,18 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
     Require(result.IsSuccess, "Bootstrap package should generate through the Control Cloud signer.");
     var generatedPackage = result.BootstrapPackage
         ?? throw new InvalidOperationException("Bootstrap package should exist.");
+    var secretReadiness = generatedPackage.SecretReadiness
+        ?? throw new InvalidOperationException("Bootstrap package should expose secret readiness.");
+    var readinessJson = JsonSerializer.Serialize(
+        secretReadiness,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    var environmentArtifact = RequireArtifact(generatedPackage, "EnvironmentTemplate");
+
+    Require(secretReadiness.ActiveKeyId == "bootstrap-smoke", "Bootstrap package should expose the non-secret active signing key id.");
+    Require(secretReadiness.RequiredEnvironmentVariables.Contains("SAFARSUITE_ENTITLEMENT_SIGNING_SECRET"), "Bootstrap package should expose the required install-time signing secret variable name.");
+    Require(generatedPackage.InstallCommand.Contains("SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID='bootstrap-smoke'", StringComparison.Ordinal), "Bootstrap install command should include the active signing key id.");
+    Require(environmentArtifact.Content.Contains("LocalServer__EntitlementTrust__SigningKeys__0__KeyId=bootstrap-smoke", StringComparison.Ordinal), "Bootstrap environment template should carry the active entitlement signing key id.");
+    Require(!readinessJson.Contains("bootstrap-signing-secret-change-before-cloud", StringComparison.Ordinal), "Bootstrap secret readiness should not leak the signing secret value.");
 
     var handoffHandler = new MarkLocalServerBootstrapPackageHandoffHandler(
         setupTokenRepository,

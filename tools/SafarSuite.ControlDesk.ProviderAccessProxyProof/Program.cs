@@ -135,7 +135,8 @@ try
 
     Require(bootstrapPackage.ClientId == clientId, "Control Desk bootstrap package should target proof client.");
     Require(bootstrapPackage.InstallationId == installationId, "Control Desk bootstrap package should target proof installation.");
-    checks.Add("created bootstrap package through Control Desk proxy");
+    RequireBootstrapSecretReadiness(bootstrapPackage, "Control Desk bootstrap package");
+    checks.Add("created bootstrap package through Control Desk proxy with non-secret signing readiness");
 
     var handoff = await SendJsonAsync<LocalServerBootstrapPackageHandoffResponse>(
         controlDeskHttp,
@@ -712,6 +713,27 @@ static void Require(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+static void RequireBootstrapSecretReadiness(
+    LocalServerBootstrapPackageResponse bootstrapPackage,
+    string label)
+{
+    var readiness = bootstrapPackage.SecretReadiness
+        ?? throw new InvalidOperationException($"{label} should include secret readiness.");
+    var readinessJson = JsonSerializer.Serialize(readiness, ProofJson.Options);
+
+    Require(readiness.HasActiveSecret, $"{label} should report an active signing secret is configured.");
+    Require(readiness.ActiveKeyId == bootstrapPackage.SignedBundle.Signature.KeyId, $"{label} readiness key should match the bundle signature key.");
+    Require(
+        readiness.RequiredEnvironmentVariables.Contains("SAFARSUITE_ENTITLEMENT_SIGNING_SECRET"),
+        $"{label} should tell operators to control the install-time entitlement signing secret.");
+    Require(
+        bootstrapPackage.InstallCommand.Contains("SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID=", StringComparison.Ordinal),
+        $"{label} install command should include the non-secret active signing key id.");
+    Require(
+        !readinessJson.Contains("local-entitlement-signing-secret-change-before-cloud", StringComparison.Ordinal),
+        $"{label} readiness should not leak the active signing secret value.");
 }
 
 internal sealed class ApiProcess : IAsyncDisposable

@@ -71,6 +71,14 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                 "Install script URL must be an absolute HTTP or HTTPS URL.");
         }
 
+        var secretReadiness = _bootstrapPackageSigner.GetSecretReadiness();
+        if (secretReadiness.Status.Equals("Blocked", StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateLocalServerBootstrapPackageResult.Failure(
+                "BootstrapSigningSecretNotReady",
+                secretReadiness.Detail);
+        }
+
         var setupTokenResult = await _setupTokenHandler.HandleAsync(
             new CreateInstallationSetupTokenCommand(
                 command.ClientId,
@@ -101,7 +109,11 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         var appActivationSigningKey = new ControlCloudBootstrapAppActivationSigningKey(
             _appActivationTokenSigner.SigningKeyId,
             _appActivationTokenSigner.PublicKeyPem);
-        var artifacts = BuildArtifacts(cloudBaseUrl, runtimePlan, appActivationSigningKey);
+        var artifacts = BuildArtifacts(
+            cloudBaseUrl,
+            runtimePlan,
+            appActivationSigningKey,
+            secretReadiness);
         var deploymentProfile = ToResponse(setupToken.DeploymentProfile);
         var generatedAtUtc = _clock.UtcNow;
         var bootstrapPackageId = Guid.NewGuid();
@@ -114,7 +126,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             setupToken.DeploymentProfile,
             localServerVersion,
             safarSuiteAppVersion,
-            appActivationSigningKey);
+            appActivationSigningKey,
+            secretReadiness);
         var payload = new ControlCloudBootstrapPackagePayload(
             ControlCloudLocalServerBootstrapPackageFormat.Version,
             bootstrapPackageId,
@@ -158,7 +171,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             ComputeSha256(JsonSerializer.Serialize(signedBundleResponse, BootstrapBundleJsonOptions)),
             signedBundleResponse,
             ToResponse(runtimePlan),
-            ToResponse(appActivationSigningKey));
+            ToResponse(appActivationSigningKey),
+            ToResponse(secretReadiness));
 
         setupToken.AttachBootstrapPackage(
             package.BootstrapPackageId,
@@ -211,7 +225,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         ControlCloudInstallationDeploymentProfile deploymentProfile,
         string localServerVersion,
         string safarSuiteAppVersion,
-        ControlCloudBootstrapAppActivationSigningKey appActivationSigningKey)
+        ControlCloudBootstrapAppActivationSigningKey appActivationSigningKey,
+        ControlCloudBootstrapSecretReadiness secretReadiness)
     {
         return string.Join(
             " ",
@@ -236,6 +251,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             $"SAFARSUITE_SYNC_TOPOLOGY_ID={QuoteForShell(deploymentProfile.SyncTopologyId ?? "")}",
             $"SAFARSUITE_LOCAL_SERVER_VERSION={QuoteForShell(localServerVersion)}",
             $"SAFARSUITE_APP_VERSION={QuoteForShell(safarSuiteAppVersion)}",
+            $"SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID={QuoteForShell(secretReadiness.ActiveKeyId)}",
             $"SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID={QuoteForShell(appActivationSigningKey.SigningKeyId)}",
             $"SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM={QuoteForShell(EscapeDockerEnvValue(appActivationSigningKey.PublicKeyPem))}",
             "bash",
@@ -245,10 +261,15 @@ public sealed class CreateLocalServerBootstrapPackageHandler
     private static IReadOnlyCollection<ControlCloudBootstrapPackageArtifact> BuildArtifacts(
         string cloudBaseUrl,
         ControlCloudBootstrapRuntimePlan runtimePlan,
-        ControlCloudBootstrapAppActivationSigningKey appActivationSigningKey)
+        ControlCloudBootstrapAppActivationSigningKey appActivationSigningKey,
+        ControlCloudBootstrapSecretReadiness secretReadiness)
     {
         var dockerComposeContent = NormalizeTemplate(DockerComposeTemplate);
         var envTemplateContent = NormalizeTemplate(EnvironmentTemplate)
+            .Replace(
+                "{{SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID}}",
+                secretReadiness.ActiveKeyId,
+                StringComparison.Ordinal)
             .Replace(
                 "{{SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID}}",
                 appActivationSigningKey.SigningKeyId,
@@ -461,6 +482,18 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             signingKey.PublicKeyPem);
     }
 
+    private static LocalServerBootstrapSecretReadinessResponse ToResponse(
+        ControlCloudBootstrapSecretReadiness readiness)
+    {
+        return new LocalServerBootstrapSecretReadinessResponse(
+            readiness.Status,
+            readiness.ActiveKeyId,
+            readiness.HasActiveSecret,
+            readiness.Warnings,
+            readiness.RequiredEnvironmentVariables,
+            readiness.Detail);
+    }
+
     private static LocalServerBootstrapRuntimeServiceResponse ToResponse(
         ControlCloudBootstrapRuntimeService service)
     {
@@ -660,9 +693,9 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         SAFARSUITE_PENDING_COMMANDS_URL={{SAFARSUITE_PENDING_COMMANDS_URL}}
         SAFARSUITE_DIAGNOSTICS_URL={{SAFARSUITE_DIAGNOSTICS_URL}}
         DeploymentSecrets__Provider=Environment
-        LocalServer__BootstrapTrust__SigningKeys__0__KeyId=change-me-before-start
+        LocalServer__BootstrapTrust__SigningKeys__0__KeyId={{SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID}}
         LocalServer__BootstrapTrust__SigningKeys__0__Secret=change-me-before-start
-        LocalServer__EntitlementTrust__SigningKeys__0__KeyId=change-me-before-start
+        LocalServer__EntitlementTrust__SigningKeys__0__KeyId={{SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID}}
         LocalServer__EntitlementTrust__SigningKeys__0__Secret=change-me-before-start
         ActivationSigning__SigningKeyId={{SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID}}
         ActivationSigning__PublicKeyPem={{SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM}}

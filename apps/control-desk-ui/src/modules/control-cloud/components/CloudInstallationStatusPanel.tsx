@@ -158,8 +158,17 @@ export function CloudInstallationStatusPanel({
     issuedAppActivation,
     appActivationIssues
   });
+  const setupPreflightItems = getCustomerSetupPreflightItems({
+    deploymentValue,
+    status,
+    bootstrapPackage,
+    bootstrapPackages,
+    diagnosticsReport
+  });
   const completedSetupSteps = setupSteps.filter((step) => step.done).length;
   const warningSetupSteps = setupSteps.filter((step) => step.tone === "warning").length;
+  const readyPreflightItems = setupPreflightItems.filter((item) => item.tone === "ready").length;
+  const warningPreflightItems = setupPreflightItems.filter((item) => item.tone === "warning").length;
   const setupReadinessTone = completedSetupSteps === setupSteps.length
     ? warningSetupSteps > 0 ? "warning" : "ready"
     : "neutral";
@@ -364,6 +373,34 @@ export function CloudInstallationStatusPanel({
               </div>
               <span className={`status-pill ${step.done ? "active" : step.tone === "warning" ? "pending" : "draft"}`}>
                 {step.status}
+              </span>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className={`cloud-setup-preflight ${warningPreflightItems > 0 ? "warning" : "ready"}`}>
+        <div className="cloud-audit-heading">
+          <div>
+            <span>Setup preflight</span>
+            <strong>{readyPreflightItems}/{setupPreflightItems.length} clear</strong>
+          </div>
+          <span className={`status-pill ${warningPreflightItems > 0 ? "pending" : "active"}`}>
+            {warningPreflightItems > 0 ? `${warningPreflightItems} review` : "Clear"}
+          </span>
+        </div>
+        <div className="cloud-setup-preflight-grid">
+          {setupPreflightItems.map((item) => (
+            <article className={`cloud-setup-preflight-item ${item.tone}`} key={item.key}>
+              <span className={`cloud-setup-step-icon ${item.tone}`}>
+                {item.tone === "ready" ? <ShieldCheck size={15} /> : <ServerCog size={15} />}
+              </span>
+              <div>
+                <strong>{item.label}</strong>
+                <span>{item.detail}</span>
+              </div>
+              <span className={`status-pill ${item.tone === "ready" ? "active" : item.tone === "warning" ? "pending" : "draft"}`}>
+                {item.status}
               </span>
             </article>
           ))}
@@ -753,6 +790,10 @@ export function CloudInstallationStatusPanel({
               <div>
                 <dt>Signature</dt>
                 <dd>{bootstrapPackage.signedBundle.signature.keyId}</dd>
+              </div>
+              <div>
+                <dt>Secret readiness</dt>
+                <dd>{formatSecretReadiness(bootstrapPackage)}</dd>
               </div>
               <div>
                 <dt>Artifacts</dt>
@@ -1851,6 +1892,14 @@ type CustomerSetupStep = {
   tone: "neutral" | "ready" | "warning";
 };
 
+type CustomerSetupPreflightItem = {
+  key: string;
+  label: string;
+  status: string;
+  detail: string;
+  tone: "neutral" | "ready" | "warning";
+};
+
 type CustomerSetupStepsInput = {
   selectedDeploymentId: string;
   deploymentValue: CloudInstallationStatusPanelProps["deploymentValue"];
@@ -1863,6 +1912,14 @@ type CustomerSetupStepsInput = {
   diagnosticsReport: LocalServerDiagnosticReport | null;
   issuedAppActivation: IssuedSafarSuiteAppActivationToken | null;
   appActivationIssues: SafarSuiteAppActivationIssue[];
+};
+
+type CustomerSetupPreflightInput = {
+  deploymentValue: CloudInstallationStatusPanelProps["deploymentValue"];
+  status: ControlCloudInstallationStatus | null;
+  bootstrapPackage: LocalServerBootstrapPackage | null;
+  bootstrapPackages: LocalServerBootstrapPackageSummary[];
+  diagnosticsReport: LocalServerDiagnosticReport | null;
 };
 
 function getCustomerSetupSteps({
@@ -1999,6 +2056,111 @@ function getCustomerSetupSteps({
   ];
 }
 
+function getCustomerSetupPreflightItems({
+  deploymentValue,
+  status,
+  bootstrapPackage,
+  bootstrapPackages,
+  diagnosticsReport
+}: CustomerSetupPreflightInput): CustomerSetupPreflightItem[] {
+  const latestRegisteredPackage = bootstrapPackages[0] ?? null;
+  const packageReady = bootstrapPackage !== null || isUsablePackage(latestRegisteredPackage);
+  const packageConsumed = latestRegisteredPackage?.consumedAtUtc !== null
+    && latestRegisteredPackage?.consumedAtUtc !== undefined;
+  const runtimeStarted = status !== null || diagnosticsReport !== null;
+  const secretReadiness = bootstrapPackage?.secretReadiness ?? null;
+  const packageSignature = bootstrapPackage?.signedBundle.signature ?? null;
+  const packageHasProviderSignature =
+    packageSignature !== null
+    && packageSignature.keyId.trim() !== ""
+    && packageSignature.payloadSha256.trim() !== ""
+    && packageSignature.value.trim() !== "";
+  const runtimePlan = bootstrapPackage?.runtimePlan ?? null;
+  const appVersion = runtimePlan?.safarSuiteAppVersion ?? deploymentValue.safarSuiteAppVersion;
+  const hasAppRuntimeVersion = appVersion.trim() !== "";
+  const artifacts = bootstrapPackage?.artifacts ?? [];
+  const composeArtifact = artifacts.find((artifact) =>
+    artifact.artifactType === "DockerComposeTemplate"
+      || artifact.fileName.toLowerCase().includes("compose")
+  );
+  const composeIncludesAppRuntime =
+    composeArtifact?.content.includes("app-runtime") === true
+    || composeArtifact?.content.includes("safarsuite-app") === true;
+  const diagnosticsRuntime = diagnosticsReport?.bundle.runtime ?? null;
+  const diagnosticsDockerKnown = diagnosticsRuntime?.dockerAvailable !== null
+    && diagnosticsRuntime?.dockerAvailable !== undefined;
+  const diagnosticsDockerReady = diagnosticsRuntime?.dockerAvailable === true
+    || diagnosticsReport !== null;
+  const localApiIsHttps =
+    bootstrapPackage?.runtimePlan?.runtimeMode.trim() !== ""
+    && (
+      bootstrapPackage?.installCommand.includes("SAFARSUITE_LOCAL_API_TLS_MODE")
+        || bootstrapPackage?.artifacts.some((artifact) =>
+          artifact.content.includes("SAFARSUITE_LOCAL_API_TLS_MODE=GeneratedLocalCa")
+        ) === true
+    );
+
+  return [
+    {
+      key: "docker-target",
+      label: "Docker target",
+      status: runtimeStarted ? "Observed" : packageReady ? "Check" : "Waiting",
+      detail: diagnosticsDockerReady
+        ? diagnosticsDockerKnown
+          ? `Diagnostics reported Docker ${formatAvailability(diagnosticsRuntime?.dockerAvailable ?? null)}`
+          : "Runtime evidence is present after the generated install"
+        : packageReady
+          ? "Confirm Docker Desktop or Docker Compose is running before handoff"
+          : "Generate setup packet before target checks",
+      tone: runtimeStarted ? "ready" : packageReady ? "warning" : "neutral"
+    },
+    {
+      key: "clean-target",
+      label: "Clean target",
+      status: runtimeStarted || packageConsumed ? "Runtime used" : packageReady ? "Confirm" : "Waiting",
+      detail: runtimeStarted || packageConsumed
+        ? "Setup token has runtime evidence; do not remove live volumes"
+        : packageReady
+          ? "Remove only stale safarsuite-local-server proof stack and volumes before rerun"
+          : "No generated package selected",
+      tone: runtimeStarted || packageConsumed ? "ready" : packageReady ? "warning" : "neutral"
+    },
+    {
+      key: "trust-custody",
+      label: "Trust custody",
+      status: status !== null
+        ? "Verified"
+        : secretReadiness !== null
+          ? secretReadiness.status === "Ready" ? "Provider-held" : secretReadiness.status
+          : packageHasProviderSignature ? "Provider-held" : "Waiting",
+      detail: status !== null
+        ? "LocalServer accepted the signed bootstrap and reported status"
+        : formatSecretReadinessPreflightDetail(secretReadiness, packageSignature),
+      tone: status !== null ? "ready" : packageHasProviderSignature ? "warning" : "neutral"
+    },
+    {
+      key: "app-runtime-profile",
+      label: "App runtime",
+      status: composeIncludesAppRuntime || hasAppRuntimeVersion ? "Included" : packageReady ? "Review" : "Waiting",
+      detail: composeIncludesAppRuntime
+        ? `Compose profile app-runtime with app ${formatNullableText(appVersion)}`
+        : hasAppRuntimeVersion
+          ? `App version ${appVersion}; verify compose profile before handoff`
+          : "No app-runtime version/profile evidence loaded",
+      tone: composeIncludesAppRuntime ? "ready" : packageReady ? "warning" : "neutral"
+    },
+    {
+      key: "windows-local-api-tls",
+      label: "Windows TLS",
+      status: runtimeStarted && localApiIsHttps ? "Follow-up" : localApiIsHttps ? "Git Bash" : "Waiting",
+      detail: localApiIsHttps
+        ? "Use Git Bash or WSL for install verification until host Schannel/.NET evidence is cleared"
+        : "Generated Local API TLS mode not loaded",
+      tone: localApiIsHttps ? "warning" : "neutral"
+    }
+  ];
+}
+
 function isUsablePackage(packageSummary: LocalServerBootstrapPackageSummary | null): boolean {
   return packageSummary !== null && !isExpiredPackage(packageSummary);
 }
@@ -2117,6 +2279,39 @@ function formatPackageRuntime(packageSummary: LocalServerBootstrapPackageSummary
   return safarSuiteVersion === "Not set"
     ? localServerVersion
     : `${localServerVersion} / ${safarSuiteVersion}`;
+}
+
+function formatSecretReadiness(bootstrapPackage: LocalServerBootstrapPackage): string {
+  const readiness = bootstrapPackage.secretReadiness;
+
+  return readiness === null
+    ? "Not reported"
+    : `${readiness.status} / ${readiness.activeKeyId}`;
+}
+
+function formatSecretReadinessPreflightDetail(
+  readiness: LocalServerBootstrapPackage["secretReadiness"],
+  packageSignature: LocalServerBootstrapPackage["signedBundle"]["signature"] | null
+): string {
+  if (readiness === null) {
+    return packageSignature === null
+      ? "Package signature not loaded"
+      : `Signing key ${packageSignature.keyId}; provider secret must match at install time`;
+  }
+
+  if (!readiness.hasActiveSecret || readiness.status === "Blocked") {
+    return `${readiness.activeKeyId}: ${readiness.detail}`;
+  }
+
+  if (readiness.warnings.length > 0) {
+    return `${readiness.activeKeyId}: ${readiness.warnings[0]}`;
+  }
+
+  const requiredVariables = readiness.requiredEnvironmentVariables.join(", ");
+
+  return requiredVariables.trim() === ""
+    ? `${readiness.activeKeyId}: provider secret must match at install time`
+    : `${readiness.activeKeyId}: control ${requiredVariables} during install`;
 }
 
 function formatPackageHash(value: string): string {

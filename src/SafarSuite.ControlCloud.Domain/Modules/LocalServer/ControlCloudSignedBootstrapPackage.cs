@@ -70,3 +70,11 @@ public sealed record ControlCloudBootstrapPackageSignature(
     string KeyId,
     string PayloadSha256,
     string Value);
+
+public sealed record ControlCloudBootstrapSecretReadiness(
+    string Status,
+    string ActiveKeyId,
+    bool HasActiveSecret,
+    IReadOnlyCollection<string> Warnings,
+    IReadOnlyCollection<string> RequiredEnvironmentVariables,
+    string Detail);

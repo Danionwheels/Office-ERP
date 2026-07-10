@@ -21,6 +21,10 @@ Let a provider operator create a customer deployment package, hand off everythin
 - [x] Let operators mark external handoff state without exposing setup-token plaintext after package creation.
 - [x] Show setup packet handoff evidence as its own guided checklist step before local-server registration.
 - [x] Add clean-target Docker volume preflight warnings to the downloaded customer setup guide after the real clean-machine proof exposed stale-volume failure risk.
+- [x] Add provider-secret custody guidance to the downloaded customer setup guide after the real clean-machine proof exposed placeholder trust failure risk.
+- [x] Add local API TLS troubleshooting guidance to the downloaded customer setup guide after the real clean-machine proof exposed a Windows Schannel/.NET verification edge.
+- [x] Add an in-app Control Desk setup preflight panel so provider operators see Docker target, clean volume, trust custody, app-runtime profile, and Windows TLS review items before handoff.
+- [x] Return non-secret signing readiness with generated packages, include the active signing key id in the generated install command/environment template, and surface required install-time provider variable names without exposing secret values.
 
 ## Notes
 
@@ -31,6 +35,14 @@ The setup checklist is evidence-backed from existing cloud state instead of manu
 The downloaded setup guide now calls out that the install command is Bash, gives PowerShell launch commands for Git Bash/WSL, and tells operators to regenerate the package if the guide or bundle is sent to the wrong destination.
 
 The downloaded setup guide also carries a clean-target preflight section with the generated compose project/state directory, warns operators not to reuse stale database volumes from another customer/package/PostgreSQL major version, and scopes any retry cleanup to the previous SafarSuite setup stack for the same installation. This came directly from the 2026-07-10 real Control Cloud clean-machine pass, where a stale local PostgreSQL volume broke an otherwise clean generated package run.
+
+The downloaded setup guide now distinguishes customer-safe setup artifacts from provider-owned operational secrets. It tells operators to keep signing/trust secrets in approved provider custody, avoid sending them through tickets/chat/email/customer notes, and stop before import or registration if a generated environment still contains placeholder trust values. This came from the same 2026-07-10 proof, where the generated helper could not know the real file-backed entitlement/bootstrap HMAC secret and placeholder trust caused bootstrap import failure.
+
+Generated bootstrap package responses now include `secretReadiness`, a non-secret report with status, active signing key id, configured/missing state, warning text, and the install-time environment variable names operators must control. Control Cloud also places the active signing key id into the generated install command and environment template; the HMAC secret remains provider-owned and is never returned in the package response, setup guide, signed bundle, or audit trail.
+
+The downloaded setup guide also has local API TLS troubleshooting guidance for the generated local CA path. It tells operators to prefer the generated CA-pinned Git Bash/WSL helper evidence first, treat `SEC_E_NO_CREDENTIALS` or related native Windows PowerShell/.NET/Schannel failures as host trust/tooling issues when the helper succeeds, and avoid disabling certificate validation or switching customer installs to HTTP just to make a host-side check pass. This came from the 2026-07-10 proof, where Git Bash helper evidence passed while Windows host verification against the generated local CA hit `SEC_E_NO_CREDENTIALS`.
+
+The Control Desk Cloud tab now separates automated customer setup evidence from preflight risk checks. The Customer setup checklist still tracks saved deployment, setup packet, handoff, registration, heartbeat, pairing, entitlement, diagnostics, and app activation evidence. A new Setup preflight strip sits beside it and calls out Docker target readiness, clean-target/volume state, provider trust custody, app-runtime profile inclusion, and the Windows Local API TLS support caveat before operators hand the packet to a customer.
 
 The setup packet now also includes a non-secret pairing descriptor. The normal Descriptor button asks Control Cloud to issue and sign the descriptor through the bootstrap signing-key lane, then falls back to a local unsigned hint only if the cloud export is unavailable. It carries URL candidates, client/install/site metadata, bootstrap package identifiers, bundle/signature metadata, and optional app-server identity/fingerprint pins when a current activation issue is known. It does not carry setup-token plaintext, provider credentials, database credentials, app activation tokens, or signing private keys. The SafarSuite Windows app imports the descriptor as a candidate hint, then still validates the live LocalServer hello response and requires fingerprint confirmation before writing trust.
 

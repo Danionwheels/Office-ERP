@@ -39,6 +39,7 @@ export function downloadCustomerSetupGuide(
     bootstrapPackage,
     clientCode,
     appIdentity);
+  const secretReadiness = bootstrapPackage.secretReadiness;
   const guide = [
     "# SafarSuite Customer Setup",
     "",
@@ -53,6 +54,8 @@ export function downloadCustomerSetupGuide(
     `SafarSuite app version: ${bootstrapPackage.runtimePlan?.safarSuiteAppVersion ?? "Not set"}`,
     `Compose project: ${bootstrapPackage.runtimePlan?.composeProjectName ?? "Not set"}`,
     `State directory: ${bootstrapPackage.runtimePlan?.stateDirectory ?? "Not set"}`,
+    `Signing readiness: ${secretReadiness?.status ?? "Not reported"}`,
+    `Signing key id: ${secretReadiness?.activeKeyId ?? bootstrapPackage.signedBundle.signature.keyId}`,
     "",
     "## Install",
     "",
@@ -68,9 +71,25 @@ export function downloadCustomerSetupGuide(
     "- Do not reuse database volumes from another customer, another bootstrap package, or another PostgreSQL major version.",
     "- Do not remove volumes from an existing live customer installation unless the provider and customer have confirmed the local data can be destroyed.",
     "",
+    "## Provider Secret Custody",
+    "",
+    ...(secretReadiness === null
+      ? ["- Control Cloud did not return a signing-readiness report for this package. Confirm the active signing key and install-time secret through the provider runbook before import."]
+      : [
+        `- Control Cloud signing readiness: ${secretReadiness.status}. ${secretReadiness.detail}`,
+        `- Active signing key id: ${secretReadiness.activeKeyId}. The key id is not secret and is already included in the generated install command.`,
+        `- Install-time provider variables to control: ${secretReadiness.requiredEnvironmentVariables.join(", ") || "Not reported"}.`,
+        ...secretReadiness.warnings.map((warning) => `- Review: ${warning}`)
+      ]),
+    "- Provider signing and trust secrets are not part of the customer setup packet. Keep them in the provider-approved secret store or inject them only during a controlled install session.",
+    "- Do not put provider signing secrets, provider credentials, database passwords, app activation tokens, signing private keys, or long-lived HMAC secrets into this guide, tickets, chat, email, or customer-visible notes.",
+    "- Before import or registration, confirm the generated runtime environment uses the provider-approved entitlement/bootstrap signing secret. If the template still contains placeholder or change-before-production trust values, stop and supply the approved value before continuing.",
+    "- Treat setup tokens and signed bundles as time-limited handoff artifacts. Treat signing secrets as provider-owned operational secrets that must not be handed to the customer.",
+    "",
     "## Windows / PowerShell",
     "",
     "The install command is a Bash command. On Windows, run it from Git Bash or WSL with Docker Desktop running; do not paste it directly into PowerShell or Command Prompt.",
+    "Use Git Bash or WSL for Local API HTTPS verification until provider support has confirmed host-side PowerShell/.NET trust behavior for the generated local CA on that workstation.",
     "",
     "From PowerShell, open Git Bash with:",
     "",
@@ -87,6 +106,13 @@ export function downloadCustomerSetupGuide(
     "Then paste the Bash install command from the Install section.",
     "",
     "Keep this guide and the signed bundle in a secure handoff channel until the setup token expires. Generate a fresh bootstrap package if either file is sent to the wrong place.",
+    "",
+    "## Local API TLS Troubleshooting",
+    "",
+    "- The generated runtime uses HTTPS for the local API by default with a generated local CA. Keep the installer and verification helper on the generated CA-pinned path before trying native Windows host checks.",
+    "- If the Git Bash or WSL helper succeeds but PowerShell, .NET, or Windows Schannel curl reports SEC_E_NO_CREDENTIALS, certificate revocation, or credential-selection errors against the local API, treat it as a Windows host trust/tooling issue first.",
+    "- Do not disable certificate validation or switch the customer installation to HTTP only to make a host-side check pass. Capture the helper output, Control Cloud registration, heartbeat, entitlement, and diagnostics evidence instead.",
+    "- Escalate to provider support if native Windows Local API evidence is required; support may need to inspect the generated local CA trust material, hostname, Schannel policy, and customer machine certificate state.",
     "",
     "## SafarSuite App Pairing Descriptor",
     "",

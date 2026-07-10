@@ -4239,9 +4239,34 @@ td {
   background: #fff9e8;
 }
 
+.cloud-setup-preflight {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #cbd1d7;
+  border-radius: 6px;
+  padding: 8px;
+  background: #f8f9fa;
+}
+
+.cloud-setup-preflight.ready {
+  border-color: #8bc49d;
+  background: #f2faf5;
+}
+
+.cloud-setup-preflight.warning {
+  border-color: #d0a24e;
+  background: #fff9e8;
+}
+
 .cloud-setup-step-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.cloud-setup-preflight-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 7px;
 }
 
@@ -4257,11 +4282,31 @@ td {
   background: #ffffff;
 }
 
+.cloud-setup-preflight-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid #d6dde5;
+  border-radius: 5px;
+  padding: 7px;
+  background: #ffffff;
+}
+
 .cloud-setup-step.ready {
   border-color: #b8d6c1;
 }
 
+.cloud-setup-preflight-item.ready {
+  border-color: #b8d6c1;
+}
+
 .cloud-setup-step.warning {
+  border-color: #d0a24e;
+}
+
+.cloud-setup-preflight-item.warning {
   border-color: #d0a24e;
 }
 
@@ -4310,6 +4355,34 @@ td {
   color: #5c6570;
   font-size: 11px;
   font-weight: 750;
+}
+
+.cloud-setup-preflight-item > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cloud-setup-preflight-item strong,
+.cloud-setup-preflight-item span {
+  overflow-wrap: anywhere;
+}
+
+.cloud-setup-preflight-item strong {
+  color: #20252b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cloud-setup-preflight-item span {
+  color: #5c6570;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.cloud-setup-preflight-item > .status-pill {
+  grid-column: 2;
+  justify-self: start;
 }
 
 .cloud-workspace {
@@ -4989,6 +5062,10 @@ td {
 @media (max-width: 640px) {
   .cloud-setup-packet-actions {
     justify-content: stretch;
+  }
+
+  .cloud-setup-preflight-grid {
+    grid-template-columns: 1fr;
   }
 
   .cloud-setup-step {
@@ -13773,6 +13850,7 @@ td {
   .billing-form-grid.charge-code,
   .cloud-deployment-grid,
   .cloud-setup-step-grid,
+  .cloud-setup-preflight-grid,
   .cloud-provisioning-facts,
   .cloud-app-identity-map,
   .cloud-app-activation-grid,

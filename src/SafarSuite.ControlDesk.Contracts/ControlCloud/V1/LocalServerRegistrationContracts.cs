@@ -56,6 +56,14 @@ public sealed record LocalServerBootstrapPackageSignatureResponse(
     string PayloadSha256,
     string Value);
 
+public sealed record LocalServerBootstrapSecretReadinessResponse(
+    string Status,
+    string ActiveKeyId,
+    bool HasActiveSecret,
+    IReadOnlyCollection<string> Warnings,
+    IReadOnlyCollection<string> RequiredEnvironmentVariables,
+    string Detail);
+
 public sealed record LocalServerBootstrapPackageArtifactResponse(
     string ArtifactType,
     string FileName,
@@ -132,7 +140,8 @@ public sealed record LocalServerBootstrapPackageResponse(
     string BundleSha256,
     LocalServerSignedBootstrapBundleResponse SignedBundle,
     LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null,
-    SafarSuiteAppActivationSigningKeyResponse? AppActivationSigningKey = null);
+    SafarSuiteAppActivationSigningKeyResponse? AppActivationSigningKey = null,
+    LocalServerBootstrapSecretReadinessResponse? SecretReadiness = null);
 
 public sealed record LocalServerBootstrapPackageRegisterResponse(
     IReadOnlyCollection<LocalServerBootstrapPackageSummaryResponse> Packages);

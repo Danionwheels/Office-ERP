@@ -347,6 +347,15 @@ export type LocalServerBootstrapPackageSignature = {
   value: string;
 };
 
+export type LocalServerBootstrapSecretReadiness = {
+  status: "Ready" | "Review" | "Blocked" | string;
+  activeKeyId: string;
+  hasActiveSecret: boolean;
+  warnings: string[];
+  requiredEnvironmentVariables: string[];
+  detail: string;
+};
+
 export type LocalServerFirstManagerSetupTokenPayload = {
   formatVersion: string;
   tokenId: string;
@@ -418,6 +427,7 @@ export type LocalServerBootstrapPackage = LocalServerBootstrapPackagePayload & {
   bundleContentType: string;
   bundleSha256: string;
   signedBundle: LocalServerSignedBootstrapBundle;
+  secretReadiness: LocalServerBootstrapSecretReadiness | null;
 };
 
 export type LocalServerBootstrapPackageSummary = {
