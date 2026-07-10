@@ -85,6 +85,7 @@ import {
   listCloudInstallationBootstrapPackages,
   listCloudInstallationAuditEvents,
   listCloudOutboxMessages,
+  markCloudBootstrapPackageHandoff,
   publishCloudOutboxMessages,
   queueCloudInstallationSupportCommand,
   revokeCloudAppActivationIssue
@@ -94,6 +95,7 @@ import { ProviderAccessPanel } from "../../control-cloud/components/ProviderAcce
 import type {
   CloudAppActivationTokenFormInput,
   CloudAppActivationRevocationFormInput,
+  CloudBootstrapPackageHandoffFormInput,
   CloudFirstManagerSetupTokenFormInput,
   CloudOutboxMessage,
   ControlCloudAuditEvent,
@@ -321,6 +323,8 @@ export function ClientDeskPage() {
     useState<LocalServerBootstrapPackage | null>(null);
   const [cloudBootstrapPackages, setCloudBootstrapPackages] =
     useState<LocalServerBootstrapPackageSummary[]>([]);
+  const [bootstrapPackageHandoffForm, setBootstrapPackageHandoffForm] =
+    useState<CloudBootstrapPackageHandoffFormInput>(createDefaultBootstrapPackageHandoffForm());
   const [supportCommandForm, setSupportCommandForm] =
     useState<CloudInstallationSupportCommandFormInput>(createDefaultSupportCommandForm());
   const [queuedSupportCommand, setQueuedSupportCommand] =
@@ -2218,6 +2222,33 @@ export function ClientDeskPage() {
     });
   }
 
+  async function handleMarkCloudBootstrapPackageHandoff(bootstrapPackageId: string) {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
+      const handoff = await markCloudBootstrapPackageHandoff(
+        selectedClient.clientId,
+        savedDeployment.installationId,
+        bootstrapPackageId,
+        {
+          channel: bootstrapPackageHandoffForm.channel,
+          recipient: bootstrapPackageHandoffForm.recipient,
+          markedBy: bootstrapPackageHandoffForm.markedBy,
+          note: bootstrapPackageHandoffForm.note
+        });
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; setup packet handoff was marked."
+      ));
+      await loadCloudBootstrapPackages(selectedClient.clientId, savedDeployment.installationId);
+      await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
+      setMessage(`Setup packet handoff marked for ${handoff.bootstrapPackageId.slice(0, 8)}.`);
+    });
+  }
+
   async function handleQueueCloudSupportCommand() {
     if (selectedClient === null) {
       return;
@@ -3218,6 +3249,7 @@ export function ClientDeskPage() {
                   setupToken={cloudSetupToken}
                   bootstrapPackage={cloudBootstrapPackage}
                   bootstrapPackages={cloudBootstrapPackages}
+                  bootstrapPackageHandoffValue={bootstrapPackageHandoffForm}
                   supportCommandValue={supportCommandForm}
                   queuedSupportCommand={queuedSupportCommand}
                   appActivationValue={appActivationForm}
@@ -3240,6 +3272,8 @@ export function ClientDeskPage() {
                   onCreateSetupToken={handleCreateCloudSetupToken}
                   onCreateBootstrapPackage={handleCreateCloudBootstrapPackage}
                   onRefreshBootstrapPackages={handleRefreshCloudBootstrapPackages}
+                  onBootstrapPackageHandoffValueChange={setBootstrapPackageHandoffForm}
+                  onMarkBootstrapPackageHandoff={handleMarkCloudBootstrapPackageHandoff}
                   onSupportCommandValueChange={handleSupportCommandValueChange}
                   onQueueSupportCommand={handleQueueCloudSupportCommand}
                   onAppActivationValueChange={handleAppActivationValueChange}
@@ -3349,6 +3383,15 @@ function createDefaultSupportCommandForm(): CloudInstallationSupportCommandFormI
   };
 }
 
+function createDefaultBootstrapPackageHandoffForm(): CloudBootstrapPackageHandoffFormInput {
+  return {
+    channel: "Secure email",
+    recipient: "",
+    markedBy: "SafarSuite Control Desk",
+    note: ""
+  };
+}
+
 function createDefaultAppActivationForm(): CloudAppActivationTokenFormInput {
   return {
     activationRequestId: "",
@@ -3366,7 +3409,9 @@ function createDefaultFirstManagerSetupTokenForm(): CloudFirstManagerSetupTokenF
     managerDisplayName: "First Manager",
     managerEmail: "",
     createdBy: "SafarSuite Control Desk",
-    expiresInHours: "24"
+    expiresInHours: "24",
+    purpose: "FirstManagerBootstrap",
+    recoveryReason: "Provider-assisted manager recovery"
   };
 }
 
@@ -3662,7 +3707,9 @@ function toCloudFirstManagerSetupTokenInput(
     managerDisplayName: value.managerDisplayName.trim(),
     managerEmail: value.managerEmail.trim(),
     createdBy: value.createdBy.trim(),
-    expiresInHours: parseSetupTokenHours(value.expiresInHours)
+    expiresInHours: parseSetupTokenHours(value.expiresInHours),
+    purpose: value.purpose,
+    recoveryReason: value.recoveryReason.trim()
   };
 }
 

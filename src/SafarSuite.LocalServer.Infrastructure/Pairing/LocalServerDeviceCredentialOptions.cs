@@ -9,4 +9,8 @@ public sealed class LocalServerDeviceCredentialOptions
     public string SigningSecret { get; set; } = string.Empty;
 
     public int ExpiresInDays { get; set; } = 3650;
+
+    public int RefreshWindowDays { get; set; } = 30;
+
+    public int RefreshGraceHours { get; set; } = 24;
 }

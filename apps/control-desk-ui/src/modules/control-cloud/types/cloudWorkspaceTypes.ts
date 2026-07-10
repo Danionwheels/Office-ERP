@@ -7,6 +7,7 @@ import type {
   CloudAppActivationRevocationFormInput,
   CloudAppActivationTokenFormInput,
   CloudFirstManagerSetupTokenFormInput,
+  CloudBootstrapPackageHandoffFormInput,
   CloudInstallationSupportCommandFormInput,
   CloudOutboxMessage,
   ControlCloudAuditEvent,
@@ -36,6 +37,7 @@ export type CloudInstallationStatusPanelProps = {
   setupToken: LocalServerSetupToken | null;
   bootstrapPackage: LocalServerBootstrapPackage | null;
   bootstrapPackages: LocalServerBootstrapPackageSummary[];
+  bootstrapPackageHandoffValue: CloudBootstrapPackageHandoffFormInput;
   supportCommandValue: CloudInstallationSupportCommandFormInput;
   queuedSupportCommand: QueuedCloudInstallationSupportCommand | null;
   appActivationValue: CloudAppActivationTokenFormInput;
@@ -58,6 +60,8 @@ export type CloudInstallationStatusPanelProps = {
   onCreateSetupToken: () => Promise<void>;
   onCreateBootstrapPackage: () => Promise<void>;
   onRefreshBootstrapPackages: () => Promise<void>;
+  onBootstrapPackageHandoffValueChange: (value: CloudBootstrapPackageHandoffFormInput) => void;
+  onMarkBootstrapPackageHandoff: (bootstrapPackageId: string) => Promise<void>;
   onSupportCommandValueChange: (value: CloudInstallationSupportCommandFormInput) => void;
   onQueueSupportCommand: () => Promise<void>;
   onAppActivationValueChange: (value: CloudAppActivationTokenFormInput) => void;

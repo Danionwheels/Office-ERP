@@ -320,6 +320,8 @@ app_activation_public_key_pem="${SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM:-${Act
 app_device_signing_key_id="${SAFARSUITE_APP_DEVICE_SIGNING_KEY_ID:-${DeviceCredentials__SigningKeyId:-safarsuite-app-device-local}}"
 app_device_signing_secret="${SAFARSUITE_APP_DEVICE_SIGNING_SECRET:-${DeviceCredentials__SigningSecret:-}}"
 app_device_credential_expires_days="${SAFARSUITE_APP_DEVICE_CREDENTIAL_EXPIRES_DAYS:-${DeviceCredentials__ExpiresInDays:-3650}}"
+app_device_credential_refresh_window_days="${SAFARSUITE_APP_DEVICE_CREDENTIAL_REFRESH_WINDOW_DAYS:-${DeviceCredentials__RefreshWindowDays:-30}}"
+app_device_credential_refresh_grace_hours="${SAFARSUITE_APP_DEVICE_CREDENTIAL_REFRESH_GRACE_HOURS:-${DeviceCredentials__RefreshGraceHours:-24}}"
 app_session_signing_key_id="${SAFARSUITE_APP_SESSION_SIGNING_KEY_ID:-${UserSessions__SigningKeyId:-safarsuite-app-session-local}}"
 app_session_signing_secret="${SAFARSUITE_APP_SESSION_SIGNING_SECRET:-${UserSessions__SigningSecret:-}}"
 first_manager_allow_setup_code_fallback="${SAFARSUITE_FIRST_MANAGER_ALLOW_SETUP_CODE_FALLBACK:-${FirstManagerBootstrap__AllowSetupCodeFallback:-false}}"
@@ -476,6 +478,8 @@ ActivationSigning__PublicKeyPem=$app_activation_public_key_pem
 DeviceCredentials__SigningKeyId=$app_device_signing_key_id
 DeviceCredentials__SigningSecret=$app_device_signing_secret
 DeviceCredentials__ExpiresInDays=$app_device_credential_expires_days
+DeviceCredentials__RefreshWindowDays=$app_device_credential_refresh_window_days
+DeviceCredentials__RefreshGraceHours=$app_device_credential_refresh_grace_hours
 UserSessions__SigningKeyId=$app_session_signing_key_id
 UserSessions__SigningSecret=$app_session_signing_secret
 FirstManagerBootstrap__AllowSetupCodeFallback=$first_manager_allow_setup_code_fallback
@@ -613,6 +617,7 @@ services:
         condition: service_started
     ports:
       - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280"
+      - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280/udp"
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:5280
       SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-https://local-api:8080}

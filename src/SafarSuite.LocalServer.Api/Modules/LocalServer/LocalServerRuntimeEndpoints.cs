@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 using SafarSuite.LocalServer.Application.Commands.GetAppActivationRevocationStatus;
 using SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommandsFromBootstrapConfiguration;
@@ -13,11 +14,14 @@ using SafarSuite.LocalServer.Application.Registration.RegisterInstallationFromBo
 using SafarSuite.LocalServer.Domain.Entitlements;
 using SafarSuite.LocalServer.Domain.Pairing;
 using SafarSuite.LocalServer.Domain.Registration;
+using SafarSuite.LocalServer.Infrastructure.Pairing;
 
 namespace SafarSuite.LocalServer.Api.Modules.LocalServer;
 
 public static class LocalServerRuntimeEndpoints
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     public static IEndpointRouteBuilder MapLocalServerRuntimeEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
@@ -43,8 +47,14 @@ public static class LocalServerRuntimeEndpoints
         group.MapPost("/pairing/manager-sessions", CreateManagerSessionAsync)
             .WithName("CreateLocalServerManagerSession");
 
+        group.MapGet("/pairing/descriptor", GetPairingDescriptorAsync)
+            .WithName("GetLocalServerPairingDescriptor");
+
         group.MapPost("/device-credentials/verify", VerifyDeviceCredentialAsync)
             .WithName("VerifyLocalServerDeviceCredential");
+
+        group.MapPost("/device-credentials/refresh", RefreshDeviceCredentialAsync)
+            .WithName("RefreshLocalServerDeviceCredential");
 
         group.MapGet("/devices", ListDevicesAsync)
             .WithName("ListLocalServerDevices");
@@ -373,19 +383,27 @@ public static class LocalServerRuntimeEndpoints
                 "First-manager setup token can only approve a pending device pairing request.");
         }
 
+        var tokenPurpose = ResolveFirstManagerSetupTokenPurpose(payload);
+        var assignedRole = string.Equals(
+            tokenPurpose,
+            LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+            StringComparison.Ordinal)
+            ? "ManagerApprovedDevice"
+            : "FirstManagerDevice";
         var deviceCredentialId = Guid.NewGuid();
         var signedDeviceCredential = deviceCredentialService.Issue(
             record,
             deviceCredentialId,
-            "FirstManagerDevice",
+            assignedRole,
             importedAtUtc);
         var deviceCredential = signedDeviceCredential.CompactToken;
         var approved = record.Approve(
-            BuildFirstManagerActor(payload),
-            "FirstManagerDevice",
+            BuildFirstManagerSetupTokenActor(payload),
+            assignedRole,
             deviceCredentialId.ToString("D"),
             Sha256Hex(deviceCredential),
-            importedAtUtc);
+            importedAtUtc,
+            signedDeviceCredential.Payload.ExpiresAtUtc);
         var consumption = new LocalServerFirstManagerSetupTokenConsumptionRecord(
             payload.TokenId,
             payload.ClientId,
@@ -427,7 +445,11 @@ public static class LocalServerRuntimeEndpoints
             signature.KeyId.Trim(),
             signature.PayloadSha256,
             importedAtUtc,
-            signedDeviceCredential));
+            signedDeviceCredential,
+            tokenPurpose,
+            NormalizeOptional(payload.RecoveryReason, 500),
+            payload.AllowedActions,
+            assignedRole));
     }
 
     private static async Task<IResult> CreateManagerSessionAsync(
@@ -460,9 +482,10 @@ public static class LocalServerRuntimeEndpoints
                 "A paired manager device credential is required before creating a manager session.");
         }
 
+        var verifiedAtUtc = DateTimeOffset.UtcNow;
         var credentialVerification = deviceCredentialService.Verify(
             credential,
-            DateTimeOffset.UtcNow);
+            verifiedAtUtc);
 
         if (!credentialVerification.IsSuccess)
         {
@@ -492,13 +515,17 @@ public static class LocalServerRuntimeEndpoints
 
         var device = await pairingStore.GetByDeviceIdAsync(request.DeviceId, cancellationToken);
         var credentialId = payload.CredentialId.ToString("D");
+        var credentialMatch = MatchDeviceCredential(
+            device,
+            credentialId,
+            credential,
+            verifiedAtUtc);
 
         if (device is null
             || device.ClientId != configuration.ClientId
             || !string.Equals(device.InstallationId, configuration.InstallationId, StringComparison.Ordinal)
             || device.PairingRequestId != payload.PairingRequestId
-            || !string.Equals(device.DeviceCredentialId, credentialId, StringComparison.Ordinal)
-            || !string.Equals(device.DeviceCredentialSha256, Sha256Hex(credential), StringComparison.Ordinal)
+            || !credentialMatch.IsMatch
             || !string.Equals(device.DevicePublicKeySha256, payload.DevicePublicKeySha256, StringComparison.Ordinal))
         {
             return ToFailureResult(
@@ -515,6 +542,78 @@ public static class LocalServerRuntimeEndpoints
         return issueResult.IsSuccess
             ? Results.Ok(issueResult.Session)
             : ToFailureResult(issueResult.FailureCode, issueResult.Detail);
+    }
+
+    private static async Task<IResult> GetPairingDescriptorAsync(
+        HttpRequest httpRequest,
+        LocalServerPairingOptions pairingOptions,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        LocalServerManagerSessionService managerSessionService,
+        ILocalServerDeviceCredentialService deviceCredentialService,
+        CancellationToken cancellationToken)
+    {
+        var session = await AuthorizeManagerSessionAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            managerSessionService,
+            cancellationToken);
+
+        if (session.Failure is not null)
+        {
+            return session.Failure;
+        }
+
+        var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
+
+        if (configuration is null)
+        {
+            return ToFailureResult(
+                "BootstrapConfigurationMissing",
+                "A verified bootstrap configuration is required before exporting a pairing descriptor.");
+        }
+
+        var generatedAtUtc = DateTimeOffset.UtcNow;
+        var unsignedDescriptor = new LocalServerPairingDescriptorResponse(
+            LocalServerPairingFormats.PairingDescriptorVersion,
+            configuration.ClientId,
+            configuration.InstallationId,
+            configuration.BootstrapPackageId,
+            configuration.SetupTokenId,
+            ResolvePairingDisplayName(pairingOptions, configuration),
+            null,
+            configuration.DeploymentProfile.SiteId,
+            configuration.DeploymentProfile.SiteRole,
+            null,
+            null,
+            configuration.DeploymentProfile.BranchCode ?? configuration.DeploymentProfile.SiteId,
+            null,
+            ToOptional(pairingOptions.TlsCaSha256),
+            ToOptional(pairingOptions.TlsCertificateSha256),
+            ToOptional(pairingOptions.ServerPairingKeySha256),
+            BuildUrlCandidates(httpRequest, pairingOptions),
+            generatedAtUtc,
+            generatedAtUtc.AddHours(pairingOptions.RequestExpiresInHours),
+            "LocalServerLivePairingDescriptor",
+            configuration.PayloadSha256,
+            configuration.SignatureKeyId,
+            Notes:
+            [
+                "This descriptor was exported by the installed LocalServer after a local manager session was verified.",
+                "It does not contain setup-token plaintext, provider credentials, database credentials, activation tokens, or device credentials.",
+                "The SafarSuite Windows app must still validate the live LocalServer hello response and require fingerprint confirmation before trust is written."
+            ]);
+        var payloadJson = JsonSerializer.Serialize(unsignedDescriptor, JsonOptions);
+        var signature = deviceCredentialService.SignPayloadJson(payloadJson);
+
+        return Results.Ok(unsignedDescriptor with
+        {
+            SignatureAlgorithm = signature.Algorithm,
+            SignatureKeyId = signature.KeyId,
+            PayloadSha256 = signature.PayloadSha256,
+            Signature = signature.Value
+        });
     }
 
     private static async Task<IResult> VerifyDeviceCredentialAsync(
@@ -567,13 +666,17 @@ public static class LocalServerRuntimeEndpoints
 
         var device = await pairingStore.GetByDeviceIdAsync(payload.DeviceId, cancellationToken);
         var credentialId = payload.CredentialId.ToString("D");
+        var credentialMatch = MatchDeviceCredential(
+            device,
+            credentialId,
+            credential,
+            verifiedAtUtc);
 
         if (device is null
             || device.ClientId != configuration.ClientId
             || !string.Equals(device.InstallationId, configuration.InstallationId, StringComparison.Ordinal)
             || device.PairingRequestId != payload.PairingRequestId
-            || !string.Equals(device.DeviceCredentialId, credentialId, StringComparison.Ordinal)
-            || !string.Equals(device.DeviceCredentialSha256, Sha256Hex(credential), StringComparison.Ordinal)
+            || !credentialMatch.IsMatch
             || !string.Equals(device.DevicePublicKeySha256, payload.DevicePublicKeySha256, StringComparison.Ordinal))
         {
             return ToFailureResult(
@@ -595,11 +698,141 @@ public static class LocalServerRuntimeEndpoints
             device.DeviceId,
             device.DeviceStatus,
             device.AssignedRole ?? payload.AssignedRole,
-            device.DeviceCredentialId ?? credentialId,
+            credentialMatch.CredentialId ?? credentialId,
             IsManagerCapableDevice(device),
             payload.IssuedAtUtc,
             payload.ExpiresAtUtc,
             verifiedAtUtc));
+    }
+
+    private static async Task<IResult> RefreshDeviceCredentialAsync(
+        HttpRequest httpRequest,
+        RefreshLocalServerDeviceCredentialRequest? request,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        ILocalServerDeviceCredentialService deviceCredentialService,
+        LocalServerDeviceCredentialOptions credentialOptions,
+        CancellationToken cancellationToken)
+    {
+        var credential = NormalizeRequired(
+            request?.DeviceCredential ?? ReadDeviceCredentialHeader(httpRequest),
+            8192);
+
+        if (credential is null)
+        {
+            return ToFailureResult(
+                "DeviceCredentialRequired",
+                "A device credential is required before refreshing device access.");
+        }
+
+        var refreshedAtUtc = DateTimeOffset.UtcNow;
+        var credentialVerification = deviceCredentialService.Verify(
+            credential,
+            refreshedAtUtc);
+
+        if (!credentialVerification.IsSuccess)
+        {
+            return ToFailureResult(
+                credentialVerification.FailureCode,
+                credentialVerification.Detail);
+        }
+
+        var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
+        if (configuration is null)
+        {
+            return ToFailureResult(
+                "BootstrapConfigurationMissing",
+                "A verified bootstrap configuration is required before refreshing device access.");
+        }
+
+        var payload = credentialVerification.Payload!;
+        if (payload.ClientId != configuration.ClientId
+            || !string.Equals(payload.InstallationId, configuration.InstallationId, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "DeviceCredentialScopeMismatch",
+                "Device credential belongs to another client or LocalServer installation.");
+        }
+
+        var device = await pairingStore.GetByDeviceIdAsync(payload.DeviceId, cancellationToken);
+        var credentialId = payload.CredentialId.ToString("D");
+        var credentialMatch = MatchDeviceCredential(
+            device,
+            credentialId,
+            credential,
+            refreshedAtUtc);
+
+        if (device is null
+            || device.ClientId != configuration.ClientId
+            || !string.Equals(device.InstallationId, configuration.InstallationId, StringComparison.Ordinal)
+            || device.PairingRequestId != payload.PairingRequestId
+            || !credentialMatch.IsMatch
+            || !string.Equals(device.DevicePublicKeySha256, payload.DevicePublicKeySha256, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "DeviceCredentialInvalid",
+                "Device credential is not valid for this LocalServer device.");
+        }
+
+        if (!string.Equals(device.DeviceStatus, LocalServerDevicePairingRecordStatuses.Approved, StringComparison.Ordinal))
+        {
+            return ToFailureResult(
+                "DeviceCredentialStatusInvalid",
+                "Device credential is not active for an approved device.");
+        }
+
+        var refreshWindowDays = Math.Clamp(credentialOptions.RefreshWindowDays, 1, 3650);
+        var shouldRotate = credentialMatch.IsPrevious
+            || (payload.ExpiresAtUtc is not null
+                && payload.ExpiresAtUtc <= refreshedAtUtc.AddDays(refreshWindowDays));
+
+        if (!shouldRotate)
+        {
+            return Results.Ok(ToRefreshResponse(
+                device,
+                payload,
+                credentialMatch,
+                rotated: false,
+                deviceCredential: null,
+                signedDeviceCredential: null,
+                refreshedAtUtc));
+        }
+
+        var newCredentialId = Guid.NewGuid();
+        var assignedRole = NormalizeRequired(device.AssignedRole, 80) ?? payload.AssignedRole;
+        var signedDeviceCredential = deviceCredentialService.Issue(
+            device,
+            newCredentialId,
+            assignedRole,
+            refreshedAtUtc);
+        var newCredential = signedDeviceCredential.CompactToken;
+        var previousGraceUntilUtc = ResolvePreviousCredentialGraceUntil(
+            payload.ExpiresAtUtc,
+            refreshedAtUtc,
+            credentialOptions.RefreshGraceHours);
+        var refreshed = device.RefreshCredential(
+            NormalizeRequired(request?.RequestedBy, 160)
+                ?? $"device-credential-refresh:{device.DeviceId:D}",
+            newCredentialId.ToString("D"),
+            Sha256Hex(newCredential),
+            refreshedAtUtc,
+            signedDeviceCredential.Payload.ExpiresAtUtc,
+            previousGraceUntilUtc);
+
+        await pairingStore.SaveAsync(refreshed, cancellationToken);
+
+        return Results.Ok(ToRefreshResponse(
+            refreshed,
+            signedDeviceCredential.Payload,
+            new DeviceCredentialMatch(
+                true,
+                false,
+                refreshed.DeviceCredentialId,
+                refreshed.DeviceCredentialSha256),
+            rotated: true,
+            newCredential,
+            signedDeviceCredential,
+            refreshedAtUtc));
     }
 
     private static async Task<IResult> ListDevicesAsync(
@@ -738,7 +971,8 @@ public static class LocalServerRuntimeEndpoints
             assignedRole,
             deviceCredentialId.ToString("D"),
             Sha256Hex(deviceCredential),
-            approvedAtUtc);
+            approvedAtUtc,
+            signedDeviceCredential.Payload.ExpiresAtUtc);
 
         await pairingStore.SaveAsync(approved, cancellationToken);
 
@@ -1206,6 +1440,85 @@ public static class LocalServerRuntimeEndpoints
             record.RevocationReason);
     }
 
+    private static RefreshLocalServerDeviceCredentialResponse ToRefreshResponse(
+        LocalServerDevicePairingRecord device,
+        LocalServerDeviceCredentialPayloadResponse payload,
+        DeviceCredentialMatch credentialMatch,
+        bool rotated,
+        string? deviceCredential,
+        LocalServerSignedDeviceCredentialResponse? signedDeviceCredential,
+        DateTimeOffset refreshedAtUtc)
+    {
+        return new RefreshLocalServerDeviceCredentialResponse(
+            device.ClientId,
+            device.InstallationId,
+            device.PairingRequestId,
+            device.DeviceId,
+            device.DeviceStatus,
+            device.AssignedRole ?? payload.AssignedRole,
+            IsManagerCapableDevice(device),
+            rotated,
+            deviceCredential,
+            signedDeviceCredential,
+            credentialMatch.CredentialId ?? payload.CredentialId.ToString("D"),
+            payload.IssuedAtUtc,
+            payload.ExpiresAtUtc,
+            device.PreviousDeviceCredentialId,
+            device.PreviousDeviceCredentialValidUntilUtc,
+            refreshedAtUtc);
+    }
+
+    private static DeviceCredentialMatch MatchDeviceCredential(
+        LocalServerDevicePairingRecord? device,
+        string credentialId,
+        string credential,
+        DateTimeOffset verifiedAtUtc)
+    {
+        if (device is null)
+        {
+            return DeviceCredentialMatch.NoMatch;
+        }
+
+        var credentialSha256 = Sha256Hex(credential);
+
+        if (string.Equals(device.DeviceCredentialId, credentialId, StringComparison.Ordinal)
+            && string.Equals(device.DeviceCredentialSha256, credentialSha256, StringComparison.Ordinal))
+        {
+            return new DeviceCredentialMatch(
+                true,
+                false,
+                device.DeviceCredentialId,
+                device.DeviceCredentialSha256);
+        }
+
+        if (device.PreviousDeviceCredentialValidUntilUtc is not null
+            && device.PreviousDeviceCredentialValidUntilUtc > verifiedAtUtc
+            && string.Equals(device.PreviousDeviceCredentialId, credentialId, StringComparison.Ordinal)
+            && string.Equals(device.PreviousDeviceCredentialSha256, credentialSha256, StringComparison.Ordinal))
+        {
+            return new DeviceCredentialMatch(
+                true,
+                true,
+                device.PreviousDeviceCredentialId,
+                device.PreviousDeviceCredentialSha256);
+        }
+
+        return DeviceCredentialMatch.NoMatch;
+    }
+
+    private static DateTimeOffset ResolvePreviousCredentialGraceUntil(
+        DateTimeOffset? credentialExpiresAtUtc,
+        DateTimeOffset refreshedAtUtc,
+        int configuredGraceHours)
+    {
+        var graceHours = Math.Clamp(configuredGraceHours, 1, 168);
+        var graceUntilUtc = refreshedAtUtc.AddHours(graceHours);
+
+        return credentialExpiresAtUtc is null || credentialExpiresAtUtc > graceUntilUtc
+            ? graceUntilUtc
+            : credentialExpiresAtUtc.Value;
+    }
+
     private static LocalServerDeploymentProfileResponse ToDeploymentProfileResponse(
         LocalServerBootstrapDeploymentProfile profile)
     {
@@ -1344,14 +1657,32 @@ public static class LocalServerRuntimeEndpoints
             || string.Equals(device.AssignedRole, "ManagerApprovedDevice", StringComparison.Ordinal);
     }
 
-    private static string BuildFirstManagerActor(
+    private static string BuildFirstManagerSetupTokenActor(
         LocalServerFirstManagerSetupTokenPayloadResponse payload)
     {
         var manager = NormalizeRequired(payload.ManagerEmail, 160)
             ?? NormalizeRequired(payload.ManagerDisplayName, 160)
             ?? "first-manager";
 
-        return $"first-manager:{manager}";
+        return string.Equals(
+            ResolveFirstManagerSetupTokenPurpose(payload),
+            LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+            StringComparison.Ordinal)
+            ? $"manager-recovery:{manager}"
+            : $"first-manager:{manager}";
+    }
+
+    private static string ResolveFirstManagerSetupTokenPurpose(
+        LocalServerFirstManagerSetupTokenPayloadResponse payload)
+    {
+        var normalized = NormalizeRequired(payload.Purpose, 80);
+
+        return string.Equals(
+            normalized,
+            LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+            StringComparison.Ordinal)
+            ? LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery
+            : LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap;
     }
 
     private static string Sha256Hex(string value)
@@ -1476,6 +1807,19 @@ public static class LocalServerRuntimeEndpoints
         string? Actor,
         LocalServerDevicePairingRecord? Device,
         IResult? Failure);
+
+    private sealed record DeviceCredentialMatch(
+        bool IsMatch,
+        bool IsPrevious,
+        string? CredentialId,
+        string? CredentialSha256)
+    {
+        public static DeviceCredentialMatch NoMatch { get; } = new(
+            false,
+            false,
+            null,
+            null);
+    }
 }
 
 public sealed record LocalServerRuntimeStatusResponse(

@@ -8,11 +8,13 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallati
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudFirstManagerSetupToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudPairingDescriptor;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudAppActivationIssues;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationBootstrapPackages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationAuditEvents;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListProviderAccessOperators;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.MarkCloudInstallationBootstrapPackageHandoff;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.QueueCloudInstallationSupportCommand;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorPassword;
@@ -74,6 +76,9 @@ public static class ControlCloudEndpoints
         group.MapGet(
             "/clients/{clientId:guid}/installations/{installationId}/bootstrap-packages",
             ListBootstrapPackagesAsync);
+        group.MapPost(
+            "/clients/{clientId:guid}/installations/{installationId}/bootstrap-packages/{bootstrapPackageId:guid}/handoff",
+            MarkBootstrapPackageHandoffAsync);
         group.MapGet(
             "/clients/{clientId:guid}/installations/{installationId}/audit-events",
             ListInstallationAuditEventsAsync);
@@ -95,6 +100,9 @@ public static class ControlCloudEndpoints
         group.MapPost(
             "/clients/{clientId:guid}/installations/{installationId}/first-manager-setup-token",
             IssueFirstManagerSetupTokenAsync);
+        group.MapPost(
+            "/clients/{clientId:guid}/installations/{installationId}/pairing-descriptor",
+            IssuePairingDescriptorAsync);
         group.MapPost("/outbox-messages/publish", PublishOutboxMessagesAsync);
         group.MapPost("/outbox-messages/publish-local", PublishOutboxMessagesAsync);
 
@@ -349,6 +357,30 @@ public static class ControlCloudEndpoints
             : Results.Ok(result.Value);
     }
 
+    private static async Task<IResult> MarkBootstrapPackageHandoffAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        MarkLocalServerBootstrapPackageHandoffRequest request,
+        MarkCloudInstallationBootstrapPackageHandoffHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new MarkCloudInstallationBootstrapPackageHandoffCommand(
+                clientId,
+                installationId,
+                bootstrapPackageId,
+                request.Channel,
+                request.Recipient,
+                request.MarkedBy,
+                request.Note),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
     private static async Task<IResult> ListInstallationAuditEventsAsync(
         Guid clientId,
         string installationId,
@@ -443,7 +475,38 @@ public static class ControlCloudEndpoints
                 request.ManagerDisplayName,
                 request.ManagerEmail,
                 request.CreatedBy,
-                request.ExpiresInHours),
+                request.ExpiresInHours,
+                request.Purpose,
+                request.RecoveryReason),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(result.Value);
+    }
+
+    private static async Task<IResult> IssuePairingDescriptorAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerPairingDescriptorRequest request,
+        IssueCloudPairingDescriptorHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new IssueCloudPairingDescriptorCommand(
+                clientId,
+                installationId,
+                request.BootstrapPackageId,
+                request.SetupTokenId,
+                request.ClientCode,
+                request.CustomerName,
+                request.AppServerInstallationId,
+                request.FingerprintHash,
+                request.UrlCandidates,
+                request.TlsCaSha256,
+                request.TlsCertificateSha256,
+                request.ServerPairingKeySha256,
+                request.RequestedBy),
             cancellationToken);
 
         return result.IsFailure

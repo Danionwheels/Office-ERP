@@ -10,6 +10,7 @@ public sealed class ListCloudInstallationAuditEventsHandler
     {
         "SetupTokenCreated",
         "BootstrapPackageGenerated",
+        "BootstrapPackageHandedOff",
         "LocalServerRegistrationAccepted",
         "LocalServerRegistrationRejected",
         "LocalServerDiagnosticsUploaded",

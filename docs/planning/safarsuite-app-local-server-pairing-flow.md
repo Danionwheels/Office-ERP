@@ -2,7 +2,7 @@
 
 Date added: 2026-07-09
 
-Status: Client Portal pairing status visibility wired
+Status: Windows app v1/manual discovery, native LAN candidate generation, UDP broadcast discovery, protected pairing storage, signed descriptor handoff, manager recovery, LocalServer credential refresh, and pre-login credential maintenance wired; unrecognized-device abuse controls are recorded for later security hardening; mDNS/DNS-SD remains optional
 
 Purpose: define how a SafarSuite Windows app finds, trusts, activates against, and keeps using the client-site LocalServer without repeated client-side setup.
 
@@ -20,7 +20,71 @@ Purpose: define how a SafarSuite Windows app finds, trusts, activates against, a
 - [x] Add local manager bearer sessions and require them for device list/approval/suspend/revoke routes.
 - [x] Add Control Desk visibility for first device approved and pairing-mode status through heartbeat/status.
 - [x] Add Client Portal visibility for first device approved and pairing-mode status.
-- [ ] Add Windows app LAN/manual discovery and protected pairing profile storage in the SafarSuite app workspace.
+- [x] Add Windows app v1/manual URL discovery and protected pairing profile storage in the SafarSuite app workspace.
+- [x] Add Windows app LAN candidate probing, descriptor import, and fingerprint confirmation UI.
+- [x] Add native Tauri LAN candidate generation from local host/network context.
+- [x] Add Control Desk customer setup packet pairing descriptor download for cloud-assisted/offline-assisted discovery hints.
+- [x] Add Control Cloud-issued signed pairing descriptor export through the bootstrap signing-key lane.
+- [x] Add manager-gated LocalServer live pairing descriptor export for support/replacement handoff.
+- [x] Add explicit provider-assisted manager recovery token purpose and Control Desk ceremony.
+- [x] Add LocalServer device credential refresh so approved devices can rotate credentials without repeating setup.
+- [x] Add native Windows UDP broadcast discovery for deployment networks that need active service discovery beyond DNS/subnet candidates.
+- [ ] Add unrecognized-device abuse controls: rate limits, pending-request caps, duplicate coalescing, request-size limits, quarantine/deny controls, and observability for noisy LAN clients.
+- [ ] Add native Windows mDNS/DNS-SD service browsing only if customer networks need multicast DNS advertisements.
+
+## App Workspace Verification - 2026-07-09
+
+Verified app workspace:
+
+```text
+C:\Users\Daniyal\Documents\Codex\2026-06-09\hello-there-2
+```
+
+Completed in the app workspace:
+
+- Windows client now prefers `GET /.well-known/safarsuite-local-server` and `POST /api/v1/local-server/pairing/hello` before legacy discovery.
+- Windows client asks the Tauri shell for native LAN candidate URLs from loopback names, local machine names, default SafarSuite LAN names, and likely private-subnet gateway/static hosts before probing each candidate.
+- Windows client pairing requests/status calls prefer `/api/v1/local-server/pairing/...` and fall back to the older app-local routes.
+- Windows client pairing profiles retain server URL candidates, last-seen time, LocalServer installation id, fingerprint, server pairing key hash, TLS hash placeholders, device credential metadata, and a local private-key reference.
+- Tauri protected storage now writes the local-client secret as a Windows DPAPI current-user JSON envelope and still reads legacy plaintext payloads.
+- App LocalServer exposes v1 pairing hello, v1 pairing request/status aliases, v1 device list/action aliases, and `POST /api/v1/local-server/device-credentials/verify`.
+- App LocalServer now exposes non-authoritative UDP discovery on `LocalServerDiscovery:UdpPort` (default `5280`), and Tauri `discover_local_servers` emits `NativeBroadcast` candidates from UDP responses while still requiring HTTP identity validation and fingerprint confirmation before trust.
+- Windows client live discovery smoke exercises the native-candidate merge path against the Docker LocalServer, then requires fingerprint confirmation before writing trust.
+- Installed Windows client discovery smoke drives the packaged pre-login DOM over WebView2 CDP, starts from a dead URL, scans LAN candidates, confirms the Docker LocalServer fingerprint, and writes trust.
+- Windows client pairing smoke proves descriptor import pins the app LocalServer fingerprint, rejects mismatched descriptor fingerprints before trust, reuses the approved device credential without repeating setup, and blocks revoked credentials client-side.
+- Windows client pre-login pairing profile refresh now verifies the trusted LocalServer identity, verifies/refreshes stored approved device credentials, persists rotated credential metadata, and can consume an already-approved pending request before sign-in without creating a new pairing request.
+- Installed Windows client pairing smoke drives the packaged pre-login DOM against a deterministic v1 LocalServer stub, creates one pending device request, approves it, stores the issued credential, relaunches the installed app, and signs in again without repeating setup.
+- Installed Windows client Docker pairing smoke activates an isolated Compose LocalServer, bootstraps a real manager device/admin, approves the installed app through the Docker manager API, stores the Docker-issued credential, relaunches, and signs in again without adding another device row.
+
+Verified commands:
+
+```powershell
+cargo check --manifest-path apps/windows-client/src-tauri/Cargo.toml
+npm run build
+npm run smoke:client-pairing
+dotnet build SafarSuite.sln --no-restore
+dotnet run --project tests\ProductKernelGuardSmoke\ProductKernelGuardSmoke.csproj --no-build
+docker compose -f docker-compose.runtime.yml up -d --build safarsuite-app
+npm run smoke:local-discovery
+npm run smoke:installed-discovery
+npm run smoke:installed-pairing
+npm run smoke:installed-docker-pairing
+npm run tauri -- build
+node --check apps/windows-client/scripts/installed-docker-pairing-cdp-smoke.mjs
+```
+
+Docker runtime proof:
+
+- `GET http://localhost:5280/.well-known/safarsuite-local-server` returned `safarsuite-local-server-discovery-v1`.
+- `POST http://localhost:5280/api/v1/local-server/pairing/hello` returned `safarsuite-local-server-pairing-hello-v1` and echoed the client nonce.
+- `POST http://localhost:5280/api/v1/local-server/device-credentials/verify` returned the v1 verification contract with invalid-credential reasons for a dummy credential.
+- `tests\ProductKernelGuardSmoke` passed 42 checks.
+- `npm run smoke:local-discovery` proved native-candidate discovery against the running Docker LocalServer, and `npm run tauri -- build` produced MSI and NSIS installers.
+- A loopback UDP probe against an in-memory LocalServer returned `safarsuite-local-server-discovery-response-v1`, and `docker compose -f docker-compose.runtime.yml config` rendered both TCP and UDP app port mappings.
+- `npm run smoke:installed-discovery` proved the installed desktop UI can scan from a dead URL, select the Docker LocalServer, verify the fingerprint confirmation panel, and persist confirmed trust.
+- `npm run smoke:installed-pairing` proved the installed desktop UI can create a pending device request, receive an approved device credential, sign in, relaunch, verify the stored credential, and sign in again without creating a second pairing request.
+- `npm run smoke:installed-docker-pairing` proved the installed desktop UI against an activated temporary Docker LocalServer with real first-manager bootstrap, first-admin creation, manager-session approval, Docker-issued client credential storage, relaunch reuse, pre-login `lastCredentialVerifiedAt` advancement before second sign-in, and temporary Compose cleanup.
+- The standing Docker runtime volume was missing `platform.local_server_identity.activation_issue_id`; applying only idempotent `migrations/local/platform/0007_add_app_activation_revocation_metadata.sql` fixed the rebuilt image without applying the whole empty-ledger migration set.
 
 ## Decision Summary
 
@@ -61,6 +125,23 @@ After that, the app reconnects silently whenever it can prove it is still talkin
 - Managers can approve, revoke, suspend, retire, and rename devices; create users; assign local roles; reset local user access; and view local audit.
 - Managers cannot alter installation identity, provider trust roots, activation signing keys, paid modules, license dates, app activation issues, provider contracts, pricing, invoices, or Control Cloud truth.
 - First setup is allowed to be guided. Normal office use after successful pairing must not ask the same device to re-import setup files or repeat manager approval.
+- Unapproved devices are untrusted LAN callers. Discovery and pairing endpoints must stay cheap, bounded, auditable, and rate-limited before production security tightening is complete.
+
+## Security Hardening Backlog
+
+Per-device pairing is the correct product shape because it gives LocalServer a separate trust record for every workstation: one device can be approved, revoked, suspended, refreshed, or audited without affecting other approved devices. It also keeps database credentials and provider credentials away from desktop clients.
+
+The risk is that unauthenticated or not-yet-approved LAN callers can still reach discovery, hello, pairing-request, pairing-status, and login-adjacent endpoints. A malicious or broken script on the same network could repeatedly submit pairing requests, poll status, or send oversized/noisy requests. That could waste CPU, grow pending-device storage and logs, clutter the manager queue, consume connection slots, and make support diagnostics noisy even though it should not grant access.
+
+Later security tightening should add:
+
+- Per-IP, per-device-install-id, per-fingerprint, and per-endpoint rate limits for unauthenticated discovery/pairing routes.
+- A bounded pending-device queue with TTL cleanup, duplicate request coalescing, and one active pending request per device install id/fingerprint where possible.
+- Request body size limits, connection limits, short unauthenticated timeouts, and cheap validation before any signing, database write, or expensive work.
+- Exponential backoff or temporary quarantine for repeated failed pairing, bad pairing-secret, bad credential, or bad login attempts.
+- Manager-visible noisy-device indicators with approve/block/quarantine actions, without letting noise hide already-approved devices.
+- Structured metrics/audit for rejected, throttled, duplicate, expired, and quarantined pairing attempts.
+- Optional reverse-proxy or Kestrel limits in generated deployment templates so abuse controls exist below the application layer too.
 
 ## Flow Overview
 
@@ -444,6 +525,16 @@ GET  /api/v1/local-server/modules/{moduleCode}/access
 
 These endpoint names are draft contract names. The real app workspace should own the Windows UI, while this workspace should own shared contracts and LocalServer authority behavior.
 
+## Device Credential Refresh
+
+Approved Windows devices should refresh LocalServer credentials silently during startup/reconnect and before expiry. The default LocalServer device credential lifetime is 3650 days, with refresh enabled during the final 30 days and a 24-hour grace period for the previous credential after rotation.
+
+`POST /api/v1/local-server/device-credentials/refresh` accepts the current credential in `deviceCredential`, `X-SafarSuite-Device-Credential`, or `Authorization: Bearer`. LocalServer verifies the signed credential, client id, installation id, device id, pairing request id, protected public-key hash, local device status, and stored credential hash before it returns a result.
+
+If the current credential is outside the refresh window, the endpoint returns `rotated: false` with the current credential metadata and no replacement secret. If the credential is within the refresh window, or if the caller is still using the previous credential during grace, LocalServer issues a new signed compact credential, stores its hash, records the previous credential id/hash until the grace deadline, and returns `rotated: true` with the new credential for protected client storage.
+
+This keeps approved devices on a one-time pairing model. The user does not repeat setup for ordinary expiry rotation; manager/provider involvement is only needed when the credential is revoked, expired beyond grace, bound to a replaced LocalServer installation id, or the local protected client profile is lost.
+
 ## Cloud-Assisted Behavior
 
 Cloud-assisted mode should improve setup guidance without changing runtime authority.
@@ -484,6 +575,72 @@ Offline packet exclusions:
 
 The same LocalServer pairing request, token import, manager approval, device credential, and local audit paths are used in offline mode.
 
+## Control Desk Pairing Descriptor Handoff
+
+Control Desk now downloads a customer-safe descriptor beside the bootstrap guide and signed bundle:
+
+```json
+{
+  "formatVersion": "safarsuite-local-pairing-descriptor-v1",
+  "clientId": "client-guid",
+  "providerInstallationId": "office-main",
+  "bootstrapPackageId": "package-guid",
+  "setupTokenId": "setup-token-guid",
+  "displayName": "CUSTOMER - MAIN",
+  "appServerInstallationId": "optional-app-localserver-guid",
+  "serverInstallationId": "optional-app-localserver-guid",
+  "fingerprintHash": "optional-app-localserver-fingerprint",
+  "siteId": "main",
+  "siteRole": "Standalone",
+  "customerCode": "CUSTOMER",
+  "branchName": "MAIN",
+  "urlCandidates": [
+    "http://localhost:5280",
+    "http://127.0.0.1:5280",
+    "http://safarsuite-main.lan:5280"
+  ],
+  "generatedAtUtc": "2026-07-09T00:00:00Z",
+  "expiresAtUtc": "2026-07-10T00:00:00Z",
+  "source": "ControlCloudPairingDescriptor",
+  "bootstrapBundleSha256": "sha256",
+  "bootstrapSignatureKeyId": "key-id",
+  "signatureAlgorithm": "HMAC-SHA256",
+  "signatureKeyId": "key-id",
+  "payloadSha256": "unsigned-descriptor-payload-sha256",
+  "signature": "base64-signature"
+}
+```
+
+This descriptor is a setup hint, not an authority token. The normal Control Desk Descriptor action calls Control Cloud to resolve the selected bootstrap package and current activation issue, then signs the unsigned descriptor payload through the same bootstrap trust key lane used by the bootstrap bundle and first-manager setup-token. If the current app activation issue is already known, Control Cloud includes the app LocalServer installation id and fingerprint hash so the Windows client can reject the wrong app server before fingerprint confirmation. If the app server is not activated yet, the descriptor intentionally omits those pins and the Windows client falls back to live hello validation plus manager confirmation.
+
+The descriptor must never contain setup-token plaintext, app activation imports, provider sessions, database credentials, Local API access keys, or signing private keys.
+
+## LocalServer Live Pairing Descriptor Export
+
+The installed LocalServer now also exposes `GET /api/v1/local-server/pairing/descriptor` for support, replacement, and no-repeat-setup recovery flows. Unlike `.well-known` discovery and pairing hello, this export is not anonymous: it requires a short-lived local manager bearer session minted from an approved manager-capable device credential.
+
+The live descriptor uses the same `safarsuite-local-pairing-descriptor-v1` contract, with `source` set to `LocalServerLivePairingDescriptor`. It carries the installed client id, LocalServer installation id, bootstrap package/setup ids for correlation, deployment site/profile hints, URL candidates, TLS and server pairing key hashes, bootstrap payload/signing metadata, and a short freshness window based on the local pairing request expiry. It is signed by the installed LocalServer using the local device-credential HMAC signing lane and returns `signatureAlgorithm`, `signatureKeyId`, `payloadSha256`, and `signature`.
+
+The live descriptor must never contain setup-token plaintext, provider sessions, database credentials, app activation imports, activation tokens, local API access keys, device credentials, or signing private keys. The Windows app still treats it as discovery input only and must validate the live hello response plus manager-confirmed fingerprints before writing trust.
+
+## Manager Recovery Ceremony
+
+The first-manager setup-token lane now carries an explicit signed purpose:
+
+- `FirstManagerBootstrap`: the original first-device ceremony. The signed payload allows `CreateFirstManager` and `ApproveFirstDevice`, and LocalServer approves the pending device as `FirstManagerDevice`.
+- `ManagerRecovery`: the provider-assisted recovery ceremony. The signed payload requires a recovery reason, allows `RecoverManagerAccess` and `ApproveManagerDevice`, and LocalServer approves the pending device as `ManagerApprovedDevice`.
+
+Recovery flow:
+
+1. The replacement manager device discovers or imports a descriptor for the installed LocalServer and creates a normal pending device request.
+2. A provider operator in Control Desk selects `Manager recovery`, enters the pending request id, manager identity, expiry, and recovery reason.
+3. Control Desk asks Control Cloud to issue the signed setup token through the existing bootstrap trust key lane.
+4. The customer imports the signed token into LocalServer through `POST /api/v1/local-server/pairing/first-manager-token/import`.
+5. LocalServer verifies signature, client/install binding, purpose/action pair, expiry, pending request binding, and replay status before approving the recovery device.
+6. The recovered manager device receives a signed compact device credential and can mint a short-lived local manager bearer session.
+
+This flow is for lost/replaced manager devices, not silent device takeover. Already-approved client devices keep using their protected pairing profiles and do not repeat setup unless their device credential is revoked, expired, or bound to a replaced LocalServer installation id.
+
 ## Failure Cases
 
 | Case | Expected behavior |
@@ -493,6 +650,7 @@ The same LocalServer pairing request, token import, manager approval, device cre
 | MITM on LAN | TLS and pairing key checks fail unless the attacker also has the pinned trust material. |
 | Certificate regenerated | Allow refresh only when higher-level LocalServer identity is still proven and manager confirms. |
 | Device cloned | Device key and local credential are bound to protected storage; manager can revoke suspicious duplicate use. |
+| Device credential near expiry | App calls the refresh endpoint silently; LocalServer rotates the credential and keeps the previous credential valid only for the configured grace period. |
 | Manager lost access | Provider-assisted recovery issues a new signed manager recovery/setup token with audit. |
 | LocalServer replaced | New installation id requires provider-controlled replacement or migration flow. |
 | Device revoked while offline | Device is blocked when it next reaches LocalServer; local audit records the attempt. |
@@ -501,21 +659,20 @@ The same LocalServer pairing request, token import, manager approval, device cre
 ## Implementation Slices
 
 1. Add shared pairing contracts and this design note to the app handoff.
-2. Add LocalServer public descriptor and pairing hello endpoints.
+2. Add LocalServer discovery, pairing hello, and manager-gated live descriptor endpoints. Done: `.well-known` discovery and pairing hello are public candidate/trust-probe endpoints, while live descriptor export requires a verified local manager bearer session.
 3. Add pending pairing request storage, manager approval commands, device credential issue/revoke, and device audit.
 4. Add first-manager setup-token import/consume on LocalServer with token replay protection and first-device approval.
 5. Add Control Cloud/Control Desk first-manager setup-token issue/download flow.
 6. Add real manager-session protection for local manager approval endpoints. Done: approved device credentials can mint short-lived local manager bearer sessions, and device list/approval/suspend/revoke routes require that session.
 7. Add final signed device credential verification on app-to-LocalServer calls. Done for the LocalServer authority: approved devices now receive HMAC-signed compact credentials and can verify them through `POST /api/v1/local-server/device-credentials/verify`.
-8. Add Windows app LAN discovery, manual URL, descriptor import, and fingerprint confirmation UI in the SafarSuite app workspace.
-9. Add protected client storage for pairing profiles and silent reconnect across IP changes.
-10. Add Control Desk/Client Portal visibility for first device approved and pairing-mode status. Done: Control Desk and the static Client Portal preview both read the shared installation status pairing snapshot.
-11. Add smoke proofs for online pairing, offline-assisted first manager, revoked device, changed IP same trust, changed certificate manager refresh, and server replacement block.
+8. Add silent device credential refresh on LocalServer. Done: approved devices can call `POST /api/v1/local-server/device-credentials/refresh`, rotate within the configured refresh window, keep the previous credential valid during a short grace period, and avoid repeated client setup for normal credential maintenance.
+9. Add Windows app LAN discovery, manual URL, descriptor import, and fingerprint confirmation UI in the SafarSuite app workspace. Done for the v1/manual URL path, descriptor import, LAN hostname candidate probing, native Tauri host/subnet candidate generation, UDP broadcast discovery, and explicit fingerprint confirmation: the Windows client now prefers `.well-known` plus pairing hello, stores URL candidates and trust pins, and falls back to legacy discovery. Remaining: true mDNS/DNS-SD service browsing only if customer networks need multicast DNS advertisements.
+10. Add protected client storage for pairing profiles and silent reconnect across IP changes. Done for packaged Windows: the Tauri local-client secret is now stored as a Windows DPAPI current-user envelope, with legacy plaintext reads supported and reconnect candidates pinned by server installation/fingerprint/pairing key/TLS hashes.
+11. Add Control Desk/Client Portal visibility for first device approved and pairing-mode status. Done: Control Desk and the static Client Portal preview both read the shared installation status pairing snapshot.
+12. Add smoke proofs for online pairing, offline-assisted first manager, revoked device, changed IP same trust, changed certificate manager refresh, credential refresh with previous-token grace, and server replacement block.
 
 ## Open Decisions
 
 - Final discovery stack: mDNS/DNS-SD first, local DNS first, or both with a feature flag.
-- Pairing descriptor signer: Control Cloud for setup packets, LocalServer for live local export, or both.
-- Device credential lifetime and refresh period.
 - Exact privacy-preserving device fingerprint fields for Windows.
 - Whether manager approval should support time-limited guest devices in V1.

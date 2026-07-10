@@ -29,6 +29,7 @@ public static class ClientPortalAuditEventTypes
     public const string SessionRejected = "SessionRejected";
     public const string SetupTokenCreated = "SetupTokenCreated";
     public const string BootstrapPackageGenerated = "BootstrapPackageGenerated";
+    public const string BootstrapPackageHandedOff = "BootstrapPackageHandedOff";
     public const string LocalServerRegistrationAccepted = "LocalServerRegistrationAccepted";
     public const string LocalServerRegistrationRejected = "LocalServerRegistrationRejected";
     public const string LocalServerDiagnosticsUploaded = "LocalServerDiagnosticsUploaded";

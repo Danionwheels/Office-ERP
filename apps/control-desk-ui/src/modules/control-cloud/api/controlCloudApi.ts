@@ -6,13 +6,17 @@ import type {
   CreateCloudInstallationProvisioningInput,
   RevokeCloudAppActivationIssueInput,
   IssueCloudFirstManagerSetupTokenInput,
+  IssueLocalServerPairingDescriptorInput,
   IssueCloudAppActivationTokenInput,
   IssuedLocalServerFirstManagerSetupToken,
   IssuedSafarSuiteAppActivationToken,
   LocalServerBootstrapPackage,
+  LocalServerBootstrapPackageHandoff,
   LocalServerBootstrapPackageRegister,
   LocalServerBootstrapPackageSummary,
   LocalServerDiagnosticReport,
+  LocalServerPairingDescriptor,
+  MarkCloudBootstrapPackageHandoffInput,
   LocalServerSetupToken,
   PublishCloudOutboxMessagesResult,
   ProviderAccessOperator,
@@ -148,6 +152,28 @@ export async function listCloudInstallationBootstrapPackages(
   return response.packages;
 }
 
+export async function markCloudBootstrapPackageHandoff(
+  clientId: string,
+  installationId: string,
+  bootstrapPackageId: string,
+  input: MarkCloudBootstrapPackageHandoffInput
+): Promise<LocalServerBootstrapPackageHandoff> {
+  return apiRequest<LocalServerBootstrapPackageHandoff>(
+    `/api/v1/control-cloud/clients/${clientId}/installations/${encodeURIComponent(
+      installationId
+    )}/bootstrap-packages/${bootstrapPackageId}/handoff`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        channel: input.channel.trim(),
+        recipient: input.recipient.trim(),
+        markedBy: input.markedBy.trim(),
+        note: optionalText(input.note)
+      })
+    }
+  );
+}
+
 export async function listCloudInstallationAuditEvents(
   clientId: string,
   installationId: string,
@@ -233,7 +259,37 @@ export async function issueCloudFirstManagerSetupToken(
         managerDisplayName: input.managerDisplayName.trim(),
         managerEmail: optionalText(input.managerEmail),
         createdBy: input.createdBy.trim(),
-        expiresInHours: input.expiresInHours
+        expiresInHours: input.expiresInHours,
+        purpose: input.purpose,
+        recoveryReason: optionalText(input.recoveryReason)
+      })
+    }
+  );
+}
+
+export async function issueCloudPairingDescriptor(
+  clientId: string,
+  installationId: string,
+  input: IssueLocalServerPairingDescriptorInput
+): Promise<LocalServerPairingDescriptor> {
+  return apiRequest<LocalServerPairingDescriptor>(
+    `/api/v1/control-cloud/clients/${clientId}/installations/${encodeURIComponent(
+      installationId
+    )}/pairing-descriptor`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        bootstrapPackageId: optionalText(input.bootstrapPackageId),
+        setupTokenId: optionalText(input.setupTokenId),
+        clientCode: optionalText(input.clientCode),
+        customerName: optionalText(input.customerName),
+        appServerInstallationId: optionalText(input.appServerInstallationId),
+        fingerprintHash: optionalText(input.fingerprintHash),
+        urlCandidates: input.urlCandidates?.map((candidate) => candidate.trim()).filter(Boolean),
+        tlsCaSha256: optionalText(input.tlsCaSha256),
+        tlsCertificateSha256: optionalText(input.tlsCertificateSha256),
+        serverPairingKeySha256: optionalText(input.serverPairingKeySha256),
+        requestedBy: optionalText(input.requestedBy)
       })
     }
   );
@@ -442,8 +498,8 @@ function toSetupTokenRequest(input: CreateCloudInstallationProvisioningInput) {
   };
 }
 
-function optionalText(value: string): string | undefined {
-  const trimmed = value.trim();
+function optionalText(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
 
-  return trimmed === "" ? undefined : trimmed;
+  return trimmed ? trimmed : undefined;
 }

@@ -22,6 +22,13 @@ public interface IControlCloudInstallationProvisioningClient
         int take,
         CancellationToken cancellationToken = default);
 
+    Task<ControlCloudBootstrapPackageHandoffClientResult> MarkBootstrapPackageHandoffAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        MarkLocalServerBootstrapPackageHandoffRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<ControlCloudAppActivationTokenClientResult> IssueAppActivationTokenAsync(
         Guid clientId,
         string installationId,
@@ -32,6 +39,12 @@ public interface IControlCloudInstallationProvisioningClient
         Guid clientId,
         string installationId,
         IssueLocalServerFirstManagerSetupTokenRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<ControlCloudPairingDescriptorClientResult> IssuePairingDescriptorAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerPairingDescriptorRequest request,
         CancellationToken cancellationToken = default);
 
     Task<ControlCloudAppActivationIssuesClientResult> ListAppActivationIssuesAsync(
@@ -47,6 +60,86 @@ public interface IControlCloudInstallationProvisioningClient
         Guid activationIssueId,
         RevokeSafarSuiteAppActivationIssueRequest request,
         CancellationToken cancellationToken = default);
+}
+
+public sealed class ControlCloudPairingDescriptorClientResult
+{
+    private ControlCloudPairingDescriptorClientResult(
+        LocalServerPairingDescriptorResponse? descriptor,
+        string? failureCode,
+        string? detail)
+    {
+        Descriptor = descriptor;
+        FailureCode = failureCode;
+        Detail = detail;
+    }
+
+    public bool IsSuccess => Descriptor is not null;
+
+    public LocalServerPairingDescriptorResponse? Descriptor { get; }
+
+    public string? FailureCode { get; }
+
+    public string? Detail { get; }
+
+    public static ControlCloudPairingDescriptorClientResult Success(
+        LocalServerPairingDescriptorResponse descriptor)
+    {
+        return new ControlCloudPairingDescriptorClientResult(
+            descriptor,
+            failureCode: null,
+            detail: null);
+    }
+
+    public static ControlCloudPairingDescriptorClientResult Failure(
+        string failureCode,
+        string detail)
+    {
+        return new ControlCloudPairingDescriptorClientResult(
+            descriptor: null,
+            failureCode,
+            detail);
+    }
+}
+
+public sealed class ControlCloudBootstrapPackageHandoffClientResult
+{
+    private ControlCloudBootstrapPackageHandoffClientResult(
+        LocalServerBootstrapPackageHandoffResponse? response,
+        string? failureCode,
+        string? detail)
+    {
+        Response = response;
+        FailureCode = failureCode;
+        Detail = detail;
+    }
+
+    public bool IsSuccess => Response is not null;
+
+    public LocalServerBootstrapPackageHandoffResponse? Response { get; }
+
+    public string? FailureCode { get; }
+
+    public string? Detail { get; }
+
+    public static ControlCloudBootstrapPackageHandoffClientResult Success(
+        LocalServerBootstrapPackageHandoffResponse response)
+    {
+        return new ControlCloudBootstrapPackageHandoffClientResult(
+            response,
+            failureCode: null,
+            detail: null);
+    }
+
+    public static ControlCloudBootstrapPackageHandoffClientResult Failure(
+        string failureCode,
+        string detail)
+    {
+        return new ControlCloudBootstrapPackageHandoffClientResult(
+            response: null,
+            failureCode,
+            detail);
+    }
 }
 
 public sealed class ControlCloudFirstManagerSetupTokenClientResult

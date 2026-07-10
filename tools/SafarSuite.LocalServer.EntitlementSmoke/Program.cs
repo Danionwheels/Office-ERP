@@ -8,6 +8,7 @@ using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateInstallationSetupToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateLocalServerBootstrapPackage;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueLocalServerFirstManagerSetupToken;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.MarkLocalServerBootstrapPackageHandoff;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Domain.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Domain.Modules.LocalServer;
@@ -183,6 +184,7 @@ Require(dockerComposeArtifact.Content.Contains("profiles:", StringComparison.Ord
     && dockerComposeArtifact.Content.Contains("- app-runtime", StringComparison.Ordinal), "Bootstrap Docker Compose template should keep the SafarSuite app behind the app-runtime profile.");
 Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_APP_IMAGE:?Set SAFARSUITE_APP_IMAGE}", StringComparison.Ordinal), "Bootstrap Docker Compose template should use the app image environment variable.");
 Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_APP_HTTP_PORT:-5280}:5280", StringComparison.Ordinal), "Bootstrap Docker Compose template should publish the app through the configured host port.");
+Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_APP_HTTP_PORT:-5280}:5280/udp", StringComparison.Ordinal), "Bootstrap Docker Compose template should publish the app UDP discovery port through the configured host port.");
 Require(dockerComposeArtifact.Content.Contains("SAFARSUITE_MODULE_GATEWAY_URL", StringComparison.Ordinal), "Bootstrap Docker Compose template should wire the app to the local module gateway.");
 Require(dockerComposeArtifact.Content.Contains("SAFARSUITE_LOCAL_API_BASE_URL:-https://local-api:8080", StringComparison.Ordinal), "Bootstrap Docker Compose template should default the app to the HTTPS Local API.");
 Require(dockerComposeArtifact.Content.Contains("SAFARSUITE_MODULE_GATEWAY_URL:-https://local-api:8080", StringComparison.Ordinal), "Bootstrap Docker Compose template should default module-gateway URL to the HTTPS Local API.");
@@ -212,6 +214,8 @@ Require(environmentTemplateArtifact.Content.Contains("ActivationSigning__PublicK
 Require(!environmentTemplateArtifact.Content.Contains("{{SAFARSUITE_APP_ACTIVATION_", StringComparison.Ordinal), "Bootstrap environment template should not leave app activation signing placeholders unresolved.");
 Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__SigningSecret=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the app device signing secret placeholder.");
 Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__ExpiresInDays=3650", StringComparison.Ordinal), "Bootstrap environment template should carry the app device credential lifetime.");
+Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__RefreshWindowDays=30", StringComparison.Ordinal), "Bootstrap environment template should carry the app device credential refresh window.");
+Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__RefreshGraceHours=24", StringComparison.Ordinal), "Bootstrap environment template should carry the app device credential refresh grace.");
 Require(environmentTemplateArtifact.Content.Contains("UserSessions__SigningSecret=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the app session signing secret placeholder.");
 Require(environmentTemplateArtifact.Content.Contains("FirstManagerBootstrap__AllowSetupCodeFallback=false", StringComparison.Ordinal), "Bootstrap environment template should keep first-manager fallback setup codes disabled.");
 Require(runtimeManifestArtifact.Content.Contains("\"serviceName\": \"safarsuite-app\"", StringComparison.Ordinal), "Bootstrap runtime manifest should include the SafarSuite app service.");
@@ -950,13 +954,14 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
     var cloudClock = new FixedControlCloudClock(
         new DateTimeOffset(2026, 8, 1, 10, 0, 0, TimeSpan.Zero));
     var setupTokenRepository = new InMemorySetupTokenRepository();
+    var auditRecorder = new InMemoryClientPortalAuditRecorder();
     var unitOfWork = new PassthroughControlCloudUnitOfWork();
     var setupTokenHandler = new CreateInstallationSetupTokenHandler(
         new StaticCommercialProjectionRepository(clientId),
         new InMemoryClientInstallationRepository(),
         setupTokenRepository,
         new StaticSetupTokenService(),
-        new InMemoryClientPortalAuditRecorder(),
+        auditRecorder,
         unitOfWork,
         cloudClock);
     var bootstrapHandler = new CreateLocalServerBootstrapPackageHandler(
@@ -980,7 +985,7 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
             {
                 ActiveKeyId = "app-activation-smoke"
             }),
-        new InMemoryClientPortalAuditRecorder(),
+        auditRecorder,
         unitOfWork,
         cloudClock);
     var result = await bootstrapHandler.HandleAsync(
@@ -1002,6 +1007,36 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
             SyncTopologyId: "sync-main"));
 
     Require(result.IsSuccess, "Bootstrap package should generate through the Control Cloud signer.");
+    var generatedPackage = result.BootstrapPackage
+        ?? throw new InvalidOperationException("Bootstrap package should exist.");
+
+    var handoffHandler = new MarkLocalServerBootstrapPackageHandoffHandler(
+        setupTokenRepository,
+        auditRecorder,
+        cloudClock);
+    var handoffResult = await handoffHandler.HandleAsync(
+        new MarkLocalServerBootstrapPackageHandoffCommand(
+            clientId,
+            installationId,
+            generatedPackage.BootstrapPackageId,
+            Channel: "Secure email",
+            Recipient: "customer.ops@example.test",
+            MarkedBy: "Smoke",
+            Note: "Smoke handoff marker"));
+    var handoffAuditRecord = auditRecorder.Records.LastOrDefault(record =>
+        record.EventType == ClientPortalAuditEventTypes.BootstrapPackageHandedOff
+        && record.Detail.Contains(generatedPackage.BootstrapPackageId.ToString("D"), StringComparison.Ordinal));
+
+    Require(handoffResult.IsSuccess, "Bootstrap package handoff should be marked for an existing package.");
+    Require(handoffResult.Response?.HandoffStatus == "HandedOff", "Bootstrap package handoff response should expose the marked state.");
+    Require(handoffAuditRecord is not null, "Bootstrap package handoff should be recorded in audit history.");
+    Require(
+        handoffAuditRecord!.Detail.Contains("Secure email", StringComparison.Ordinal)
+        && handoffAuditRecord.Detail.Contains("customer.ops@example.test", StringComparison.Ordinal),
+        "Bootstrap package handoff audit should include non-secret channel and recipient evidence.");
+    Require(
+        !handoffAuditRecord.Detail.Contains(generatedPackage.SetupToken, StringComparison.Ordinal),
+        "Bootstrap package handoff audit should not expose setup-token plaintext.");
 
     var unsupportedModeResult = await bootstrapHandler.HandleAsync(
         new CreateLocalServerBootstrapPackageCommand(
@@ -1018,8 +1053,7 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
     Require(!unsupportedModeResult.IsSuccess, "Bootstrap package should reject client deployment modes in the bootstrap-mode field.");
     Require(unsupportedModeResult.FailureCode == "BootstrapModeUnsupported", "Unsupported bootstrap mode failure code should be stable.");
 
-    return result.BootstrapPackage
-        ?? throw new InvalidOperationException("Bootstrap package should exist.");
+    return generatedPackage;
 }
 
 async Task<LocalServerFeatureAccessDecision> EvaluateAsync(
@@ -1786,6 +1820,20 @@ internal sealed class InMemorySetupTokenRepository
         return Task.FromResult<IReadOnlyCollection<ControlCloudInstallationSetupToken>>(setupTokens);
     }
 
+    public Task<ControlCloudInstallationSetupToken?> GetBootstrapPackageAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        CancellationToken cancellationToken = default)
+    {
+        var setupToken = _setupTokensByHash.Values.FirstOrDefault(candidate =>
+            candidate.ClientId == clientId
+            && string.Equals(candidate.InstallationId, installationId.Trim(), StringComparison.Ordinal)
+            && candidate.BootstrapPackageId == bootstrapPackageId);
+
+        return Task.FromResult(setupToken);
+    }
+
     public Task SaveAsync(
         ControlCloudInstallationSetupToken setupToken,
         CancellationToken cancellationToken = default)
@@ -1835,10 +1883,16 @@ internal sealed class StaticSetupTokenService : IControlCloudInstallationSetupTo
 
 internal sealed class InMemoryClientPortalAuditRecorder : IClientPortalAuditRecorder
 {
+    private readonly List<ClientPortalAuditRecord> _records = [];
+
+    public IReadOnlyList<ClientPortalAuditRecord> Records => _records;
+
     public Task RecordAsync(
         ClientPortalAuditRecord audit,
         CancellationToken cancellationToken = default)
     {
+        _records.Add(audit);
+
         return Task.CompletedTask;
     }
 }

@@ -177,6 +177,66 @@ try
         "bootstrap package register should include the generated pending package.");
     checks.Add("listed PostgreSQL-backed bootstrap package register through provider gate");
 
+    var handoff = await SendJsonAsync<LocalServerBootstrapPackageHandoffResponse>(
+        http,
+        HttpMethod.Post,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/bootstrap-packages/{bootstrapPackage.BootstrapPackageId:D}/handoff",
+        new MarkLocalServerBootstrapPackageHandoffRequest(
+            Channel: "Secure email",
+            Recipient: "postgres.proof.customer@safarsuite.local",
+            MarkedBy: "postgres-proof",
+            Note: "PostgreSQL proof handoff marker"),
+        adminSession.AccessToken);
+
+    Require(handoff.BootstrapPackageId == bootstrapPackage.BootstrapPackageId, "handoff should target generated bootstrap package.");
+    Require(handoff.SetupTokenId == bootstrapPackage.SetupTokenId, "handoff should target generated setup token.");
+    Require(handoff.ClientId == clientId, "handoff should target proof client.");
+    Require(handoff.InstallationId == installationId, "handoff should target proof installation.");
+    Require(handoff.HandoffStatus == "HandedOff", "handoff should be marked handed off.");
+
+    var handoffAudit = await SendJsonAsync<ControlCloudAuditEventsResponse>(
+        http,
+        HttpMethod.Get,
+        $"api/v1/control-cloud/audit-events?clientId={clientId:D}&eventType=BootstrapPackageHandedOff&take=20");
+
+    Require(
+        handoffAudit.Events.Any(auditEvent =>
+            auditEvent.EventType == "BootstrapPackageHandedOff"
+            && auditEvent.ClientId == clientId
+            && auditEvent.Detail.Contains(bootstrapPackage.BootstrapPackageId.ToString("D"), StringComparison.Ordinal)
+            && auditEvent.Detail.Contains(installationId, StringComparison.Ordinal)
+            && !auditEvent.Detail.Contains(bootstrapPackage.SetupToken, StringComparison.Ordinal)),
+        "handoff audit trail should identify the package and installation without leaking the setup token secret.");
+    checks.Add("marked bootstrap package handoff and verified non-secret audit trail");
+
+    var appServerInstallationId = Guid.NewGuid();
+    var pairingDescriptor = await SendJsonAsync<LocalServerPairingDescriptorResponse>(
+        http,
+        HttpMethod.Post,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/pairing-descriptor",
+        new IssueLocalServerPairingDescriptorRequest(
+            bootstrapPackage.BootstrapPackageId,
+            bootstrapPackage.SetupTokenId,
+            ClientCode: "POSTGRES",
+            CustomerName: "Postgres Proof Customer",
+            AppServerInstallationId: appServerInstallationId.ToString("D"),
+            FingerprintHash: "postgres-proof-app-fingerprint",
+            UrlCandidates: ["http://127.0.0.1:5280"],
+            RequestedBy: "postgres-proof"),
+        adminSession.AccessToken);
+
+    Require(pairingDescriptor.FormatVersion == LocalServerPairingFormats.PairingDescriptorVersion, "pairing descriptor should use the v1 descriptor format.");
+    Require(pairingDescriptor.ClientId == clientId, "pairing descriptor should target proof client.");
+    Require(pairingDescriptor.ProviderInstallationId == installationId, "pairing descriptor should target proof installation.");
+    Require(pairingDescriptor.BootstrapPackageId == bootstrapPackage.BootstrapPackageId, "pairing descriptor should bind the bootstrap package id.");
+    Require(pairingDescriptor.SetupTokenId == bootstrapPackage.SetupTokenId, "pairing descriptor should bind the setup token id.");
+    Require(pairingDescriptor.FingerprintHash == "postgres-proof-app-fingerprint", "pairing descriptor should carry the requested app fingerprint when no activation issue exists yet.");
+    Require(pairingDescriptor.SignatureAlgorithm == "HMAC-SHA256", "pairing descriptor should use HMAC signature.");
+    Require(!string.IsNullOrWhiteSpace(pairingDescriptor.SignatureKeyId), "pairing descriptor should expose the signing key id.");
+    Require(!string.IsNullOrWhiteSpace(pairingDescriptor.PayloadSha256), "pairing descriptor should expose payload hash.");
+    Require(!string.IsNullOrWhiteSpace(pairingDescriptor.Signature), "pairing descriptor should expose signature value.");
+    checks.Add("issued provider-gated signed pairing descriptor");
+
     var registration = await SendJsonAsync<LocalServerInstallationRegistrationResponse>(
         http,
         HttpMethod.Post,
@@ -206,9 +266,36 @@ try
     Require(firstManagerSetupToken.ClientId == clientId, "first-manager setup token should target proof client.");
     Require(firstManagerSetupToken.InstallationId == installationId, "first-manager setup token should target proof installation.");
     Require(firstManagerSetupToken.PendingDeviceRequestId == firstManagerPendingDeviceRequestId, "first-manager setup token should bind the pending device request.");
+    Require(firstManagerSetupToken.Purpose == LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap, "first-manager setup token should default to first-manager bootstrap purpose.");
     Require(firstManagerSetupToken.SignedToken.Signature.Algorithm == "HMAC-SHA256", "first-manager setup token should use HMAC signature.");
     Require(firstManagerSetupToken.SignedToken.Signature.PayloadSha256 == firstManagerSetupToken.PayloadSha256, "first-manager setup token response should expose the signed payload hash.");
     checks.Add("issued provider-gated first-manager setup token");
+
+    var managerRecoveryPendingDeviceRequestId = Guid.NewGuid();
+    var managerRecoverySetupToken = await SendJsonAsync<IssueLocalServerFirstManagerSetupTokenResponse>(
+        http,
+        HttpMethod.Post,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/first-manager-setup-token",
+        new IssueLocalServerFirstManagerSetupTokenRequest(
+            managerRecoveryPendingDeviceRequestId,
+            "Recovered Manager",
+            "recovered.manager@safarsuite.local",
+            "postgres-proof",
+            ExpiresInHours: 24,
+            Purpose: LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+            RecoveryReason: "PostgreSQL proof manager recovery"),
+        adminSession.AccessToken);
+
+    Require(managerRecoverySetupToken.ClientId == clientId, "manager recovery setup token should target proof client.");
+    Require(managerRecoverySetupToken.InstallationId == installationId, "manager recovery setup token should target proof installation.");
+    Require(managerRecoverySetupToken.PendingDeviceRequestId == managerRecoveryPendingDeviceRequestId, "manager recovery setup token should bind the pending device request.");
+    Require(managerRecoverySetupToken.Purpose == LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery, "manager recovery setup token should carry recovery purpose.");
+    Require(managerRecoverySetupToken.RecoveryReason == "PostgreSQL proof manager recovery", "manager recovery setup token should carry recovery reason.");
+    Require(managerRecoverySetupToken.AllowedActions?.Contains(LocalServerFirstManagerSetupTokenActions.RecoverManagerAccess) == true, "manager recovery setup token should allow manager access recovery.");
+    Require(managerRecoverySetupToken.AllowedActions?.Contains(LocalServerFirstManagerSetupTokenActions.ApproveManagerDevice) == true, "manager recovery setup token should allow manager device approval.");
+    Require(managerRecoverySetupToken.SignedToken.Payload.Purpose == LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery, "signed manager recovery payload should carry recovery purpose.");
+    Require(managerRecoverySetupToken.SignedToken.Signature.PayloadSha256 == managerRecoverySetupToken.PayloadSha256, "manager recovery setup token response should expose the signed payload hash.");
+    checks.Add("issued provider-gated manager recovery setup token");
 
     var signedBundle = await SendJsonAsync<ClientPortalSignedEntitlementBundleResponse>(
         http,

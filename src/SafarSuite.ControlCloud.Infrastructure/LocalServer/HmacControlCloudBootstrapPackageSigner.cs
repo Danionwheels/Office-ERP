@@ -42,21 +42,34 @@ public sealed class HmacControlCloudBootstrapPackageSigner
         }
     }
 
+    public string SigningKeyId => _activeKeyId;
+
     public ControlCloudSignedBootstrapPackage Sign(
         ControlCloudBootstrapPackagePayload payload)
     {
         var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
-        var payloadSha256 = ComputeSha256(payloadJson);
-        var signature = Sign(_secretsByKeyId[_activeKeyId], payloadJson);
 
         return new ControlCloudSignedBootstrapPackage(
             payloadJson,
             payload,
-            new ControlCloudBootstrapPackageSignature(
-                SignatureAlgorithm,
-                _activeKeyId,
-                payloadSha256,
-                signature));
+            SignPayloadJson(payloadJson));
+    }
+
+    public ControlCloudBootstrapPackageSignature SignPayloadJson(string payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            throw new ArgumentException("Payload JSON is required.", nameof(payloadJson));
+        }
+
+        var payloadSha256 = ComputeSha256(payloadJson);
+        var signature = Sign(_secretsByKeyId[_activeKeyId], payloadJson);
+
+        return new ControlCloudBootstrapPackageSignature(
+            SignatureAlgorithm,
+            _activeKeyId,
+            payloadSha256,
+            signature);
     }
 
     private static string ComputeSha256(string value)

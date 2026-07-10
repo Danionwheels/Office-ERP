@@ -57,6 +57,25 @@ public sealed class EfControlCloudInstallationSetupTokenRepository
         return entities.Select(ToDomain).ToArray();
     }
 
+    public async Task<ControlCloudInstallationSetupToken?> GetBootstrapPackageAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedInstallationId = installationId.Trim();
+
+        var entity = await _dbContext.InstallationSetupTokens
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                setupToken => setupToken.ClientId == clientId
+                    && setupToken.InstallationId == normalizedInstallationId
+                    && setupToken.BootstrapPackageId == bootstrapPackageId,
+                cancellationToken);
+
+        return entity is null ? null : ToDomain(entity);
+    }
+
     public async Task SaveAsync(
         ControlCloudInstallationSetupToken setupToken,
         CancellationToken cancellationToken = default)

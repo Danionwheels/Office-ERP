@@ -366,6 +366,9 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
 
     var bundleJson = await File.ReadAllTextAsync(
         Path.Combine(options.OutputDirectory, "bootstrap-bundle.json"));
+    var bootstrapBundle = JsonSerializer.Deserialize<LocalServerSignedBootstrapBundleResponse>(
+        bundleJson,
+        bundleJsonOptions) ?? throw new InvalidOperationException("Generated bootstrap bundle JSON could not be read.");
     using var importResponse = await http.PostAsync(
         "api/v1/local-server/bootstrap-package/import",
         new StringContent(bundleJson, Encoding.UTF8, "application/json"));
@@ -578,6 +581,81 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
             "LocalServer manager session response did not bind the first-manager device and installation.");
     }
 
+    using var anonymousDescriptorResponse = await http.GetAsync("api/v1/local-server/pairing/descriptor");
+
+    if (anonymousDescriptorResponse.StatusCode != HttpStatusCode.Unauthorized)
+    {
+        throw new InvalidOperationException(
+            $"Unauthenticated pairing descriptor export returned {(int)anonymousDescriptorResponse.StatusCode}; expected 401.");
+    }
+
+    var recoveryDevicePairingRequest = new LocalServerDevicePairingRequest(
+        LocalServerPairingFormats.DevicePairingRequestVersion,
+        imported.InstallationId,
+        "Compose Recovery Manager Device",
+        $"compose-recovery-manager-public-key-{Guid.NewGuid():N}",
+        DeviceFingerprintHash: $"compose-recovery-manager-fingerprint-{Guid.NewGuid():N}",
+        WindowsUserHint: "compose-recovery-manager",
+        AppVersion: options.AppVersion,
+        HelloServerNonce: hello.ServerNonce,
+        HelloClientNonce: hello.ClientNonce,
+        RequestedAtUtc: DateTimeOffset.UtcNow);
+    using var recoveryPairingRequestResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/requests",
+        recoveryDevicePairingRequest,
+        bundleJsonOptions);
+    var recoveryPairingRequest = await ReadJsonResponseAsync<LocalServerDevicePairingRequestResponse>(
+        recoveryPairingRequestResponse,
+        "create LocalServer manager recovery pairing request");
+    var managerRecoveryToken = CreateFirstManagerSetupToken(
+        options,
+        imported.ClientId,
+        imported.InstallationId,
+        recoveryPairingRequest.PairingRequestId,
+        LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+        "Compose proof provider-assisted manager recovery");
+    using var managerRecoveryImportResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/first-manager-token/import",
+        managerRecoveryToken,
+        bundleJsonOptions);
+    var managerRecoveryImport = await ReadJsonResponseAsync<ImportLocalServerFirstManagerSetupTokenResponse>(
+        managerRecoveryImportResponse,
+        "import manager recovery setup token");
+
+    using var managerRecoveryCredentialVerifyResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/device-credentials/verify",
+        new VerifyLocalServerDeviceCredentialRequest(managerRecoveryImport.DeviceCredential),
+        bundleJsonOptions);
+    var managerRecoveryCredentialVerify = await ReadJsonResponseAsync<VerifyLocalServerDeviceCredentialResponse>(
+        managerRecoveryCredentialVerifyResponse,
+        "verify manager recovery device credential");
+
+    using var recoveryManagerSessionResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/pairing/manager-sessions",
+        new CreateLocalServerManagerSessionRequest(
+            managerRecoveryImport.DeviceId,
+            managerRecoveryImport.DeviceCredential,
+            "compose-proof-recovery-manager"),
+        bundleJsonOptions);
+    var recoveryManagerSession = await ReadJsonResponseAsync<LocalServerManagerSessionResponse>(
+        recoveryManagerSessionResponse,
+        "create LocalServer manager session from recovered manager device");
+
+    if (!string.Equals(managerRecoveryImport.Purpose, LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery, StringComparison.Ordinal)
+        || !string.Equals(managerRecoveryImport.AssignedRole, "ManagerApprovedDevice", StringComparison.Ordinal)
+        || !string.Equals(managerRecoveryImport.Device.AssignedRole, "ManagerApprovedDevice", StringComparison.Ordinal)
+        || !string.Equals(managerRecoveryImport.Device.ApprovedBy, "manager-recovery:compose.manager@safarsuite.local", StringComparison.Ordinal)
+        || string.IsNullOrWhiteSpace(managerRecoveryImport.DeviceCredential)
+        || managerRecoveryImport.SignedDeviceCredential is null
+        || !managerRecoveryCredentialVerify.IsManagerCapable
+        || !string.Equals(managerRecoveryCredentialVerify.AssignedRole, "ManagerApprovedDevice", StringComparison.Ordinal)
+        || recoveryManagerSession.DeviceId != managerRecoveryImport.DeviceId
+        || !string.Equals(recoveryManagerSession.InstallationId, imported.InstallationId, StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException(
+            "Manager recovery setup token did not approve a manager-capable recovery device.");
+    }
+
     var devicePairingRequest = new LocalServerDevicePairingRequest(
         LocalServerPairingFormats.DevicePairingRequestVersion,
         imported.InstallationId,
@@ -622,6 +700,31 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
         "Bearer",
         managerSession.AccessToken);
 
+    using var descriptorResponse = await http.GetAsync("api/v1/local-server/pairing/descriptor");
+    var pairingDescriptor = await ReadJsonResponseAsync<LocalServerPairingDescriptorResponse>(
+        descriptorResponse,
+        "export manager-gated LocalServer pairing descriptor");
+
+    if (!string.Equals(pairingDescriptor.FormatVersion, LocalServerPairingFormats.PairingDescriptorVersion, StringComparison.Ordinal)
+        || pairingDescriptor.ClientId != imported.ClientId
+        || !string.Equals(pairingDescriptor.ProviderInstallationId, imported.InstallationId, StringComparison.Ordinal)
+        || pairingDescriptor.BootstrapPackageId != bootstrapBundle.Payload.BootstrapPackageId
+        || pairingDescriptor.SetupTokenId != bootstrapBundle.Payload.SetupTokenId
+        || !string.Equals(pairingDescriptor.Source, "LocalServerLivePairingDescriptor", StringComparison.Ordinal)
+        || !string.Equals(pairingDescriptor.BootstrapBundleSha256, imported.PayloadSha256, StringComparison.Ordinal)
+        || !string.Equals(pairingDescriptor.BootstrapSignatureKeyId, imported.SignatureKeyId, StringComparison.Ordinal)
+        || !string.Equals(pairingDescriptor.SignatureAlgorithm, "HMAC-SHA256", StringComparison.Ordinal)
+        || !string.Equals(pairingDescriptor.SignatureKeyId, "app-profile-proof-device", StringComparison.Ordinal)
+        || string.IsNullOrWhiteSpace(pairingDescriptor.PayloadSha256)
+        || string.IsNullOrWhiteSpace(pairingDescriptor.Signature)
+        || pairingDescriptor.ExpiresAtUtc is null
+        || pairingDescriptor.ExpiresAtUtc <= pairingDescriptor.GeneratedAtUtc
+        || !pairingDescriptor.UrlCandidates.Contains(GetLocalApiHostBaseUrl(options), StringComparer.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            "Manager-gated LocalServer pairing descriptor did not expose the installed identity, URL candidates, and signature metadata.");
+    }
+
     using var pendingDevicesResponse = await http.GetAsync("api/v1/local-server/devices/pending");
     var pendingDevices = await ReadJsonResponseAsync<LocalServerDevicePairingRequestsResponse>(
         pendingDevicesResponse,
@@ -644,6 +747,32 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
     var approvedCredentialVerify = await ReadJsonResponseAsync<VerifyLocalServerDeviceCredentialResponse>(
         approvedCredentialVerifyResponse,
         "verify approved LocalServer device credential");
+
+    using var refreshCredentialResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/device-credentials/refresh",
+        new RefreshLocalServerDeviceCredentialRequest(
+            approvedDevice.DeviceCredential,
+            "compose-proof-device"),
+        bundleJsonOptions);
+    var refreshedCredential = await ReadJsonResponseAsync<RefreshLocalServerDeviceCredentialResponse>(
+        refreshCredentialResponse,
+        "refresh approved LocalServer device credential");
+
+    using var oldCredentialGraceVerifyResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/device-credentials/verify",
+        new VerifyLocalServerDeviceCredentialRequest(approvedDevice.DeviceCredential),
+        bundleJsonOptions);
+    var oldCredentialGraceVerify = await ReadJsonResponseAsync<VerifyLocalServerDeviceCredentialResponse>(
+        oldCredentialGraceVerifyResponse,
+        "verify previous LocalServer device credential during refresh grace");
+
+    using var refreshedCredentialVerifyResponse = await http.PostAsJsonAsync(
+        "api/v1/local-server/device-credentials/verify",
+        new VerifyLocalServerDeviceCredentialRequest(refreshedCredential.DeviceCredential),
+        bundleJsonOptions);
+    var refreshedCredentialVerify = await ReadJsonResponseAsync<VerifyLocalServerDeviceCredentialResponse>(
+        refreshedCredentialVerifyResponse,
+        "verify refreshed LocalServer device credential");
 
     using var suspendResponse = await http.PostAsJsonAsync(
         $"api/v1/local-server/devices/{pairingRequest.DeviceId:D}/suspend",
@@ -677,6 +806,15 @@ async Task<LocalRuntimeProofResult> VerifyRunningRuntimeAsync(ProofOptions optio
         || approvedDevice.SignedDeviceCredential is null
         || approvedCredentialVerify.DeviceId != pairingRequest.DeviceId
         || approvedCredentialVerify.IsManagerCapable
+        || !refreshedCredential.Rotated
+        || string.IsNullOrWhiteSpace(refreshedCredential.DeviceCredential)
+        || refreshedCredential.SignedDeviceCredential is null
+        || refreshedCredential.PreviousDeviceCredentialId != approvedCredentialVerify.DeviceCredentialId
+        || refreshedCredential.PreviousCredentialGraceUntilUtc is null
+        || refreshedCredential.PreviousCredentialGraceUntilUtc <= DateTimeOffset.UtcNow
+        || oldCredentialGraceVerify.DeviceCredentialId != approvedCredentialVerify.DeviceCredentialId
+        || refreshedCredentialVerify.DeviceCredentialId != refreshedCredential.CurrentDeviceCredentialId
+        || refreshedCredentialVerify.DeviceId != pairingRequest.DeviceId
         || !string.Equals(approvedDevice.Device.ApprovedBy, managerSession.Actor, StringComparison.Ordinal)
         || !string.Equals(suspendedDevice.DeviceStatus, LocalServerDevicePairingStatuses.Suspended, StringComparison.Ordinal)
         || !string.Equals(suspendedDevice.SuspendedBy, managerSession.Actor, StringComparison.Ordinal)
@@ -1663,6 +1801,8 @@ string BuildEnvironmentFile(ProofOptions options)
         "DeviceCredentials__SigningKeyId=app-profile-proof-device",
         "DeviceCredentials__SigningSecret=app-profile-proof-device-secret-change-before-production",
         "DeviceCredentials__ExpiresInDays=3650",
+        "DeviceCredentials__RefreshWindowDays=3650",
+        "DeviceCredentials__RefreshGraceHours=24",
         "UserSessions__SigningKeyId=app-profile-proof-session",
         "UserSessions__SigningSecret=app-profile-proof-session-secret-change-before-production",
         "FirstManagerBootstrap__AllowSetupCodeFallback=false",
@@ -1735,6 +1875,8 @@ string BuildEnvironmentFileFromPackage(
         "DeviceCredentials__SigningKeyId=app-profile-proof-device",
         "DeviceCredentials__SigningSecret=app-profile-proof-device-secret-change-before-production",
         "DeviceCredentials__ExpiresInDays=3650",
+        "DeviceCredentials__RefreshWindowDays=3650",
+        "DeviceCredentials__RefreshGraceHours=24",
         "UserSessions__SigningKeyId=app-profile-proof-session",
         "UserSessions__SigningSecret=app-profile-proof-session-secret-change-before-production",
         "FirstManagerBootstrap__AllowSetupCodeFallback=false",
@@ -1745,24 +1887,39 @@ LocalServerSignedFirstManagerSetupTokenResponse CreateFirstManagerSetupToken(
     ProofOptions options,
     Guid clientId,
     string installationId,
-    Guid pendingDeviceRequestId)
+    Guid pendingDeviceRequestId,
+    string purpose = LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap,
+    string? recoveryReason = null)
 {
     var issuedAtUtc = DateTimeOffset.UtcNow;
+    IReadOnlyCollection<string> allowedActions = string.Equals(
+            purpose,
+            LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+            StringComparison.Ordinal)
+        ? new[]
+        {
+            LocalServerFirstManagerSetupTokenActions.RecoverManagerAccess,
+            LocalServerFirstManagerSetupTokenActions.ApproveManagerDevice
+        }
+        : new[]
+        {
+            LocalServerFirstManagerSetupTokenActions.CreateFirstManager,
+            LocalServerFirstManagerSetupTokenActions.ApproveFirstDevice
+        };
     var payload = new LocalServerFirstManagerSetupTokenPayloadResponse(
         LocalServerPairingFormats.FirstManagerSetupTokenVersion,
         Guid.NewGuid(),
         clientId,
         installationId,
         pendingDeviceRequestId,
-        [
-            LocalServerFirstManagerSetupTokenActions.CreateFirstManager,
-            LocalServerFirstManagerSetupTokenActions.ApproveFirstDevice
-        ],
+        allowedActions,
         "Compose Proof Manager",
         "compose.manager@safarsuite.local",
         "compose-bootstrap-proof",
         issuedAtUtc,
-        issuedAtUtc.AddHours(1));
+        issuedAtUtc.AddHours(1),
+        purpose,
+        recoveryReason);
     var payloadJson = JsonSerializer.Serialize(payload, bundleJsonOptions);
     var signature = new LocalServerBootstrapPackageSignatureResponse(
         "HMAC-SHA256",

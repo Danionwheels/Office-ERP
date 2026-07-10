@@ -72,6 +72,7 @@ services:
         condition: service_started
     ports:
       - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280"
+      - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280/udp"
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:5280
       SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-https://local-api:8080}

@@ -137,6 +137,37 @@ try
     Require(bootstrapPackage.InstallationId == installationId, "Control Desk bootstrap package should target proof installation.");
     checks.Add("created bootstrap package through Control Desk proxy");
 
+    var handoff = await SendJsonAsync<LocalServerBootstrapPackageHandoffResponse>(
+        controlDeskHttp,
+        HttpMethod.Post,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/bootstrap-packages/{bootstrapPackage.BootstrapPackageId:D}/handoff",
+        new MarkLocalServerBootstrapPackageHandoffRequest(
+            Channel: "Secure email",
+            Recipient: "proxy.proof.customer@safarsuite.local",
+            MarkedBy: "control-desk-proxy-proof",
+            Note: "Control Desk proxy proof handoff marker"));
+
+    Require(handoff.BootstrapPackageId == bootstrapPackage.BootstrapPackageId, "Control Desk handoff should target generated bootstrap package.");
+    Require(handoff.SetupTokenId == bootstrapPackage.SetupTokenId, "Control Desk handoff should target generated setup token.");
+    Require(handoff.ClientId == clientId, "Control Desk handoff should target proof client.");
+    Require(handoff.InstallationId == installationId, "Control Desk handoff should target proof installation.");
+    Require(handoff.HandoffStatus == "HandedOff", "Control Desk handoff should be marked handed off.");
+
+    var handoffAudit = await SendJsonAsync<ControlCloudAuditEventsResponse>(
+        controlDeskHttp,
+        HttpMethod.Get,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/audit-events?take=20");
+
+    Require(
+        handoffAudit.Events.Any(auditEvent =>
+            auditEvent.EventType == "BootstrapPackageHandedOff"
+            && auditEvent.ClientId == clientId
+            && auditEvent.Detail.Contains(bootstrapPackage.BootstrapPackageId.ToString("D"), StringComparison.Ordinal)
+            && auditEvent.Detail.Contains(installationId, StringComparison.Ordinal)
+            && !auditEvent.Detail.Contains(bootstrapPackage.SetupToken, StringComparison.Ordinal)),
+        "Control Desk handoff audit view should identify the package and installation without leaking the setup token secret.");
+    checks.Add("marked bootstrap package handoff through Control Desk proxy and verified non-secret audit trail");
+
     var registration = await SendJsonAsync<LocalServerInstallationRegistrationResponse>(
         controlCloudHttp,
         HttpMethod.Post,

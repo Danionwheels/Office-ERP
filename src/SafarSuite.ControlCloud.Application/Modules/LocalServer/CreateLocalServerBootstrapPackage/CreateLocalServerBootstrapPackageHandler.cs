@@ -589,6 +589,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                 condition: service_started
             ports:
               - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280"
+              - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280/udp"
             environment:
               ASPNETCORE_URLS: http://0.0.0.0:5280
               SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-https://local-api:8080}
@@ -668,6 +669,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         DeviceCredentials__SigningKeyId=safarsuite-app-device-local
         DeviceCredentials__SigningSecret=change-me-before-start
         DeviceCredentials__ExpiresInDays=3650
+        DeviceCredentials__RefreshWindowDays=30
+        DeviceCredentials__RefreshGraceHours=24
         UserSessions__SigningKeyId=safarsuite-app-session-local
         UserSessions__SigningSecret=change-me-before-start
         FirstManagerBootstrap__AllowSetupCodeFallback=false

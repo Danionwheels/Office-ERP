@@ -1,3 +1,5 @@
+using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
+
 namespace SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueLocalServerFirstManagerSetupToken;
 
 public sealed record IssueLocalServerFirstManagerSetupTokenCommand(
@@ -7,4 +9,6 @@ public sealed record IssueLocalServerFirstManagerSetupTokenCommand(
     string ManagerDisplayName,
     string? ManagerEmail,
     string? CreatedBy,
-    int ExpiresInHours);
+    int ExpiresInHours,
+    string Purpose = LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap,
+    string? RecoveryReason = null);

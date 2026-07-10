@@ -78,6 +78,30 @@ public sealed class FileControlCloudInstallationSetupTokenRepository
         }
     }
 
+    public async Task<ControlCloudInstallationSetupToken?> GetBootstrapPackageAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var normalizedInstallationId = installationId.Trim();
+            var setupTokens = await ReadAllAsync(cancellationToken);
+
+            return setupTokens.Values.FirstOrDefault(setupToken =>
+                setupToken.ClientId == clientId
+                && string.Equals(setupToken.InstallationId, normalizedInstallationId, StringComparison.Ordinal)
+                && setupToken.BootstrapPackageId == bootstrapPackageId);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task SaveAsync(
         ControlCloudInstallationSetupToken setupToken,
         CancellationToken cancellationToken = default)

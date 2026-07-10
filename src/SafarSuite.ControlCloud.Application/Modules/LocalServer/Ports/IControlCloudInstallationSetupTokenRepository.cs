@@ -14,6 +14,12 @@ public interface IControlCloudInstallationSetupTokenRepository
         int take,
         CancellationToken cancellationToken = default);
 
+    Task<ControlCloudInstallationSetupToken?> GetBootstrapPackageAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(
         ControlCloudInstallationSetupToken setupToken,
         CancellationToken cancellationToken = default);

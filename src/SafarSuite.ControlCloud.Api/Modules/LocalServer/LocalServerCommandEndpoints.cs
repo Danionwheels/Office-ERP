@@ -10,10 +10,12 @@ using SafarSuite.ControlCloud.Application.Modules.LocalServer.ExportOfflineRenew
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationStatus;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetLatestInstallationDiagnostics;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetPendingInstallationCommands;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueLocalServerPairingDescriptor;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueLocalServerFirstManagerSetupToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueSafarSuiteAppActivationToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListLocalServerBootstrapPackages;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ListSafarSuiteAppActivationIssues;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.MarkLocalServerBootstrapPackageHandoff;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.QueueInstallationCommand;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.ReceiveInstallationDiagnostics;
@@ -71,6 +73,11 @@ public static class LocalServerCommandEndpoints
             .WithName("ListLocalServerBootstrapPackages");
 
         controlCloudGroup.MapPost(
+                "/clients/{clientId:guid}/installations/{installationId}/bootstrap-packages/{bootstrapPackageId:guid}/handoff",
+                MarkBootstrapPackageHandoffAsync)
+            .WithName("MarkLocalServerBootstrapPackageHandoff");
+
+        controlCloudGroup.MapPost(
                 "/clients/{clientId:guid}/installations/{installationId}/bootstrap-package/download",
                 DownloadBootstrapPackageAsync)
             .WithName("DownloadLocalServerBootstrapPackage");
@@ -99,6 +106,11 @@ public static class LocalServerCommandEndpoints
                 "/clients/{clientId:guid}/installations/{installationId}/first-manager-setup-token",
                 IssueFirstManagerSetupTokenAsync)
             .WithName("IssueLocalServerFirstManagerSetupToken");
+
+        controlCloudGroup.MapPost(
+                "/clients/{clientId:guid}/installations/{installationId}/pairing-descriptor",
+                IssuePairingDescriptorAsync)
+            .WithName("IssueLocalServerPairingDescriptor");
 
         controlCloudGroup.MapGet(
                 "/clients/{clientId:guid}/installations/{installationId}/offline-renewal-file",
@@ -308,6 +320,42 @@ public static class LocalServerCommandEndpoints
             : ToFailureResult(result.FailureCode, result.Detail);
     }
 
+    private static async Task<IResult> MarkBootstrapPackageHandoffAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        MarkLocalServerBootstrapPackageHandoffRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
+        MarkLocalServerBootstrapPackageHandoffHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.DeploymentPackagesWrite);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var result = await handler.HandleAsync(
+            new MarkLocalServerBootstrapPackageHandoffCommand(
+                clientId,
+                installationId,
+                bootstrapPackageId,
+                request.Channel,
+                request.Recipient,
+                request.MarkedBy,
+                request.Note),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Results.Ok(result.Response!)
+            : ToFailureResult(result.FailureCode, result.Detail);
+    }
+
     private static Task<IResult> GetAppActivationSigningKeyAsync(
         IControlCloudAppActivationTokenSigner signer)
     {
@@ -446,11 +494,54 @@ public static class LocalServerCommandEndpoints
                 request.ManagerDisplayName,
                 request.ManagerEmail,
                 request.CreatedBy,
-                request.ExpiresInHours),
+                request.ExpiresInHours,
+                request.Purpose,
+                request.RecoveryReason),
             cancellationToken);
 
         return result.IsSuccess
             ? Results.Ok(result.Response!)
+            : ToFailureResult(result.FailureCode, result.Detail);
+    }
+
+    private static async Task<IResult> IssuePairingDescriptorAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerPairingDescriptorRequest request,
+        HttpRequest httpRequest,
+        ProviderAccessSessionService providerAccess,
+        IssueLocalServerPairingDescriptorHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var providerAuthorizationFailure = AuthorizeProviderAccess(
+            httpRequest,
+            providerAccess,
+            ProviderAccessScopes.DeploymentPackagesRead);
+
+        if (providerAuthorizationFailure is not null)
+        {
+            return providerAuthorizationFailure;
+        }
+
+        var result = await handler.HandleAsync(
+            new IssueLocalServerPairingDescriptorCommand(
+                clientId,
+                installationId,
+                request.BootstrapPackageId,
+                request.SetupTokenId,
+                request.ClientCode,
+                request.CustomerName,
+                request.AppServerInstallationId,
+                request.FingerprintHash,
+                request.UrlCandidates,
+                request.TlsCaSha256,
+                request.TlsCertificateSha256,
+                request.ServerPairingKeySha256,
+                request.RequestedBy),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Results.Ok(result.Descriptor!)
             : ToFailureResult(result.FailureCode, result.Detail);
     }
 

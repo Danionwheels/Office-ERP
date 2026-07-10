@@ -5240,6 +5240,30 @@ td {
   gap: 8px;
 }
 
+.cloud-bootstrap-handoff-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.6fr) minmax(160px, 1fr) minmax(150px, 0.8fr) minmax(180px, 1.2fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.cloud-bootstrap-handoff-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cloud-bootstrap-handoff-form label span {
+  color: #39414c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cloud-bootstrap-handoff-form input,
+.cloud-bootstrap-handoff-form select {
+  width: 100%;
+}
+
 .cloud-bootstrap-package {
   display: grid;
   gap: 8px;
@@ -5260,6 +5284,14 @@ td {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.cloud-bootstrap-package header .cloud-bootstrap-package-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .cloud-bootstrap-package strong,
@@ -13745,6 +13777,7 @@ td {
   .cloud-app-identity-map,
   .cloud-app-activation-grid,
   .cloud-app-activation-issue dl,
+  .cloud-bootstrap-handoff-form,
   .cloud-bootstrap-package dl,
   .cloud-command-grid,
   .cloud-diagnostics-facts,

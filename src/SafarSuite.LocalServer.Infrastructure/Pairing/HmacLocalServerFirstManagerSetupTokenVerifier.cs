@@ -180,17 +180,73 @@ public sealed class HmacLocalServerFirstManagerSetupTokenVerifier
                 "First-manager setup token must include allowed actions.");
         }
 
-        if (!HasAction(payload, LocalServerFirstManagerSetupTokenActions.CreateFirstManager)
-            || !HasAction(payload, LocalServerFirstManagerSetupTokenActions.ApproveFirstDevice))
+        var purpose = ResolvePurpose(payload);
+
+        if (purpose is null)
+        {
+            return Failure(
+                "FirstManagerSetupTokenPurposeInvalid",
+                "First-manager setup token purpose is not supported.");
+        }
+
+        if (string.Equals(
+                purpose,
+                LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap,
+                StringComparison.Ordinal)
+            && (!HasAction(payload, LocalServerFirstManagerSetupTokenActions.CreateFirstManager)
+                || !HasAction(payload, LocalServerFirstManagerSetupTokenActions.ApproveFirstDevice)))
         {
             return Failure(
                 "FirstManagerSetupTokenActionsInvalid",
-                "First-manager setup token must allow first manager creation and first device approval.");
+                "First-manager bootstrap token must allow first manager creation and first device approval.");
+        }
+
+        if (string.Equals(
+                purpose,
+                LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+                StringComparison.Ordinal)
+            && (!HasAction(payload, LocalServerFirstManagerSetupTokenActions.RecoverManagerAccess)
+                || !HasAction(payload, LocalServerFirstManagerSetupTokenActions.ApproveManagerDevice)))
+        {
+            return Failure(
+                "FirstManagerSetupTokenActionsInvalid",
+                "Manager recovery token must allow manager access recovery and manager device approval.");
+        }
+
+        if (string.Equals(
+                purpose,
+                LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+                StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(payload.RecoveryReason))
+        {
+            return Failure(
+                "ManagerRecoveryReasonRequired",
+                "Manager recovery token must include a recovery reason.");
         }
 
         return LocalServerFirstManagerSetupTokenVerificationResult.Success(
             payload,
             token.Signature);
+    }
+
+    private static string? ResolvePurpose(
+        LocalServerFirstManagerSetupTokenPayloadResponse payload)
+    {
+        var normalized = payload.Purpose?.Trim();
+
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap;
+        }
+
+        return normalized switch
+        {
+            LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap
+                => LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap,
+            LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery
+                => LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+            _ => null
+        };
     }
 
     private static bool HasAction(

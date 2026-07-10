@@ -8,6 +8,8 @@ public static class LocalServerPairingFormats
     public const string DevicePairingRequestVersion = "safarsuite-local-device-pairing-request-v1";
     public const string DeviceCredentialVersion = "safarsuite-local-device-credential-v1";
     public const string PairingProfileVersion = "safarsuite-local-pairing-profile-v1";
+    public const string PairingDescriptorVersion = "safarsuite-local-pairing-descriptor-v1";
+    public const string PairingDirectoryVersion = "safarsuite-local-pairing-directory-v1";
     public const string FirstManagerSetupTokenVersion = "safarsuite-first-manager-setup-token-v1";
     public const string ManagerSessionVersion = "safarsuite-local-manager-session-v1";
 }
@@ -38,6 +40,14 @@ public static class LocalServerFirstManagerSetupTokenActions
 {
     public const string CreateFirstManager = "CreateFirstManager";
     public const string ApproveFirstDevice = "ApproveFirstDevice";
+    public const string RecoverManagerAccess = "RecoverManagerAccess";
+    public const string ApproveManagerDevice = "ApproveManagerDevice";
+}
+
+public static class LocalServerFirstManagerSetupTokenPurposes
+{
+    public const string FirstManagerBootstrap = "FirstManagerBootstrap";
+    public const string ManagerRecovery = "ManagerRecovery";
 }
 
 public sealed record LocalServerPairingStatusResponse(
@@ -66,6 +76,48 @@ public sealed record LocalServerPairingDiscoveryResponse(
     string? BootstrapPayloadSha256,
     string? BootstrapSignatureKeyId,
     DateTimeOffset GeneratedAtUtc);
+
+public sealed record LocalServerPairingDescriptorResponse(
+    string FormatVersion,
+    Guid ClientId,
+    string ProviderInstallationId,
+    Guid? BootstrapPackageId,
+    Guid? SetupTokenId,
+    string DisplayName,
+    string? AppServerInstallationId,
+    string? SiteId,
+    string? SiteRole,
+    string? CustomerCode,
+    string? CustomerName,
+    string? BranchName,
+    string? FingerprintHash,
+    string? TlsCaSha256,
+    string? TlsCertificateSha256,
+    string? ServerPairingKeySha256,
+    IReadOnlyCollection<string> UrlCandidates,
+    DateTimeOffset GeneratedAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    string? Source,
+    string? BootstrapBundleSha256 = null,
+    string? BootstrapSignatureKeyId = null,
+    IReadOnlyCollection<string>? Notes = null,
+    string? SignatureAlgorithm = null,
+    string? SignatureKeyId = null,
+    string? PayloadSha256 = null,
+    string? Signature = null);
+
+public sealed record IssueLocalServerPairingDescriptorRequest(
+    Guid? BootstrapPackageId = null,
+    Guid? SetupTokenId = null,
+    string? ClientCode = null,
+    string? CustomerName = null,
+    string? AppServerInstallationId = null,
+    string? FingerprintHash = null,
+    IReadOnlyCollection<string>? UrlCandidates = null,
+    string? TlsCaSha256 = null,
+    string? TlsCertificateSha256 = null,
+    string? ServerPairingKeySha256 = null,
+    string? RequestedBy = null);
 
 public sealed record LocalServerPairingHelloRequest(
     string FormatVersion,
@@ -223,6 +275,10 @@ public sealed record LocalServerSignedDeviceCredentialResponse(
 public sealed record VerifyLocalServerDeviceCredentialRequest(
     string? DeviceCredential = null);
 
+public sealed record RefreshLocalServerDeviceCredentialRequest(
+    string? DeviceCredential = null,
+    string? RequestedBy = null);
+
 public sealed record VerifyLocalServerDeviceCredentialResponse(
     Guid ClientId,
     string InstallationId,
@@ -236,6 +292,24 @@ public sealed record VerifyLocalServerDeviceCredentialResponse(
     DateTimeOffset? ExpiresAtUtc,
     DateTimeOffset VerifiedAtUtc);
 
+public sealed record RefreshLocalServerDeviceCredentialResponse(
+    Guid ClientId,
+    string InstallationId,
+    Guid PairingRequestId,
+    Guid DeviceId,
+    string DeviceStatus,
+    string AssignedRole,
+    bool IsManagerCapable,
+    bool Rotated,
+    string? DeviceCredential,
+    LocalServerSignedDeviceCredentialResponse? SignedDeviceCredential,
+    string CurrentDeviceCredentialId,
+    DateTimeOffset CurrentCredentialIssuedAtUtc,
+    DateTimeOffset? CurrentCredentialExpiresAtUtc,
+    string? PreviousDeviceCredentialId,
+    DateTimeOffset? PreviousCredentialGraceUntilUtc,
+    DateTimeOffset RefreshedAtUtc);
+
 public sealed record LocalServerFirstManagerSetupTokenPayloadResponse(
     string FormatVersion,
     Guid TokenId,
@@ -247,14 +321,18 @@ public sealed record LocalServerFirstManagerSetupTokenPayloadResponse(
     string? ManagerEmail,
     string CreatedBy,
     DateTimeOffset IssuedAtUtc,
-    DateTimeOffset ExpiresAtUtc);
+    DateTimeOffset ExpiresAtUtc,
+    string Purpose = LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap,
+    string? RecoveryReason = null);
 
 public sealed record IssueLocalServerFirstManagerSetupTokenRequest(
     Guid PendingDeviceRequestId,
     string ManagerDisplayName,
     string? ManagerEmail = null,
     string? CreatedBy = null,
-    int ExpiresInHours = 24);
+    int ExpiresInHours = 24,
+    string Purpose = LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap,
+    string? RecoveryReason = null);
 
 public sealed record LocalServerSignedFirstManagerSetupTokenResponse(
     string PayloadJson,
@@ -273,7 +351,10 @@ public sealed record IssueLocalServerFirstManagerSetupTokenResponse(
     string PayloadSha256,
     DateTimeOffset IssuedAtUtc,
     DateTimeOffset ExpiresAtUtc,
-    LocalServerSignedFirstManagerSetupTokenResponse SignedToken);
+    LocalServerSignedFirstManagerSetupTokenResponse SignedToken,
+    string Purpose = LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap,
+    string? RecoveryReason = null,
+    IReadOnlyCollection<string>? AllowedActions = null);
 
 public sealed record ImportLocalServerFirstManagerSetupTokenResponse(
     Guid TokenId,
@@ -289,4 +370,8 @@ public sealed record ImportLocalServerFirstManagerSetupTokenResponse(
     string SignatureKeyId,
     string PayloadSha256,
     DateTimeOffset ImportedAtUtc,
-    LocalServerSignedDeviceCredentialResponse? SignedDeviceCredential = null);
+    LocalServerSignedDeviceCredentialResponse? SignedDeviceCredential = null,
+    string Purpose = LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap,
+    string? RecoveryReason = null,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    string? AssignedRole = null);

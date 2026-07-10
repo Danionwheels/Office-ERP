@@ -103,6 +103,8 @@ export type CloudFirstManagerSetupTokenFormInput = {
   managerEmail: string;
   createdBy: string;
   expiresInHours: string;
+  purpose: "FirstManagerBootstrap" | "ManagerRecovery";
+  recoveryReason: string;
 };
 
 export type IssueCloudFirstManagerSetupTokenInput = {
@@ -111,6 +113,8 @@ export type IssueCloudFirstManagerSetupTokenInput = {
   managerEmail: string;
   createdBy: string;
   expiresInHours: number;
+  purpose: "FirstManagerBootstrap" | "ManagerRecovery";
+  recoveryReason: string;
 };
 
 export type RevokeCloudAppActivationIssueInput = {
@@ -355,6 +359,8 @@ export type LocalServerFirstManagerSetupTokenPayload = {
   createdBy: string;
   issuedAtUtc: string;
   expiresAtUtc: string;
+  purpose: "FirstManagerBootstrap" | "ManagerRecovery";
+  recoveryReason: string | null;
 };
 
 export type LocalServerSignedFirstManagerSetupToken = {
@@ -376,6 +382,9 @@ export type IssuedLocalServerFirstManagerSetupToken = {
   issuedAtUtc: string;
   expiresAtUtc: string;
   signedToken: LocalServerSignedFirstManagerSetupToken;
+  purpose: "FirstManagerBootstrap" | "ManagerRecovery";
+  recoveryReason: string | null;
+  allowedActions: string[] | null;
 };
 
 export type LocalServerBootstrapPackagePayload = {
@@ -434,6 +443,78 @@ export type LocalServerBootstrapPackageSummary = {
 
 export type LocalServerBootstrapPackageRegister = {
   packages: LocalServerBootstrapPackageSummary[];
+};
+
+export type CloudBootstrapPackageHandoffFormInput = {
+  channel: string;
+  recipient: string;
+  markedBy: string;
+  note: string;
+};
+
+export type MarkCloudBootstrapPackageHandoffInput = {
+  channel: string;
+  recipient: string;
+  markedBy: string;
+  note?: string;
+};
+
+export type LocalServerBootstrapPackageHandoff = {
+  bootstrapPackageId: string;
+  setupTokenId: string;
+  clientId: string;
+  installationId: string;
+  handoffStatus: string;
+  channel: string;
+  recipient: string;
+  markedBy: string;
+  note: string | null;
+  markedAtUtc: string;
+};
+
+export type LocalServerPairingDescriptor = {
+  formatVersion: "safarsuite-local-pairing-descriptor-v1";
+  clientId: string;
+  providerInstallationId: string;
+  bootstrapPackageId: string;
+  setupTokenId: string;
+  displayName: string;
+  appServerInstallationId?: string;
+  serverInstallationId?: string;
+  siteId?: string;
+  siteRole?: string;
+  customerCode?: string;
+  customerName?: string;
+  branchName?: string;
+  fingerprintHash?: string;
+  tlsCaSha256?: string;
+  tlsCertificateSha256?: string;
+  serverPairingKeySha256?: string;
+  urlCandidates: string[];
+  generatedAtUtc: string;
+  expiresAtUtc?: string;
+  source: "ControlDeskBootstrapPackage" | "ControlCloudPairingDescriptor";
+  bootstrapBundleSha256: string;
+  bootstrapSignatureKeyId: string;
+  notes: string[];
+  signatureAlgorithm?: string;
+  signatureKeyId?: string;
+  payloadSha256?: string;
+  signature?: string;
+};
+
+export type IssueLocalServerPairingDescriptorInput = {
+  bootstrapPackageId?: string;
+  setupTokenId?: string;
+  clientCode?: string;
+  customerName?: string;
+  appServerInstallationId?: string;
+  fingerprintHash?: string;
+  urlCandidates?: string[];
+  tlsCaSha256?: string;
+  tlsCertificateSha256?: string;
+  serverPairingKeySha256?: string;
+  requestedBy?: string;
 };
 
 export type LocalServerDiagnosticCheck = {

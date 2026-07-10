@@ -30,7 +30,9 @@ public sealed class IssueCloudFirstManagerSetupTokenHandler
             command.ManagerDisplayName.Trim(),
             CloudInstallationProvisioningValidator.OptionalText(command.ManagerEmail),
             CloudInstallationProvisioningValidator.NormalizeActor(command.CreatedBy ?? ""),
-            command.ExpiresInHours);
+            command.ExpiresInHours,
+            NormalizePurpose(command.Purpose),
+            CloudInstallationProvisioningValidator.OptionalText(command.RecoveryReason));
         var result = await _provisioningClient.IssueFirstManagerSetupTokenAsync(
             command.ClientId,
             command.InstallationId.Trim(),
@@ -68,6 +70,7 @@ public sealed class IssueCloudFirstManagerSetupTokenHandler
         AddRequiredText(errors, nameof(command.ManagerDisplayName), command.ManagerDisplayName, 160);
         AddOptionalText(errors, nameof(command.ManagerEmail), command.ManagerEmail, 160);
         AddOptionalText(errors, nameof(command.CreatedBy), command.CreatedBy, 160);
+        AddOptionalText(errors, nameof(command.RecoveryReason), command.RecoveryReason, 500);
 
         if (command.ExpiresInHours is < 1 or > 168)
         {
@@ -76,7 +79,33 @@ public sealed class IssueCloudFirstManagerSetupTokenHandler
                 "First-manager setup token expiry must be between 1 and 168 hours."));
         }
 
+        var purpose = NormalizePurpose(command.Purpose);
+        if (!string.Equals(purpose, LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap, StringComparison.Ordinal)
+            && !string.Equals(purpose, LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery, StringComparison.Ordinal))
+        {
+            errors.Add(ApplicationError.Validation(
+                nameof(command.Purpose),
+                "First-manager setup token purpose is not supported."));
+        }
+
+        if (string.Equals(purpose, LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery, StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(command.RecoveryReason))
+        {
+            errors.Add(ApplicationError.Validation(
+                nameof(command.RecoveryReason),
+                "A recovery reason is required for manager recovery setup tokens."));
+        }
+
         return errors;
+    }
+
+    private static string NormalizePurpose(string? value)
+    {
+        var normalized = CloudInstallationProvisioningValidator.OptionalText(value);
+
+        return string.IsNullOrWhiteSpace(normalized)
+            ? LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap
+            : normalized;
     }
 
     private static void AddRequiredText(

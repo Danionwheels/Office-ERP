@@ -50,6 +50,21 @@ public sealed class HttpControlCloudInstallationProvisioningClient
         return ListBootstrapPackagesCoreAsync(clientId, installationId, take, cancellationToken);
     }
 
+    public Task<ControlCloudBootstrapPackageHandoffClientResult> MarkBootstrapPackageHandoffAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        MarkLocalServerBootstrapPackageHandoffRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return MarkBootstrapPackageHandoffCoreAsync(
+            clientId,
+            installationId,
+            bootstrapPackageId,
+            request,
+            cancellationToken);
+    }
+
     public Task<ControlCloudAppActivationTokenClientResult> IssueAppActivationTokenAsync(
         Guid clientId,
         string installationId,
@@ -66,6 +81,15 @@ public sealed class HttpControlCloudInstallationProvisioningClient
         CancellationToken cancellationToken = default)
     {
         return IssueFirstManagerSetupTokenCoreAsync(clientId, installationId, request, cancellationToken);
+    }
+
+    public Task<ControlCloudPairingDescriptorClientResult> IssuePairingDescriptorAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerPairingDescriptorRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return IssuePairingDescriptorCoreAsync(clientId, installationId, request, cancellationToken);
     }
 
     public Task<ControlCloudAppActivationIssuesClientResult> ListAppActivationIssuesAsync(
@@ -165,6 +189,33 @@ public sealed class HttpControlCloudInstallationProvisioningClient
             : ControlCloudBootstrapPackageRegisterClientResult.Failure(result.FailureCode!, result.Detail!);
     }
 
+    private async Task<ControlCloudBootstrapPackageHandoffClientResult> MarkBootstrapPackageHandoffCoreAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        MarkLocalServerBootstrapPackageHandoffRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!HasProviderAccess())
+        {
+            return ControlCloudBootstrapPackageHandoffClientResult.Failure(
+                "ControlCloudProviderAccessNotConfigured",
+                "Control Cloud provider access key is not configured.");
+        }
+
+        var result = await SendAsync<MarkLocalServerBootstrapPackageHandoffRequest, LocalServerBootstrapPackageHandoffResponse>(
+            clientId,
+            installationId,
+            $"bootstrap-packages/{bootstrapPackageId:D}/handoff",
+            request,
+            "bootstrap package handoff",
+            cancellationToken);
+
+        return result.IsSuccess
+            ? ControlCloudBootstrapPackageHandoffClientResult.Success(result.Response!)
+            : ControlCloudBootstrapPackageHandoffClientResult.Failure(result.FailureCode!, result.Detail!);
+    }
+
     private async Task<ControlCloudAppActivationTokenClientResult> IssueAppActivationTokenCoreAsync(
         Guid clientId,
         string installationId,
@@ -215,6 +266,32 @@ public sealed class HttpControlCloudInstallationProvisioningClient
         return result.IsSuccess
             ? ControlCloudFirstManagerSetupTokenClientResult.Success(result.Response!)
             : ControlCloudFirstManagerSetupTokenClientResult.Failure(result.FailureCode!, result.Detail!);
+    }
+
+    private async Task<ControlCloudPairingDescriptorClientResult> IssuePairingDescriptorCoreAsync(
+        Guid clientId,
+        string installationId,
+        IssueLocalServerPairingDescriptorRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!HasProviderAccess())
+        {
+            return ControlCloudPairingDescriptorClientResult.Failure(
+                "ControlCloudProviderAccessNotConfigured",
+                "Control Cloud provider access key is not configured.");
+        }
+
+        var result = await SendAsync<IssueLocalServerPairingDescriptorRequest, LocalServerPairingDescriptorResponse>(
+            clientId,
+            installationId,
+            "pairing-descriptor",
+            request,
+            "pairing descriptor",
+            cancellationToken);
+
+        return result.IsSuccess
+            ? ControlCloudPairingDescriptorClientResult.Success(result.Response!)
+            : ControlCloudPairingDescriptorClientResult.Failure(result.FailureCode!, result.Detail!);
     }
 
     private async Task<ControlCloudAppActivationIssuesClientResult> ListAppActivationIssuesCoreAsync(

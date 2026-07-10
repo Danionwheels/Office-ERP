@@ -157,6 +157,24 @@ public sealed record LocalServerBootstrapPackageSummaryResponse(
     string BundleFileName,
     string BundleSha256);
 
+public sealed record MarkLocalServerBootstrapPackageHandoffRequest(
+    string Channel,
+    string Recipient,
+    string MarkedBy,
+    string? Note = null);
+
+public sealed record LocalServerBootstrapPackageHandoffResponse(
+    Guid BootstrapPackageId,
+    Guid SetupTokenId,
+    Guid ClientId,
+    string InstallationId,
+    string HandoffStatus,
+    string Channel,
+    string Recipient,
+    string MarkedBy,
+    string? Note,
+    DateTimeOffset MarkedAtUtc);
+
 public sealed record RegisterLocalServerInstallationRequest(
     Guid ClientId,
     string SetupToken,

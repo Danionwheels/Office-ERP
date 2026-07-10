@@ -64,6 +64,27 @@ public sealed class IssueLocalServerFirstManagerSetupTokenHandler
                 "Manager display name is required before issuing a first-manager setup token.");
         }
 
+        var purpose = NormalizePurpose(command.Purpose);
+
+        if (purpose is null)
+        {
+            return IssueLocalServerFirstManagerSetupTokenResult.Failure(
+                "FirstManagerSetupTokenPurposeInvalid",
+                "First-manager setup token purpose is not supported.");
+        }
+
+        var recoveryReason = NormalizeText(command.RecoveryReason);
+        if (string.Equals(
+                purpose,
+                LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+                StringComparison.Ordinal)
+            && recoveryReason is null)
+        {
+            return IssueLocalServerFirstManagerSetupTokenResult.Failure(
+                "ManagerRecoveryReasonRequired",
+                "A recovery reason is required before issuing a manager recovery setup token.");
+        }
+
         var installation = await _installations.GetByInstallationIdAsync(
             installationId,
             cancellationToken);
@@ -91,15 +112,14 @@ public sealed class IssueLocalServerFirstManagerSetupTokenHandler
             command.ClientId,
             installationId,
             command.PendingDeviceRequestId,
-            [
-                LocalServerFirstManagerSetupTokenActions.CreateFirstManager,
-                LocalServerFirstManagerSetupTokenActions.ApproveFirstDevice
-            ],
+            ResolveAllowedActions(purpose),
             managerDisplayName,
             NormalizeText(command.ManagerEmail),
             createdBy,
             now,
-            expiresAtUtc);
+            expiresAtUtc,
+            purpose,
+            recoveryReason);
         var signed = _signer.Sign(payload);
 
         try
@@ -136,7 +156,7 @@ public sealed class IssueLocalServerFirstManagerSetupTokenHandler
                 SubjectEmail: payload.ManagerEmail ?? "",
                 ClientPortalAuditEventTypes.FirstManagerSetupTokenIssued,
                 ControlCloudAuditWriter.NormalizeActor(createdBy, ClientPortalAuditActors.ControlDesk),
-                $"First-manager setup token '{payload.TokenId}' issued for installation '{installationId}', pending device request '{payload.PendingDeviceRequestId}', manager '{payload.ManagerDisplayName}', signing key '{signed.Signature.KeyId}', and expiry '{payload.ExpiresAtUtc:O}'.",
+                $"First-manager setup token '{payload.TokenId}' issued for installation '{installationId}', pending device request '{payload.PendingDeviceRequestId}', manager '{payload.ManagerDisplayName}', purpose '{payload.Purpose}', signing key '{signed.Signature.KeyId}', and expiry '{payload.ExpiresAtUtc:O}'.",
                 now),
             cancellationToken);
 
@@ -153,7 +173,46 @@ public sealed class IssueLocalServerFirstManagerSetupTokenHandler
                 signed.Signature.PayloadSha256,
                 payload.IssuedAtUtc,
                 payload.ExpiresAtUtc,
-                signed));
+                signed,
+                payload.Purpose,
+                payload.RecoveryReason,
+                payload.AllowedActions));
+    }
+
+    private static string? NormalizePurpose(string? value)
+    {
+        var normalized = NormalizeText(value)
+            ?? LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap;
+
+        return normalized switch
+        {
+            LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap
+                => LocalServerFirstManagerSetupTokenPurposes.FirstManagerBootstrap,
+            LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery
+                => LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+            _ => null
+        };
+    }
+
+    private static IReadOnlyCollection<string> ResolveAllowedActions(string purpose)
+    {
+        if (string.Equals(
+                purpose,
+                LocalServerFirstManagerSetupTokenPurposes.ManagerRecovery,
+                StringComparison.Ordinal))
+        {
+            return
+            [
+                LocalServerFirstManagerSetupTokenActions.RecoverManagerAccess,
+                LocalServerFirstManagerSetupTokenActions.ApproveManagerDevice
+            ];
+        }
+
+        return
+        [
+            LocalServerFirstManagerSetupTokenActions.CreateFirstManager,
+            LocalServerFirstManagerSetupTokenActions.ApproveFirstDevice
+        ];
     }
 
     private static string? NormalizeText(string? value)

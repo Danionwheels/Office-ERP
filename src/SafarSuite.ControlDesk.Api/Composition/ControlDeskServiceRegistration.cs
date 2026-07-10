@@ -92,11 +92,13 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallati
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudFirstManagerSetupToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudPairingDescriptor;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudAppActivationIssues;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationBootstrapPackages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationAuditEvents;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListProviderAccessOperators;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.MarkCloudInstallationBootstrapPackageHandoff;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.QueueCloudInstallationSupportCommand;
@@ -269,8 +271,10 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<UpdateProviderAccessOperatorStatusHandler>();
         services.AddScoped<CreateCloudInstallationSetupTokenHandler>();
         services.AddScoped<CreateCloudInstallationBootstrapPackageHandler>();
+        services.AddScoped<MarkCloudInstallationBootstrapPackageHandoffHandler>();
         services.AddScoped<IssueCloudAppActivationTokenHandler>();
         services.AddScoped<IssueCloudFirstManagerSetupTokenHandler>();
+        services.AddScoped<IssueCloudPairingDescriptorHandler>();
         services.AddScoped<RevokeCloudAppActivationIssueHandler>();
         services.AddScoped<QueueCloudInstallationSupportCommandHandler>();
         services.AddScoped<PublishPendingCloudOutboxMessagesHandler>();

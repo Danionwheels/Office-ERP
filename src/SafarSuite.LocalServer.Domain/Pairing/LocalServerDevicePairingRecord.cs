@@ -30,14 +30,21 @@ public sealed record LocalServerDevicePairingRecord(
     string? SuspensionReason = null,
     DateTimeOffset? RevokedAtUtc = null,
     string? RevokedBy = null,
-    string? RevocationReason = null)
+    string? RevocationReason = null,
+    DateTimeOffset? DeviceCredentialExpiresAtUtc = null,
+    DateTimeOffset? DeviceCredentialRefreshedAtUtc = null,
+    string? DeviceCredentialRefreshedBy = null,
+    string? PreviousDeviceCredentialId = null,
+    string? PreviousDeviceCredentialSha256 = null,
+    DateTimeOffset? PreviousDeviceCredentialValidUntilUtc = null)
 {
     public LocalServerDevicePairingRecord Approve(
         string approvedBy,
         string assignedRole,
         string deviceCredentialId,
         string deviceCredentialSha256,
-        DateTimeOffset approvedAtUtc)
+        DateTimeOffset approvedAtUtc,
+        DateTimeOffset? deviceCredentialExpiresAtUtc = null)
     {
         return this with
         {
@@ -49,10 +56,39 @@ public sealed record LocalServerDevicePairingRecord(
             DeviceCredentialId = NormalizeOptional(deviceCredentialId, 120),
             DeviceCredentialSha256 = NormalizeOptional(deviceCredentialSha256, 160),
             DeviceCredentialIssuedAtUtc = approvedAtUtc,
+            DeviceCredentialExpiresAtUtc = deviceCredentialExpiresAtUtc,
+            DeviceCredentialRefreshedAtUtc = null,
+            DeviceCredentialRefreshedBy = null,
+            PreviousDeviceCredentialId = null,
+            PreviousDeviceCredentialSha256 = null,
+            PreviousDeviceCredentialValidUntilUtc = null,
             SuspendedAtUtc = null,
             SuspendedBy = null,
             SuspensionReason = null,
             UpdatedAtUtc = approvedAtUtc
+        };
+    }
+
+    public LocalServerDevicePairingRecord RefreshCredential(
+        string refreshedBy,
+        string deviceCredentialId,
+        string deviceCredentialSha256,
+        DateTimeOffset refreshedAtUtc,
+        DateTimeOffset? deviceCredentialExpiresAtUtc,
+        DateTimeOffset? previousCredentialValidUntilUtc)
+    {
+        return this with
+        {
+            DeviceCredentialId = NormalizeOptional(deviceCredentialId, 120),
+            DeviceCredentialSha256 = NormalizeOptional(deviceCredentialSha256, 160),
+            DeviceCredentialIssuedAtUtc = refreshedAtUtc,
+            DeviceCredentialExpiresAtUtc = deviceCredentialExpiresAtUtc,
+            DeviceCredentialRefreshedAtUtc = refreshedAtUtc,
+            DeviceCredentialRefreshedBy = NormalizeOptional(refreshedBy, 160),
+            PreviousDeviceCredentialId = NormalizeOptional(DeviceCredentialId, 120),
+            PreviousDeviceCredentialSha256 = NormalizeOptional(DeviceCredentialSha256, 160),
+            PreviousDeviceCredentialValidUntilUtc = previousCredentialValidUntilUtc,
+            UpdatedAtUtc = refreshedAtUtc
         };
     }
 

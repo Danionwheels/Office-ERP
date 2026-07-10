@@ -185,6 +185,25 @@ public sealed class HmacLocalServerDeviceCredentialService
             token);
     }
 
+    public LocalServerBootstrapPackageSignatureResponse SignPayloadJson(
+        string payloadJson)
+    {
+        var payload = payloadJson?.Trim();
+
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            throw new ArgumentException(
+                "Payload JSON is required before signing.",
+                nameof(payloadJson));
+        }
+
+        return new LocalServerBootstrapPackageSignatureResponse(
+            SignatureAlgorithm,
+            _signingKeyId,
+            ComputeSha256(payload),
+            Sign(_signingSecret, payload));
+    }
+
     private static LocalServerDeviceCredentialVerificationResult Failure(
         string failureCode,
         string detail)

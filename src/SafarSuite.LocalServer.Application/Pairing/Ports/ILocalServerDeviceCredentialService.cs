@@ -14,6 +14,9 @@ public interface ILocalServerDeviceCredentialService
     LocalServerDeviceCredentialVerificationResult Verify(
         string? compactToken,
         DateTimeOffset verifiedAtUtc);
+
+    LocalServerBootstrapPackageSignatureResponse SignPayloadJson(
+        string payloadJson);
 }
 
 public sealed record LocalServerDeviceCredentialVerificationResult(
