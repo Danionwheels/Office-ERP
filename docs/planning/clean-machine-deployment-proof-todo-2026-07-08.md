@@ -19,6 +19,34 @@ Prove that a fresh customer-style setup can go from Control Cloud bootstrap pack
 - [x] Capture the exact command sequence, expected outputs, artifacts, and failure triage notes.
 - [ ] Decide what must move from "proof script" into the Control Desk customer setup UX.
 
+## 2026-07-10 Rehearsal Pass
+
+Ran a fresh generated-package rehearsal after the LocalServer pairing and installed-app manager Access Assignment proofs landed. This pass used `ComposeBootstrapProof run-compose` with the optional `app-runtime` profile enabled, generated a new proof package under `artifacts/codex/clean-machine-rehearsal-20260710`, started Docker Compose on fresh host ports, verified the LocalServer runtime, verified app-runtime health, and cleaned the compose stack down after the proof.
+
+Command:
+
+```powershell
+dotnet run --project tools\SafarSuite.LocalServer.ComposeBootstrapProof\SafarSuite.LocalServer.ComposeBootstrapProof.csproj -- run-compose --repo-root C:\Users\Daniyal\Documents\Codex\provider-office-erp --output C:\Users\Daniyal\Documents\Codex\provider-office-erp\artifacts\codex\clean-machine-rehearsal-20260710 --port 51892 --local-port 18143 --app-port 18144 --include-app-runtime true --verify-app-runtime true --cleanup-compose true --runtime-wait-seconds 180
+```
+
+Verified runtime surface:
+
+- Local API: `https://127.0.0.1:18143` with `GeneratedLocalCa`.
+- App runtime: `http://127.0.0.1:18144`, `/health` returned HTTP `200`.
+- Bootstrap registration: `Registered`.
+- Cloud registration: `Active`.
+- Entitlement pull: version `1`, license status `Active`.
+- Heartbeat: `Received`.
+- Module access: `Accounting` allowed with `Active` access state.
+- Pairing mode: `ManagerApproval`.
+- Pairing lifecycle proof: first manager device `Approved`, new device request `Pending`, approved device `Approved`, revoked device `Revoked`.
+- Runtime state: bootstrap configuration and cached entitlement present.
+
+Notes:
+
+- The first command used a relative output path and the tool resolved it below the tool project folder; the final evidence run used an absolute output path under the repo-level `artifacts/codex` directory.
+- This was a fast clean-package rehearsal against the proof stub cloud. The next deeper pass should run the generated real Control Cloud customer setup package, diagnostics command/upload, app activation import, and rerun-secret proof again with today’s app/pairing state.
+
 ## 2026-07-08 Final Live Proof Notes
 
 Passed artifacts:

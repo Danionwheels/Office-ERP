@@ -151,6 +151,7 @@ export function CloudInstallationStatusPanel({
     status,
     bootstrapPackage,
     bootstrapPackages,
+    auditEvents,
     latestHeartbeat,
     latestEntitlement,
     diagnosticsReport,
@@ -1856,6 +1857,7 @@ type CustomerSetupStepsInput = {
   status: ControlCloudInstallationStatus | null;
   bootstrapPackage: LocalServerBootstrapPackage | null;
   bootstrapPackages: LocalServerBootstrapPackageSummary[];
+  auditEvents: CloudInstallationStatusPanelProps["auditEvents"];
   latestHeartbeat: ControlCloudInstallationStatus["latestHeartbeat"];
   latestEntitlement: ControlCloudInstallationStatus["latestEntitlement"];
   diagnosticsReport: LocalServerDiagnosticReport | null;
@@ -1869,6 +1871,7 @@ function getCustomerSetupSteps({
   status,
   bootstrapPackage,
   bootstrapPackages,
+  auditEvents,
   latestHeartbeat,
   latestEntitlement,
   diagnosticsReport,
@@ -1882,6 +1885,10 @@ function getCustomerSetupSteps({
     ? latestRegisteredPackage?.packageStatus ?? "Waiting"
     : "Ready";
   const packageReady = bootstrapPackage !== null || isUsablePackage(latestRegisteredPackage);
+  const handoffEvent = latestRegisteredPackage === null
+    ? null
+    : getBootstrapPackageHandoffEvent(latestRegisteredPackage, auditEvents);
+  const handoffReady = handoffEvent !== null;
   const registrationReady = status !== null;
   const heartbeatReady = latestHeartbeat !== null;
   const heartbeatEntitlementVersion = latestHeartbeat?.entitlementVersion ?? null;
@@ -1914,6 +1921,14 @@ function getCustomerSetupSteps({
       tone: packageReady
         ? isExpiredPackage(latestRegisteredPackage) && bootstrapPackage === null ? "warning" : "ready"
         : "neutral"
+    },
+    {
+      key: "packet-handoff",
+      label: "Packet handoff",
+      status: handoffReady ? "Handed off" : "Waiting",
+      detail: formatSetupPackageHandoffDetail(latestRegisteredPackage, handoffEvent, packageReady),
+      done: handoffReady,
+      tone: handoffReady ? "ready" : packageReady ? "warning" : "neutral"
     },
     {
       key: "registration",
@@ -2015,6 +2030,24 @@ function formatSetupPackageDetail(
   }
 
   return `${packageSummary.bundleFileName || shortIdentifier(packageSummary.bootstrapPackageId)} generated ${formatNullableDateTime(packageSummary.generatedAtUtc)}`;
+}
+
+function formatSetupPackageHandoffDetail(
+  packageSummary: LocalServerBootstrapPackageSummary | null,
+  handoffEvent: CloudInstallationStatusPanelProps["auditEvents"][number] | null,
+  packageReady: boolean
+): string {
+  if (handoffEvent !== null) {
+    return `Marked ${formatNullableDateTime(handoffEvent.occurredAtUtc)}`;
+  }
+
+  if (packageSummary !== null) {
+    return `${shortIdentifier(packageSummary.bootstrapPackageId)} has not been marked handed off`;
+  }
+
+  return packageReady
+    ? "Refresh package register to load handoff evidence"
+    : "Generate setup packet before handoff";
 }
 
 function formatAppActivationSetupDetail(
