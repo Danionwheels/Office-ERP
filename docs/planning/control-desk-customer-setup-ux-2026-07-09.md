@@ -20,6 +20,7 @@ Let a provider operator create a customer deployment package, hand off everythin
 - [x] Add customer-safe Windows/PowerShell handoff wording if the installer is run from a Windows terminal.
 - [x] Let operators mark external handoff state without exposing setup-token plaintext after package creation.
 - [x] Show setup packet handoff evidence as its own guided checklist step before local-server registration.
+- [x] Add clean-target Docker volume preflight warnings to the downloaded customer setup guide after the real clean-machine proof exposed stale-volume failure risk.
 
 ## Notes
 
@@ -28,6 +29,8 @@ The first UX slice is intentionally browser-side and uses the existing bootstrap
 The setup checklist is evidence-backed from existing cloud state instead of manual ticks. Entitlement pulled is complete only when the latest heartbeat carries an entitlement version, so the desk can distinguish cloud issuance from local-server pickup.
 
 The downloaded setup guide now calls out that the install command is Bash, gives PowerShell launch commands for Git Bash/WSL, and tells operators to regenerate the package if the guide or bundle is sent to the wrong destination.
+
+The downloaded setup guide also carries a clean-target preflight section with the generated compose project/state directory, warns operators not to reuse stale database volumes from another customer/package/PostgreSQL major version, and scopes any retry cleanup to the previous SafarSuite setup stack for the same installation. This came directly from the 2026-07-10 real Control Cloud clean-machine pass, where a stale local PostgreSQL volume broke an otherwise clean generated package run.
 
 The setup packet now also includes a non-secret pairing descriptor. The normal Descriptor button asks Control Cloud to issue and sign the descriptor through the bootstrap signing-key lane, then falls back to a local unsigned hint only if the cloud export is unavailable. It carries URL candidates, client/install/site metadata, bootstrap package identifiers, bundle/signature metadata, and optional app-server identity/fingerprint pins when a current activation issue is known. It does not carry setup-token plaintext, provider credentials, database credentials, app activation tokens, or signing private keys. The SafarSuite Windows app imports the descriptor as a candidate hint, then still validates the live LocalServer hello response and requires fingerprint confirmation before writing trust.
 

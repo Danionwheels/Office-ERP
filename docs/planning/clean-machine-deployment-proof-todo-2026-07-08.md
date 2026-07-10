@@ -47,6 +47,39 @@ Notes:
 - The first command used a relative output path and the tool resolved it below the tool project folder; the final evidence run used an absolute output path under the repo-level `artifacts/codex` directory.
 - This was a fast clean-package rehearsal against the proof stub cloud. The next deeper pass should run the generated real Control Cloud customer setup package, diagnostics command/upload, app activation import, and rerun-secret proof again with today’s app/pairing state.
 
+## 2026-07-10 Real Control Cloud Pass
+
+Ran the stricter clean-machine path again against a real PostgreSQL-backed Control Cloud API with the current app-runtime and pairing-era LocalServer image. Evidence root: `artifacts/codex/clean-machine-live-proof-20260710`.
+
+Proof identity:
+
+- Control Cloud host URL: `http://127.0.0.1:5169`.
+- Container-visible Control Cloud URL: `http://host.docker.internal:5169`.
+- Client: `22222222-2222-2222-2222-222222222222`.
+- Installation: `clean-machine-main-20260710`.
+- Bootstrap package: `8fdb0470-a398-4d86-b39f-78a10c8494c3`.
+- LocalServer image: `safarsuite-local-server:clean-proof-20260710`.
+- Local API: `https://127.0.0.1:19090`.
+- SafarSuite app runtime: `http://127.0.0.1:19091`.
+
+Verified runtime surface:
+
+- Generated package and helper scripts from real Control Cloud succeeded after supplying the file-backed entitlement/bootstrap signing secret to the installer helper with `SAFARSUITE_ENTITLEMENT_SIGNING_SECRET`.
+- LocalServer bootstrap registration reached `Registered`; Control Cloud installation status is `Active`.
+- Entitlement pull cached version `639192436075769404`, license status `Active`, paid until `2026-08-09`, offline valid until `2026-08-23`.
+- Heartbeat status `Received`; Control Cloud status readback shows the latest heartbeat and zero pending commands.
+- Module gateway returned `Accounting` allowed with `Active` access state.
+- Diagnostics command `c558e623-170c-4fa2-bff3-ff917a4fba26` was acknowledged as `Applied` with detail `Diagnostics bundle exported and uploaded.`
+- Latest diagnostics report `879cbb65-6c6f-49a5-bf62-2035fe4b9105` is `Received` with `Active` license status and accepted Control Cloud entitlement import audit.
+- App activation import passed through Control Cloud issue `10f95586-ed42-4023-b1ba-89656f3e88b0`; app server `2d855bfa-5b6c-495b-9f14-e67dc6dc4d17` became `Active`, and app `Accounting` access is allowed/`Active`.
+- `clean-machine-rerun-secret-proof.sh` passed; generated files under `target/var/secrets` and `target/var/certs-private/local-api` kept matching hashes across installer reruns.
+
+Run hazards found:
+
+- A stale `safarsuite-local-server` Docker volume from a PostgreSQL 17 proof made the generated `postgres:16-alpine` local-db container unhealthy. The proof stack must be removed with the app-runtime profile and volumes before claiming a target is clean.
+- The generated helper script intentionally cannot know the real file-backed HMAC secret. For this proof, omitting `SAFARSUITE_ENTITLEMENT_SIGNING_SECRET` left LocalServer with placeholder trust and made bootstrap import return HTTP `400`.
+- Windows host Schannel/.NET verification against the generated local CA hit `SEC_E_NO_CREDENTIALS`; the generated Git Bash helper still produced CA-pinned runtime evidence. Keep a follow-up to check Windows-side Local API TLS client compatibility if host-side .NET/curl verification must be part of customer support evidence.
+
 ## 2026-07-08 Final Live Proof Notes
 
 Passed artifacts:
