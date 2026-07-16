@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ListPaymentReceiptsReport;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Payments;
 
@@ -10,7 +11,8 @@ public static class PaymentReportEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/payments/reports")
-            .WithTags("Payment Reports");
+            .WithTags("Payment Reports")
+            .RequireAuthorization(ControlDeskPolicies.ReportsRead);
 
         group.MapGet("/receipts", ListPaymentReceiptsAsync);
 

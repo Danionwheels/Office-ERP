@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Clients;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ActivateClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.AddClientContact;
@@ -29,7 +30,8 @@ public static class ClientEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/clients")
-            .WithTags("Clients");
+            .WithTags("Clients")
+            .RequireAuthorization(ControlDeskPolicies.ClientsManage);
 
         group.MapPost("/", CreateAsync);
         group.MapGet("/", ListAsync);

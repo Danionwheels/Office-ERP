@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetRevenueSummary;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Accounting;
 
@@ -10,7 +11,8 @@ public static class AccountingReportEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/accounting")
-            .WithTags("Accounting Reports");
+            .WithTags("Accounting Reports")
+            .RequireAuthorization(ControlDeskPolicies.ReportsRead);
 
         group.MapGet("/revenue-summary", GetRevenueSummaryAsync);
 

@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GetAccountsReceivableAging;
 using SafarSuite.ControlDesk.Application.Modules.Billing.ListOutstandingInvoices;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Billing;
@@ -11,7 +12,8 @@ public static class BillingReportEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/billing/reports")
-            .WithTags("Billing Reports");
+            .WithTags("Billing Reports")
+            .RequireAuthorization(ControlDeskPolicies.ReportsRead);
 
         group.MapGet("/accounts-receivable-aging", GetAccountsReceivableAgingAsync);
         group.MapGet("/outstanding-invoices", ListOutstandingInvoicesAsync);

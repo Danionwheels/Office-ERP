@@ -116,6 +116,8 @@ If the host supports mounted secrets, prefer `*File` settings where available.
 | `ASPNETCORE_ENVIRONMENT` | `Staging` |
 | `Persistence__Provider` | `Postgres` |
 | `ConnectionStrings__ControlDesk` | PostgreSQL connection string for the Control Desk staging DB |
+| `ControlDesk__OperatorAccess__SessionSigningSecret` | Independent non-placeholder Control Desk bearer-session signing secret with at least 32 characters |
+| `ControlDesk__OperatorAccess__Users__<index>__...` | At least one active non-development operator with a unique id/email, PBKDF2 password hash, and explicit roles/scopes; the built-in `local-control-desk-admin` is rejected outside Development |
 | `ControlCloud__Publisher__Mode` | `Http` |
 | `ControlCloud__Publisher__Environment` | `Staging` |
 | `ControlCloud__Publisher__SigningKeyId` | Must match the Control Cloud receiver key id |

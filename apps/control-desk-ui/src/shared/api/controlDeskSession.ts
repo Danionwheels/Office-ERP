@@ -1,11 +1,14 @@
-const storageKey = "safarsuite.controlDesk.localOperatorSession.v1";
+const storageKey = "safarsuite.controlDesk.localOperatorSession.v2";
 const expirySkewMs = 30_000;
+
+export const controlDeskSessionInvalidatedEvent = "safarsuite:control-desk-session-invalidated";
 
 export type StoredControlDeskSession = {
   accessToken: string;
   tokenType: string;
   actor: string;
   email?: string;
+  roles: string[];
   scopes: string[];
   expiresAtUtc: string;
 };
@@ -50,6 +53,14 @@ export function clearControlDeskSession(): void {
   }
 
   window.localStorage.removeItem(storageKey);
+}
+
+export function invalidateControlDeskSession(): void {
+  clearControlDeskSession();
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(controlDeskSessionInvalidatedEvent));
+  }
 }
 
 function isUsableSession(value: StoredControlDeskSession): boolean {

@@ -21,6 +21,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ApiError } from "../shared/api/apiError";
 import {
   clearControlDeskSession,
+  controlDeskSessionInvalidatedEvent,
   getControlDeskSession,
   saveControlDeskSession,
   type StoredControlDeskSession
@@ -420,6 +421,16 @@ export function App() {
   const [session, setSession] = useState<StoredControlDeskSession | null>(
     () => getControlDeskSession()
   );
+
+  useEffect(() => {
+    const handleSessionInvalidated = () => setSession(null);
+    window.addEventListener(controlDeskSessionInvalidatedEvent, handleSessionInvalidated);
+
+    return () => window.removeEventListener(
+      controlDeskSessionInvalidatedEvent,
+      handleSessionInvalidated
+    );
+  }, []);
   const [activeSection, setActiveSection] = useState<WorkSectionKey>(() => getInitialSection());
   const [client360LaunchTarget, setClient360LaunchTarget] =
     useState<Client360LaunchTarget | null>(null);

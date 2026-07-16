@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
@@ -19,7 +20,8 @@ public static class BillingEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/billing")
-            .WithTags("Billing");
+            .WithTags("Billing")
+            .RequireAuthorization(ControlDeskPolicies.BillingManage);
 
         group.MapPost("/charge-codes", CreateChargeCodeAsync);
         group.MapGet("/charge-codes", ListChargeCodesAsync);

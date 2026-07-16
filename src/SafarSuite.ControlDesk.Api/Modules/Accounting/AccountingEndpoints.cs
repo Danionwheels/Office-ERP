@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
@@ -46,7 +47,8 @@ public static class AccountingEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/accounting")
-            .WithTags("Accounting");
+            .WithTags("Accounting")
+            .RequireAuthorization(ControlDeskPolicies.AccountingManage);
 
         group.MapGet("/ledger-accounts", ListLedgerAccountsAsync);
         group.MapGet("/ledger-accounts/reconciliation", GetLedgerAccountReconciliationAsync);
@@ -1462,15 +1464,7 @@ public static class AccountingEndpoints
                             entry.TotalCredit)).ToArray()));
     }
 
-    private static string? ResolveActor(HttpContext httpContext)
-    {
-        if (httpContext.User.Identity?.IsAuthenticated == true)
-        {
-            return httpContext.User.Identity.Name;
-        }
-
-        return httpContext.Request.Headers.TryGetValue("X-Safar-Actor", out var actor)
-            ? actor.FirstOrDefault()
-            : null;
-    }
+    private static string ResolveActor(HttpContext httpContext) =>
+        httpContext.User.Identity?.Name
+        ?? throw new InvalidOperationException("An authenticated Control Desk operator is required.");
 }

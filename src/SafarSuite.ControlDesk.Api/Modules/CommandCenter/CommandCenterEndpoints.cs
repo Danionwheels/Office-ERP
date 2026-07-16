@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.CommandCenter.ListClientWorkQueue;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.CommandCenter;
 
@@ -10,7 +11,8 @@ public static class CommandCenterEndpoints
     {
         endpoints
             .MapGet("/api/v1/command-center/client-work", ListClientWorkAsync)
-            .WithTags("Command Center");
+            .WithTags("Command Center")
+            .RequireAuthorization(ControlDeskPolicies.CommandCenterRead);
 
         return endpoints;
     }

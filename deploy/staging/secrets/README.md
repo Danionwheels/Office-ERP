@@ -15,6 +15,7 @@ Expected files:
 Keep matching inline values in `.env` for the Control Desk settings that do not support `*File` yet:
 
 - `CONTROL_DESK_PUBLISHER_SIGNING_SECRET`
+- `CONTROL_DESK_SESSION_SIGNING_SECRET`
 - `PROVIDER_ACCESS_SHARED_SECRET`
 - `CLIENT_PORTAL_SESSION_SIGNING_SECRET`
 - `CLIENT_PORTAL_MFA_PROTECTION_SECRET`

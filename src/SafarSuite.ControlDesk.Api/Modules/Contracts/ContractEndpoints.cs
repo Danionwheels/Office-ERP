@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Contracts;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.GetClientContract;
@@ -21,7 +22,8 @@ public static class ContractEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/contracts")
-            .WithTags("Contracts");
+            .WithTags("Contracts")
+            .RequireAuthorization(ControlDeskPolicies.ContractsManage);
 
         group.MapPost("/client-contracts", CreateClientContractAsync);
         group.MapGet("/client-contracts/{contractId:guid}", GetClientContractAsync);
@@ -480,24 +482,7 @@ public static class ContractEndpoints
                 limit.Unit)).ToArray());
     }
 
-    private static string ResolveActor(HttpContext httpContext)
-    {
-        if (httpContext.User.Identity?.IsAuthenticated == true
-            && !string.IsNullOrWhiteSpace(httpContext.User.Identity.Name))
-        {
-            return httpContext.User.Identity.Name.Trim();
-        }
-
-        if (httpContext.Request.Headers.TryGetValue("X-Safar-Actor", out var actor))
-        {
-            var value = actor.FirstOrDefault()?.Trim();
-
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        return "Control Desk operator";
-    }
+    private static string ResolveActor(HttpContext httpContext) =>
+        httpContext.User.Identity?.Name
+        ?? throw new InvalidOperationException("An authenticated Control Desk operator is required.");
 }

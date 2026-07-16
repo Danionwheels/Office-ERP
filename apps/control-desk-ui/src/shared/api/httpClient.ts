@@ -1,5 +1,8 @@
 import { ApiError, type ApiErrorItem } from "./apiError";
-import { getControlDeskSession } from "./controlDeskSession";
+import {
+  getControlDeskSession,
+  invalidateControlDeskSession
+} from "./controlDeskSession";
 import {
   getProviderAccessToken,
   providerAccessTokenOverrideHeader
@@ -63,8 +66,11 @@ function createHeaders(path: string, init: RequestInit = {}): Headers {
 
   const controlDeskSession = getControlDeskSession();
 
-  if (controlDeskSession !== null && controlDeskSession.actor.trim() !== "") {
-    headers.set("X-Safar-Actor", controlDeskSession.actor.trim());
+  if (controlDeskSession !== null) {
+    headers.set(
+      "Authorization",
+      `${controlDeskSession.tokenType} ${controlDeskSession.accessToken}`
+    );
   }
 
   if (
@@ -96,6 +102,10 @@ function getDownloadFileName(contentDisposition: string | null, fallback: string
 }
 
 async function toApiError(response: Response): Promise<ApiError> {
+  if (response.status === 401) {
+    invalidateControlDeskSession();
+  }
+
   try {
     const body = (await response.json()) as ApiErrorResponse;
     return new ApiError(

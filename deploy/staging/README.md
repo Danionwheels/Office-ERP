@@ -42,6 +42,10 @@ Control Cloud also gets a persistent `App_Data` volume because a few staging reg
 
 2. Copy `.env.example` to `.env` on the server and replace every placeholder.
 
+   Generate `CONTROL_DESK_SESSION_SIGNING_SECRET` independently with at least 32 characters; never reuse a database, publisher, provider-access, or Client Portal secret.
+
+   Fill the `CONTROL_DESK_OPERATOR_*` values with a non-development operator, including a PBKDF2 password hash and explicit role/scope. The built-in `local-control-desk-admin` identity is rejected outside Development.
+
 3. Create the files listed in `secrets/README.md`.
 
 4. Build and start databases first:

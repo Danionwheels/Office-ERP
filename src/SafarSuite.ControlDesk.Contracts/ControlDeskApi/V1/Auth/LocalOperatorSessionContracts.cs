@@ -10,5 +10,6 @@ public sealed record LocalOperatorSessionResponse(
     string TokenType,
     string Actor,
     string? Email,
+    IReadOnlyCollection<string> Roles,
     IReadOnlyCollection<string> Scopes,
     DateTimeOffset ExpiresAtUtc);

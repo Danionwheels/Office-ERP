@@ -53,6 +53,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlCloud.Ide
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlDesk.Domain.Tests", "tests\SafarSuite.ControlDesk.Domain.Tests\SafarSuite.ControlDesk.Domain.Tests.csproj", "{7D7CB2CC-CE16-4885-B980-0E21B730CADB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlDesk.Api.Tests", "tests\SafarSuite.ControlDesk.Api.Tests\SafarSuite.ControlDesk.Api.Tests.csproj", "{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -327,6 +329,18 @@ Global
 		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Release|x64.Build.0 = Release|Any CPU
 		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Release|x86.ActiveCfg = Release|Any CPU
 		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Release|x86.Build.0 = Release|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Debug|x64.Build.0 = Debug|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Debug|x86.Build.0 = Debug|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Release|x64.ActiveCfg = Release|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Release|x64.Build.0 = Release|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Release|x86.ActiveCfg = Release|Any CPU
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -354,5 +368,6 @@ Global
 		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9} = {23687B85-ECA0-46D8-9B03-AB99D7205D07}
 		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1} = {A1D62C45-6A31-4F38-8129-30DD2560E2D2}
 		{7D7CB2CC-CE16-4885-B980-0E21B730CADB} = {A1D62C45-6A31-4F38-8129-30DD2560E2D2}
+		{7A0D2AFF-240D-4FF6-A5C3-C6818E205071} = {A1D62C45-6A31-4F38-8129-30DD2560E2D2}
 	EndGlobalSection
 EndGlobal

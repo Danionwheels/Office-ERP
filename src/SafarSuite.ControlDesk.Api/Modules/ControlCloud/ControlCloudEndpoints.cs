@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ChangeProviderAccessOperatorPassword;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationBootstrapPackage;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
@@ -34,7 +35,8 @@ public static class ControlCloudEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/control-cloud")
-            .WithTags("Control Cloud");
+            .WithTags("Control Cloud")
+            .RequireAuthorization(ControlDeskPolicies.ControlCloudManage);
 
         group.MapGet("/outbox-messages", ListOutboxMessagesAsync);
         group.MapGet(

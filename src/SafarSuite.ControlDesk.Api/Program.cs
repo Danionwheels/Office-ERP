@@ -20,7 +20,11 @@ builder.Services.AddControlDeskServices(builder.Configuration);
 
 var app = builder.Build();
 
-app.MapGet("/", () => Results.Redirect("/health"));
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapGet("/", () => Results.Redirect("/health"))
+    .AllowAnonymous();
 
 app.MapGet("/health", () =>
 {
@@ -30,7 +34,7 @@ app.MapGet("/health", () =>
         CheckedAtUtc: DateTimeOffset.UtcNow);
 
     return Results.Ok(response);
-});
+}).AllowAnonymous();
 
 app.MapAuthEndpoints();
 app.MapClientEndpoints();
@@ -46,3 +50,5 @@ app.MapControlCloudEndpoints();
 app.MapEntitlementEndpoints();
 
 app.Run();
+
+public partial class Program;

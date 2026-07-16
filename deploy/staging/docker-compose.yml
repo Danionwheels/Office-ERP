@@ -70,6 +70,14 @@ services:
       ASPNETCORE_URLS: http://0.0.0.0:8080
       Persistence__Provider: Postgres
       ConnectionStrings__ControlDesk: Host=control-desk-db;Port=5432;Database=${CONTROL_DESK_DB_NAME};Username=${CONTROL_DESK_DB_USER};Password=${CONTROL_DESK_DB_PASSWORD}
+      ControlDesk__OperatorAccess__SessionSigningSecret: ${CONTROL_DESK_SESSION_SIGNING_SECRET}
+      ControlDesk__OperatorAccess__Users__0__UserId: ${CONTROL_DESK_OPERATOR_USER_ID}
+      ControlDesk__OperatorAccess__Users__0__Email: ${CONTROL_DESK_OPERATOR_EMAIL}
+      ControlDesk__OperatorAccess__Users__0__FullName: ${CONTROL_DESK_OPERATOR_FULL_NAME}
+      ControlDesk__OperatorAccess__Users__0__PasswordHash: ${CONTROL_DESK_OPERATOR_PASSWORD_HASH}
+      ControlDesk__OperatorAccess__Users__0__Status: Active
+      ControlDesk__OperatorAccess__Users__0__Roles__0: ${CONTROL_DESK_OPERATOR_ROLE}
+      ControlDesk__OperatorAccess__Users__0__Scopes__0: ${CONTROL_DESK_OPERATOR_SCOPE}
       ControlCloud__Publisher__Mode: Http
       ControlCloud__Publisher__Environment: Staging
       ControlCloud__Publisher__SigningKeyId: ${CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID}

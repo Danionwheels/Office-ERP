@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ApplyClientCredit;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ApproveInvoicePayment;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetClientRefundDocument;
@@ -27,7 +28,8 @@ public static class PaymentsEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/payments")
-            .WithTags("Payments");
+            .WithTags("Payments")
+            .RequireAuthorization(ControlDeskPolicies.PaymentsManage);
 
         group.MapPost("/invoice-payments", RecordInvoicePaymentAsync);
         group.MapGet("/invoice-payments/{paymentId:guid}", GetInvoicePaymentDocumentAsync);

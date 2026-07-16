@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
@@ -151,6 +152,7 @@ public static class ControlDeskServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddControlDeskAuthentication(configuration);
         services.Configure<ControlDeskClockOptions>(
             configuration.GetSection(ControlDeskClockOptions.SectionName));
         services.AddSingleton<IClock, SystemClock>();

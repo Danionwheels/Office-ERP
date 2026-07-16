@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.Options;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Auth;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Common;
 
@@ -8,23 +9,22 @@ public static class AuthEndpoints
 {
     private const int MinimumSessionMinutes = 5;
     private const int MaximumSessionMinutes = 1_440;
-    private const int SessionTokenBytes = 32;
-    private const string LocalOperatorTokenType = "LocalOperator";
-
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints
             .MapGroup("/api/v1/auth")
             .WithTags("Auth");
 
-        group.MapPost("/operator-sessions", CreateOperatorSession);
+        group.MapPost("/operator-sessions", CreateOperatorSession)
+            .AllowAnonymous();
 
         return endpoints;
     }
 
     private static IResult CreateOperatorSession(
         CreateLocalOperatorSessionRequest request,
-        IConfiguration configuration)
+        IOptions<ControlDeskOperatorAccessOptions> optionsAccessor,
+        IControlDeskSessionTokenService tokens)
     {
         var email = request.Email?.Trim() ?? string.Empty;
 
@@ -38,9 +38,7 @@ public static class AuthEndpoints
             return ValidationError("password", "Password is required.");
         }
 
-        var options = configuration
-            .GetSection(ControlDeskOperatorAccessOptions.SectionName)
-            .Get<ControlDeskOperatorAccessOptions>() ?? new ControlDeskOperatorAccessOptions();
+        var options = optionsAccessor.Value;
 
         var sessionMinutes = request.ExpiresInMinutes ?? options.SessionMinutes;
 
@@ -52,7 +50,7 @@ public static class AuthEndpoints
         }
 
         var operatorUser = options.Users.FirstOrDefault(user =>
-            string.Equals(user.Email.Trim(), email, StringComparison.OrdinalIgnoreCase));
+            string.Equals(user.Email?.Trim(), email, StringComparison.OrdinalIgnoreCase));
 
         if (operatorUser is null
             || !string.Equals(operatorUser.Status, "Active", StringComparison.OrdinalIgnoreCase)
@@ -61,22 +59,16 @@ public static class AuthEndpoints
             return SignInError();
         }
 
-        var scopes = operatorUser.Scopes
-            .Where(scope => !string.IsNullOrWhiteSpace(scope))
-            .Select(scope => scope.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .DefaultIfEmpty("control-desk:operator")
-            .ToArray();
+        var session = tokens.Issue(operatorUser, sessionMinutes);
 
         var response = new LocalOperatorSessionResponse(
-            AccessToken: CreateSessionToken(),
-            TokenType: LocalOperatorTokenType,
-            Actor: string.IsNullOrWhiteSpace(operatorUser.FullName)
-                ? operatorUser.Email
-                : operatorUser.FullName,
-            Email: operatorUser.Email,
-            Scopes: scopes,
-            ExpiresAtUtc: DateTimeOffset.UtcNow.AddMinutes(sessionMinutes));
+            AccessToken: session.AccessToken,
+            TokenType: "Bearer",
+            Actor: session.Actor,
+            Email: session.Email,
+            Roles: session.Roles,
+            Scopes: session.Scopes,
+            ExpiresAtUtc: session.ExpiresAtUtc);
 
         return Results.Ok(response);
     }
@@ -138,19 +130,6 @@ public static class AuthEndpoints
         }
     }
 
-    private static string CreateSessionToken()
-    {
-        return Base64UrlEncode(RandomNumberGenerator.GetBytes(SessionTokenBytes));
-    }
-
-    private static string Base64UrlEncode(byte[] value)
-    {
-        return Convert.ToBase64String(value)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
-    }
-
     private static byte[] Base64UrlDecode(string value)
     {
         var incoming = value
@@ -166,27 +145,4 @@ public static class AuthEndpoints
         return Convert.FromBase64String(incoming);
     }
 
-    private sealed class ControlDeskOperatorAccessOptions
-    {
-        public const string SectionName = "ControlDesk:OperatorAccess";
-
-        public int SessionMinutes { get; set; } = 480;
-
-        public List<ControlDeskOperatorUserOptions> Users { get; set; } = [];
-    }
-
-    private sealed class ControlDeskOperatorUserOptions
-    {
-        public string UserId { get; set; } = string.Empty;
-
-        public string Email { get; set; } = string.Empty;
-
-        public string FullName { get; set; } = string.Empty;
-
-        public string PasswordHash { get; set; } = string.Empty;
-
-        public string Status { get; set; } = "Active";
-
-        public List<string> Scopes { get; set; } = [];
-    }
 }
