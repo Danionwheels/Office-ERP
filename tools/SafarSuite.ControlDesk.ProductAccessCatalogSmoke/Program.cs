@@ -21,36 +21,108 @@ var restored = false;
 try
 {
     originalCatalog = await GetCatalogAsync(controlDesk);
+    Require(originalCatalog.State == "Published", "Catalog smoke requires a published catalog with no pending draft.");
+    Require(originalCatalog.RevisionNumber > 0, "Published catalog should have a positive revision number.");
+    Require(originalCatalog.CatalogRevisionId.HasValue, "Published catalog should have a revision id.");
+    Require(originalCatalog.Modules is { Count: > 0 }, "Control Desk should return at least one product module.");
     Require(originalCatalog.ModuleGroups.Count > 0, "Control Desk should return at least one product module group.");
     Require(originalCatalog.Resources.Count > 0, "Control Desk should return at least one product resource.");
     checks.Add($"read current catalog ({originalCatalog.ModuleGroups.Count} groups, {originalCatalog.Resources.Count} resources)");
 
+    var originalModules = originalCatalog.Modules
+        ?? throw new InvalidOperationException("Control Desk returned no product module collection.");
+    var smokeModule = originalModules.FirstOrDefault(module => module.IsActive)
+        ?? throw new InvalidOperationException("Catalog smoke requires at least one active product module.");
+
     var smokeCatalog = BuildSmokeCatalog(originalCatalog, options);
     var savedCatalog = await SaveCatalogAsync(controlDesk, smokeCatalog, options.RequestedBy);
+    Require(savedCatalog.State == "Draft", "Saving a catalog should create a draft, not mutate published state.");
+    Require(savedCatalog.BaseCatalogRevisionNumber == originalCatalog.RevisionNumber, "Draft should retain its published base revision.");
     Require(savedCatalog.ModuleGroups.Any(group => EqualsId(group.GroupId, options.GroupId)), "Saved catalog should include the smoke module group.");
     Require(savedCatalog.Resources.Any(resource => EqualsId(resource.ResourceId, options.ResourceId)), "Saved catalog should include the smoke resource.");
+    var savedSmokeModule = (savedCatalog.Modules
+        ?? throw new InvalidOperationException("Saved draft returned no product module collection."))
+        .Single(module => string.Equals(
+            module.ModuleCode,
+            smokeModule.ModuleCode,
+            StringComparison.Ordinal));
+    Require(!savedSmokeModule.IsActive, "Saved draft should allow a module to be soft-deactivated.");
+    Require(
+        savedSmokeModule.Description == "Temporary product module catalog smoke description.",
+        "Saved draft should round-trip the product module description.");
     Require(
         savedCatalog.Resources
             .First(resource => EqualsId(resource.ResourceId, options.ResourceId))
             .ResolvedModuleCodes
             .Any(moduleCode => string.Equals(moduleCode, "payroll", StringComparison.OrdinalIgnoreCase)),
         "Saved smoke resource should resolve Payroll from its group.");
-    checks.Add("saved temporary owner catalog group/resource and verified resolver output");
+    checks.Add("saved temporary catalog draft and verified resolver output");
+
+    var publishedBeforeRevision = await ListPublishedModulesAsync(controlDesk);
+    Require(
+        publishedBeforeRevision.Single(module => module.ModuleCode == smokeModule.ModuleCode).IsActive,
+        "Saving a draft must not change published module availability.");
+    checks.Add("verified draft module changes do not alter published contract choices");
+
+    var renamedCatalog = savedCatalog with
+    {
+        Modules = savedCatalog.Modules?.Select(module =>
+                module.ModuleCode == smokeModule.ModuleCode
+                    ? module with { ModuleCode = $"{module.ModuleCode}_RENAMED" }
+                    : module)
+            .ToArray()
+    };
+    await RequireCatalogSaveRejectedAsync(controlDesk, renamedCatalog, options.RequestedBy);
+    checks.Add("rejected product module code rename/delete attempt");
 
     var readBackCatalog = await GetCatalogAsync(controlDesk);
     Require(readBackCatalog.ModuleGroups.Any(group => EqualsId(group.GroupId, options.GroupId)), "Readback catalog should include the smoke module group.");
     Require(readBackCatalog.Resources.Any(resource => EqualsId(resource.ResourceId, options.ResourceId)), "Readback catalog should include the smoke resource.");
-    checks.Add("readback returned the persisted smoke catalog");
+    checks.Add("readback returned the persisted smoke draft");
+
+    var smokeRevision = await PublishRevisionAsync(controlDesk, options.RequestedBy);
+    Require(smokeRevision.State == "Published", "Publishing should return an immutable published revision.");
+    Require(
+        smokeRevision.RevisionNumber == originalCatalog.RevisionNumber + 1,
+        "Smoke publication should allocate the next catalog revision number.");
+    Require(
+        smokeRevision.SupersedesCatalogRevisionId == originalCatalog.CatalogRevisionId,
+        "Smoke publication should retain predecessor lineage.");
+    checks.Add($"published temporary catalog revision #{smokeRevision.RevisionNumber}");
+
+    var publishedAfterRevision = await ListPublishedModulesAsync(controlDesk);
+    var publishedSmokeModule = publishedAfterRevision.Single(module =>
+        module.ModuleCode == smokeModule.ModuleCode);
+    Require(!publishedSmokeModule.IsActive, "Published module list should retain a deactivated module.");
+    Require(
+        publishedSmokeModule.Description == "Temporary product module catalog smoke description.",
+        "Published module list should retain the module description.");
+    checks.Add("verified published soft-deactivation remains visible in the catalog");
+
+    var history = await ListRevisionsAsync(controlDesk);
+    Require(
+        history.Any(revision => revision.CatalogRevisionId == originalCatalog.CatalogRevisionId)
+        && history.Any(revision => revision.CatalogRevisionId == smokeRevision.CatalogRevisionId),
+        "Published history should retain both the original and smoke revisions.");
+    checks.Add("verified append-only published catalog history");
 
     if (!options.SkipRestore)
     {
         await SaveCatalogAsync(controlDesk, originalCatalog, $"{options.RequestedBy} restore");
+        var restoredRevision = await PublishRevisionAsync(controlDesk, $"{options.RequestedBy} restore");
         restored = true;
         var restoredCatalog = await GetCatalogAsync(controlDesk);
         Require(
             CatalogHasSameShape(originalCatalog, restoredCatalog),
             "Restored catalog should match the original group/resource shape.");
-        checks.Add("restored original catalog after save/read proof");
+        var restoredModule = (await ListPublishedModulesAsync(controlDesk)).Single(module =>
+            module.ModuleCode == smokeModule.ModuleCode);
+        Require(restoredModule.IsActive == smokeModule.IsActive, "Restoration should restore module status.");
+        Require(restoredModule.Description == smokeModule.Description, "Restoration should restore module description.");
+        Require(
+            restoredRevision.RevisionNumber == smokeRevision.RevisionNumber + 1,
+            "Restoration should publish a new revision rather than rewrite history.");
+        checks.Add($"restored original definition as revision #{restoredRevision.RevisionNumber}");
     }
 
     if (options.PublishActivationRequestId is { } activationRequestId)
@@ -80,6 +152,7 @@ finally
         try
         {
             await SaveCatalogAsync(controlDesk, originalCatalog, $"{options.RequestedBy} restore");
+            await PublishRevisionAsync(controlDesk, $"{options.RequestedBy} restore");
             Console.WriteLine("Restored original product access catalog after smoke cleanup.");
         }
         catch (Exception exception)
@@ -111,7 +184,20 @@ static async Task<ProductAccessCatalogResponse> SaveCatalogAsync(
     ProductAccessCatalogResponse catalog,
     string requestedBy)
 {
-    var request = new SaveProductAccessCatalogRequest(
+    using var response = await http.PutAsJsonAsync(
+        "/api/v1/contracts/product-access-catalog",
+        CreateSaveCatalogRequest(catalog, requestedBy));
+    await EnsureSuccessAsync(response, "save product access catalog");
+
+    return await response.Content.ReadFromJsonAsync<ProductAccessCatalogResponse>()
+        ?? throw new InvalidOperationException("Control Desk returned an empty saved catalog response.");
+}
+
+static SaveProductAccessCatalogRequest CreateSaveCatalogRequest(
+    ProductAccessCatalogResponse catalog,
+    string requestedBy)
+{
+    return new SaveProductAccessCatalogRequest(
         catalog.ModuleGroups.Select(group => new SaveProductModuleGroupRequest(
                 group.GroupId,
                 group.DisplayName,
@@ -125,19 +211,48 @@ static async Task<ProductAccessCatalogResponse> SaveCatalogAsync(
                 resource.RequiredGroupIds.ToArray(),
                 resource.RequiredModuleCodes.ToArray()))
             .ToArray(),
-        requestedBy);
+        requestedBy,
+        catalog.Modules?.Select(module => new SaveProductModuleRequest(
+                module.ModuleCode,
+                module.DisplayName,
+                module.CommercialMode,
+                module.IsActive,
+                module.BillingDefaults,
+                module.Compatibility,
+                module.Description))
+            .ToArray(),
+        $"Catalog smoke change by {requestedBy}.");
+}
 
-    using var response = await http.PutAsJsonAsync("/api/v1/contracts/product-access-catalog", request);
-    await EnsureSuccessAsync(response, "save product access catalog");
+static async Task RequireCatalogSaveRejectedAsync(
+    HttpClient http,
+    ProductAccessCatalogResponse catalog,
+    string requestedBy)
+{
+    using var response = await http.PutAsJsonAsync(
+        "/api/v1/contracts/product-access-catalog",
+        CreateSaveCatalogRequest(catalog, requestedBy));
 
-    return await response.Content.ReadFromJsonAsync<ProductAccessCatalogResponse>()
-        ?? throw new InvalidOperationException("Control Desk returned an empty saved catalog response.");
+    Require(
+        (int)response.StatusCode == 400,
+        $"Invalid product module mutation should return HTTP 400, not {(int)response.StatusCode}.");
+}
+
+static async Task<IReadOnlyCollection<ProductModuleResponse>> ListPublishedModulesAsync(HttpClient http)
+{
+    using var response = await http.GetAsync("/api/v1/contracts/product-modules");
+    await EnsureSuccessAsync(response, "list published product modules");
+    var result = await response.Content.ReadFromJsonAsync<ListProductModulesResponse>()
+        ?? throw new InvalidOperationException("Control Desk returned an empty product module response.");
+
+    return result.Modules;
 }
 
 static ProductAccessCatalogResponse BuildSmokeCatalog(
     ProductAccessCatalogResponse current,
     SmokeOptions options)
 {
+    var smokeModuleCode = current.Modules?.First(module => module.IsActive).ModuleCode;
     var groups = current.ModuleGroups
         .Where(group => !EqualsId(group.GroupId, options.GroupId))
         .Append(new ProductModuleGroupResponse(
@@ -158,7 +273,46 @@ static ProductAccessCatalogResponse BuildSmokeCatalog(
             Array.Empty<string>()))
         .ToArray();
 
-    return new ProductAccessCatalogResponse(groups, resources);
+    return current with
+    {
+        Modules = current.Modules?.Select(module =>
+                module.ModuleCode == smokeModuleCode
+                    ? module with
+                    {
+                        Description = "Temporary product module catalog smoke description.",
+                        IsActive = false
+                    }
+                    : module)
+            .ToArray(),
+        ModuleGroups = groups,
+        Resources = resources,
+        ChangeReason = "Temporary product access catalog smoke revision."
+    };
+}
+
+static async Task<ProductAccessCatalogResponse> PublishRevisionAsync(
+    HttpClient controlDesk,
+    string requestedBy)
+{
+    using var response = await controlDesk.PostAsJsonAsync(
+        "/api/v1/contracts/product-access-catalog/publish-revision",
+        new PublishProductCatalogRevisionRequest(requestedBy));
+    await EnsureSuccessAsync(response, "publish product catalog revision");
+
+    return await response.Content.ReadFromJsonAsync<ProductAccessCatalogResponse>()
+        ?? throw new InvalidOperationException("Control Desk returned an empty published catalog revision.");
+}
+
+static async Task<IReadOnlyCollection<ProductAccessCatalogResponse>> ListRevisionsAsync(
+    HttpClient controlDesk)
+{
+    using var response = await controlDesk.GetAsync(
+        "/api/v1/contracts/product-access-catalog/revisions");
+    await EnsureSuccessAsync(response, "list product catalog revisions");
+    var result = await response.Content.ReadFromJsonAsync<ListProductCatalogRevisionsResponse>()
+        ?? throw new InvalidOperationException("Control Desk returned an empty catalog history response.");
+
+    return result.Revisions;
 }
 
 static async Task<PublishProductAccessCatalogCommandResponse> PublishCatalogAsync(

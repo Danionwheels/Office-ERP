@@ -1523,15 +1523,19 @@ ClientPortalSignedEntitlementBundleResponse CreateEntitlementBundle(ProofOptions
     var today = DateOnly.FromDateTime(DateTime.UtcNow);
     var paidUntil = today.AddDays(30);
     var payload = new ClientPortalEntitlementBundlePayloadResponse(
-        "safarsuite-entitlement-v1",
+        "3",
         "SafarSuite.ControlCloud",
         "SafarSuite.ClientPortal",
         options.ClientId,
         options.InstallationId,
-        EntitlementVersion: 1,
+        1,
         Guid.NewGuid(),
         Guid.NewGuid(),
         Guid.NewGuid(),
+        Guid.NewGuid(),
+        1,
+        Guid.Parse("9c1da88b-c763-4bb0-8dda-2d95fe63ec8f"),
+        1,
         Guid.NewGuid(),
         "COMPOSE-PROOF",
         "Active",
@@ -1570,10 +1574,12 @@ ControlCloudEnvelope CreateEntitlementSnapshotEnvelope(ProofOptions options)
     var messageId = Guid.NewGuid();
     var entitlementSnapshotId = Guid.NewGuid();
     var payload = new EntitlementSnapshotIssuedProofPayload(
-        EventVersion: "1",
+        EventVersion: "2",
         EntitlementSnapshotId: entitlementSnapshotId,
+        ClientAccessRevisionId: Guid.NewGuid(),
         ClientId: options.ClientId,
         ContractId: Guid.NewGuid(),
+        EntitlementVersion: 100,
         SourceInvoiceId: Guid.NewGuid(),
         SourceInvoiceNumber: $"COMPOSE-PROOF-{now:yyyyMMddHHmmss}",
         Status: "Active",
@@ -2233,8 +2239,10 @@ string SignControlDeskEnvelope(
 internal sealed record EntitlementSnapshotIssuedProofPayload(
     string EventVersion,
     Guid EntitlementSnapshotId,
+    Guid ClientAccessRevisionId,
     Guid ClientId,
     Guid ContractId,
+    long EntitlementVersion,
     Guid SourceInvoiceId,
     string SourceInvoiceNumber,
     string Status,

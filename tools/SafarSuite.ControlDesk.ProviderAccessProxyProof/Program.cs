@@ -146,6 +146,7 @@ try
             Channel: "Secure email",
             Recipient: "proxy.proof.customer@safarsuite.local",
             MarkedBy: "control-desk-proxy-proof",
+            PreflightAcknowledgements: LocalServerBootstrapPackageHandoffPreflight.RequiredKeys,
             Note: "Control Desk proxy proof handoff marker"));
 
     Require(handoff.BootstrapPackageId == bootstrapPackage.BootstrapPackageId, "Control Desk handoff should target generated bootstrap package.");
@@ -153,6 +154,10 @@ try
     Require(handoff.ClientId == clientId, "Control Desk handoff should target proof client.");
     Require(handoff.InstallationId == installationId, "Control Desk handoff should target proof installation.");
     Require(handoff.HandoffStatus == "HandedOff", "Control Desk handoff should be marked handed off.");
+    Require(
+        LocalServerBootstrapPackageHandoffPreflight.RequiredKeys.All(key =>
+            handoff.PreflightAcknowledgements.Contains(key)),
+        "Control Desk handoff should record all required setup preflight acknowledgements.");
 
     var handoffAudit = await SendJsonAsync<ControlCloudAuditEventsResponse>(
         controlDeskHttp,
@@ -165,8 +170,9 @@ try
             && auditEvent.ClientId == clientId
             && auditEvent.Detail.Contains(bootstrapPackage.BootstrapPackageId.ToString("D"), StringComparison.Ordinal)
             && auditEvent.Detail.Contains(installationId, StringComparison.Ordinal)
+            && auditEvent.Detail.Contains("Preflight acknowledged", StringComparison.Ordinal)
             && !auditEvent.Detail.Contains(bootstrapPackage.SetupToken, StringComparison.Ordinal)),
-        "Control Desk handoff audit view should identify the package and installation without leaking the setup token secret.");
+        "Control Desk handoff audit view should identify the package, installation, and preflight acknowledgements without leaking the setup token secret.");
     checks.Add("marked bootstrap package handoff through Control Desk proxy and verified non-secret audit trail");
 
     var registration = await SendJsonAsync<LocalServerInstallationRegistrationResponse>(
@@ -460,10 +466,12 @@ static ControlCloudEnvelope CreateEntitlementSnapshotEnvelope(
     var messageId = Guid.NewGuid();
     var entitlementSnapshotId = Guid.NewGuid();
     var payload = new EntitlementSnapshotIssuedProofPayload(
-        EventVersion: "1",
+        EventVersion: "2",
         EntitlementSnapshotId: entitlementSnapshotId,
+        ClientAccessRevisionId: Guid.NewGuid(),
         ClientId: clientId,
         ContractId: Guid.NewGuid(),
+        EntitlementVersion: 100,
         SourceInvoiceId: Guid.NewGuid(),
         SourceInvoiceNumber: $"PROXY-PROOF-{now:yyyyMMddHHmmss}",
         Status: "Active",
@@ -762,29 +770,36 @@ internal sealed class ApiProcess : IAsyncDisposable
         TimeSpan timeout)
     {
         var apiProject = Path.Combine(repositoryRoot, projectRelativePath);
+        var apiProjectDirectory = Path.GetDirectoryName(apiProject)
+            ?? throw new InvalidOperationException($"{name} project directory could not be resolved.");
+        var apiProjectName = Path.GetFileNameWithoutExtension(apiProject);
+        var apiAssembly = Path.Combine(
+            apiProjectDirectory,
+            "bin",
+            "Debug",
+            "net10.0",
+            $"{apiProjectName}.dll");
 
         if (!File.Exists(apiProject))
         {
             throw new InvalidOperationException($"{name} project was not found at '{apiProject}'.");
         }
 
-        var apiOutputDirectory = EnsureTrailingSeparator(outputDirectory);
-        Directory.CreateDirectory(apiOutputDirectory);
+        if (!File.Exists(apiAssembly))
+        {
+            throw new InvalidOperationException(
+                $"{name} assembly was not found at '{apiAssembly}'. Run `dotnet build SafarSuite.ControlDesk.sln` before this proof.");
+        }
 
         var processStart = new ProcessStartInfo
         {
             FileName = "dotnet",
-            WorkingDirectory = repositoryRoot,
+            WorkingDirectory = apiProjectDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false
         };
-        processStart.ArgumentList.Add("run");
-        processStart.ArgumentList.Add("--no-restore");
-        processStart.ArgumentList.Add("--no-launch-profile");
-        processStart.ArgumentList.Add("--project");
-        processStart.ArgumentList.Add(apiProject);
-        processStart.ArgumentList.Add($"-p:OutDir={apiOutputDirectory}");
+        processStart.ArgumentList.Add(apiAssembly);
         processStart.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
         processStart.Environment["ASPNETCORE_URLS"] = baseUrl;
         processStart.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
@@ -1173,8 +1188,10 @@ internal sealed record ProviderAccessSessionResponse(
 internal sealed record EntitlementSnapshotIssuedProofPayload(
     string EventVersion,
     Guid EntitlementSnapshotId,
+    Guid ClientAccessRevisionId,
     Guid ClientId,
     Guid ContractId,
+    long EntitlementVersion,
     Guid SourceInvoiceId,
     string SourceInvoiceNumber,
     string Status,

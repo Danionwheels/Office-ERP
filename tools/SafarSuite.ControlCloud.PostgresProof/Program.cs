@@ -128,6 +128,10 @@ try
         options,
         clientId,
         runId);
+    var clientAccessRevisionId = envelope.Payload.GetProperty("clientAccessRevisionId").GetGuid();
+    var contractRevisionNumber = envelope.Payload.GetProperty("contractRevisionNumber").GetInt64();
+    var productCatalogRevisionId = envelope.Payload.GetProperty("productCatalogRevisionId").GetGuid();
+    var productCatalogRevisionNumber = envelope.Payload.GetProperty("productCatalogRevisionNumber").GetInt64();
     var seed = await SendJsonAsync<ControlCloudReceiveEnvelopeResponse>(
         http,
         HttpMethod.Post,
@@ -139,6 +143,38 @@ try
         || seed.Status.Equals("Duplicate", StringComparison.OrdinalIgnoreCase),
         $"entitlement seed should be accepted or duplicate, got '{seed.Status}'.");
     checks.Add("seeded entitlement projection through signed Control Desk envelope");
+
+    var conflictingEqualVersionEnvelope = CreateEntitlementSnapshotEnvelope(
+        options,
+        clientId,
+        Guid.NewGuid(),
+        entitlementVersion: 100);
+    var conflictingEqualVersionSeed = await SendJsonAsync<ControlCloudReceiveEnvelopeResponse>(
+        http,
+        HttpMethod.Post,
+        "api/v1/control-desk/messages",
+        conflictingEqualVersionEnvelope);
+
+    Require(
+        conflictingEqualVersionSeed.Status.Equals("Accepted", StringComparison.OrdinalIgnoreCase),
+        $"equal-version entitlement event should be accepted without replacing desired state, got '{conflictingEqualVersionSeed.Status}'.");
+    checks.Add("ignored conflicting equal-version entitlement projection");
+
+    var staleEnvelope = CreateEntitlementSnapshotEnvelope(
+        options,
+        clientId,
+        Guid.NewGuid(),
+        entitlementVersion: 99);
+    var staleSeed = await SendJsonAsync<ControlCloudReceiveEnvelopeResponse>(
+        http,
+        HttpMethod.Post,
+        "api/v1/control-desk/messages",
+        staleEnvelope);
+
+    Require(
+        staleSeed.Status.Equals("Accepted", StringComparison.OrdinalIgnoreCase),
+        $"stale entitlement event should be accepted without replacing desired state, got '{staleSeed.Status}'.");
+    checks.Add("ignored stale entitlement projection without rollback");
 
     var bootstrapPackage = await SendJsonAsync<LocalServerBootstrapPackageResponse>(
         http,
@@ -186,6 +222,7 @@ try
             Channel: "Secure email",
             Recipient: "postgres.proof.customer@safarsuite.local",
             MarkedBy: "postgres-proof",
+            PreflightAcknowledgements: LocalServerBootstrapPackageHandoffPreflight.RequiredKeys,
             Note: "PostgreSQL proof handoff marker"),
         adminSession.AccessToken);
 
@@ -194,6 +231,10 @@ try
     Require(handoff.ClientId == clientId, "handoff should target proof client.");
     Require(handoff.InstallationId == installationId, "handoff should target proof installation.");
     Require(handoff.HandoffStatus == "HandedOff", "handoff should be marked handed off.");
+    Require(
+        LocalServerBootstrapPackageHandoffPreflight.RequiredKeys.All(key =>
+            handoff.PreflightAcknowledgements.Contains(key)),
+        "handoff should record all required setup preflight acknowledgements.");
 
     var handoffAudit = await SendJsonAsync<ControlCloudAuditEventsResponse>(
         http,
@@ -206,8 +247,9 @@ try
             && auditEvent.ClientId == clientId
             && auditEvent.Detail.Contains(bootstrapPackage.BootstrapPackageId.ToString("D"), StringComparison.Ordinal)
             && auditEvent.Detail.Contains(installationId, StringComparison.Ordinal)
+            && auditEvent.Detail.Contains("Preflight acknowledged", StringComparison.Ordinal)
             && !auditEvent.Detail.Contains(bootstrapPackage.SetupToken, StringComparison.Ordinal)),
-        "handoff audit trail should identify the package and installation without leaking the setup token secret.");
+        "handoff audit trail should identify the package, installation, and preflight acknowledgements without leaking the setup token secret.");
     checks.Add("marked bootstrap package handoff and verified non-secret audit trail");
 
     var appServerInstallationId = Guid.NewGuid();
@@ -308,7 +350,61 @@ try
     Require(signedBundle.Payload.Modules.Any(module =>
         module.ModuleCode.Equals("Accounting", StringComparison.OrdinalIgnoreCase)
         && module.IsEnabled), "entitlement bundle should include enabled Accounting module.");
+    Require(signedBundle.Payload.EntitlementVersion == 100, "entitlement bundle should preserve the Office-issued version.");
+    Require(
+        signedBundle.Payload.ClientAccessRevisionId == clientAccessRevisionId,
+        "entitlement bundle should preserve the Office-approved access revision id.");
+    Require(signedBundle.Payload.BundleVersion == "5", "entitlement bundle should use effective-access version 5.");
+    Require(
+        signedBundle.Payload.EffectiveFromUtc.HasValue
+        && signedBundle.Payload.EffectiveFromUtc.Value <= signedBundle.Payload.BundleIssuedAtUtc,
+        "entitlement bundle should preserve an eligible Office effective-from instant.");
+    Require(
+        signedBundle.Payload.ContractRevisionNumber == contractRevisionNumber,
+        "entitlement bundle should preserve the exact Office contract revision number.");
+    Require(
+        signedBundle.Payload.ProductCatalogRevisionId == productCatalogRevisionId
+        && signedBundle.Payload.ProductCatalogRevisionNumber == productCatalogRevisionNumber,
+        "entitlement bundle should preserve the exact Office product catalog revision.");
+    Require(signedBundle.Payload.AllowedNamedUsers == 40, "entitlement bundle should preserve the named-user allowance.");
+    Require(signedBundle.Payload.AllowedConcurrentUsers == 12, "entitlement bundle should preserve the concurrent-user allowance.");
+    var signedFeatureLimit = signedBundle.Payload.FeatureLimits?.SingleOrDefault();
+    Require(signedFeatureLimit is not null, "entitlement bundle should include the Office feature limit.");
+    Require(
+        signedFeatureLimit!.ModuleCode == "ACCOUNTING"
+        && signedFeatureLimit.FeatureCode == "MONTHLY_POSTINGS"
+        && signedFeatureLimit.LimitValue == 5000
+        && signedFeatureLimit.Unit == "COUNT",
+        "entitlement bundle should preserve the exact Office feature limit.");
     checks.Add("issued signed entitlement bundle through PostgreSQL-backed cloud");
+
+    var applyPendingStatus = await SendJsonAsync<ControlCloudInstallationStatusResponse>(
+        http,
+        HttpMethod.Get,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/status");
+
+    Require(applyPendingStatus.EntitlementSync.DesiredVersion == 100, "sync status should expose the Office desired version.");
+    Require(applyPendingStatus.EntitlementSync.SignedVersion == 100, "sync status should expose the signed version.");
+    Require(applyPendingStatus.EntitlementSync.ObservedVersion is null, "sync status should have no observed version before heartbeat.");
+    Require(applyPendingStatus.EntitlementSync.State == "ApplyPending", "sync status should wait for server application before heartbeat.");
+    Require(
+        applyPendingStatus.LatestEntitlement?.ClientAccessRevisionId == clientAccessRevisionId,
+        "installation status should expose the signed Office access revision id.");
+    Require(
+        applyPendingStatus.LatestEntitlement?.ContractRevisionNumber == contractRevisionNumber,
+        "installation status should expose the signed Office contract revision number.");
+    Require(
+        applyPendingStatus.LatestEntitlement?.ProductCatalogRevisionId == productCatalogRevisionId
+        && applyPendingStatus.LatestEntitlement?.ProductCatalogRevisionNumber == productCatalogRevisionNumber,
+        "installation status should expose the signed Office product catalog revision.");
+    Require(
+        applyPendingStatus.LatestEntitlement?.AllowedNamedUsers == 40
+        && applyPendingStatus.LatestEntitlement?.AllowedConcurrentUsers == 12,
+        "installation status should expose signed user allowances.");
+    Require(
+        applyPendingStatus.LatestEntitlement?.FeatureLimitCount == 1,
+        "installation status should expose the signed feature-limit count.");
+    checks.Add("reported entitlement apply-pending state");
 
     var heartbeatPairingStatus = new LocalServerPairingStatusResponse(
         PairingMode: LocalServerPairingModes.ManagerApproval,
@@ -336,10 +432,33 @@ try
             OfflineValidUntil: signedBundle.Payload.OfflineValidUntil,
             Detail: "postgres proof heartbeat",
             DeploymentProfile: deploymentProfile,
-            PairingStatus: heartbeatPairingStatus));
+            PairingStatus: heartbeatPairingStatus,
+            EntitlementState: new ControlCloudEntitlementStateValuesResponse(
+                signedBundle.Payload.EntitlementVersion,
+                signedBundle.Payload.EffectiveFromUtc
+                ?? new DateTimeOffset(signedBundle.Payload.ValidFrom.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+                signedBundle.Payload.Status,
+                signedBundle.Payload.PaidUntil,
+                signedBundle.Payload.WarningStartsAt,
+                signedBundle.Payload.GraceUntil,
+                signedBundle.Payload.OfflineValidUntil,
+                signedBundle.Payload.AllowedDevices,
+                signedBundle.Payload.AllowedBranches,
+                signedBundle.Payload.AllowedNamedUsers,
+                signedBundle.Payload.AllowedConcurrentUsers,
+                signedBundle.Payload.Modules.Select(module => new ControlCloudEntitlementStateModuleResponse(
+                    module.ModuleCode,
+                    module.IsEnabled)).ToArray(),
+                (signedBundle.Payload.FeatureLimits ?? []).Select(limit =>
+                    new ControlCloudEntitlementStateFeatureLimitResponse(
+                        limit.ModuleCode,
+                        limit.FeatureCode,
+                        limit.LimitValue,
+                        limit.Unit)).ToArray())));
 
     Require(heartbeat.HeartbeatStatus.Equals("Received", StringComparison.OrdinalIgnoreCase), "heartbeat should be received.");
     Require(heartbeat.PairingStatus?.FirstManagerDeviceApproved == true, "heartbeat should echo pairing first-manager approval.");
+    Require(heartbeat.EntitlementState?.AllowedNamedUsers == 40, "heartbeat should echo observed named-user allowance.");
     checks.Add("reported local-server heartbeat");
 
     var commandPayload = JsonSerializer.SerializeToElement(
@@ -400,6 +519,12 @@ try
     Require(status.LatestHeartbeat?.PairingStatus?.ApprovedDeviceCount == 1, "installation status should include pairing device counts.");
     Require(status.LatestHeartbeat?.PairingStatus?.FirstManagerDeviceApproved == true, "installation status should include first-manager approval state.");
     Require(status.LatestEntitlement?.BundleIssueId == signedBundle.Payload.BundleIssueId, "installation status should include latest entitlement issue.");
+    Require(status.EntitlementSync.DesiredVersion == 100, "installation status should retain desired entitlement version.");
+    Require(status.EntitlementSync.SignedVersion == 100, "installation status should retain signed entitlement version.");
+    Require(status.EntitlementSync.ObservedVersion == 100, "installation status should expose server-observed entitlement version.");
+    Require(status.EntitlementSync.State == "InSync", "installation status should be in sync after matching heartbeat.");
+    Require(status.Reconciliation?.State == "InSync", "value reconciliation should be in sync after matching heartbeat.");
+    Require(status.Reconciliation?.Differences.Count == 0, "matching desired, delivered, and observed values should have no differences.");
     Require(status.CommandStatus.LatestAcknowledgementStatus == "Applied", "installation status should include command acknowledgement.");
     checks.Add("read cloud installation status summary");
 
@@ -433,6 +558,287 @@ try
     Require(!string.IsNullOrWhiteSpace(acceptedPortal.AccessToken), "accepted portal session should include access token.");
     checks.Add("accepted client portal invitation");
 
+    var proofInvoiceIds = new List<Guid>();
+    var proofInvoiceDate = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+
+    for (var index = 0; index < 13; index++)
+    {
+        var invoiceId = Guid.NewGuid();
+        var issueDate = proofInvoiceDate.AddDays(-index);
+        proofInvoiceIds.Add(invoiceId);
+        var invoiceEnvelope = CreateControlDeskEnvelope(
+            options,
+            "InvoiceIssued",
+            "Invoice",
+            invoiceId,
+            $"postgres-proof-invoice:{runId:N}:{index}",
+            new
+            {
+                eventVersion = "1",
+                invoiceId,
+                invoiceNumber = $"POSTGRES-PAGE-{index:00}",
+                clientId,
+                contractId = Guid.NewGuid(),
+                invoiceStatus = "Issued",
+                issueDate,
+                dueDate = issueDate.AddDays(30),
+                totalAmount = 100m,
+                balanceDue = 100m,
+                currencyCode = "PKR"
+            });
+        var invoiceReceipt = await SendJsonAsync<ControlCloudReceiveEnvelopeResponse>(
+            http,
+            HttpMethod.Post,
+            "api/v1/control-desk/messages",
+            invoiceEnvelope);
+
+        Require(
+            invoiceReceipt.Status.Equals("Accepted", StringComparison.OrdinalIgnoreCase),
+            $"invoice page seed {index} should be accepted.");
+    }
+
+    var paymentId = Guid.NewGuid();
+    var creditNoteId = Guid.NewGuid();
+    var refundId = Guid.NewGuid();
+    var creditApplicationId = Guid.NewGuid();
+    var primaryInvoiceId = proofInvoiceIds[0];
+    var paidInvoiceId = proofInvoiceIds[1];
+    var voidedInvoiceId = proofInvoiceIds[2];
+
+    await SendAcceptedEnvelopeAsync(
+        http,
+        CreateControlDeskEnvelope(
+            options,
+            "PaymentRecorded",
+            "Payment",
+            paymentId,
+            $"postgres-proof-payment:{runId:N}",
+            new
+            {
+                eventVersion = "1",
+                paymentId,
+                invoiceId = primaryInvoiceId,
+                invoiceNumber = "POSTGRES-PAGE-00",
+                clientId,
+                paymentStatus = "Recorded",
+                paymentMethod = "BankTransfer",
+                paymentReference = "POSTGRES-PAYMENT-01",
+                amount = 40m,
+                invoiceBalanceDue = 60m,
+                currencyCode = "PKR",
+                receivedOn = proofInvoiceDate
+            }),
+        "payment record");
+    await SendAcceptedEnvelopeAsync(
+        http,
+        CreateControlDeskEnvelope(
+            options,
+            "CreditNoteIssued",
+            "CreditNote",
+            creditNoteId,
+            $"postgres-proof-credit-note:{runId:N}",
+            new
+            {
+                eventVersion = "1",
+                creditNoteId,
+                creditNoteNumber = "POSTGRES-CREDIT-01",
+                invoiceId = primaryInvoiceId,
+                invoiceNumber = "POSTGRES-PAGE-00",
+                clientId,
+                creditNoteStatus = "Issued",
+                creditDate = proofInvoiceDate,
+                amount = 20m,
+                currencyCode = "PKR",
+                reason = "PostgreSQL normalized writer proof"
+            }),
+        "credit-note issue");
+    await SendAcceptedEnvelopeAsync(
+        http,
+        CreateControlDeskEnvelope(
+            options,
+            "ClientRefundIssued",
+            "ClientRefund",
+            refundId,
+            $"postgres-proof-refund:{runId:N}",
+            new
+            {
+                eventVersion = "1",
+                refundId,
+                clientId,
+                refundStatus = "Issued",
+                refundMethod = "BankTransfer",
+                refundReference = "POSTGRES-REFUND-01",
+                amount = 5m,
+                clientBalanceBefore = 20m,
+                clientBalanceAfter = 15m,
+                currencyCode = "PKR",
+                refundedOn = proofInvoiceDate
+            }),
+        "refund issue");
+    await SendAcceptedEnvelopeAsync(
+        http,
+        CreateControlDeskEnvelope(
+            options,
+            "ClientCreditApplied",
+            "ClientCreditApplication",
+            creditApplicationId,
+            $"postgres-proof-credit-application:{runId:N}",
+            new
+            {
+                eventVersion = "1",
+                creditApplicationId,
+                clientId,
+                invoiceId = primaryInvoiceId,
+                invoiceNumber = "POSTGRES-PAGE-00",
+                invoiceStatus = "PartiallyPaid",
+                creditApplicationStatus = "Applied",
+                reference = "POSTGRES-APPLICATION-01",
+                amount = 10m,
+                invoiceBalanceBefore = 60m,
+                invoiceBalanceAfter = 50m,
+                availableCreditBefore = 15m,
+                availableCreditAfter = 5m,
+                clientBalanceBefore = 1260m,
+                clientBalanceAfter = 1250m,
+                currencyCode = "PKR",
+                appliedOn = proofInvoiceDate
+            }),
+        "credit application");
+    await SendAcceptedEnvelopeAsync(
+        http,
+        CreateControlDeskEnvelope(
+            options,
+            "PaymentReversed",
+            "Payment",
+            paymentId,
+            $"postgres-proof-payment-reversal:{runId:N}",
+            new
+            {
+                eventVersion = "1",
+                paymentId,
+                invoiceId = primaryInvoiceId,
+                clientId,
+                paymentStatus = "Reversed",
+                amount = 40m,
+                invoiceBalanceDue = 90m,
+                currencyCode = "PKR"
+            }),
+        "payment reversal");
+    await SendAcceptedEnvelopeAsync(
+        http,
+        CreateControlDeskEnvelope(
+            options,
+            "ClientPaidStatusChanged",
+            "Invoice",
+            paidInvoiceId,
+            $"postgres-proof-paid-status:{runId:N}",
+            new
+            {
+                eventVersion = "1",
+                clientId,
+                invoiceId = paidInvoiceId,
+                invoiceStatus = "Paid",
+                balanceDue = 0m,
+                currencyCode = "PKR"
+            }),
+        "paid-status change");
+    await SendAcceptedEnvelopeAsync(
+        http,
+        CreateControlDeskEnvelope(
+            options,
+            "InvoiceVoided",
+            "Invoice",
+            voidedInvoiceId,
+            $"postgres-proof-invoice-void:{runId:N}",
+            new
+            {
+                eventVersion = "1",
+                clientId,
+                invoiceId = voidedInvoiceId,
+                invoiceStatus = "Void",
+                balanceDue = 0m,
+                currencyCode = "PKR",
+                voidDate = proofInvoiceDate,
+                reason = "PostgreSQL normalized writer proof"
+            }),
+        "invoice void");
+
+    var commercialSummary = await SendJsonAsync<ClientPortalCommercialSummaryResponse>(
+        http,
+        HttpMethod.Get,
+        $"api/v1/client-portal/clients/{clientId:D}/commercial-summary",
+        body: null,
+        acceptedPortal.AccessToken);
+
+    Require(commercialSummary.TotalInvoiced == 1200m, "bounded commercial summary should exclude void invoices.");
+    Require(commercialSummary.TotalPaid == 0m, "bounded commercial summary should exclude reversed payments.");
+    Require(commercialSummary.TotalCredited == 20m, "bounded commercial summary should include normalized credit notes.");
+    Require(commercialSummary.TotalRefunded == 5m, "bounded commercial summary should include normalized refunds.");
+    Require(commercialSummary.TotalCreditApplied == 10m, "bounded commercial summary should include credit applications.");
+    Require(commercialSummary.BalanceDue == 1090m, "bounded commercial summary should apply invoice status mutations.");
+    Require(commercialSummary.AvailableCredit == 5m, "bounded commercial summary should derive remaining credit.");
+    Require(
+        commercialSummary.Invoices.Count == 0
+        && commercialSummary.Payments.Count == 0
+        && commercialSummary.CreditNotes.Count == 0
+        && commercialSummary.Refunds.Count == 0
+        && commercialSummary.CreditApplications.Count == 0,
+        "commercial summary should not embed unbounded document history.");
+    checks.Add("projected every commercial document and mutation into bounded rows");
+
+    var firstInvoicePage = await SendJsonAsync<ClientPortalCommercialDocumentsPageResponse>(
+        http,
+        HttpMethod.Get,
+        $"api/v1/client-portal/clients/{clientId:D}/commercial-documents?documentType=Invoice&take=5",
+        body: null,
+        acceptedPortal.AccessToken);
+
+    Require(firstInvoicePage.Items.Count == 5, "first invoice page should respect requested size.");
+    Require(firstInvoicePage.HasMore, "first invoice page should advertise continuation.");
+    Require(!string.IsNullOrWhiteSpace(firstInvoicePage.NextCursor), "first invoice page should return an opaque cursor.");
+    Require(firstInvoicePage.Items.First().Reference == "POSTGRES-PAGE-00", "invoice page should be newest first.");
+
+    var secondInvoicePage = await SendJsonAsync<ClientPortalCommercialDocumentsPageResponse>(
+        http,
+        HttpMethod.Get,
+        $"api/v1/client-portal/clients/{clientId:D}/commercial-documents?documentType=Invoice&take=5&cursor={Uri.EscapeDataString(firstInvoicePage.NextCursor!)}",
+        body: null,
+        acceptedPortal.AccessToken);
+    Require(secondInvoicePage.Items.Count == 5, "second invoice page should respect requested size.");
+    Require(secondInvoicePage.HasMore, "second invoice page should advertise the final continuation.");
+    Require(
+        !firstInvoicePage.Items.Select(item => item.DocumentId).Intersect(
+            secondInvoicePage.Items.Select(item => item.DocumentId)).Any(),
+        "adjacent invoice pages should not overlap.");
+
+    var thirdInvoicePage = await SendJsonAsync<ClientPortalCommercialDocumentsPageResponse>(
+        http,
+        HttpMethod.Get,
+        $"api/v1/client-portal/clients/{clientId:D}/commercial-documents?documentType=Invoice&take=5&cursor={Uri.EscapeDataString(secondInvoicePage.NextCursor!)}",
+        body: null,
+        acceptedPortal.AccessToken);
+    Require(thirdInvoicePage.Items.Count == 3, "final invoice page should return the remaining rows.");
+    Require(!thirdInvoicePage.HasMore, "final invoice page should end the cursor chain.");
+    Require(thirdInvoicePage.NextCursor is null, "final invoice page should not return another cursor.");
+    checks.Add("read stable non-overlapping keyset invoice pages");
+
+    using (var malformedCursorRequest = new HttpRequestMessage(
+               HttpMethod.Get,
+               $"api/v1/client-portal/clients/{clientId:D}/commercial-documents?documentType=Invoice&take=5&cursor=not-a-cursor"))
+    {
+        malformedCursorRequest.Headers.TryAddWithoutValidation(
+            "Authorization",
+            $"Bearer {acceptedPortal.AccessToken}");
+        using var malformedCursorResponse = await http.SendAsync(malformedCursorRequest);
+        var malformedCursorBody = await malformedCursorResponse.Content.ReadAsStringAsync();
+        Require((int)malformedCursorResponse.StatusCode == 400, "malformed commercial cursor should be rejected.");
+        Require(
+            malformedCursorBody.Contains("CommercialDocumentCursorInvalid", StringComparison.Ordinal),
+            "malformed commercial cursor should return its stable failure code.");
+    }
+
+    checks.Add("rejected malformed commercial document cursor");
+
     var portalStatus = await SendJsonAsync<ControlCloudInstallationStatusResponse>(
         http,
         HttpMethod.Get,
@@ -447,6 +853,47 @@ try
     Require(portalStatus.LatestHeartbeat?.PairingStatus?.FirstManagerDeviceApproved == true, "portal installation status should include first-manager approval state.");
     checks.Add("read client portal installation pairing status");
 
+    var scheduledEffectiveFromUtc = DateTimeOffset.UtcNow.AddHours(2);
+    var scheduledEnvelope = CreateEntitlementSnapshotEnvelope(
+        options,
+        clientId,
+        Guid.NewGuid(),
+        entitlementVersion: 101,
+        effectiveFromUtc: scheduledEffectiveFromUtc);
+    var scheduledSeed = await SendJsonAsync<ControlCloudReceiveEnvelopeResponse>(
+        http,
+        HttpMethod.Post,
+        "api/v1/control-desk/messages",
+        scheduledEnvelope);
+
+    Require(
+        scheduledSeed.Status.Equals("Accepted", StringComparison.OrdinalIgnoreCase),
+        "future entitlement event should be accepted as desired state.");
+
+    var scheduledStatus = await SendJsonAsync<ControlCloudInstallationStatusResponse>(
+        http,
+        HttpMethod.Get,
+        $"api/v1/control-cloud/clients/{clientId:D}/installations/{Uri.EscapeDataString(installationId)}/status");
+
+    Require(scheduledStatus.EntitlementSync.State == "Scheduled", "future desired version should report scheduled sync state.");
+    Require(scheduledStatus.EntitlementSync.DesiredVersion == 101, "scheduled status should expose future desired version.");
+    Require(scheduledStatus.EntitlementSync.SignedVersion == 100, "scheduled status should retain current signed version.");
+    Require(scheduledStatus.EntitlementSync.ObservedVersion == 100, "scheduled status should retain current observed version.");
+    Require(scheduledStatus.Reconciliation?.State == "Scheduled", "value reconciliation should classify expected scheduled differences.");
+    Require(scheduledStatus.Reconciliation?.Desired?.EntitlementVersion == 101, "reconciliation should expose scheduled desired values.");
+    Require(scheduledStatus.Reconciliation?.Delivered?.EntitlementVersion == 100, "reconciliation should preserve current delivered values.");
+    Require(scheduledStatus.Reconciliation?.Observed?.EntitlementVersion == 100, "reconciliation should preserve current observed values.");
+
+    using (var scheduledBundleResponse = await http.GetAsync(
+               $"api/v1/local-server/installations/{Uri.EscapeDataString(installationId)}/entitlement-bundle?clientId={clientId:D}"))
+    {
+        var scheduledBundleBody = await scheduledBundleResponse.Content.ReadAsStringAsync();
+        Require((int)scheduledBundleResponse.StatusCode == 409, "future entitlement should not be signed before its effective instant.");
+        Require(scheduledBundleBody.Contains("EntitlementScheduled", StringComparison.Ordinal), "scheduled signing hold should return its stable failure code.");
+    }
+
+    checks.Add("held future desired access from signing and reported scheduled reconciliation");
+
     await VerifyPersistedRowsAsync(
         options.ConnectionString,
         envelope.MessageId,
@@ -456,8 +903,15 @@ try
         bootstrapPackage.SetupTokenId,
         bootstrapPackage.BootstrapPackageId,
         signedBundle.Payload.BundleIssueId,
+        contractRevisionNumber,
+        productCatalogRevisionId,
+        productCatalogRevisionNumber,
         heartbeat.HeartbeatId,
-        queuedCommand.CommandId);
+        queuedCommand.CommandId,
+        [.. proofInvoiceIds, paymentId, creditNoteId, refundId, creditApplicationId],
+        paymentId,
+        paidInvoiceId,
+        voidedInvoiceId);
     checks.Add("verified PostgreSQL rows for every proof boundary");
 
     Console.WriteLine($"Control Cloud PostgreSQL proof passed {checks.Count} checks:");
@@ -475,6 +929,12 @@ try
             installationId,
             operatorEmail,
             entitlementVersion = signedBundle.Payload.EntitlementVersion,
+            contractRevisionNumber = signedBundle.Payload.ContractRevisionNumber,
+            productCatalogRevisionId = signedBundle.Payload.ProductCatalogRevisionId,
+            productCatalogRevisionNumber = signedBundle.Payload.ProductCatalogRevisionNumber,
+            allowedNamedUsers = signedBundle.Payload.AllowedNamedUsers,
+            allowedConcurrentUsers = signedBundle.Payload.AllowedConcurrentUsers,
+            featureLimitCount = signedBundle.Payload.FeatureLimits?.Count ?? 0,
             bundleIssueId = signedBundle.Payload.BundleIssueId,
             heartbeatId = heartbeat.HeartbeatId,
             commandId = queuedCommand.CommandId
@@ -546,6 +1006,22 @@ static async Task<T> SendJsonAsync<T>(
         ?? throw new InvalidOperationException($"HTTP {method} {path} returned an empty or invalid JSON response.");
 }
 
+static async Task SendAcceptedEnvelopeAsync(
+    HttpClient http,
+    ControlCloudEnvelope envelope,
+    string label)
+{
+    var receipt = await SendJsonAsync<ControlCloudReceiveEnvelopeResponse>(
+        http,
+        HttpMethod.Post,
+        "api/v1/control-desk/messages",
+        envelope);
+
+    Require(
+        receipt.Status.Equals("Accepted", StringComparison.OrdinalIgnoreCase),
+        $"{label} should be accepted, got '{receipt.Status}'.");
+}
+
 static void RequireBearerSession(
     ProviderAccessSessionResponse session,
     string requiredScope)
@@ -564,8 +1040,15 @@ static async Task VerifyPersistedRowsAsync(
     Guid setupTokenId,
     Guid bootstrapPackageId,
     Guid bundleIssueId,
+    long contractRevisionNumber,
+    Guid productCatalogRevisionId,
+    long productCatalogRevisionNumber,
     Guid heartbeatId,
-    Guid commandId)
+    Guid commandId,
+    IReadOnlyCollection<Guid> commercialDocumentIds,
+    Guid paymentId,
+    Guid paidInvoiceId,
+    Guid voidedInvoiceId)
 {
     await using var dbContext = CreateDbContext(connectionString);
     var normalizedEmail = NormalizeEmail(operatorEmail);
@@ -577,8 +1060,51 @@ static async Task VerifyPersistedRowsAsync(
         "accepted envelope receipt should be persisted.");
     Require(
         await dbContext.ClientCommercialProjections.AnyAsync(projection =>
-            projection.ClientId == clientId),
-        "client commercial projection should be persisted.");
+            projection.ClientId == clientId
+            && projection.TotalInvoiced == 1200m
+            && projection.TotalPaid == 0m
+            && projection.TotalCredited == 20m
+            && projection.TotalRefunded == 5m
+            && projection.TotalCreditApplied == 10m
+            && projection.BalanceDue == 1090m
+            && projection.AvailableCredit == 5m),
+        "bounded client commercial summary should be persisted.");
+    Require(
+        await dbContext.CommercialDocuments.CountAsync(document =>
+            document.ClientId == clientId
+            && commercialDocumentIds.Contains(document.DocumentId)) == commercialDocumentIds.Count,
+        "every proof commercial document should be persisted as one normalized row.");
+    Require(
+        await dbContext.CommercialDocuments.CountAsync(document =>
+            document.ClientId == clientId
+            && (document.DocumentType == "Invoice"
+                || document.DocumentType == "Payment"
+                || document.DocumentType == "CreditNote"
+                || document.DocumentType == "Refund"
+                || document.DocumentType == "CreditApplication")) == commercialDocumentIds.Count,
+        "normalized commercial rows should cover all five document types without duplicates.");
+    Require(
+        await dbContext.CommercialDocuments.AnyAsync(document =>
+            document.ClientId == clientId
+            && document.DocumentType == "Payment"
+            && document.DocumentId == paymentId
+            && document.Status == "Reversed"),
+        "payment reversal should update only the normalized payment row.");
+    Require(
+        await dbContext.CommercialDocuments.AnyAsync(document =>
+            document.ClientId == clientId
+            && document.DocumentType == "Invoice"
+            && document.DocumentId == paidInvoiceId
+            && document.Status == "Paid"
+            && document.BalanceAmount == 0m),
+        "paid-status change should update the normalized invoice balance.");
+    Require(
+        await dbContext.CommercialDocuments.AnyAsync(document =>
+            document.ClientId == clientId
+            && document.DocumentType == "Invoice"
+            && document.DocumentId == voidedInvoiceId
+            && document.Status == "Void"),
+        "invoice void should update the normalized invoice row.");
     Require(
         await dbContext.ProviderAccessOperators.AnyAsync(providerOperator =>
             providerOperator.NormalizedEmail == normalizedEmail),
@@ -600,15 +1126,22 @@ static async Task VerifyPersistedRowsAsync(
         await dbContext.EntitlementBundleIssues.AnyAsync(bundle =>
             bundle.BundleIssueId == bundleIssueId
             && bundle.ClientId == clientId
-            && bundle.InstallationId == installationId),
+            && bundle.InstallationId == installationId
+            && bundle.ContractRevisionNumber == contractRevisionNumber
+            && bundle.ProductCatalogRevisionId == productCatalogRevisionId
+            && bundle.ProductCatalogRevisionNumber == productCatalogRevisionNumber
+            && bundle.AllowedNamedUsers == 40
+            && bundle.AllowedConcurrentUsers == 12
+            && bundle.FeatureLimitCount == 1),
         "entitlement bundle issue should be persisted.");
     Require(
         await dbContext.InstallationHeartbeats.AnyAsync(heartbeat =>
             heartbeat.HeartbeatId == heartbeatId
             && heartbeat.InstallationId == installationId
             && heartbeat.PairingFirstManagerDeviceApproved == true
-            && heartbeat.PairingApprovedDeviceCount == 1),
-        "installation heartbeat with pairing status should be persisted.");
+            && heartbeat.PairingApprovedDeviceCount == 1
+            && heartbeat.ObservedEntitlementStateJson != null),
+        "installation heartbeat with pairing and observed entitlement evidence should be persisted.");
     Require(
         await dbContext.InstallationCommands.AnyAsync(command =>
             command.CommandId == commandId
@@ -621,10 +1154,42 @@ static async Task VerifyPersistedRowsAsync(
         "installation command acknowledgement row should be persisted.");
 }
 
+static ControlCloudEnvelope CreateControlDeskEnvelope(
+    ProofOptions options,
+    string messageType,
+    string subjectType,
+    Guid subjectId,
+    string idempotencyKey,
+    object payload)
+{
+    var now = DateTimeOffset.UtcNow;
+    var envelope = new ControlCloudEnvelope(
+        EnvelopeVersion: "1",
+        MessageId: Guid.NewGuid(),
+        MessageType: messageType,
+        SubjectType: subjectType,
+        SubjectId: subjectId.ToString("D"),
+        SourceSystem: options.ControlDeskSourceSystem,
+        SourceEnvironment: options.ControlDeskSourceEnvironment,
+        OccurredAtUtc: now,
+        PreparedAtUtc: now,
+        IdempotencyKey: $"{options.ControlDeskSourceSystem}:{idempotencyKey}",
+        Payload: JsonSerializer.SerializeToElement(payload, ProofJson.Options),
+        Signature: new ControlCloudEnvelopeSignature(
+            "HMAC-SHA256",
+            options.ControlDeskSigningKeyId,
+            "",
+            ""));
+
+    return CanonicalizeControlDeskEnvelopeForHttp(options, envelope);
+}
+
 static ControlCloudEnvelope CreateEntitlementSnapshotEnvelope(
     ProofOptions options,
     Guid clientId,
-    Guid runId)
+    Guid runId,
+    long entitlementVersion = 100,
+    DateTimeOffset? effectiveFromUtc = null)
 {
     var now = DateTimeOffset.UtcNow;
     var today = DateOnly.FromDateTime(now.UtcDateTime);
@@ -632,10 +1197,15 @@ static ControlCloudEnvelope CreateEntitlementSnapshotEnvelope(
     var messageId = Guid.NewGuid();
     var entitlementSnapshotId = Guid.NewGuid();
     var payload = new EntitlementSnapshotIssuedProofPayload(
-        EventVersion: "1",
+        EventVersion: "6",
         EntitlementSnapshotId: entitlementSnapshotId,
+        ClientAccessRevisionId: Guid.NewGuid(),
         ClientId: clientId,
         ContractId: Guid.NewGuid(),
+        ContractRevisionNumber: 7,
+        ProductCatalogRevisionId: Guid.Parse("9c1da88b-c763-4bb0-8dda-2d95fe63ec8f"),
+        ProductCatalogRevisionNumber: 3,
+        EntitlementVersion: entitlementVersion,
         SourceInvoiceId: Guid.NewGuid(),
         SourceInvoiceNumber: $"POSTGRES-PROOF-{now:yyyyMMddHHmmss}",
         Status: "Active",
@@ -649,7 +1219,18 @@ static ControlCloudEnvelope CreateEntitlementSnapshotEnvelope(
         [
             new EntitlementSnapshotIssuedProofModule("Accounting", IsEnabled: true),
             new EntitlementSnapshotIssuedProofModule("Reports", IsEnabled: true)
-        ]);
+        ],
+        AllowedNamedUsers: 40,
+        AllowedConcurrentUsers: 12,
+        FeatureLimits:
+        [
+            new EntitlementSnapshotIssuedProofFeatureLimit(
+                "ACCOUNTING",
+                "MONTHLY_POSTINGS",
+                5000,
+                "COUNT")
+        ],
+        EffectiveFromUtc: effectiveFromUtc ?? now);
     var payloadJson = JsonSerializer.Serialize(payload, ProofJson.Options);
     var occurredAtUtc = now;
     var preparedAtUtc = now;
@@ -807,36 +1388,40 @@ internal sealed class ControlCloudProcess : IAsyncDisposable
 
     public static async Task<ControlCloudProcess> StartAsync(ProofOptions options)
     {
-        var apiProject = Path.Combine(
+        var apiProjectDirectory = Path.Combine(
             options.RepositoryRoot,
             "src",
-            "SafarSuite.ControlCloud.Api",
+            "SafarSuite.ControlCloud.Api");
+        var apiProject = Path.Combine(
+            apiProjectDirectory,
             "SafarSuite.ControlCloud.Api.csproj");
+        var apiAssembly = Path.Combine(
+            apiProjectDirectory,
+            "bin",
+            "Debug",
+            "net10.0",
+            "SafarSuite.ControlCloud.Api.dll");
 
         if (!File.Exists(apiProject))
         {
             throw new InvalidOperationException($"Control Cloud API project was not found at '{apiProject}'.");
         }
 
-        var apiOutputDirectory = EnsureTrailingSeparator(Path.Combine(
-            options.OutputDirectory,
-            "controlcloud-api-build"));
-        Directory.CreateDirectory(apiOutputDirectory);
+        if (!File.Exists(apiAssembly))
+        {
+            throw new InvalidOperationException(
+                $"Control Cloud API assembly was not found at '{apiAssembly}'. Run `dotnet build SafarSuite.ControlDesk.sln` before this proof.");
+        }
 
         var processStart = new ProcessStartInfo
         {
             FileName = "dotnet",
-            WorkingDirectory = options.RepositoryRoot,
+            WorkingDirectory = apiProjectDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false
         };
-        processStart.ArgumentList.Add("run");
-        processStart.ArgumentList.Add("--no-restore");
-        processStart.ArgumentList.Add("--no-launch-profile");
-        processStart.ArgumentList.Add("--project");
-        processStart.ArgumentList.Add(apiProject);
-        processStart.ArgumentList.Add($"-p:OutDir={apiOutputDirectory}");
+        processStart.ArgumentList.Add(apiAssembly);
         processStart.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
         processStart.Environment["ASPNETCORE_URLS"] = options.ControlCloudBaseUrl;
         processStart.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
@@ -1149,8 +1734,13 @@ internal sealed class ProviderAccessOperatorResponse
 internal sealed record EntitlementSnapshotIssuedProofPayload(
     string EventVersion,
     Guid EntitlementSnapshotId,
+    Guid ClientAccessRevisionId,
     Guid ClientId,
     Guid ContractId,
+    long ContractRevisionNumber,
+    Guid ProductCatalogRevisionId,
+    long ProductCatalogRevisionNumber,
+    long EntitlementVersion,
     Guid SourceInvoiceId,
     string SourceInvoiceNumber,
     string Status,
@@ -1160,8 +1750,18 @@ internal sealed record EntitlementSnapshotIssuedProofPayload(
     int AllowedDevices,
     int AllowedBranches,
     DateTimeOffset IssuedAtUtc,
-    IReadOnlyCollection<EntitlementSnapshotIssuedProofModule> Modules);
+    IReadOnlyCollection<EntitlementSnapshotIssuedProofModule> Modules,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<EntitlementSnapshotIssuedProofFeatureLimit>? FeatureLimits = null,
+    DateTimeOffset? EffectiveFromUtc = null);
 
 internal sealed record EntitlementSnapshotIssuedProofModule(
     string ModuleCode,
     bool IsEnabled);
+
+internal sealed record EntitlementSnapshotIssuedProofFeatureLimit(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);

@@ -7,6 +7,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{23687B85-ECA0-46D8-9B03-AB99D7205D07}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{A1D62C45-6A31-4F38-8129-30DD2560E2D2}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlDesk.Domain", "src\SafarSuite.ControlDesk.Domain\SafarSuite.ControlDesk.Domain.csproj", "{79E9A7AC-E489-4B53-94FB-3B8FBBE00297}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlDesk.Contracts", "src\SafarSuite.ControlDesk.Contracts\SafarSuite.ControlDesk.Contracts.csproj", "{5C1819A1-0772-49C1-8F98-C62C964AA347}"
@@ -46,6 +48,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlCloud.PostgresProof", "tools\SafarSuite.ControlCloud.PostgresProof\SafarSuite.ControlCloud.PostgresProof.csproj", "{ADCD18C8-AF91-48D3-AE09-1D24394BB3D0}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlDesk.ProviderAccessProxyProof", "tools\SafarSuite.ControlDesk.ProviderAccessProxyProof\SafarSuite.ControlDesk.ProviderAccessProxyProof.csproj", "{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlCloud.Identity.Tests", "tests\SafarSuite.ControlCloud.Identity.Tests\SafarSuite.ControlCloud.Identity.Tests.csproj", "{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafarSuite.ControlDesk.Domain.Tests", "tests\SafarSuite.ControlDesk.Domain.Tests\SafarSuite.ControlDesk.Domain.Tests.csproj", "{7D7CB2CC-CE16-4885-B980-0E21B730CADB}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -297,6 +303,30 @@ Global
 		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Release|x64.Build.0 = Release|Any CPU
 		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Release|x86.ActiveCfg = Release|Any CPU
 		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9}.Release|x86.Build.0 = Release|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Debug|x64.Build.0 = Debug|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Debug|x86.Build.0 = Debug|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Release|x64.ActiveCfg = Release|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Release|x64.Build.0 = Release|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Release|x86.ActiveCfg = Release|Any CPU
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1}.Release|x86.Build.0 = Release|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Debug|x64.Build.0 = Debug|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Debug|x86.Build.0 = Debug|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Release|x64.ActiveCfg = Release|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Release|x64.Build.0 = Release|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Release|x86.ActiveCfg = Release|Any CPU
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -322,5 +352,7 @@ Global
 		{F19126E5-CD90-44CA-B89D-06251218D136} = {23687B85-ECA0-46D8-9B03-AB99D7205D07}
 		{ADCD18C8-AF91-48D3-AE09-1D24394BB3D0} = {23687B85-ECA0-46D8-9B03-AB99D7205D07}
 		{4F234AF8-3E9A-4C09-A2BF-926828E8A5A9} = {23687B85-ECA0-46D8-9B03-AB99D7205D07}
+		{C0D525F0-4AF3-4D25-A85D-1E10D7416BC1} = {A1D62C45-6A31-4F38-8129-30DD2560E2D2}
+		{7D7CB2CC-CE16-4885-B980-0E21B730CADB} = {A1D62C45-6A31-4F38-8129-30DD2560E2D2}
 	EndGlobalSection
 EndGlobal

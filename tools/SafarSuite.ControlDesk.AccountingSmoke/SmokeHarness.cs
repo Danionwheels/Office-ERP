@@ -18,7 +18,9 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActi
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetRevenueSummary;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListVoucherNumberingRules;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
@@ -30,24 +32,31 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccount
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GetAccountsReceivableAging;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GetCreditNoteDocument;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GetInvoiceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueCreditNote;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
+using SafarSuite.ControlDesk.Application.Modules.Billing.ListOutstandingInvoices;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientAccountingProfile;
 using SafarSuite.ControlDesk.Application.Modules.Clients.CreateClient;
-using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
+using SafarSuite.ControlDesk.Application.Modules.Clients.Financials;
 using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Contracts;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.ReplaceActiveClientContract;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Entitlements.GetLatestEntitlementSnapshot;
+using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoice;
+using SafarSuite.ControlDesk.Application.Modules.Entitlements.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ApplyClientCredit;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Common;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetClientRefundDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetInvoicePaymentDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.IssueClientRefund;
+using SafarSuite.ControlDesk.Application.Modules.Payments.ListPaymentReceiptsReport;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayment;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
@@ -80,6 +89,9 @@ internal sealed class SmokeHarness : IAsyncDisposable
         IClientRefundRepository clientRefunds,
         IClientCreditApplicationRepository clientCreditApplications,
         ICloudOutboxMessageRepository cloudOutboxMessages,
+        IClientAccessRevisionRepository clientAccessRevisions,
+        IEntitlementSnapshotRepository entitlementSnapshots,
+        IEntitlementVersionAllocator entitlementVersions,
         IUnitOfWork unitOfWork,
         ControlDeskDbContext? dbContext = null)
     {
@@ -101,6 +113,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
         ClientRefunds = clientRefunds;
         ClientCreditApplications = clientCreditApplications;
         CloudOutboxMessages = cloudOutboxMessages;
+        ClientAccessRevisions = clientAccessRevisions;
+        EntitlementSnapshots = entitlementSnapshots;
         UnitOfWork = unitOfWork;
         _dbContext = dbContext;
 
@@ -111,11 +125,37 @@ internal sealed class SmokeHarness : IAsyncDisposable
         var periodGuard = new AccountingPeriodPostingGuard(AccountingPeriods);
         var openingBalanceProfileGuard = new OpeningBalanceProfilePostingGuard(LedgerAccounts);
         var outboxMessageFactory = new PaymentCloudOutboxMessageFactory(IdGenerator, Clock);
-        var creditBalanceService = new ClientCreditBalanceService(
-            Invoices,
-            CreditNotes,
-            ClientRefunds,
-            ClientCreditApplications);
+        IClientFinancialReader financialReader = _dbContext is null
+            ? new InMemoryClientFinancialReader(
+                Clients,
+                Invoices,
+                Payments,
+                CreditNotes,
+                ClientRefunds,
+                ClientCreditApplications,
+                JournalEntries)
+            : new EfClientFinancialReader(_dbContext);
+        IJournalEntryRegisterReader journalRegisterReader = _dbContext is null
+            ? new InMemoryJournalEntryRegisterReader(JournalEntries)
+            : new EfJournalEntryRegisterReader(_dbContext);
+        IRevenueSummaryReader revenueSummaryReader = _dbContext is null
+            ? new InMemoryRevenueSummaryReader(LedgerAccounts, JournalEntries)
+            : new EfRevenueSummaryReader(_dbContext);
+        IBillingReportReader billingReportReader = _dbContext is null
+            ? new InMemoryBillingReportReader(
+                (InMemoryClientRepository)Clients,
+                (InMemoryInvoiceRepository)Invoices,
+                JournalEntries)
+            : new EfBillingReportReader(_dbContext);
+        IPaymentReportReader paymentReportReader = _dbContext is null
+            ? new InMemoryPaymentReportReader(
+                (InMemoryPaymentRepository)Payments,
+                (InMemoryClientRepository)Clients,
+                (InMemoryInvoiceRepository)Invoices,
+                JournalEntries)
+            : new EfPaymentReportReader(_dbContext);
+        var creditBalanceService = new ClientCreditBalanceService(financialReader);
+        ListJournalEntries = new ListJournalEntriesHandler(journalRegisterReader);
         AccountingSetupDefaults = new AccountingSetupDefaults(
             AccountCodeRanges,
             UnitOfWork,
@@ -243,6 +283,10 @@ internal sealed class SmokeHarness : IAsyncDisposable
             JournalEntries,
             Clock);
 
+        GetRevenueSummary = new GetRevenueSummaryHandler(
+            revenueSummaryReader,
+            Clock);
+
         GetBalanceSheet = new GetBalanceSheetHandler(
             LedgerAccounts,
             JournalEntries,
@@ -283,6 +327,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Clock,
             new ConfigureClientAccountingProfileValidator());
 
+        var productModuleSelection = new ProductModuleSelectionService(new EmptyProductModuleCatalog());
+
         CreateClientContract = new CreateClientContractHandler(
             Clients,
             Contracts,
@@ -290,7 +336,15 @@ internal sealed class SmokeHarness : IAsyncDisposable
             IdGenerator,
             Clock,
             new CreateClientContractValidator(),
-            new ProductModuleSelectionService(new EmptyProductModuleCatalog()));
+            productModuleSelection);
+
+        ReplaceActiveClientContract = new ReplaceActiveClientContractHandler(
+            Clients,
+            Contracts,
+            UnitOfWork,
+            IdGenerator,
+            Clock,
+            productModuleSelection);
 
         CreateChargeCode = new CreateChargeCodeHandler(
             ChargeCodes,
@@ -333,6 +387,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
 
         IssueInvoice = new IssueInvoiceHandler(
             Invoices,
+            Clients,
             ChargeCodes,
             ClientAccountingProfiles,
             LedgerAccounts,
@@ -409,15 +464,30 @@ internal sealed class SmokeHarness : IAsyncDisposable
             Clock,
             new ApplyClientCreditValidator());
 
-        GetClientStatement = new GetClientStatementHandler(
-            Clients,
+        GetClientFinancialSummary = new GetClientFinancialSummaryHandler(financialReader);
+        ListClientInvoices = new ListClientInvoicesHandler(financialReader);
+        ListClientPayments = new ListClientPaymentsHandler(financialReader);
+        ListClientFinancialActivity = new ListClientFinancialActivityHandler(financialReader);
+        ListClientJournalPostings = new ListClientJournalPostingsHandler(financialReader);
+        GetAccountsReceivableAging = new GetAccountsReceivableAgingHandler(billingReportReader, Clock);
+        ListOutstandingInvoices = new ListOutstandingInvoicesHandler(billingReportReader, Clock);
+        ListPaymentReceiptsReport = new ListPaymentReceiptsReportHandler(paymentReportReader);
+
+        IssueEntitlementSnapshot = new IssueEntitlementSnapshotFromPaidInvoiceHandler(
             Invoices,
-            CreditNotes,
-            Payments,
-            ClientRefunds,
-            ClientCreditApplications,
-            JournalEntries,
-            LedgerAccounts);
+            Contracts,
+            ClientAccessRevisions,
+            EntitlementSnapshots,
+            entitlementVersions,
+            CloudOutboxMessages,
+            UnitOfWork,
+            IdGenerator,
+            Clock,
+            new IssueEntitlementSnapshotFromPaidInvoiceValidator());
+
+        GetLatestEntitlementSnapshot = new GetLatestEntitlementSnapshotHandler(
+            EntitlementSnapshots,
+            ClientAccessRevisions);
     }
 
     public static async Task<SmokeHarness> CreateAsync(
@@ -456,6 +526,9 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new InMemoryClientRefundRepository(),
             new InMemoryClientCreditApplicationRepository(),
             new InMemoryCloudOutboxMessageRepository(),
+            new InMemoryClientAccessRevisionRepository(),
+            new InMemoryEntitlementSnapshotRepository(),
+            new InMemoryEntitlementVersionAllocator(),
             new NoOpUnitOfWork());
     }
 
@@ -491,7 +564,10 @@ internal sealed class SmokeHarness : IAsyncDisposable
             new EfClientRefundRepository(dbContext),
             new EfClientCreditApplicationRepository(dbContext),
             new EfCloudOutboxMessageRepository(dbContext),
-            new EfUnitOfWork(dbContext),
+            new EfClientAccessRevisionRepository(dbContext),
+            new EfEntitlementSnapshotRepository(dbContext),
+            new EfEntitlementVersionAllocator(dbContext),
+            new EfUnitOfWork(dbContext, new EfClientWorkQueueProjector(dbContext)),
             dbContext);
     }
 
@@ -530,6 +606,10 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public IClientCreditApplicationRepository ClientCreditApplications { get; }
 
     public ICloudOutboxMessageRepository CloudOutboxMessages { get; }
+
+    public IClientAccessRevisionRepository ClientAccessRevisions { get; }
+
+    public IEntitlementSnapshotRepository EntitlementSnapshots { get; }
 
     public IUnitOfWork UnitOfWork { get; }
 
@@ -575,6 +655,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
 
     public GetProfitAndLossStatementHandler GetProfitAndLossStatement { get; }
 
+    public GetRevenueSummaryHandler GetRevenueSummary { get; }
+
     public GetBalanceSheetHandler GetBalanceSheet { get; }
 
     public PreviewJournalVoucherNumberHandler PreviewJournalVoucherNumber { get; }
@@ -590,6 +672,8 @@ internal sealed class SmokeHarness : IAsyncDisposable
     public ConfigureClientAccountingProfileHandler ConfigureClientAccountingProfile { get; }
 
     public CreateClientContractHandler CreateClientContract { get; }
+
+    public ReplaceActiveClientContractHandler ReplaceActiveClientContract { get; }
 
     public CreateChargeCodeHandler CreateChargeCode { get; }
 
@@ -615,7 +699,27 @@ internal sealed class SmokeHarness : IAsyncDisposable
 
     public ApplyClientCreditHandler ApplyClientCredit { get; }
 
-    public GetClientStatementHandler GetClientStatement { get; }
+    public GetClientFinancialSummaryHandler GetClientFinancialSummary { get; }
+
+    public ListJournalEntriesHandler ListJournalEntries { get; }
+
+    public ListClientInvoicesHandler ListClientInvoices { get; }
+
+    public ListClientPaymentsHandler ListClientPayments { get; }
+
+    public ListClientFinancialActivityHandler ListClientFinancialActivity { get; }
+
+    public ListClientJournalPostingsHandler ListClientJournalPostings { get; }
+
+    public GetAccountsReceivableAgingHandler GetAccountsReceivableAging { get; }
+
+    public ListOutstandingInvoicesHandler ListOutstandingInvoices { get; }
+
+    public ListPaymentReceiptsReportHandler ListPaymentReceiptsReport { get; }
+
+    public IssueEntitlementSnapshotFromPaidInvoiceHandler IssueEntitlementSnapshot { get; }
+
+    public GetLatestEntitlementSnapshotHandler GetLatestEntitlementSnapshot { get; }
 
     public async ValueTask DisposeAsync()
     {
@@ -627,12 +731,51 @@ internal sealed class SmokeHarness : IAsyncDisposable
 
     private sealed class EmptyProductModuleCatalog : IProductModuleCatalog
     {
+        private static readonly ProductCatalogRevision Revision = ProductCatalogRevision.Publish(
+            ProductCatalogRevisionId.Create(Guid.Parse("9c1da88b-c763-4bb0-8dda-2d95fe63ec8f")),
+            revisionNumber: 1,
+            supersedesRevisionId: null,
+            ProductCatalogDefinition.Create(
+                [
+                    ProductModuleCatalogItem.Create(
+                        "BILLING",
+                        "Billing",
+                        ProductModuleCommercialMode.IncludedForAll,
+                        isActive: true)
+                ],
+                new ProductAccessCatalog([], [])),
+            "Accounting smoke catalog seed.",
+            "Accounting smoke",
+            DateTimeOffset.Parse("2026-07-11T00:00:00Z"));
+
+        public Task<ProductCatalogRevision> GetPublishedRevisionAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(Revision);
+        }
+
+        public Task<ProductCatalogDraft?> GetDraftAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<ProductCatalogDraft?>(null);
+        }
+
+        public Task<IReadOnlyCollection<ProductCatalogRevision>> ListPublishedRevisionsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyCollection<ProductCatalogRevision>>([Revision]);
+        }
+
         public Task<IReadOnlyCollection<ProductModuleCatalogItem>> ListAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            return Task.FromResult<IReadOnlyCollection<ProductModuleCatalogItem>>([]);
+            return Task.FromResult(Revision.Definition.Modules);
         }
 
         public Task<ProductAccessCatalog> GetAccessCatalogAsync(
@@ -640,7 +783,7 @@ internal sealed class SmokeHarness : IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            return Task.FromResult(new ProductAccessCatalog([], []));
+            return Task.FromResult(Revision.Definition.AccessCatalog);
         }
     }
 }

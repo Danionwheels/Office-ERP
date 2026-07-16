@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text.Json;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
@@ -16,8 +17,10 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountCodeRangeV
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepairPlan;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetRevenueSummary;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountingPeriods;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewChartOfAccountsImportText;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
@@ -27,22 +30,31 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccount
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GetAccountsReceivableAging;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GetCreditNoteDocument;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GetInvoiceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueCreditNote;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
+using SafarSuite.ControlDesk.Application.Modules.Billing.ListOutstandingInvoices;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientAccountingProfile;
 using SafarSuite.ControlDesk.Application.Modules.Clients.CreateClient;
-using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
+using SafarSuite.ControlDesk.Application.Modules.Clients.Financials;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.ReplaceActiveClientContract;
+using SafarSuite.ControlDesk.Application.Modules.Entitlements.GetLatestEntitlementSnapshot;
+using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ApplyClientCredit;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Common;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetClientRefundDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetInvoicePaymentDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.IssueClientRefund;
+using SafarSuite.ControlDesk.Application.Modules.Payments.ListPaymentReceiptsReport;
 using SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayment;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
+using SafarSuite.ControlDesk.Domain.Modules.Clients;
+using SafarSuite.ControlDesk.Domain.Modules.Contracts;
 using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Infrastructure.ControlCloud;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.InMemory;
@@ -56,6 +68,8 @@ internal sealed class AccountingSmokeRunner
     private const string CurrencyCode = "PKR";
     private const string SigningKeyId = "local-dev";
     private const string SigningSecret = "local-development-signing-secret-change-before-cloud";
+    private static readonly Guid ProductCatalogRevisionId =
+        Guid.Parse("9c1da88b-c763-4bb0-8dda-2d95fe63ec8f");
 
     private readonly SmokeHarness _harness;
     private readonly SmokeOptions _options;
@@ -84,6 +98,18 @@ internal sealed class AccountingSmokeRunner
         await AssertVoucherAndOpeningBalancePreviewAsync(accounts, businessDate, cancellationToken);
         var client = await CreateClientAsync(cancellationToken);
         var contract = await CreateContractAsync(client.ClientId, businessDate, cancellationToken);
+        SmokeAssertions.Equal(1L, contract.RevisionNumber, "initial contract revision");
+        SmokeAssertions.True(contract.SupersedesContractId is null, "initial contract revision must be the chain root");
+        SmokeAssertions.Equal(ProductCatalogRevisionId, contract.ProductCatalogRevisionId, "initial contract catalog revision id");
+        SmokeAssertions.Equal(1L, contract.ProductCatalogRevisionNumber, "initial contract catalog revision number");
+        SmokeAssertions.Equal(40, contract.AllowedNamedUsers ?? -1, "initial contract named-user allowance");
+        SmokeAssertions.Equal(12, contract.AllowedConcurrentUsers ?? -1, "initial contract concurrent-user allowance");
+        var contractFeatureLimit = contract.FeatureLimits?.SingleOrDefault();
+        SmokeAssertions.True(contractFeatureLimit is not null, "initial contract should retain its feature limit.");
+        SmokeAssertions.Equal("BILLING", contractFeatureLimit!.ModuleCode, "initial contract feature-limit module");
+        SmokeAssertions.Equal("MONTHLY_INVOICES", contractFeatureLimit.FeatureCode, "initial contract feature-limit code");
+        SmokeAssertions.Equal(2500L, contractFeatureLimit.LimitValue, "initial contract feature-limit value");
+        SmokeAssertions.Equal("COUNT", contractFeatureLimit.Unit, "initial contract feature-limit unit");
         var chargeCode = await CreateBillingSetupAsync(
             client.ClientId,
             contract.ContractId,
@@ -140,6 +166,12 @@ internal sealed class AccountingSmokeRunner
             "payment journal");
         SmokeAssertions.Equal("Paid", payment.InvoiceStatus, "paid invoice status");
         SmokeAssertions.Money(0m, payment.BalanceDue, "paid invoice balance");
+
+        await AssertEntitlementVersioningAsync(
+            client.ClientId,
+            firstInvoice.InvoiceId,
+            businessDate,
+            cancellationToken);
 
         var creditNote = await IssueCreditNoteAsync(firstInvoice.InvoiceId, businessDate, cancellationToken);
         AssertBalanced(creditNote.TotalDebit, creditNote.TotalCredit, "credit note journal");
@@ -213,12 +245,14 @@ internal sealed class AccountingSmokeRunner
 
         await AssertGeneralLedgerReportsAsync(accounts, businessDate, cancellationToken);
         await AssertFinalStatementAsync(client.ClientId, cancellationToken);
-        await AssertJournalAndOutboxShapeAsync(cancellationToken);
+        await AssertCrossClientReportsAsync(client.ClientId, businessDate, cancellationToken);
+        await AssertContractRevisioningAsync(client.ClientId, contract, businessDate, cancellationToken);
+        await AssertJournalAndOutboxShapeAsync(client.ClientId, cancellationToken);
         await AssertPeriodCloseBalanceSheetHandoffAsync(accounts, businessDate, cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(_options.CloudReceiverUrl))
         {
-            PublishedCloudMessageCount = await PublishOutboxToCloudAsync(cancellationToken);
+            PublishedCloudMessageCount = await PublishOutboxToCloudAsync(client.ClientId, cancellationToken);
         }
     }
 
@@ -1419,7 +1453,19 @@ internal sealed class AccountingSmokeRunner
                     1,
                     25,
                     3,
-                    [new CreateClientContractModuleCommand("BILLING", true)]),
+                    "Accounting smoke",
+                    "Initial commercial terms approved for the accounting proof.",
+                    [new CreateClientContractModuleCommand("BILLING", true)],
+                    AllowedNamedUsers: 40,
+                    AllowedConcurrentUsers: 12,
+                    FeatureLimits:
+                    [
+                        new CreateClientContractFeatureLimitCommand(
+                            "BILLING",
+                            "MONTHLY_INVOICES",
+                            2500,
+                            "COUNT")
+                    ]),
                 cancellationToken),
             "create client contract");
     }
@@ -1465,6 +1511,64 @@ internal sealed class AccountingSmokeRunner
             "create client charge rule");
 
         return chargeCode;
+    }
+
+    private async Task AssertContractRevisioningAsync(
+        Guid clientId,
+        CreateClientContractResult initialContract,
+        DateOnly businessDate,
+        CancellationToken cancellationToken)
+    {
+        var persistedInitial = await _harness.Contracts.GetByIdAsync(
+            ContractId.Create(initialContract.ContractId),
+            cancellationToken);
+        SmokeAssertions.True(persistedInitial is not null, "initial contract revision should be persisted.");
+
+        var immutable = false;
+
+        try
+        {
+            persistedInitial!.SetDeviceAllowance(DeviceAllowance.Create(99));
+        }
+        catch (InvalidOperationException)
+        {
+            immutable = true;
+        }
+
+        SmokeAssertions.True(immutable, "activated commercial terms should be immutable.");
+
+        var replacement = SmokeAssertions.RequireSuccess(
+            await _harness.ReplaceActiveClientContract.HandleAsync(
+                new ReplaceActiveClientContractCommand(
+                    clientId,
+                    Document("CON-002"),
+                    businessDate.AddMonths(6),
+                    businessDate.AddYears(1).AddMonths(6),
+                    125m,
+                    CurrencyCode,
+                    "Monthly",
+                    1,
+                    30,
+                    4,
+                    "Accounting smoke",
+                    "Commercial limits revised for the contract lineage proof.",
+                    [new ReplaceActiveClientContractModuleCommand("BILLING", true)]),
+                cancellationToken),
+            "replace active client contract");
+
+        SmokeAssertions.Equal(2L, replacement.ActiveContract.RevisionNumber, "replacement contract revision");
+        SmokeAssertions.Equal(
+            initialContract.ContractId,
+            replacement.ActiveContract.SupersedesContractId ?? Guid.Empty,
+            "replacement contract predecessor");
+        SmokeAssertions.Equal(
+            "Suspended",
+            replacement.SuspendedContract?.Status ?? "",
+            "superseded contract status");
+
+        var history = await _harness.Contracts.ListForClientAsync(ClientId.Create(clientId), cancellationToken);
+        SmokeAssertions.Equal(2, history.Count, "contract revision history count");
+        SmokeAssertions.Equal(2L, history.First().RevisionNumber, "latest contract history revision");
     }
 
     private async Task<GenerateInvoiceDraftResult> DraftInvoiceAsync(
@@ -1587,40 +1691,200 @@ internal sealed class AccountingSmokeRunner
     private async Task AssertFinalStatementAsync(Guid clientId, CancellationToken cancellationToken)
     {
         var statement = SmokeAssertions.RequireSuccess(
-            await _harness.GetClientStatement.HandleAsync(
-                new GetClientStatementQuery(clientId),
+            await _harness.GetClientFinancialSummary.HandleAsync(
+                new GetClientFinancialSummaryQuery(clientId),
                 cancellationToken),
-            "get client statement");
+            "get client financial summary");
 
         var summary = statement.CurrencySummaries.Single(summary => summary.CurrencyCode == CurrencyCode);
         SmokeAssertions.Money(220m, summary.TotalInvoiced, "statement total invoiced");
         SmokeAssertions.Money(110m, summary.TotalPaid, "statement total paid");
         SmokeAssertions.Money(10m, summary.AvailableCredit, "statement available credit");
         SmokeAssertions.Money(40m, summary.BalanceDue, "statement balance due");
-        SmokeAssertions.Equal(2, summary.InvoiceCount, "statement invoice count");
-        SmokeAssertions.Equal(1, summary.OpenInvoiceCount, "statement open invoice count");
+        SmokeAssertions.Equal(2L, summary.InvoiceCount, "statement invoice count");
+        SmokeAssertions.Equal(1L, summary.OpenInvoiceCount, "statement open invoice count");
+
+        var activity = SmokeAssertions.RequireSuccess(
+            await _harness.ListClientFinancialActivity.HandleAsync(
+                new ListClientFinancialActivityQuery(clientId, Take: 100),
+                cancellationToken),
+            "list client financial activity");
 
         SmokeAssertions.True(
-            statement.Lines.Any(line => line.DocumentType == "Credit note" && line.Credit == 110m),
+            activity.Lines.Any(line => line.DocumentType == "Credit note" && line.Credit == 110m),
             "statement should include the credit note line.");
         SmokeAssertions.True(
-            statement.Lines.Any(line => line.DocumentType == "Client refund" && line.Debit == 40m),
+            activity.Lines.Any(line => line.DocumentType == "Client refund" && line.Debit == 40m),
             "statement should include the client refund line.");
         SmokeAssertions.True(
-            statement.Lines.Any(line =>
+            activity.Lines.Any(line =>
                 line.DocumentType == "Applied credit"
                 && line.Debit == 60m
                 && line.Credit == 60m
                 && line.JournalEntryId is null),
             "statement should include a zero-net applied credit line without a journal.");
-        SmokeAssertions.Equal(5, statement.JournalPostings.Count, "statement journal posting count");
 
-        var statementJournalLines = statement.JournalPostings.SelectMany(posting => posting.Lines).ToArray();
+        var journalPage = SmokeAssertions.RequireSuccess(
+            await _harness.ListClientJournalPostings.HandleAsync(
+                new ListClientJournalPostingsQuery(clientId, Take: 100),
+                cancellationToken),
+            "list client journal postings");
+        SmokeAssertions.Equal(5L, journalPage.FilteredCount, "statement journal posting count");
         SmokeAssertions.True(
-            statementJournalLines.All(line =>
-                !string.IsNullOrWhiteSpace(line.LedgerAccountCode)
-                && !string.IsNullOrWhiteSpace(line.LedgerAccountName)),
-            "statement journal lines should expose COA account code and name.");
+            journalPage.JournalPostings.All(posting => posting.LineCount >= 2),
+            "statement journal summaries should expose bounded line counts.");
+
+        var journalRegisterPage = SmokeAssertions.RequireSuccess(
+            await _harness.ListJournalEntries.HandleAsync(
+                new ListJournalEntriesQuery(Take: 2),
+                cancellationToken),
+            "list first global journal page");
+        SmokeAssertions.True(journalRegisterPage.FilteredCount >= 5, "global journal count");
+        SmokeAssertions.True(journalRegisterPage.HasMore, "global journal register should expose continuation.");
+        SmokeAssertions.True(
+            !string.IsNullOrWhiteSpace(journalRegisterPage.NextCursor),
+            "global journal continuation cursor");
+        var nextJournalRegisterPage = SmokeAssertions.RequireSuccess(
+            await _harness.ListJournalEntries.HandleAsync(
+                new ListJournalEntriesQuery(Take: 2, Cursor: journalRegisterPage.NextCursor),
+                cancellationToken),
+            "list second global journal page");
+        SmokeAssertions.True(
+            !journalRegisterPage.Entries.Select(entry => entry.JournalEntryId)
+                .Intersect(nextJournalRegisterPage.Entries.Select(entry => entry.JournalEntryId))
+                .Any(),
+            "global journal pages should not overlap.");
+        var staleJournalCursor = await _harness.ListJournalEntries.HandleAsync(
+            new ListJournalEntriesQuery(
+                SourceType: JournalSourceType.BillingInvoice.ToString(),
+                Take: 2,
+                Cursor: journalRegisterPage.NextCursor),
+            cancellationToken);
+        SmokeAssertions.True(staleJournalCursor.IsFailure, "journal cursor should be filter-bound.");
+
+        var invoicePage = SmokeAssertions.RequireSuccess(
+            await _harness.ListClientInvoices.HandleAsync(
+                new ListClientInvoicesQuery(clientId, Take: 1),
+                cancellationToken),
+            "list first client invoice page");
+        SmokeAssertions.Equal(2L, invoicePage.FilteredCount, "invoice register count");
+        SmokeAssertions.True(invoicePage.HasMore, "invoice register should expose continuation.");
+        var nextInvoicePage = SmokeAssertions.RequireSuccess(
+            await _harness.ListClientInvoices.HandleAsync(
+                new ListClientInvoicesQuery(clientId, Take: 1, Cursor: invoicePage.NextCursor),
+                cancellationToken),
+            "list second client invoice page");
+        SmokeAssertions.True(
+            invoicePage.Invoices.Single().InvoiceId != nextInvoicePage.Invoices.Single().InvoiceId,
+            "invoice pages should not overlap.");
+        SmokeAssertions.True(!nextInvoicePage.HasMore, "second invoice page should terminate.");
+        var staleInvoiceCursor = await _harness.ListClientInvoices.HandleAsync(
+            new ListClientInvoicesQuery(
+                clientId,
+                Search: "different-query",
+                Take: 1,
+                Cursor: invoicePage.NextCursor),
+            cancellationToken);
+        SmokeAssertions.True(staleInvoiceCursor.IsFailure, "invoice cursor should be query-bound.");
+
+        var paymentPage = SmokeAssertions.RequireSuccess(
+            await _harness.ListClientPayments.HandleAsync(
+                new ListClientPaymentsQuery(clientId, Take: 1),
+                cancellationToken),
+            "list first client payment page");
+        SmokeAssertions.Equal(1L, paymentPage.FilteredCount, "payment register count");
+        SmokeAssertions.True(!paymentPage.HasMore, "single-payment register should terminate.");
+    }
+
+    private async Task AssertCrossClientReportsAsync(
+        Guid clientId,
+        DateOnly businessDate,
+        CancellationToken cancellationToken)
+    {
+        var asOfDate = _harness.Clock.Today;
+        var aging = SmokeAssertions.RequireSuccess(
+            await _harness.GetAccountsReceivableAging.HandleAsync(
+                new GetAccountsReceivableAgingQuery(asOfDate, CurrencyCode),
+                cancellationToken),
+            "get cross-client receivable aging");
+        var clientAging = aging.Clients.Single(client => client.ClientId == clientId);
+        var bucketTotal = clientAging.CurrentAmount
+            + clientAging.Days1To30Amount
+            + clientAging.Days31To60Amount
+            + clientAging.Days61To90Amount
+            + clientAging.DaysOver90Amount;
+
+        SmokeAssertions.Money(50m, clientAging.TotalOutstanding, "client aging outstanding total");
+        SmokeAssertions.Money(clientAging.TotalOutstanding, bucketTotal, "client aging bucket reconciliation");
+        SmokeAssertions.Equal(1L, clientAging.InvoiceCount, "client aging invoice count");
+        var agingCurrency = aging.Currencies.Single(currency => currency.CurrencyCode == CurrencyCode);
+        SmokeAssertions.True(
+            agingCurrency.TotalOutstanding >= clientAging.TotalOutstanding,
+            "currency aging total should include the smoke client's outstanding amount.");
+
+        var historicalAging = await _harness.GetAccountsReceivableAging.HandleAsync(
+            new GetAccountsReceivableAgingQuery(asOfDate.AddDays(-1), CurrencyCode),
+            cancellationToken);
+        SmokeAssertions.RequireFailure(
+            historicalAging,
+            "reject historical aging from mutable operational invoice balances");
+
+        var outstanding = SmokeAssertions.RequireSuccess(
+            await _harness.ListOutstandingInvoices.HandleAsync(
+                new ListOutstandingInvoicesQuery(
+                    clientId,
+                    businessDate,
+                    asOfDate,
+                    null,
+                    null,
+                    "All",
+                    CurrencyCode,
+                    100,
+                    null),
+                cancellationToken),
+            "list cross-client outstanding invoices");
+        var outstandingInvoice = outstanding.Invoices.Single();
+        SmokeAssertions.Equal(clientId, outstandingInvoice.ClientId, "outstanding invoice client");
+        SmokeAssertions.Equal("PartiallyPaid", outstandingInvoice.Status, "outstanding invoice status");
+        SmokeAssertions.Money(110m, outstandingInvoice.TotalAmount, "outstanding invoice total");
+        SmokeAssertions.Money(60m, outstandingInvoice.AmountPaid, "outstanding invoice settled amount");
+        SmokeAssertions.Money(50m, outstandingInvoice.BalanceDue, "outstanding invoice residual");
+        SmokeAssertions.Equal(1L, outstanding.FilteredCount, "outstanding invoice filtered count");
+
+        var invalidOutstandingCursor = await _harness.ListOutstandingInvoices.HandleAsync(
+            new ListOutstandingInvoicesQuery(
+                clientId,
+                businessDate,
+                asOfDate,
+                null,
+                null,
+                "All",
+                CurrencyCode,
+                100,
+                "not-a-report-cursor"),
+            cancellationToken);
+        SmokeAssertions.RequireFailure(invalidOutstandingCursor, "reject malformed outstanding invoice cursor");
+
+        var receipts = SmokeAssertions.RequireSuccess(
+            await _harness.ListPaymentReceiptsReport.HandleAsync(
+                new ListPaymentReceiptsReportQuery(
+                    clientId,
+                    businessDate,
+                    asOfDate,
+                    null,
+                    null,
+                    CurrencyCode,
+                    100,
+                    null),
+                cancellationToken),
+            "list cross-client payment receipts");
+        var receipt = receipts.Payments.Single();
+        SmokeAssertions.Equal(clientId, receipt.ClientId, "receipt client");
+        SmokeAssertions.Equal("Approved", receipt.Status, "receipt status");
+        SmokeAssertions.Equal("ManualCash", receipt.Method, "receipt method");
+        SmokeAssertions.Money(110m, receipt.Amount, "receipt amount");
+        SmokeAssertions.True(receipt.JournalEntryId.HasValue, "receipt should link to its journal entry.");
+        SmokeAssertions.Equal(1L, receipts.FilteredCount, "receipt filtered count");
     }
 
     private async Task AssertGeneralLedgerReportsAsync(
@@ -1700,6 +1964,44 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Money(0m, revenueLine.Debit, "profit and loss revenue line debit");
         SmokeAssertions.Money(100m, revenueLine.Credit, "profit and loss revenue line credit");
 
+        var revenueSummary = SmokeAssertions.RequireSuccess(
+            await _harness.GetRevenueSummary.HandleAsync(
+                new GetRevenueSummaryQuery(reportDate, reportDate, "monthly", CurrencyCode),
+                cancellationToken),
+            "get monthly revenue summary");
+
+        SmokeAssertions.Equal("Monthly", revenueSummary.Period, "revenue summary period");
+        SmokeAssertions.Money(100m, revenueSummary.TotalRevenue, "revenue summary total");
+        var revenuePeriod = revenueSummary.Periods.Single();
+        SmokeAssertions.Equal(reportDate, revenuePeriod.PeriodStart, "revenue summary period start");
+        SmokeAssertions.Equal(reportDate, revenuePeriod.PeriodEnd, "revenue summary period end");
+        SmokeAssertions.Money(0m, revenuePeriod.Debit, "revenue summary debit");
+        SmokeAssertions.Money(100m, revenuePeriod.Credit, "revenue summary credit");
+        SmokeAssertions.Money(100m, revenuePeriod.Revenue, "revenue summary net revenue");
+        SmokeAssertions.Equal(1, revenuePeriod.ActivityCount, "revenue summary activity count");
+
+        SmokeAssertions.RequireFailure(
+            await _harness.GetRevenueSummary.HandleAsync(
+                new GetRevenueSummaryQuery(DateOnly.MinValue, reportDate, "monthly", CurrencyCode),
+                cancellationToken),
+            "reject oversized revenue summary window",
+            nameof(GetRevenueSummaryQuery.FromDate),
+            "10 years");
+        SmokeAssertions.RequireFailure(
+            await _harness.GetRevenueSummary.HandleAsync(
+                new GetRevenueSummaryQuery(reportDate, DateOnly.MaxValue, "monthly", CurrencyCode),
+                cancellationToken),
+            "reject future revenue summary date",
+            nameof(GetRevenueSummaryQuery.ToDate),
+            "after today");
+        SmokeAssertions.RequireFailure(
+            await _harness.GetRevenueSummary.HandleAsync(
+                new GetRevenueSummaryQuery(reportDate, reportDate, "monthly", "@@@"),
+                cancellationToken),
+            "reject invalid revenue summary currency",
+            nameof(GetRevenueSummaryQuery.CurrencyCode),
+            "ASCII letters");
+
         var balanceSheet = SmokeAssertions.RequireSuccess(
             await _harness.GetBalanceSheet.HandleAsync(
                 new GetBalanceSheetQuery(reportDate, CurrencyCode),
@@ -1756,7 +2058,7 @@ internal sealed class AccountingSmokeRunner
         CancellationToken cancellationToken)
     {
         var periodStart = businessDate;
-        var periodEnd = new DateOnly(2026, 7, 31);
+        var periodEnd = businessDate.AddDays(10);
         var period = SmokeAssertions.RequireSuccess(
             await _harness.CreateAccountingPeriod.HandleAsync(
                 new CreateAccountingPeriodCommand(
@@ -1822,6 +2124,16 @@ internal sealed class AccountingSmokeRunner
         SmokeAssertions.Money(0m, postCloseProfitAndLoss.TotalRevenue, "post-close profit and loss revenue");
         SmokeAssertions.Money(0m, postCloseProfitAndLoss.TotalExpense, "post-close profit and loss expense");
         SmokeAssertions.Money(0m, postCloseProfitAndLoss.NetIncome, "post-close profit and loss net income");
+
+        var postCloseRevenueSummary = SmokeAssertions.RequireSuccess(
+            await _harness.GetRevenueSummary.HandleAsync(
+                new GetRevenueSummaryQuery(periodStart, periodEnd, "monthly", CurrencyCode),
+                cancellationToken),
+            "get post-close revenue summary");
+        SmokeAssertions.Money(
+            100m,
+            postCloseRevenueSummary.TotalRevenue,
+            "revenue summary excludes period-close transfers");
 
         var postCloseBalanceSheet = SmokeAssertions.RequireSuccess(
             await _harness.GetBalanceSheet.HandleAsync(
@@ -2030,7 +2342,189 @@ internal sealed class AccountingSmokeRunner
         return sourceDocument;
     }
 
-    private async Task AssertJournalAndOutboxShapeAsync(CancellationToken cancellationToken)
+    private async Task AssertEntitlementVersioningAsync(
+        Guid clientId,
+        Guid invoiceId,
+        DateOnly businessDate,
+        CancellationToken cancellationToken)
+    {
+        var command = new IssueEntitlementSnapshotFromPaidInvoiceCommand(
+            invoiceId,
+            businessDate.AddMonths(1),
+            businessDate.AddMonths(1).AddDays(7),
+            businessDate.AddMonths(1).AddDays(14),
+            AllowedDevices: 10,
+            AllowedBranches: 2,
+            ApprovedBy: "Accounting smoke operator",
+            ApprovalReason: "Paid invoice and active contract verified by the accounting smoke.",
+            Modules:
+            [
+                new IssueEntitlementSnapshotModuleCommand("Accounting", IsEnabled: true),
+                new IssueEntitlementSnapshotModuleCommand("Reports", IsEnabled: true)
+            ],
+            AllowedNamedUsers: 40,
+            AllowedConcurrentUsers: 12,
+            FeatureLimits:
+            [
+                new IssueEntitlementSnapshotFeatureLimitCommand(
+                    "Accounting",
+                    "MONTHLY_POSTINGS",
+                    5000,
+                    "COUNT")
+            ]);
+
+        var first = SmokeAssertions.RequireSuccess(
+            await _harness.IssueEntitlementSnapshot.HandleAsync(command, cancellationToken),
+            "issue first versioned entitlement");
+        var second = SmokeAssertions.RequireSuccess(
+            await _harness.IssueEntitlementSnapshot.HandleAsync(command, cancellationToken),
+            "issue second versioned entitlement");
+
+        SmokeAssertions.True(first.EntitlementVersion > 0, "first entitlement version should be positive.");
+        SmokeAssertions.True(
+            second.EntitlementVersion > first.EntitlementVersion,
+            "second entitlement version should be greater than the first.");
+        SmokeAssertions.Equal(1L, first.ContractRevisionNumber, "first entitlement contract revision");
+        SmokeAssertions.Equal(1L, second.ContractRevisionNumber, "second entitlement contract revision");
+        SmokeAssertions.Equal(ProductCatalogRevisionId, first.ProductCatalogRevisionId, "first entitlement catalog revision id");
+        SmokeAssertions.Equal(1L, first.ProductCatalogRevisionNumber, "first entitlement catalog revision number");
+        SmokeAssertions.Equal(ProductCatalogRevisionId, second.ProductCatalogRevisionId, "second entitlement catalog revision id");
+        SmokeAssertions.Equal(40, first.AllowedNamedUsers ?? -1, "first entitlement named-user allowance");
+        SmokeAssertions.Equal(12, first.AllowedConcurrentUsers ?? -1, "first entitlement concurrent-user allowance");
+        SmokeAssertions.Equal(first.ApprovedAtUtc, first.EffectiveFromUtc, "immediate entitlement effective-from time");
+        var firstFeatureLimit = first.FeatureLimits?.SingleOrDefault();
+        SmokeAssertions.True(firstFeatureLimit is not null, "first entitlement should retain its feature limit.");
+        SmokeAssertions.Equal("ACCOUNTING", firstFeatureLimit!.ModuleCode, "first entitlement feature-limit module");
+        SmokeAssertions.Equal("MONTHLY_POSTINGS", firstFeatureLimit.FeatureCode, "first entitlement feature-limit code");
+        SmokeAssertions.Equal(5000L, firstFeatureLimit.LimitValue, "first entitlement feature-limit value");
+        SmokeAssertions.Equal("COUNT", firstFeatureLimit.Unit, "first entitlement feature-limit unit");
+        SmokeAssertions.True(
+            first.ClientAccessRevisionId != Guid.Empty,
+            "first client access revision id should be populated.");
+        SmokeAssertions.True(
+            second.ClientAccessRevisionId != first.ClientAccessRevisionId,
+            "each entitlement issue should create a distinct client access revision.");
+        SmokeAssertions.True(
+            first.SupersedesClientAccessRevisionId is null,
+            "first client access revision should be the chain root.");
+        SmokeAssertions.Equal(
+            first.ClientAccessRevisionId,
+            second.SupersedesClientAccessRevisionId ?? Guid.Empty,
+            "second client access revision predecessor");
+        SmokeAssertions.Equal(
+            "Accounting smoke operator",
+            second.ApprovedBy,
+            "client access revision approver");
+
+        var latest = SmokeAssertions.RequireSuccess(
+            await _harness.GetLatestEntitlementSnapshot.HandleAsync(
+                new GetLatestEntitlementSnapshotQuery(clientId),
+                cancellationToken),
+            "read latest versioned entitlement");
+
+        SmokeAssertions.Equal(
+            second.EntitlementVersion,
+            latest.EntitlementVersion,
+            "latest entitlement version");
+        SmokeAssertions.Equal(
+            second.ClientAccessRevisionId,
+            latest.ClientAccessRevisionId,
+            "latest client access revision id");
+        SmokeAssertions.Equal(1L, latest.ContractRevisionNumber, "latest entitlement contract revision");
+        SmokeAssertions.Equal(ProductCatalogRevisionId, latest.ProductCatalogRevisionId, "latest entitlement catalog revision id");
+        SmokeAssertions.Equal(1L, latest.ProductCatalogRevisionNumber, "latest entitlement catalog revision number");
+        SmokeAssertions.Equal(40, latest.AllowedNamedUsers ?? -1, "latest entitlement named-user allowance");
+        SmokeAssertions.Equal(12, latest.AllowedConcurrentUsers ?? -1, "latest entitlement concurrent-user allowance");
+        SmokeAssertions.Equal(1, latest.FeatureLimits?.Count ?? 0, "latest entitlement feature-limit count");
+
+        var latestRevision = await _harness.ClientAccessRevisions.GetLatestForClientAsync(
+            ClientId.Create(clientId),
+            cancellationToken);
+
+        SmokeAssertions.True(latestRevision is not null, "latest client access revision should exist.");
+        SmokeAssertions.Equal(
+            second.ClientAccessRevisionId,
+            latestRevision!.Id.Value,
+            "persisted latest client access revision id");
+        SmokeAssertions.Equal(invoiceId, latestRevision.SourceInvoiceId?.Value ?? Guid.Empty, "revision source invoice id");
+        SmokeAssertions.Equal(1L, latestRevision.ContractRevisionNumber, "persisted access contract revision");
+        SmokeAssertions.Equal(ProductCatalogRevisionId, latestRevision.ProductCatalogRevisionId.Value, "persisted access catalog revision id");
+        SmokeAssertions.Equal(1L, latestRevision.ProductCatalogRevisionNumber, "persisted access catalog revision number");
+        SmokeAssertions.Equal(2, latestRevision.Modules.Count, "revision module count");
+        SmokeAssertions.Equal(40, latestRevision.AllowedNamedUsers ?? -1, "persisted access named-user allowance");
+        SmokeAssertions.Equal(12, latestRevision.AllowedConcurrentUsers ?? -1, "persisted access concurrent-user allowance");
+        var persistedFeatureLimit = latestRevision.FeatureLimits.SingleOrDefault();
+        SmokeAssertions.True(persistedFeatureLimit is not null, "persisted access revision should retain its feature limit.");
+        SmokeAssertions.Equal("ACCOUNTING", persistedFeatureLimit!.ModuleCode.Value, "persisted feature-limit module");
+        SmokeAssertions.Equal("MONTHLY_POSTINGS", persistedFeatureLimit.FeatureCode.Value, "persisted feature-limit code");
+        SmokeAssertions.Equal(5000L, persistedFeatureLimit.LimitValue, "persisted feature-limit value");
+        SmokeAssertions.Equal("COUNT", persistedFeatureLimit.Unit, "persisted feature-limit unit");
+
+        var entitlementMessages = (await _harness.CloudOutboxMessages.ListPageAsync(
+                CloudOutboxMessageStatus.Pending,
+                "EntitlementSnapshotIssued",
+                ClientId.Create(clientId),
+                beforeOccurredAtUtc: null,
+                beforeMessageId: null,
+                take: 100,
+                cancellationToken))
+            .Where(message => message.PayloadJson.Contains(_runId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        SmokeAssertions.Equal(2, entitlementMessages.Length, "versioned entitlement outbox message count");
+
+        var publishedVersions = entitlementMessages
+            .Select(message =>
+            {
+                using var payload = JsonDocument.Parse(message.PayloadJson);
+                return payload.RootElement.GetProperty("entitlementVersion").GetInt64();
+            })
+            .ToHashSet();
+
+        SmokeAssertions.True(
+            publishedVersions.SetEquals([first.EntitlementVersion, second.EntitlementVersion]),
+            "outbox should preserve both Office-issued entitlement versions.");
+
+        var publishedRevisionIds = entitlementMessages
+            .Select(message =>
+            {
+                using var payload = JsonDocument.Parse(message.PayloadJson);
+                return payload.RootElement.GetProperty("clientAccessRevisionId").GetGuid();
+            })
+            .ToHashSet();
+
+        SmokeAssertions.True(
+            publishedRevisionIds.SetEquals([first.ClientAccessRevisionId, second.ClientAccessRevisionId]),
+            "outbox should preserve both approved client access revision ids.");
+
+        SmokeAssertions.True(
+            entitlementMessages.All(message =>
+            {
+                using var payload = JsonDocument.Parse(message.PayloadJson);
+                var root = payload.RootElement;
+                var featureLimits = root.GetProperty("featureLimits");
+                var featureLimit = featureLimits[0];
+
+                return root.GetProperty("eventVersion").GetString() == "6"
+                    && root.GetProperty("effectiveFromUtc").GetDateTimeOffset()
+                        == root.GetProperty("issuedAtUtc").GetDateTimeOffset()
+                    && root.GetProperty("contractRevisionNumber").GetInt64() == 1L
+                    && root.GetProperty("productCatalogRevisionId").GetGuid() == ProductCatalogRevisionId
+                    && root.GetProperty("productCatalogRevisionNumber").GetInt64() == 1L
+                    && root.GetProperty("allowedNamedUsers").GetInt32() == 40
+                    && root.GetProperty("allowedConcurrentUsers").GetInt32() == 12
+                    && featureLimits.GetArrayLength() == 1
+                    && featureLimit.GetProperty("moduleCode").GetString() == "ACCOUNTING"
+                    && featureLimit.GetProperty("featureCode").GetString() == "MONTHLY_POSTINGS"
+                    && featureLimit.GetProperty("limitValue").GetInt64() == 5000L
+                    && featureLimit.GetProperty("unit").GetString() == "COUNT";
+            }),
+            "outbox should publish event v6 with exact revisions, effective time, and desired-access limits.");
+    }
+
+    private async Task AssertJournalAndOutboxShapeAsync(
+        Guid clientId,
+        CancellationToken cancellationToken)
     {
         var journalEntries = (await _harness.JournalEntries.ListAsync(cancellationToken: cancellationToken))
             .Where(entry => entry.SourceReference?.Contains(_runId, StringComparison.OrdinalIgnoreCase) == true)
@@ -2056,22 +2550,96 @@ internal sealed class AccountingSmokeRunner
             journalEntries.Count(entry => entry.SourceType == JournalSourceType.ClientRefund),
             "client refund journal count");
 
-        var outboxMessages = (await _harness.CloudOutboxMessages.ListAsync(
+        var outboxMessages = (await _harness.CloudOutboxMessages.ListPageAsync(
             CloudOutboxMessageStatus.Pending,
             messageType: null,
+            ClientId.Create(clientId),
+            beforeOccurredAtUtc: null,
+            beforeMessageId: null,
+            take: 100,
             cancellationToken))
             .Where(message => message.PayloadJson.Contains(_runId, StringComparison.OrdinalIgnoreCase))
             .ToArray();
-        SmokeAssertions.Equal(7, outboxMessages.Length, "pending outbox message count");
+        SmokeAssertions.Equal(9, outboxMessages.Length, "pending outbox message count");
         SmokeAssertions.True(
             outboxMessages.Any(message => message.MessageType == "ClientCreditApplied"),
             "outbox should contain ClientCreditApplied.");
         SmokeAssertions.True(
             outboxMessages.All(message => message.Status == CloudOutboxMessageStatus.Pending),
             "all smoke outbox messages should be pending.");
+        SmokeAssertions.True(
+            outboxMessages.All(message => message.ClientId?.Value == clientId),
+            "all smoke outbox messages should persist the owning client id.");
+
+        var publishPolicy = new ConfiguredCloudOutboxPublishPolicy(
+            Options.Create(new ControlCloudPublisherOptions
+            {
+                MaximumAttemptCount = 5
+            }));
+        var listHandler = new ListCloudOutboxMessagesHandler(
+            _harness.CloudOutboxMessages,
+            publishPolicy,
+            _harness.Clock);
+        var firstPage = SmokeAssertions.RequireSuccess(
+            await listHandler.HandleAsync(
+                new ListCloudOutboxMessagesQuery("Pending", null, clientId, 4, null),
+                cancellationToken),
+            "list first client outbox page");
+
+        SmokeAssertions.Equal(4, firstPage.Messages.Count, "first outbox page row count");
+        SmokeAssertions.True(firstPage.HasMore, "first outbox page should have a continuation.");
+        SmokeAssertions.True(
+            !string.IsNullOrWhiteSpace(firstPage.NextCursor),
+            "first outbox page should return a cursor.");
+        SmokeAssertions.Equal(9L, firstPage.Summary.TotalCount, "client outbox summary total");
+        SmokeAssertions.Equal(9L, firstPage.Summary.PendingCount, "client outbox summary pending");
+        SmokeAssertions.Equal(0L, firstPage.Summary.FailedCount, "client outbox summary failed");
+        SmokeAssertions.Equal(9L, firstPage.Summary.ReadyForPublishingCount, "client outbox summary ready");
+        SmokeAssertions.Equal(0L, firstPage.Summary.TotalAttemptCount, "client outbox summary attempts");
+
+        var secondPage = SmokeAssertions.RequireSuccess(
+            await listHandler.HandleAsync(
+                new ListCloudOutboxMessagesQuery("Pending", null, clientId, 4, firstPage.NextCursor),
+                cancellationToken),
+            "list second client outbox page");
+        var thirdPage = SmokeAssertions.RequireSuccess(
+            await listHandler.HandleAsync(
+                new ListCloudOutboxMessagesQuery("Pending", null, clientId, 4, secondPage.NextCursor),
+                cancellationToken),
+            "list third client outbox page");
+
+        SmokeAssertions.Equal(4, secondPage.Messages.Count, "second outbox page row count");
+        SmokeAssertions.True(secondPage.HasMore, "second outbox page should have a continuation.");
+        SmokeAssertions.Equal(1, thirdPage.Messages.Count, "third outbox page row count");
+        SmokeAssertions.True(!thirdPage.HasMore, "third outbox page should be terminal.");
+        SmokeAssertions.True(thirdPage.NextCursor is null, "terminal outbox page should not return a cursor.");
+
+        var pagedMessageIds = firstPage.Messages
+            .Concat(secondPage.Messages)
+            .Concat(thirdPage.Messages)
+            .Select(message => message.CloudOutboxMessageId)
+            .ToArray();
+        SmokeAssertions.Equal(9, pagedMessageIds.Length, "paged outbox row count");
+        SmokeAssertions.Equal(9, pagedMessageIds.Distinct().Count(), "paged outbox distinct row count");
+        SmokeAssertions.True(
+            firstPage.Messages
+                .Concat(secondPage.Messages)
+                .Concat(thirdPage.Messages)
+                .All(message => message.ClientId == clientId),
+            "every paged outbox row should belong to the requested client.");
+
+        SmokeAssertions.RequireFailure(
+            await listHandler.HandleAsync(
+                new ListCloudOutboxMessagesQuery(null, null, clientId, 4, "not-a-valid-cursor"),
+                cancellationToken),
+            "reject malformed client outbox cursor",
+            nameof(ListCloudOutboxMessagesQuery.Cursor),
+            "invalid");
     }
 
-    private async Task<int> PublishOutboxToCloudAsync(CancellationToken cancellationToken)
+    private async Task<int> PublishOutboxToCloudAsync(
+        Guid clientId,
+        CancellationToken cancellationToken)
     {
         var endpointUrl = _options.CloudReceiverUrl?.Trim();
 
@@ -2096,14 +2664,18 @@ internal sealed class AccountingSmokeRunner
             httpClient,
             new ControlCloudEnvelopeBuilder(publisherOptions, _harness.Clock),
             publisherOptions);
-        var pendingMessages = (await _harness.CloudOutboxMessages.ListAsync(
+        var pendingMessages = (await _harness.CloudOutboxMessages.ListPageAsync(
             CloudOutboxMessageStatus.Pending,
             messageType: null,
+            ClientId.Create(clientId),
+            beforeOccurredAtUtc: null,
+            beforeMessageId: null,
+            take: 100,
             cancellationToken))
             .Where(message => message.PayloadJson.Contains(_runId, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
-        SmokeAssertions.Equal(7, pendingMessages.Length, "cloud publish pending smoke outbox count");
+        SmokeAssertions.Equal(9, pendingMessages.Length, "cloud publish pending smoke outbox count");
 
         foreach (var message in pendingMessages)
         {
@@ -2131,14 +2703,18 @@ internal sealed class AccountingSmokeRunner
             await _harness.UnitOfWork.SaveChangesAsync(cancellationToken);
         }
 
-        var sentMessages = (await _harness.CloudOutboxMessages.ListAsync(
+        var sentMessages = (await _harness.CloudOutboxMessages.ListPageAsync(
             CloudOutboxMessageStatus.Sent,
             messageType: null,
+            ClientId.Create(clientId),
+            beforeOccurredAtUtc: null,
+            beforeMessageId: null,
+            take: 100,
             cancellationToken))
             .Where(message => message.PayloadJson.Contains(_runId, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
-        SmokeAssertions.Equal(7, sentMessages.Length, "cloud publish sent smoke outbox count");
+        SmokeAssertions.Equal(9, sentMessages.Length, "cloud publish sent smoke outbox count");
 
         return sentMessages.Length;
     }

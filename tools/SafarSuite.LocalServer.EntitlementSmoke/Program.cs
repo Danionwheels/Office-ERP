@@ -63,6 +63,9 @@ var bootstrapConfigurationPath = Path.Combine(
 var pairingStorePath = Path.Combine(
     Path.GetTempPath(),
     $"safarsuite-local-device-pairings-smoke-{Guid.NewGuid():N}.json");
+var pairingSecurityEventStorePath = Path.Combine(
+    Path.GetTempPath(),
+    $"safarsuite-local-pairing-security-events-smoke-{Guid.NewGuid():N}.json");
 var trustOptions = new LocalServerEntitlementTrustOptions
 {
     CacheStorePath = cachePath,
@@ -100,6 +103,13 @@ var pairingStore = new FileLocalServerDevicePairingStore(
     {
         DeviceStorePath = pairingStorePath
     });
+var pairingAbuseOptions = new LocalServerPairingAbuseControlOptions
+{
+    SecurityEventStorePath = pairingSecurityEventStorePath,
+    SecurityEventReadLimit = 50,
+    SecurityEventMaxRecords = 100
+};
+var pairingSecurityEventStore = new FileLocalServerPairingSecurityEventStore(pairingAbuseOptions);
 var firstManagerSetupTokenVerifier = new HmacLocalServerFirstManagerSetupTokenVerifier(
     bootstrapTrustOptions);
 var deviceCredentialService = new HmacLocalServerDeviceCredentialService(
@@ -137,6 +147,58 @@ var diagnosticsBundleHandler = new CreateLocalServerDiagnosticsBundleHandler(
     clock,
     importAuditStore,
     runtimeDiagnosticsCollector);
+
+var securityEventAtUtc = new DateTimeOffset(2026, 8, 1, 9, 55, 0, TimeSpan.Zero);
+await pairingSecurityEventStore.RecordEventAsync(
+    new LocalServerPairingSecurityEvent(
+        Guid.NewGuid(),
+        securityEventAtUtc,
+        LocalServerPairingSecurityEventTypes.RateLimited,
+        LocalServerPairingSecuritySeverities.Warning,
+        LocalServerPairingAbuseEndpointGroups.PairingRequest,
+        "remote:smoke",
+        "192.0.2.10",
+        DeviceInstallIdHash: null,
+        DeviceFingerprintHash: "fingerprint-smoke",
+        PairingRequestId: null,
+        DeviceId: null,
+        Count: 13,
+        WindowStartedAtUtc: securityEventAtUtc.AddMinutes(-15),
+        WindowExpiresAtUtc: securityEventAtUtc.AddMinutes(15),
+        Action: LocalServerPairingAbuseActions.Throttle,
+        Detail: "Smoke pairing source exceeded its limit."));
+var pairingSecurityEvents = await pairingSecurityEventStore.ListEventsAsync(10);
+Require(pairingSecurityEvents.Count == 1, "Pairing security event store should persist local abuse events.");
+Require(
+    pairingSecurityEvents.First().EventType == LocalServerPairingSecurityEventTypes.RateLimited
+    && pairingSecurityEvents.First().SourceKey == "remote:smoke",
+    "Pairing security event store should preserve event type and source key.");
+
+await pairingSecurityEventStore.SaveSourceDecisionAsync(
+    new LocalServerPairingAbuseSourceDecision(
+        "remote:smoke",
+        LocalServerPairingAbuseActions.Deny,
+        "Smoke manager deny.",
+        "Smoke Manager",
+        securityEventAtUtc,
+        securityEventAtUtc.AddHours(1)));
+var activeDenyDecision = await pairingSecurityEventStore.GetActiveSourceDecisionAsync(
+    "remote:smoke",
+    securityEventAtUtc.AddMinutes(5));
+Require(activeDenyDecision?.Action == LocalServerPairingAbuseActions.Deny, "Pairing abuse source deny should be active until expiry or release.");
+
+await pairingSecurityEventStore.SaveSourceDecisionAsync(
+    new LocalServerPairingAbuseSourceDecision(
+        "remote:smoke",
+        LocalServerPairingAbuseActions.Release,
+        "Smoke manager release.",
+        "Smoke Manager",
+        securityEventAtUtc.AddMinutes(10),
+        ExpiresAtUtc: null));
+var releasedDecision = await pairingSecurityEventStore.GetActiveSourceDecisionAsync(
+    "remote:smoke",
+    securityEventAtUtc.AddMinutes(11));
+Require(releasedDecision is null, "Pairing abuse source release should clear the latest active deny/quarantine decision.");
 
 var signedBundle = CreateSignedBundle(
     clientId,
@@ -425,6 +487,26 @@ var pullResult = await pullHandler.HandleAsync(
 
 Require(pullResult.IsSuccess, "Signed entitlement bundle should pull and import from Control Cloud.");
 Require(pullResult.Entitlement!.EntitlementVersion == 100, "Pulled entitlement version should be 100.");
+Require(
+    pullResult.Entitlement.ClientAccessRevisionId != Guid.Empty,
+    "Pulled entitlement should retain the Office access revision id.");
+Require(
+    pullResult.Entitlement.ContractRevisionNumber == 1,
+    "Pulled entitlement should retain the exact Office contract revision number.");
+Require(
+    pullResult.Entitlement.ProductCatalogRevisionId
+        == Guid.Parse("9c1da88b-c763-4bb0-8dda-2d95fe63ec8f")
+    && pullResult.Entitlement.ProductCatalogRevisionNumber == 1,
+    "Pulled entitlement should retain the exact Office product catalog revision.");
+Require(pullResult.Entitlement.AllowedNamedUsers == 40, "Pulled entitlement should retain the named-user allowance.");
+Require(pullResult.Entitlement.AllowedConcurrentUsers == 12, "Pulled entitlement should retain the concurrent-user allowance.");
+Require(
+    pullResult.Entitlement.EffectiveFromUtc == new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero),
+    "Pulled entitlement should retain the exact effective-from instant.");
+var pulledFeatureLimit = pullResult.Entitlement.FindFeatureLimit("accounting", "monthly_postings");
+Require(pulledFeatureLimit is not null, "Pulled entitlement should expose its module feature limit.");
+Require(pulledFeatureLimit!.LimitValue == 5000, "Pulled entitlement should retain the feature-limit value.");
+Require(pulledFeatureLimit.Unit == "COUNT", "Pulled entitlement should retain the feature-limit unit.");
 
 var heartbeatHttpHandler = new StaticHeartbeatHttpMessageHandler();
 var heartbeatClient = new HttpControlCloudHeartbeatClient(
@@ -450,6 +532,8 @@ Require(heartbeatResult.IsSuccess, "Heartbeat should report current entitlement 
 Require(heartbeatResult.Heartbeat!.HeartbeatStatus == "Received", "Heartbeat status should be Received.");
 Require(heartbeatResult.Heartbeat.LicenseStatus == LocalServerEntitlementAccessStates.Active, "Heartbeat license status should be Active.");
 Require(heartbeatHttpHandler.LastRequest?.EntitlementVersion == 100, "Heartbeat should report cached entitlement version 100.");
+Require(heartbeatHttpHandler.LastRequest?.EntitlementState?.AllowedNamedUsers == 40, "Heartbeat should report observed named-user allowance.");
+Require(heartbeatHttpHandler.LastRequest?.EntitlementState?.FeatureLimits.Count == 1, "Heartbeat should report observed feature limits.");
 var postHeartbeatTrustState = await trustStateStore.GetAsync(installationId)
     ?? throw new InvalidOperationException("Trust state should exist after heartbeat.");
 Require(postHeartbeatTrustState.LastSuccessfulCloudTimeUtc == heartbeatResult.Heartbeat.ReceivedAtUtc, "Trust state should record the last trusted Control Cloud time.");
@@ -878,6 +962,11 @@ var cachedEntitlement = await cache.GetCurrentAsync();
 Require(cachedEntitlement?.EntitlementVersion == 102, "Cached entitlement should be updated by the refresh-entitlement command.");
 var verifiedCachedEntitlement = cachedEntitlement
     ?? throw new InvalidOperationException("Cached entitlement should exist.");
+Require(verifiedCachedEntitlement.AllowedNamedUsers == 40, "Cached entitlement should retain the named-user allowance.");
+Require(verifiedCachedEntitlement.AllowedConcurrentUsers == 12, "Cached entitlement should retain the concurrent-user allowance.");
+Require(
+    verifiedCachedEntitlement.FindFeatureLimit("ACCOUNTING", "MONTHLY_POSTINGS")?.LimitValue == 5000,
+    "Cached entitlement should expose the verified feature limit.");
 var importedEntitlement = pullResult.Entitlement
     ?? throw new InvalidOperationException("Pulled entitlement should exist.");
 
@@ -904,7 +993,15 @@ Console.WriteLine(JsonSerializer.Serialize(
         firstManagerDeviceStatus = persistedFirstManagerDevice?.DeviceStatus,
         firstManagerDeviceCredentialVerified = firstManagerDeviceCredentialVerification.IsSuccess,
         firstManagerSetupTokenConsumed = consumedFirstManagerToken is not null,
+        pairingSecurityEvents = pairingSecurityEvents.Count,
+        pairingAbuseSourceReleaseCleared = releasedDecision is null,
         cachedVersion = verifiedCachedEntitlement.EntitlementVersion,
+        cachedContractRevision = verifiedCachedEntitlement.ContractRevisionNumber,
+        cachedProductCatalogRevisionId = verifiedCachedEntitlement.ProductCatalogRevisionId,
+        cachedProductCatalogRevisionNumber = verifiedCachedEntitlement.ProductCatalogRevisionNumber,
+        cachedAllowedNamedUsers = verifiedCachedEntitlement.AllowedNamedUsers,
+        cachedAllowedConcurrentUsers = verifiedCachedEntitlement.AllowedConcurrentUsers,
+        cachedFeatureLimitCount = verifiedCachedEntitlement.FeatureLimits?.Count ?? 0,
         importedBundleIssueId = importedEntitlement.BundleIssueId,
         pulledAtUtc = pullResult.PulledAtUtc,
         heartbeatStatus = heartbeatResult.Heartbeat.HeartbeatStatus,
@@ -1034,6 +1131,7 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
             Channel: "Secure email",
             Recipient: "customer.ops@example.test",
             MarkedBy: "Smoke",
+            PreflightAcknowledgements: LocalServerBootstrapPackageHandoffPreflight.RequiredKeys,
             Note: "Smoke handoff marker"));
     var handoffAuditRecord = auditRecorder.Records.LastOrDefault(record =>
         record.EventType == ClientPortalAuditEventTypes.BootstrapPackageHandedOff
@@ -1041,11 +1139,17 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
 
     Require(handoffResult.IsSuccess, "Bootstrap package handoff should be marked for an existing package.");
     Require(handoffResult.Response?.HandoffStatus == "HandedOff", "Bootstrap package handoff response should expose the marked state.");
+    Require(
+        handoffResult.Response is not null
+        && LocalServerBootstrapPackageHandoffPreflight.RequiredKeys.All(key =>
+            handoffResult.Response.PreflightAcknowledgements.Contains(key)),
+        "Bootstrap package handoff response should expose all required setup preflight acknowledgements.");
     Require(handoffAuditRecord is not null, "Bootstrap package handoff should be recorded in audit history.");
     Require(
         handoffAuditRecord!.Detail.Contains("Secure email", StringComparison.Ordinal)
-        && handoffAuditRecord.Detail.Contains("customer.ops@example.test", StringComparison.Ordinal),
-        "Bootstrap package handoff audit should include non-secret channel and recipient evidence.");
+        && handoffAuditRecord.Detail.Contains("customer.ops@example.test", StringComparison.Ordinal)
+        && handoffAuditRecord.Detail.Contains("Preflight acknowledged", StringComparison.Ordinal),
+        "Bootstrap package handoff audit should include non-secret channel, recipient, and preflight evidence.");
     Require(
         !handoffAuditRecord.Detail.Contains(generatedPackage.SetupToken, StringComparison.Ordinal),
         "Bootstrap package handoff audit should not expose setup-token plaintext.");
@@ -1220,7 +1324,7 @@ static ClientPortalSignedEntitlementBundleResponse CreateSignedBundle(
     var resolvedGraceUntil = graceUntil ?? new DateOnly(2026, 9, 7);
     var resolvedOfflineValidUntil = offlineValidUntil ?? new DateOnly(2026, 9, 14);
     var payload = new ClientPortalEntitlementBundlePayloadResponse(
-        "1",
+        "5",
         "SafarSuite.ControlCloud",
         "SafarSuite.ClientPortal",
         clientId,
@@ -1229,6 +1333,10 @@ static ClientPortalSignedEntitlementBundleResponse CreateSignedBundle(
         Guid.NewGuid(),
         Guid.NewGuid(),
         Guid.NewGuid(),
+        Guid.NewGuid(),
+        1L,
+        Guid.Parse("9c1da88b-c763-4bb0-8dda-2d95fe63ec8f"),
+        1L,
         Guid.NewGuid(),
         "INV-SMOKE-001",
         "Active",
@@ -1245,7 +1353,18 @@ static ClientPortalSignedEntitlementBundleResponse CreateSignedBundle(
             new ClientPortalEntitlementBundleModuleResponse("Accounting", "Active", true),
             new ClientPortalEntitlementBundleModuleResponse("Billing", "Active", true),
             new ClientPortalEntitlementBundleModuleResponse("Reports", "Disabled", false)
-        ]);
+        ],
+        AllowedNamedUsers: 40,
+        AllowedConcurrentUsers: 12,
+        FeatureLimits:
+        [
+            new ClientPortalEntitlementBundleFeatureLimitResponse(
+                "ACCOUNTING",
+                "MONTHLY_POSTINGS",
+                5000,
+                "COUNT")
+        ],
+        EffectiveFromUtc: new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero));
     var payloadJson = JsonSerializer.Serialize(
         payload,
         new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -1587,7 +1706,8 @@ internal sealed class StaticHeartbeatHttpMessageHandler : HttpMessageHandler
             heartbeatRequest.OfflineValidUntil,
             heartbeatRequest.LocalServerVersion,
             heartbeatRequest.Detail,
-            PairingStatus: heartbeatRequest.PairingStatus);
+            PairingStatus: heartbeatRequest.PairingStatus,
+            EntitlementState: heartbeatRequest.EntitlementState);
 
         return new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -1756,6 +1876,73 @@ internal sealed class StaticCommercialProjectionRepository
         CancellationToken cancellationToken = default)
     {
         return Task.CompletedTask;
+    }
+
+    public Task ApplyChangeAsync(
+        ControlCloudCommercialProjectionChange change,
+        CancellationToken cancellationToken = default)
+    {
+        if (change is ControlCloudEntitlementIssuedChange entitlementIssued
+            && change.ClientId == _projection.ClientId)
+        {
+            _projection.ApplyEntitlement(
+                entitlementIssued.Entitlement,
+                entitlementIssued.ProjectedAtUtc);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyCollection<ControlCloudCommercialDocumentProjection>> ListDocumentsAsync(
+        Guid clientId,
+        string documentType,
+        DateOnly? beforeDate,
+        Guid? beforeDocumentId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyCollection<ControlCloudCommercialDocumentProjection>>(
+            Array.Empty<ControlCloudCommercialDocumentProjection>());
+    }
+
+    public Task<IReadOnlyCollection<ControlCloudInvoiceProjection>> ListInvoicesAsync(
+        Guid clientId,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyCollection<ControlCloudInvoiceProjection> invoices =
+            _projection.ClientId == clientId
+                ? _projection.Invoices.Values.ToArray()
+                : Array.Empty<ControlCloudInvoiceProjection>();
+
+        return Task.FromResult(invoices);
+    }
+
+    public Task<ControlCloudInvoiceProjection?> GetInvoiceAsync(
+        Guid clientId,
+        Guid invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        var invoice = _projection.ClientId == clientId
+            && _projection.Invoices.TryGetValue(invoiceId, out var stored)
+                ? stored
+                : null;
+
+        return Task.FromResult(invoice);
+    }
+
+    public Task<IReadOnlyCollection<ControlCloudPaymentProjection>> ListPaymentsAsync(
+        Guid clientId,
+        Guid? invoiceId = null,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyCollection<ControlCloudPaymentProjection> payments =
+            _projection.ClientId == clientId
+                ? _projection.Payments.Values
+                    .Where(payment => invoiceId is null || payment.InvoiceId == invoiceId.Value)
+                    .ToArray()
+                : Array.Empty<ControlCloudPaymentProjection>();
+
+        return Task.FromResult(payments);
     }
 }
 
