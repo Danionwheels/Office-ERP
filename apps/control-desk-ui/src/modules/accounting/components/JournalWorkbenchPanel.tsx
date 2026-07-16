@@ -2,6 +2,7 @@ import { useState } from "react";
 import type {
   AccountingPeriod,
   JournalEntryFilters,
+  JournalEntryRegisterPage,
   JournalEntrySourceDocument,
   JournalEntrySummary,
   JournalVoucherNumberPreview,
@@ -28,6 +29,7 @@ type JournalWorkbenchPanelProps = {
   accounts: LedgerAccountSummary[];
   periods: AccountingPeriod[];
   entries: JournalEntrySummary[];
+  page: Omit<JournalEntryRegisterPage, "entries">;
   filters: JournalEntryFilters;
   value: ManualJournalEntryInput;
   manualVoucherPreview: JournalVoucherNumberPreview | null;
@@ -58,12 +60,14 @@ type JournalWorkbenchPanelProps = {
   getSourceDocumentLabel: (entry: JournalEntrySummary) => string | null;
   getSourceDocumentClientLabel: (sourceDocument: JournalEntrySourceDocument) => string;
   onRefresh: () => Promise<void>;
+  onLoadMore: () => Promise<void>;
 };
 
 export function JournalWorkbenchPanel({
   accounts,
   periods,
   entries,
+  page,
   filters,
   value,
   manualVoucherPreview,
@@ -93,7 +97,8 @@ export function JournalWorkbenchPanel({
   onOpenSourceDocument,
   getSourceDocumentLabel,
   getSourceDocumentClientLabel,
-  onRefresh
+  onRefresh,
+  onLoadMore
 }: JournalWorkbenchPanelProps) {
   const [isWorkWindowOpen, setIsWorkWindowOpen] = useState(false);
   const [activeWorkView, setActiveWorkView] = useState<JournalWorkWindowView>("voucher");
@@ -142,6 +147,7 @@ export function JournalWorkbenchPanel({
     <section className="journal-workbench">
       <JournalRegisterPanel
         entries={entries}
+        page={page}
         filters={filters}
         focusedJournalEntryId={focusedJournalEntryId}
         focusedJournalEntry={focusedJournalEntry}
@@ -149,6 +155,7 @@ export function JournalWorkbenchPanel({
         reversalPeriodState={reversalPeriodState}
         onFiltersChange={onFiltersChange}
         onRefresh={onRefresh}
+        onLoadMore={onLoadMore}
         onOpenVoucherEntry={() => openWorkWindow("voucher")}
         onOpenOpeningBalance={() => openWorkWindow("opening")}
         onOpenJournalDetail={handleOpenJournalDetail}

@@ -3,6 +3,7 @@ import type {
   ControlCloudAuditEvent,
   ControlCloudInstallationStatus,
   CloudOutboxMessage,
+  CloudOutboxMessagePage,
   CreateCloudInstallationProvisioningInput,
   RevokeCloudAppActivationIssueInput,
   IssueCloudFirstManagerSetupTokenInput,
@@ -36,10 +37,6 @@ import type {
   SafarSuiteAppActivationIssue
 } from "../types/controlCloudTypes";
 
-type CloudOutboxMessagesResponse = {
-  messages: CloudOutboxMessage[];
-};
-
 type ControlCloudAuditEventsResponse = {
   events: ControlCloudAuditEvent[];
 };
@@ -52,12 +49,15 @@ type ProviderAccessOperatorsResponse = {
   operators: ProviderAccessOperator[];
 };
 
-export async function listCloudOutboxMessages(
+export async function listCloudOutboxMessagePage(
   input: {
     status?: string;
     messageType?: string;
+    clientId?: string;
+    take?: number;
+    cursor?: string;
   } = {}
-): Promise<CloudOutboxMessage[]> {
+): Promise<CloudOutboxMessagePage> {
   const search = new URLSearchParams();
 
   if (input.status?.trim()) {
@@ -68,12 +68,34 @@ export async function listCloudOutboxMessages(
     search.set("messageType", input.messageType.trim());
   }
 
+  if (input.clientId?.trim()) {
+    search.set("clientId", input.clientId.trim());
+  }
+
+  if (input.take !== undefined) {
+    search.set("take", String(input.take));
+  }
+
+  if (input.cursor?.trim()) {
+    search.set("cursor", input.cursor.trim());
+  }
+
   const query = search.toString();
-  const response = await apiRequest<CloudOutboxMessagesResponse>(
+  const page = await apiRequest<CloudOutboxMessagePage>(
     `/api/v1/control-cloud/outbox-messages${query === "" ? "" : `?${query}`}`
   );
 
-  return response.messages;
+  if (page.summary === undefined || page.pageSize === undefined || page.hasMore === undefined) {
+    throw new Error("Office Control API must be upgraded before client outbox pages can be read.");
+  }
+
+  return page;
+}
+
+export async function listCloudOutboxMessages(
+  input: Parameters<typeof listCloudOutboxMessagePage>[0] = {}
+): Promise<CloudOutboxMessage[]> {
+  return (await listCloudOutboxMessagePage(input)).messages;
 }
 
 export async function publishCloudOutboxMessages(
@@ -168,6 +190,9 @@ export async function markCloudBootstrapPackageHandoff(
         channel: input.channel.trim(),
         recipient: input.recipient.trim(),
         markedBy: input.markedBy.trim(),
+        preflightAcknowledgements: input.preflightAcknowledgements
+          .map((acknowledgement) => acknowledgement.trim())
+          .filter(Boolean),
         note: optionalText(input.note)
       })
     }

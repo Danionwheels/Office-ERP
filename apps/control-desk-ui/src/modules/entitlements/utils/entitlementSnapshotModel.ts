@@ -84,7 +84,7 @@ export function getEntitlementControlRows({
         : `${displaySnapshot.allowedDevices} devices / ${displaySnapshot.allowedBranches} branches`,
       detail: displaySnapshot === null
         ? "Limits appear after a snapshot is loaded"
-        : `${displaySnapshot.modules.filter((module) => module.isEnabled).length} enabled modules in snapshot`,
+        : `${displaySnapshot.modules.filter((module) => module.isEnabled).length} modules / ${(displaySnapshot.featureLimits ?? []).length} feature limits`,
       tone: displaySnapshot === null ? "neutral" : "ready"
     },
     {
@@ -101,6 +101,22 @@ export function getEntitlementControlRows({
 
 export function getEntitlementFacts(snapshot: EntitlementSnapshot): EntitlementFact[] {
   return [
+    {
+      label: "Access revision",
+      value: `#${snapshot.entitlementVersion}`
+    },
+    {
+      label: "Contract revision",
+      value: `#${snapshot.contractRevisionNumber}`
+    },
+    {
+      label: "Product catalog",
+      value: `#${snapshot.productCatalogRevisionNumber}`
+    },
+    {
+      label: "Approved by",
+      value: snapshot.approvedBy
+    },
     {
       label: "Paid until",
       value: formatDate(snapshot.paidUntil)
@@ -120,6 +136,18 @@ export function getEntitlementFacts(snapshot: EntitlementSnapshot): EntitlementF
     {
       label: "Branches",
       value: String(snapshot.allowedBranches)
+    },
+    {
+      label: "Named users",
+      value: snapshot.allowedNamedUsers?.toString() ?? "No cap"
+    },
+    {
+      label: "Concurrent users",
+      value: snapshot.allowedConcurrentUsers?.toString() ?? "No cap"
+    },
+    {
+      label: "Feature limits",
+      value: String((snapshot.featureLimits ?? []).length)
     },
     {
       label: "Issued",

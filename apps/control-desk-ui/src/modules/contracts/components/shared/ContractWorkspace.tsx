@@ -7,7 +7,9 @@ import {
   KeyRound,
   ListChecks,
   PauseCircle,
+  Plus,
   RefreshCw,
+  Trash2,
   WalletCards,
   type LucideIcon
 } from "lucide-react";
@@ -118,6 +120,39 @@ export function ContractSetupForm({
   onReplaceActive,
   onModuleToggle
 }: ContractSetupFormProps) {
+  function addFeatureLimit() {
+    onChange({
+      ...value,
+      featureLimits: [
+        ...value.featureLimits,
+        {
+          moduleCode: selectedModuleCodes[0] ?? activeProductModules[0]?.moduleCode ?? "",
+          featureCode: "",
+          limitValue: "0",
+          unit: "COUNT"
+        }
+      ]
+    });
+  }
+
+  function updateFeatureLimit(
+    index: number,
+    patch: Partial<ClientContractFormInput["featureLimits"][number]>
+  ) {
+    onChange({
+      ...value,
+      featureLimits: value.featureLimits.map((limit, itemIndex) =>
+        itemIndex === index ? { ...limit, ...patch } : limit)
+    });
+  }
+
+  function removeFeatureLimit(index: number) {
+    onChange({
+      ...value,
+      featureLimits: value.featureLimits.filter((_, itemIndex) => itemIndex !== index)
+    });
+  }
+
   return (
     <form className="client-panel client-contract-form contract-setup-panel" onSubmit={onSubmit}>
       <div className="client-panel-heading">
@@ -234,6 +269,37 @@ export function ContractSetupForm({
             disabled={isBusy}
           />
         </label>
+        <label className="form-field">
+          <span>Named users</span>
+          <input
+            type="number"
+            min="0"
+            value={value.allowedNamedUsers}
+            onChange={(event) => onChange({ ...value, allowedNamedUsers: event.target.value })}
+            disabled={isBusy}
+            placeholder="No cap"
+          />
+        </label>
+        <label className="form-field">
+          <span>Concurrent users</span>
+          <input
+            type="number"
+            min="0"
+            value={value.allowedConcurrentUsers}
+            onChange={(event) => onChange({ ...value, allowedConcurrentUsers: event.target.value })}
+            disabled={isBusy}
+            placeholder="No cap"
+          />
+        </label>
+        <label className="form-field contract-modules-field">
+          <span>Approval reason</span>
+          <input
+            maxLength={1000}
+            value={value.approvalReason}
+            onChange={(event) => onChange({ ...value, approvalReason: event.target.value })}
+            disabled={isBusy}
+          />
+        </label>
         {activeProductModules.length === 0 ? (
           <label className="form-field contract-modules-field">
             <span>Modules</span>
@@ -271,6 +337,81 @@ export function ContractSetupForm({
             })}
           </fieldset>
         )}
+
+        <fieldset className="contract-feature-limits" disabled={isBusy}>
+          <legend>Feature limits</legend>
+          <div className="contract-feature-limit-heading">
+            <span>{value.featureLimits.length} configured</span>
+            <button className="mini-button" type="button" onClick={addFeatureLimit}>
+              <Plus size={14} />
+              Add
+            </button>
+          </div>
+          {value.featureLimits.length === 0 ? (
+            <div className="client-empty-state compact">No feature-specific limits</div>
+          ) : (
+            <div className="contract-feature-limit-list">
+              {value.featureLimits.map((limit, index) => (
+                <div
+                  className="contract-feature-limit-row"
+                  key={`${index}-${limit.moduleCode}-${limit.featureCode}`}
+                >
+                  <label className="form-field">
+                    <span>Module</span>
+                    <select
+                      value={limit.moduleCode}
+                      onChange={(event) => updateFeatureLimit(index, { moduleCode: event.target.value })}
+                    >
+                      {activeProductModules.map((module) => (
+                        <option key={module.moduleCode} value={module.moduleCode}>
+                          {module.displayName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Feature code</span>
+                    <input
+                      maxLength={64}
+                      value={limit.featureCode}
+                      onChange={(event) => updateFeatureLimit(index, {
+                        featureCode: event.target.value.toUpperCase()
+                      })}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Limit</span>
+                    <input
+                      min="0"
+                      type="number"
+                      value={limit.limitValue}
+                      onChange={(event) => updateFeatureLimit(index, { limitValue: event.target.value })}
+                    />
+                  </label>
+                  <label className="form-field">
+                    <span>Unit</span>
+                    <input
+                      maxLength={32}
+                      value={limit.unit}
+                      onChange={(event) => updateFeatureLimit(index, {
+                        unit: event.target.value.toUpperCase()
+                      })}
+                    />
+                  </label>
+                  <button
+                    className="mini-button danger"
+                    type="button"
+                    onClick={() => removeFeatureLimit(index)}
+                    title="Remove feature limit"
+                  >
+                    <Trash2 size={14} />
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </fieldset>
       </div>
     </form>
   );
@@ -305,7 +446,7 @@ export function ContractHistoryList({
               <div>
                 <strong>{contract.contractNumber}</strong>
                 <span>
-                  {formatDate(contract.startsOn)} to {formatDate(contract.endsOn)}
+                  Revision {contract.revisionNumber} / {formatDate(contract.startsOn)} to {formatDate(contract.endsOn)}
                 </span>
               </div>
               <span className={`status-pill ${contract.status.toLowerCase()}`}>{contract.status}</span>
@@ -326,12 +467,30 @@ export function ContractHistoryList({
               <div>
                 <dt>Limits</dt>
                 <dd>
-                  {contract.allowedDevices} devices, {contract.allowedBranches} branches
+                  {contract.allowedDevices} devices, {contract.allowedBranches} branches, {contract.allowedNamedUsers ?? "no cap"} named, {contract.allowedConcurrentUsers ?? "no cap"} concurrent
+                </dd>
+              </div>
+              <div>
+                <dt>Feature limits</dt>
+                <dd>
+                  {(contract.featureLimits ?? []).length === 0
+                    ? "None"
+                    : (contract.featureLimits ?? [])
+                      .map((limit) => `${limit.moduleCode}.${limit.featureCode} ${limit.limitValue} ${limit.unit}`)
+                      .join(", ")}
                 </dd>
               </div>
               <div>
                 <dt>Modules</dt>
                 <dd>{enabledModules(contract, productModules)}</dd>
+              </div>
+              <div>
+                <dt>Product catalog</dt>
+                <dd>Revision #{contract.productCatalogRevisionNumber}</dd>
+              </div>
+              <div>
+                <dt>Approved</dt>
+                <dd>{contract.approvedBy}</dd>
               </div>
             </dl>
             <div className="contract-actions">

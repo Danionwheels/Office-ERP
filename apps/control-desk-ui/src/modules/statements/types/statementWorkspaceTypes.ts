@@ -1,11 +1,12 @@
 import type { ClientDetails } from "../../clients/types/clientTypes";
-import type { ClientStatement } from "./statementTypes";
+import type { ClientStatement, ClientStatementRegister } from "./statementTypes";
 
 export type ClientStatementPanelProps = {
   client: ClientDetails | null;
   statement: ClientStatement | null;
   isBusy: boolean;
   onRefresh: () => Promise<void>;
+  onLoadMore: (register: ClientStatementRegister) => Promise<void>;
 };
 
 export type StatementTone = "neutral" | "ready" | "warning";

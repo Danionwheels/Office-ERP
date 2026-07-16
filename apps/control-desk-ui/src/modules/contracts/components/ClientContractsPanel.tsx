@@ -27,6 +27,7 @@ export function ClientContractsPanel({
   contracts,
   productModules,
   accessCatalog,
+  accessCatalogRevisions,
   publishedAccessCatalogCommand,
   accessCatalogPublishValue,
   chargeRules,
@@ -39,6 +40,7 @@ export function ClientContractsPanel({
   onAccessCatalogPublishValueChange,
   onRefreshAccessCatalog,
   onSaveAccessCatalog,
+  onPublishAccessCatalogRevision,
   onPublishAccessCatalog,
   onCreate,
   onReplaceActive,
@@ -118,6 +120,14 @@ export function ClientContractsPanel({
 
                   <dl className="contract-fact-grid">
                     <div>
+                      <dt>Revision</dt>
+                      <dd>#{activeContract.revisionNumber}</dd>
+                    </div>
+                    <div>
+                      <dt>Product catalog</dt>
+                      <dd>#{activeContract.productCatalogRevisionNumber}</dd>
+                    </div>
+                    <div>
                       <dt>Term</dt>
                       <dd>
                         {formatDate(activeContract.startsOn)} to {formatDate(activeContract.endsOn)}
@@ -132,6 +142,14 @@ export function ClientContractsPanel({
                       <dd>{activeContract.allowedBranches}</dd>
                     </div>
                     <div>
+                      <dt>Named users</dt>
+                      <dd>{activeContract.allowedNamedUsers ?? "No cap"}</dd>
+                    </div>
+                    <div>
+                      <dt>Concurrent users</dt>
+                      <dd>{activeContract.allowedConcurrentUsers ?? "No cap"}</dd>
+                    </div>
+                    <div>
                       <dt>Activated</dt>
                       <dd>
                         {activeContract.activatedAtUtc === null || activeContract.activatedAtUtc === undefined
@@ -139,12 +157,29 @@ export function ClientContractsPanel({
                           : formatDateTime(activeContract.activatedAtUtc)}
                       </dd>
                     </div>
+                    <div>
+                      <dt>Approved</dt>
+                      <dd>{activeContract.approvedBy}</dd>
+                    </div>
                   </dl>
 
                   <ModulePlanList
                     modules={activeContract.modules}
                     productModules={productModules}
                   />
+
+                  {(activeContract.featureLimits ?? []).length > 0 && (
+                    <div className="contract-feature-limit-summary">
+                      <span>Feature limits</span>
+                      <div>
+                        {(activeContract.featureLimits ?? []).map((limit) => (
+                          <strong key={`${limit.moduleCode}-${limit.featureCode}`}>
+                            {limit.moduleCode}.{limit.featureCode}: {limit.limitValue} {limit.unit}
+                          </strong>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <ModulePlanReadinessPanel
@@ -211,12 +246,14 @@ export function ClientContractsPanel({
       {activeView === "catalog" && (
         <ProductAccessCatalogPanel
           catalog={accessCatalog}
+          revisions={accessCatalogRevisions}
           publishedCommand={publishedAccessCatalogCommand}
           value={accessCatalogPublishValue}
           isBusy={isBusy}
           onChange={onAccessCatalogPublishValueChange}
           onRefresh={onRefreshAccessCatalog}
           onSaveCatalog={onSaveAccessCatalog}
+          onPublishRevision={onPublishAccessCatalogRevision}
           onPublish={onPublishAccessCatalog}
         />
       )}

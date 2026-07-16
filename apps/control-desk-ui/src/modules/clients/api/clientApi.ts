@@ -6,6 +6,8 @@ import type {
   ClientContact,
   ClientDeployment,
   ClientDetails,
+  ClientDirectoryPage,
+  ClientDirectoryQuery,
   ClientLookup,
   ClientPortalInvitation,
   ClientSupportNote,
@@ -14,10 +16,6 @@ import type {
   CreateClientInput,
   UpdateClientInput
 } from "../types/clientTypes";
-
-type ListClientsResponse = {
-  clients: ClientLookup[];
-};
 
 type AddClientSupportNoteResponse = {
   clientId: string;
@@ -51,10 +49,45 @@ type ListClientDeploymentsResponse = {
   deployments: ClientDeployment[];
 };
 
-export async function listClients(): Promise<ClientLookup[]> {
-  const response = await apiRequest<ListClientsResponse>("/api/v1/clients");
+export async function listClientPage(
+  input: ClientDirectoryQuery = {}
+): Promise<ClientDirectoryPage> {
+  const search = new URLSearchParams();
 
-  return response.clients;
+  if (input.search?.trim()) {
+    search.set("search", input.search.trim());
+  }
+
+  if (input.status?.trim()) {
+    search.set("status", input.status.trim());
+  }
+
+  if (input.sort !== undefined) {
+    search.set("sort", input.sort);
+  }
+
+  if (input.direction !== undefined) {
+    search.set("direction", input.direction);
+  }
+
+  if (input.take !== undefined) {
+    search.set("take", String(input.take));
+  }
+
+  if (input.cursor?.trim()) {
+    search.set("cursor", input.cursor.trim());
+  }
+
+  const query = search.toString();
+  const page = await apiRequest<ClientDirectoryPage>(
+    `/api/v1/clients${query === "" ? "" : `?${query}`}`
+  );
+
+  if (page.summary === undefined || page.pageSize === undefined || page.hasMore === undefined) {
+    throw new Error("Office Control API must be upgraded before client pages can be read.");
+  }
+
+  return page;
 }
 
 export async function getClient(clientId: string): Promise<ClientDetails> {

@@ -13,6 +13,7 @@ export type ClientContractsPanelProps = {
   contracts: ClientContract[];
   productModules: ProductModule[];
   accessCatalog: ProductAccessCatalog | null;
+  accessCatalogRevisions: ProductAccessCatalog[];
   publishedAccessCatalogCommand: PublishedProductAccessCatalogCommand | null;
   accessCatalogPublishValue: PublishProductAccessCatalogCommandInput;
   chargeRules: ClientChargeRule[];
@@ -25,6 +26,7 @@ export type ClientContractsPanelProps = {
   onAccessCatalogPublishValueChange: (value: PublishProductAccessCatalogCommandInput) => void;
   onRefreshAccessCatalog: () => Promise<void>;
   onSaveAccessCatalog: (catalog: ProductAccessCatalog, requestedBy: string) => Promise<void>;
+  onPublishAccessCatalogRevision: () => Promise<void>;
   onPublishAccessCatalog: () => Promise<void>;
   onCreate: () => Promise<void>;
   onReplaceActive: () => Promise<void>;

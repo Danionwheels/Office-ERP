@@ -54,13 +54,15 @@ import {
   toAppActivationRequestJson
 } from "../utils/cloudWorkspaceModel";
 import { CloudControlBoard } from "./shared/CloudControlBoard";
+import { EntitlementReconciliationTable } from "./shared/EntitlementReconciliationTable";
 import type {
   ControlCloudInstallationStatus,
   IssuedSafarSuiteAppActivationToken,
   LocalServerBootstrapPackage,
   LocalServerBootstrapPackageSummary,
   LocalServerDiagnosticReport,
-  SafarSuiteAppActivationIssue
+  SafarSuiteAppActivationIssue,
+  SetupPreflightAcknowledgementKey
 } from "../types/controlCloudTypes";
 
 export function CloudInstallationStatusPanel({
@@ -86,6 +88,7 @@ export function CloudInstallationStatusPanel({
   appActivationIssueSearch,
   appActivationRevocationValue,
   outboxMessages,
+  outboxSummary,
   latestOutboxPublish,
   auditEvents,
   diagnosticsReport,
@@ -123,6 +126,8 @@ export function CloudInstallationStatusPanel({
   const latestHeartbeat = status?.latestHeartbeat ?? null;
   const pairingStatus = latestHeartbeat?.pairingStatus ?? null;
   const latestEntitlement = status?.latestEntitlement ?? null;
+  const entitlementSync = status?.entitlementSync ?? null;
+  const reconciliation = status?.reconciliation ?? null;
   const commandStatus = status?.commandStatus ?? null;
   const deploymentProfile = status?.deploymentProfile ?? latestHeartbeat?.deploymentProfile ?? null;
   const cloudConnectionText = formatCloudConnectionStatus(connectionState);
@@ -169,13 +174,19 @@ export function CloudInstallationStatusPanel({
   const warningSetupSteps = setupSteps.filter((step) => step.tone === "warning").length;
   const readyPreflightItems = setupPreflightItems.filter((item) => item.tone === "ready").length;
   const warningPreflightItems = setupPreflightItems.filter((item) => item.tone === "warning").length;
+  const selectedPreflightAcknowledgements: string[] =
+    bootstrapPackageHandoffValue.preflightAcknowledgements ?? [];
+  const acknowledgedPreflightItems = setupPreflightItems.filter((item) =>
+    selectedPreflightAcknowledgements.includes(item.key)
+  ).length;
+  const allSetupPreflightAcknowledged = acknowledgedPreflightItems === setupPreflightItems.length;
   const setupReadinessTone = completedSetupSteps === setupSteps.length
     ? warningSetupSteps > 0 ? "warning" : "ready"
     : "neutral";
   const setupReadinessStatus = completedSetupSteps === setupSteps.length
     ? warningSetupSteps > 0 ? "Review" : "Complete"
     : `${completedSetupSteps}/${setupSteps.length} ready`;
-  const outboxCounts = getCloudOutboxCounts(outboxMessages);
+  const outboxCounts = getCloudOutboxCounts(outboxMessages, outboxSummary);
   const canIssueAppActivationToken =
     !isBusy
     && !cloudWritesBlocked
@@ -214,6 +225,19 @@ export function CloudInstallationStatusPanel({
     activeAppActivationIssue,
     appActivationValue.serverInstallationId,
     appActivationValue.fingerprintHash);
+
+  function handlePreflightAcknowledgementChange(key: string, checked: boolean) {
+    const acknowledgementKey = key as SetupPreflightAcknowledgementKey;
+    const current = bootstrapPackageHandoffValue.preflightAcknowledgements ?? [];
+    const preflightAcknowledgements = checked
+      ? Array.from(new Set([...current, acknowledgementKey]))
+      : current.filter((value) => value !== acknowledgementKey);
+
+    onBootstrapPackageHandoffValueChange({
+      ...bootstrapPackageHandoffValue,
+      preflightAcknowledgements
+    });
+  }
 
   async function handleImportAppActivationRequest(file: File) {
     setAppActivationImportError("");
@@ -905,6 +929,40 @@ export function CloudInstallationStatusPanel({
             </label>
           </div>
 
+          <div className="cloud-bootstrap-preflight-acknowledgements">
+            <div className="cloud-bootstrap-preflight-heading">
+              <span>Handoff preflight</span>
+              <strong>{acknowledgedPreflightItems}/{setupPreflightItems.length}</strong>
+            </div>
+            <div className="cloud-bootstrap-preflight-list">
+              {setupPreflightItems.map((item) => {
+                const checked = selectedPreflightAcknowledgements.includes(item.key);
+
+                return (
+                  <label
+                    className={`cloud-bootstrap-preflight-check ${item.tone}${checked ? " checked" : ""}`}
+                    key={item.key}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={isBusy || cloudWritesBlocked}
+                      onChange={(event) => handlePreflightAcknowledgementChange(
+                        item.key,
+                        event.target.checked
+                      )}
+                    />
+                    <span>
+                      <strong>{item.label}</strong>
+                      <small>{item.detail}</small>
+                    </span>
+                    <em>{item.status}</em>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
           {bootstrapPackages.length === 0 ? (
             <div className="client-empty-state">No deployment packages loaded</div>
           ) : (
@@ -944,9 +1002,12 @@ export function CloudInstallationStatusPanel({
                               || isBusy
                               || bootstrapPackageHandoffValue.channel.trim() === ""
                               || bootstrapPackageHandoffValue.markedBy.trim() === ""
+                              || !allSetupPreflightAcknowledged
                           }
                           onClick={() => onMarkBootstrapPackageHandoff(packageSummary.bootstrapPackageId)}
-                          title={handoffEvent === null
+                          title={!allSetupPreflightAcknowledged
+                            ? "Acknowledge setup preflight before handoff"
+                            : handoffEvent === null
                             ? "Mark setup packet handoff"
                             : "Update setup packet handoff"}
                         >
@@ -1846,8 +1907,56 @@ export function CloudInstallationStatusPanel({
               </dd>
             </div>
             <div>
-              <dt>Entitlement</dt>
-              <dd>{status.latestEntitlementVersion}</dd>
+              <dt>Access sync</dt>
+              <dd>{entitlementSync?.state ?? "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>Versions</dt>
+              <dd>
+                {entitlementSync === null
+                  ? "Not available"
+                  : `${entitlementSync.desiredVersion ?? "-"} desired / ${entitlementSync.signedVersion ?? "-"} signed / ${entitlementSync.observedVersion ?? "-"} applied`}
+              </dd>
+            </div>
+            <div>
+              <dt>Access revision</dt>
+              <dd title={latestEntitlement?.clientAccessRevisionId}>
+                {latestEntitlement === null
+                  ? "Not signed"
+                  : `#${latestEntitlement.entitlementVersion} / ${latestEntitlement.clientAccessRevisionId.slice(0, 8)}`}
+              </dd>
+            </div>
+            <div>
+              <dt>Contract revision</dt>
+              <dd>
+                {latestEntitlement === null
+                  ? "Not signed"
+                  : latestEntitlement.contractRevisionNumber > 0
+                    ? `#${latestEntitlement.contractRevisionNumber}`
+                    : "Historical"}
+              </dd>
+            </div>
+            <div>
+              <dt>Product catalog</dt>
+              <dd title={latestEntitlement?.productCatalogRevisionId}>
+                {latestEntitlement === null
+                  ? "Not signed"
+                  : latestEntitlement.productCatalogRevisionNumber > 0
+                    ? `#${latestEntitlement.productCatalogRevisionNumber}`
+                    : "Historical"}
+              </dd>
+            </div>
+            <div>
+              <dt>Named users</dt>
+              <dd>{latestEntitlement?.allowedNamedUsers ?? "No cap"}</dd>
+            </div>
+            <div>
+              <dt>Concurrent users</dt>
+              <dd>{latestEntitlement?.allowedConcurrentUsers ?? "No cap"}</dd>
+            </div>
+            <div>
+              <dt>Feature limits</dt>
+              <dd>{latestEntitlement?.featureLimitCount ?? 0}</dd>
             </div>
             <div>
               <dt>Commands</dt>
@@ -1856,6 +1965,12 @@ export function CloudInstallationStatusPanel({
           </dl>
 
           <div className="cloud-status-notes">
+            {entitlementSync !== null && (
+              <span>
+                <ShieldCheck size={15} />
+                {entitlementSync.detail}
+              </span>
+            )}
             <span>
               <Cloud size={15} />
               Last bundle {formatNullableDateTime(status.lastBundleIssuedAtUtc)}
@@ -1877,6 +1992,8 @@ export function CloudInstallationStatusPanel({
               {commandStatus?.latestCommandStatus ?? "No command"} command
             </span>
           </div>
+
+          <EntitlementReconciliationTable reconciliation={reconciliation} />
         </>
       )}
     </section>

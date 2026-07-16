@@ -14,7 +14,7 @@ export type EntitlementSnapshotPanelProps = {
   latestSnapshotMissing: boolean;
   issuedSnapshot: IssuedEntitlementSnapshot | null;
   isBusy: boolean;
-  onIssueFromPaidInvoice: () => Promise<void>;
+  onIssueFromPaidInvoice: (approvalReason: string) => Promise<void>;
   onRefreshLatest: () => Promise<void>;
 };
 

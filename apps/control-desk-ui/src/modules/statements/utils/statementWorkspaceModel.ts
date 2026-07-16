@@ -16,11 +16,11 @@ export function getStatementLedgerBridgeItems(statement: ClientStatement): State
   return [
     {
       label: "Running balance",
-      value: `${statement.lines.length} lines`,
+      value: `${statement.registers.lines.filteredCount} lines`,
       detail: unlinkedStatementLineCount === 0
-        ? "Every statement line has a journal marker"
-        : `${unlinkedStatementLineCount} lines need journal review`,
-      tone: statement.lines.length === 0
+        ? `${statement.lines.length} recent lines loaded`
+        : `${unlinkedStatementLineCount} loaded lines need journal review`,
+      tone: statement.registers.lines.filteredCount === 0
         ? "neutral"
         : unlinkedStatementLineCount === 0
           ? "ready"
@@ -28,8 +28,8 @@ export function getStatementLedgerBridgeItems(statement: ClientStatement): State
     },
     {
       label: "Journal postings",
-      value: `${statement.journalPostings.length} entries`,
-      detail: `${journalLineCount} debit/credit lines`,
+      value: `${statement.registers.journalPostings.filteredCount} entries`,
+      detail: `${journalLineCount} debit/credit lines loaded`,
       tone: hasPostings ? "ready" : "neutral"
     },
     {
@@ -40,9 +40,9 @@ export function getStatementLedgerBridgeItems(statement: ClientStatement): State
     },
     {
       label: "Documents",
-      value: `${statement.invoices.length + statement.payments.length} docs`,
+      value: `${statement.registers.invoices.filteredCount + statement.registers.payments.filteredCount} docs`,
       detail: unlinkedDocumentCount === 0 ? "Invoices and receipts are journal-linked" : `${unlinkedDocumentCount} documents need journal links`,
-      tone: statement.invoices.length + statement.payments.length === 0
+      tone: statement.registers.invoices.filteredCount + statement.registers.payments.filteredCount === 0
         ? "neutral"
         : unlinkedDocumentCount === 0
           ? "ready"
@@ -79,30 +79,30 @@ export function getStatementControlRows(statement: ClientStatement): StatementCo
     {
       key: "invoices",
       label: "Invoices",
-      status: `${statement.invoices.length} invoices`,
+      status: `${statement.registers.invoices.filteredCount} invoices`,
       detail: `${summaryTotals.invoiceCount} posted, ${summaryTotals.openInvoiceCount} open`,
       tone: summaryTotals.openInvoiceCount === 0 ? "ready" : "warning"
     },
     {
       key: "receipts",
       label: "Receipts",
-      status: `${statement.payments.length} payments`,
+      status: `${statement.registers.payments.filteredCount} payments`,
       detail: summaryTotals.paidSummary,
-      tone: statement.payments.length === 0 ? "neutral" : "ready"
+      tone: statement.registers.payments.filteredCount === 0 ? "neutral" : "ready"
     },
     {
       key: "lines",
       label: "Statement lines",
-      status: `${statement.lines.length} lines`,
-      detail: statement.lines.length === 0 ? "No posted invoice or payment lines" : "Running balance trail is available",
-      tone: statement.lines.length === 0 ? "neutral" : "ready"
+      status: `${statement.registers.lines.filteredCount} lines`,
+      detail: statement.registers.lines.filteredCount === 0 ? "No posted invoice or payment lines" : "Running balance trail is available",
+      tone: statement.registers.lines.filteredCount === 0 ? "neutral" : "ready"
     },
     {
       key: "postings",
       label: "GL postings",
-      status: `${statement.journalPostings.length} postings`,
-      detail: statement.journalPostings.length === 0 ? "No journal postings" : `${journalLineCount} debit and credit lines available`,
-      tone: statement.journalPostings.length === 0 ? "neutral" : "ready"
+      status: `${statement.registers.journalPostings.filteredCount} postings`,
+      detail: statement.registers.journalPostings.filteredCount === 0 ? "No journal postings" : `${journalLineCount} debit and credit lines loaded`,
+      tone: statement.registers.journalPostings.filteredCount === 0 ? "neutral" : "ready"
     }
   ];
 }
@@ -155,7 +155,7 @@ export function formatPostingTotals(statement: ClientStatement): string {
 }
 
 export function getJournalLineCount(statement: ClientStatement): number {
-  return statement.journalPostings.reduce((total, posting) => total + posting.lines.length, 0);
+  return statement.journalPostings.reduce((total, posting) => total + posting.lineCount, 0);
 }
 
 export function hasJournalEntry(journalEntryId?: string | null): boolean {

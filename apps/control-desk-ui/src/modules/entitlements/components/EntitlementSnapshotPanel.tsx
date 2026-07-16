@@ -1,4 +1,5 @@
 import { KeyRound, RefreshCw } from "lucide-react";
+import { useState } from "react";
 import type { EntitlementSnapshotPanelProps } from "../types/entitlementWorkspaceTypes";
 import {
   canIssueEntitlementFromPaidInvoice,
@@ -7,6 +8,7 @@ import {
 } from "../utils/entitlementSnapshotModel";
 import {
   EntitlementControlBoard,
+  EntitlementFeatureLimitRegister,
   EntitlementModuleRegister,
   EntitlementSnapshotSummary
 } from "./shared/EntitlementSnapshotWorkspace";
@@ -22,6 +24,9 @@ export function EntitlementSnapshotPanel({
   onIssueFromPaidInvoice,
   onRefreshLatest
 }: EntitlementSnapshotPanelProps) {
+  const [approvalReason, setApprovalReason] = useState(
+    "Paid invoice and active contract verified in Control Desk."
+  );
   const displaySnapshot = issuedSnapshot ?? latestSnapshot;
   const canIssue = canIssueEntitlementFromPaidInvoice({
     invoiceDraft,
@@ -54,8 +59,8 @@ export function EntitlementSnapshotPanel({
         <button
           className="icon-button primary"
           type="button"
-          disabled={!canIssue}
-          onClick={onIssueFromPaidInvoice}
+          disabled={!canIssue || approvalReason.trim() === ""}
+          onClick={() => onIssueFromPaidInvoice(approvalReason.trim())}
           title="Issue entitlement from paid invoice"
         >
           <KeyRound size={16} />
@@ -71,6 +76,16 @@ export function EntitlementSnapshotPanel({
           <RefreshCw size={16} />
           Refresh
         </button>
+        <label className="entitlement-approval-reason">
+          <span>Approval reason</span>
+          <input
+            type="text"
+            value={approvalReason}
+            maxLength={1000}
+            disabled={isBusy}
+            onChange={(event) => setApprovalReason(event.target.value)}
+          />
+        </label>
         <span className="billing-small-fact">
           {getEntitlementInvoiceCue(invoiceDraft)}
         </span>
@@ -92,6 +107,7 @@ export function EntitlementSnapshotPanel({
             modules={displaySnapshot.modules}
             productModules={productModules}
           />
+          <EntitlementFeatureLimitRegister featureLimits={displaySnapshot.featureLimits ?? []} />
         </div>
       )}
     </section>

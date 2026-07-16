@@ -58,7 +58,9 @@ import {
   createClientContract,
   listClientContracts,
   listProductAccessCatalog,
+  listProductCatalogRevisions,
   listProductModules,
+  publishProductCatalogRevision,
   publishProductAccessCatalogCommand,
   replaceActiveClientContract,
   saveProductAccessCatalog,
@@ -84,7 +86,7 @@ import {
   listCloudAppActivationIssues,
   listCloudInstallationBootstrapPackages,
   listCloudInstallationAuditEvents,
-  listCloudOutboxMessages,
+  listCloudOutboxMessagePage,
   markCloudBootstrapPackageHandoff,
   publishCloudOutboxMessages,
   queueCloudInstallationSupportCommand,
@@ -98,6 +100,7 @@ import type {
   CloudBootstrapPackageHandoffFormInput,
   CloudFirstManagerSetupTokenFormInput,
   CloudOutboxMessage,
+  CloudOutboxMessageRegisterSummary,
   ControlCloudAuditEvent,
   ControlCloudConnectionState,
   CreateCloudInstallationProvisioningInput,
@@ -133,6 +136,7 @@ import {
   reverseInvoicePayment
 } from "../../payments/api/paymentApi";
 import { PaymentReceiptPanel } from "../../payments/components/PaymentReceiptPanel";
+import { PortalPaymentClaimsPanel } from "../../payments/components/PortalPaymentClaimsPanel";
 import type {
   AppliedClientCredit,
   ApplyClientCreditInput,
@@ -142,9 +146,12 @@ import type {
   RecordInvoicePaymentInput,
   ReversedInvoicePayment
 } from "../../payments/types/paymentTypes";
-import { getClientStatement } from "../../statements/api/statementApi";
+import { getClientStatement, loadMoreClientStatement } from "../../statements/api/statementApi";
 import { ClientStatementPanel } from "../../statements/components/ClientStatementPanel";
-import type { ClientStatement } from "../../statements/types/statementTypes";
+import type {
+  ClientStatement,
+  ClientStatementRegister
+} from "../../statements/types/statementTypes";
 import {
   activateClient,
   addClientContact,
@@ -157,7 +164,7 @@ import {
   inviteClientPortalContact,
   listClientDeployments,
   listClientPortalInvitations,
-  listClients,
+  listClientPage,
   resendClientPortalInvitation,
   revokeClientPortalInvitation,
   suspendClient,
@@ -180,6 +187,8 @@ import type {
   AddClientSupportNoteInput,
   ClientAccountingProfile,
   ClientDeployment,
+  ClientDirectorySort,
+  ClientDirectorySortDirection,
   ClientDetails,
   ClientLookup,
   ClientPortalInvitation,
@@ -240,6 +249,14 @@ const defaultCloudConnectionState: ControlCloudConnectionState = {
 
 export function ClientDeskPage() {
   const [clients, setClients] = useState<ClientLookup[]>([]);
+  const [clientDirectoryQuery, setClientDirectoryQuery] = useState<{
+    search: string;
+    sort: ClientDirectorySort;
+    direction: ClientDirectorySortDirection;
+  }>({ search: "", sort: "code", direction: "asc" });
+  const [clientFilteredCount, setClientFilteredCount] = useState(0);
+  const [clientNextCursor, setClientNextCursor] = useState<string | null>(null);
+  const [isLoadingMoreClients, setIsLoadingMoreClients] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState("");
   const [selectedClient, setSelectedClient] = useState<ClientDetails | null>(null);
   const [accountingProfile, setAccountingProfile] = useState<ClientAccountingProfile | null>(null);
@@ -248,6 +265,8 @@ export function ClientDeskPage() {
   const [productModules, setProductModules] = useState<ProductModule[]>([]);
   const [productAccessCatalog, setProductAccessCatalog] =
     useState<ProductAccessCatalog | null>(null);
+  const [productAccessCatalogRevisions, setProductAccessCatalogRevisions] =
+    useState<ProductAccessCatalog[]>([]);
   const [publishedAccessCatalogCommand, setPublishedAccessCatalogCommand] =
     useState<PublishedProductAccessCatalogCommand | null>(null);
   const [accessCatalogPublishForm, setAccessCatalogPublishForm] =
@@ -343,6 +362,8 @@ export function ClientDeskPage() {
   const [appActivationRevocationForm, setAppActivationRevocationForm] =
     useState<CloudAppActivationRevocationFormInput>(createDefaultAppActivationRevocationForm());
   const [cloudOutboxMessages, setCloudOutboxMessages] = useState<CloudOutboxMessage[]>([]);
+  const [cloudOutboxSummary, setCloudOutboxSummary] =
+    useState<CloudOutboxMessageRegisterSummary | null>(null);
   const [latestCloudOutboxPublish, setLatestCloudOutboxPublish] =
     useState<PublishCloudOutboxMessagesResult | null>(null);
   const [cloudAuditEvents, setCloudAuditEvents] = useState<ControlCloudAuditEvent[]>([]);
@@ -382,7 +403,31 @@ export function ClientDeskPage() {
   }, [selectedClientId]);
 
   async function refreshClients(nextSelectedClientId = selectedClientId) {
-    await runClientAction(() => loadClientList(nextSelectedClientId));
+    await runClientAction(() => loadClientList(nextSelectedClientId, false, clientDirectoryQuery));
+  }
+
+  async function handleClientDirectoryQuery(
+    search: string,
+    sort: ClientDirectorySort,
+    direction: ClientDirectorySortDirection
+  ) {
+    const nextQuery = { search: search.trim(), sort, direction };
+    setClientDirectoryQuery(nextQuery);
+    await runClientAction(() => loadClientList(selectedClientId, false, nextQuery));
+  }
+
+  async function loadMoreClients() {
+    if (clientNextCursor === null) {
+      return;
+    }
+
+    setIsLoadingMoreClients(true);
+
+    try {
+      await runClientAction(() => loadClientList(selectedClientId, true, clientDirectoryQuery));
+    } finally {
+      setIsLoadingMoreClients(false);
+    }
   }
 
   async function refreshChargeCodes() {
@@ -411,15 +456,23 @@ export function ClientDeskPage() {
 
   async function refreshProductAccessCatalog() {
     await runClientAction(async () => {
-      const nextCatalog = await listProductAccessCatalog();
+      const [nextCatalog, revisions] = await Promise.all([
+        listProductAccessCatalog(),
+        listProductCatalogRevisions()
+      ]);
       setProductAccessCatalog(nextCatalog);
+      setProductAccessCatalogRevisions(revisions);
     });
   }
 
   async function handleRefreshProductAccessCatalog() {
     await runClientAction(async () => {
-      const nextCatalog = await listProductAccessCatalog();
+      const [nextCatalog, revisions] = await Promise.all([
+        listProductAccessCatalog(),
+        listProductCatalogRevisions()
+      ]);
       setProductAccessCatalog(nextCatalog);
+      setProductAccessCatalogRevisions(revisions);
       setMessage("Product access catalog refreshed.");
     });
   }
@@ -431,7 +484,21 @@ export function ClientDeskPage() {
     await runClientAction(async () => {
       const savedCatalog = await saveProductAccessCatalog(catalog, requestedBy);
       setProductAccessCatalog(savedCatalog);
-      setMessage("Product access catalog saved.");
+      setMessage("Product catalog draft saved. Published contract behavior is unchanged.");
+    });
+  }
+
+  async function handlePublishProductAccessCatalogRevision() {
+    await runClientAction(async () => {
+      const published = await publishProductCatalogRevision(accessCatalogPublishForm.requestedBy);
+      const [revisions, nextModules] = await Promise.all([
+        listProductCatalogRevisions(),
+        listProductModules()
+      ]);
+      setProductAccessCatalog(published);
+      setProductAccessCatalogRevisions(revisions);
+      setProductModules(nextModules);
+      setMessage(`Product catalog revision #${published.revisionNumber ?? "-"} published.`);
     });
   }
 
@@ -439,7 +506,7 @@ export function ClientDeskPage() {
     await runClientAction(async () => {
       const publishedCommand = await publishProductAccessCatalogCommand(accessCatalogPublishForm);
       setPublishedAccessCatalogCommand(publishedCommand);
-      setProductAccessCatalog(publishedCommand.accessCatalog);
+      setProductAccessCatalog(await listProductAccessCatalog());
       setMessage(`Product access catalog command issued (${publishedCommand.commandId}).`);
     });
   }
@@ -787,9 +854,31 @@ export function ClientDeskPage() {
       : `${client.code} ${client.displayName}`;
   }
 
-  async function loadClientList(nextSelectedClientId = selectedClientId) {
-    const clientList = await listClients();
+  async function loadClientList(
+    nextSelectedClientId = selectedClientId,
+    append = false,
+    query = clientDirectoryQuery
+  ) {
+    const page = await listClientPage({
+      search: query.search,
+      sort: query.sort,
+      direction: query.direction,
+      take: 50,
+      cursor: append ? clientNextCursor ?? undefined : undefined
+    });
+    let clientList = append
+      ? mergeClientLookups(clients, page.clients)
+      : page.clients;
+
+    if (nextSelectedClientId !== ""
+      && !clientList.some((client) => client.clientId === nextSelectedClientId)) {
+      const selected = await getClient(nextSelectedClientId);
+      clientList = mergeClientLookups(clientList, [toClientLookup(selected)]);
+    }
+
     setClients(clientList);
+    setClientFilteredCount(page.filteredCount);
+    setClientNextCursor(page.nextCursor ?? null);
 
     if (clientList.length === 0) {
       setSelectedClientId("");
@@ -803,6 +892,8 @@ export function ClientDeskPage() {
       setClientDeployments([]);
       setDeploymentForm(createDefaultDeploymentForm());
       clearCloudProvisioningArtifacts();
+      setCloudOutboxMessages([]);
+      setCloudOutboxSummary(null);
       setLatestPortalInvitation(null);
       setPortalInvitations([]);
       setClientStatement(null);
@@ -833,7 +924,7 @@ export function ClientDeskPage() {
       await loadClientChargeRules(clientId, getActiveContract(clientContracts)?.contractId);
       const loadedAccountingProfile = await loadAccountingProfile(clientId);
       await loadLatestEntitlementSnapshot(clientId);
-      await loadCloudOutboxMessages();
+      await loadCloudOutboxMessages(clientId);
       await loadClientPortalInvitations(clientId, true);
       await hydratePendingJournalSourceOpen(
         clientId,
@@ -1142,9 +1233,19 @@ export function ClientDeskPage() {
     return true;
   }
 
-  async function loadCloudOutboxMessages(): Promise<boolean> {
-    const messages = await listCloudOutboxMessages();
-    setCloudOutboxMessages(messages);
+  async function loadCloudOutboxMessages(
+    clientId = selectedClient?.clientId
+  ): Promise<boolean> {
+    if (clientId === undefined) {
+      setCloudOutboxMessages([]);
+      setCloudOutboxSummary(null);
+
+      return false;
+    }
+
+    const page = await listCloudOutboxMessagePage({ clientId, take: 100 });
+    setCloudOutboxMessages(page.messages);
+    setCloudOutboxSummary(page.summary);
 
     return true;
   }
@@ -1245,7 +1346,7 @@ export function ClientDeskPage() {
     await runClientAction(async () => {
       const createdClient = await createClient(createForm);
       setCreateForm(emptyCreateForm);
-      await loadClientList(createdClient.clientId);
+      await loadClientList(createdClient.clientId, false, clientDirectoryQuery);
       setMessage("Client created.");
     });
   }
@@ -2051,6 +2152,21 @@ export function ClientDeskPage() {
     });
   }
 
+  async function handleLoadMoreClientStatement(register: ClientStatementRegister) {
+    if (selectedClient === null || clientStatement === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const statement = await loadMoreClientStatement(
+        selectedClient.clientId,
+        clientStatement,
+        register
+      );
+      setClientStatement(statement);
+    });
+  }
+
   async function handleRefreshCloudBootstrapPackages() {
     if (selectedClient === null) {
       return;
@@ -2237,6 +2353,7 @@ export function ClientDeskPage() {
           channel: bootstrapPackageHandoffForm.channel,
           recipient: bootstrapPackageHandoffForm.recipient,
           markedBy: bootstrapPackageHandoffForm.markedBy,
+          preflightAcknowledgements: bootstrapPackageHandoffForm.preflightAcknowledgements,
           note: bootstrapPackageHandoffForm.note
         });
       setCloudConnectionState(createCloudConnectionState(
@@ -2369,13 +2486,18 @@ export function ClientDeskPage() {
     return savedDeployment;
   }
 
-  async function handleIssueEntitlementSnapshot() {
+  async function handleIssueEntitlementSnapshot(
+    approvalReason = "Paid invoice and active contract verified in Control Desk."
+  ) {
     if (invoiceDraft === null) {
       return;
     }
 
     await runClientAction(async () => {
-      const snapshot = await issueEntitlementFromPaidInvoiceDefaults(invoiceDraft.invoiceId);
+      const snapshot = await issueEntitlementFromPaidInvoiceDefaults(
+        invoiceDraft.invoiceId,
+        approvalReason
+      );
       setIssuedEntitlementSnapshot(snapshot);
       setLatestEntitlementSnapshot(snapshot);
       setLatestEntitlementSnapshotMissing(false);
@@ -2659,12 +2781,14 @@ export function ClientDeskPage() {
 
   async function handleRefreshContractsCommand() {
     await runClientAction(async () => {
-      const [nextProductModules, nextCatalog] = await Promise.all([
+      const [nextProductModules, nextCatalog, revisions] = await Promise.all([
         listProductModules(),
-        listProductAccessCatalog()
+        listProductAccessCatalog(),
+        listProductCatalogRevisions()
       ]);
       setProductModules(nextProductModules);
       setProductAccessCatalog(nextCatalog);
+      setProductAccessCatalogRevisions(revisions);
 
       if (selectedClient !== null) {
         const nextContracts = await listClientContracts(selectedClient.clientId);
@@ -3058,8 +3182,13 @@ export function ClientDeskPage() {
                   clients={clients}
                   selectedClientId={selectedClientId}
                   isBusy={isBusy}
+                  isLoadingMore={isLoadingMoreClients}
+                  filteredCount={clientFilteredCount}
+                  hasMore={clientNextCursor !== null}
                   onSelect={setSelectedClientId}
                   onRefresh={() => refreshClients()}
+                  onLoadMore={loadMoreClients}
+                  onQueryChange={handleClientDirectoryQuery}
                 />
 
                 <section className="client-window-create" aria-label="Create client">
@@ -3117,6 +3246,7 @@ export function ClientDeskPage() {
                 contracts={contracts}
                 productModules={productModules}
                 accessCatalog={productAccessCatalog}
+                accessCatalogRevisions={productAccessCatalogRevisions}
                 publishedAccessCatalogCommand={publishedAccessCatalogCommand}
                 accessCatalogPublishValue={accessCatalogPublishForm}
                 chargeRules={clientChargeRules}
@@ -3129,6 +3259,7 @@ export function ClientDeskPage() {
                 onAccessCatalogPublishValueChange={setAccessCatalogPublishForm}
                 onRefreshAccessCatalog={handleRefreshProductAccessCatalog}
                 onSaveAccessCatalog={handleSaveProductAccessCatalog}
+                onPublishAccessCatalogRevision={handlePublishProductAccessCatalogRevision}
                 onPublishAccessCatalog={handlePublishProductAccessCatalog}
                 onCreate={handleCreateContract}
                 onReplaceActive={handleReplaceActiveContract}
@@ -3192,7 +3323,8 @@ export function ClientDeskPage() {
             )}
 
             {activeDashboardModule === "payments" && (
-              <PaymentReceiptPanel
+              <>
+                <PaymentReceiptPanel
                 invoiceDraft={invoiceDraft}
                 issuedInvoice={issuedInvoice}
                 initialStep={preferredPaymentStep}
@@ -3218,7 +3350,14 @@ export function ClientDeskPage() {
                 onRejectPayment={handleRejectInvoicePayment}
                 onReversePayment={handleReverseInvoicePayment}
                 onViewJournalEntry={accounting.viewJournalEntryById}
-              />
+                />
+                <PortalPaymentClaimsPanel
+                  clientId={selectedClient?.clientId ?? ""}
+                  cashOrBankAccountId={paymentForm.cashOrBankAccountId}
+                  accountsReceivableAccountId={paymentForm.accountsReceivableAccountId}
+                  postingDate={paymentForm.postingDate}
+                />
+              </>
             )}
 
             {activeDashboardModule === "entitlements" && (
@@ -3260,6 +3399,7 @@ export function ClientDeskPage() {
                   appActivationIssueSearch={appActivationIssueSearch}
                   appActivationRevocationValue={appActivationRevocationForm}
                   outboxMessages={cloudOutboxMessages}
+                  outboxSummary={cloudOutboxSummary}
                   latestOutboxPublish={latestCloudOutboxPublish}
                   auditEvents={cloudAuditEvents}
                   diagnosticsReport={cloudDiagnosticsReport}
@@ -3301,6 +3441,7 @@ export function ClientDeskPage() {
                 statement={clientStatement}
                 isBusy={isBusy || selectedClient === null}
                 onRefresh={handleRefreshClientStatement}
+                onLoadMore={handleLoadMoreClientStatement}
               />
             )}
     </ClientDeskShell>
@@ -3388,6 +3529,7 @@ function createDefaultBootstrapPackageHandoffForm(): CloudBootstrapPackageHandof
     channel: "Secure email",
     recipient: "",
     markedBy: "SafarSuite Control Desk",
+    preflightAcknowledgements: [],
     note: ""
   };
 }
@@ -3426,7 +3568,8 @@ function createDefaultAccessCatalogPublishForm(): PublishProductAccessCatalogCom
   return {
     activationRequestId: "",
     expiresInHours: "2",
-    requestedBy: "Control Desk"
+    requestedBy: "Control Desk",
+    changeReason: "Product definition reviewed for the next published revision."
   };
 }
 
@@ -3745,7 +3888,11 @@ function createDefaultContractForm(
     billingDayOfMonth: "1",
     allowedDevices: "1",
     allowedBranches: "1",
-    moduleCodes: defaultContractModuleCodes(productModules)
+    allowedNamedUsers: "",
+    allowedConcurrentUsers: "",
+    approvalReason: "Commercial terms reviewed and approved in Control Desk.",
+    moduleCodes: defaultContractModuleCodes(productModules),
+    featureLimits: []
   };
 }
 
@@ -4063,6 +4210,17 @@ function getActiveContract(contracts: ClientContract[]): ClientContract | null {
   return contracts.find((contract) => contract.status.toLowerCase() === "active")
     ?? contracts[0]
     ?? null;
+}
+
+function mergeClientLookups(
+  current: ClientLookup[],
+  next: ClientLookup[]
+): ClientLookup[] {
+  const byClientId = new Map(current.map((client) => [client.clientId, client]));
+
+  next.forEach((client) => byClientId.set(client.clientId, client));
+
+  return [...byClientId.values()];
 }
 
 function toClientLookup(client: ClientDetails): ClientLookup {

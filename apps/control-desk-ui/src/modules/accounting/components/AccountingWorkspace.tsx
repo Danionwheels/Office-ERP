@@ -168,6 +168,7 @@ export function AccountingWorkspace({
             accounts={workspace.ledgerAccounts}
             periods={workspace.accountingPeriods}
             entries={workspace.journalEntries}
+            page={workspace.journalEntryPage}
             filters={workspace.journalEntryFilters}
             value={workspace.manualJournalEntryForm}
             manualVoucherPreview={workspace.manualJournalVoucherPreview}
@@ -198,6 +199,7 @@ export function AccountingWorkspace({
             getSourceDocumentLabel={getSourceDocumentLabel}
             getSourceDocumentClientLabel={getSourceDocumentClientLabel}
             onRefresh={() => workspace.refreshJournalEntries()}
+            onLoadMore={workspace.loadMoreJournalEntries}
           />
         )}
 

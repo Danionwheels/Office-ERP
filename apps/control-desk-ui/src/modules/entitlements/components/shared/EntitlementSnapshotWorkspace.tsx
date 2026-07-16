@@ -65,6 +65,13 @@ export function EntitlementSnapshotSummary({
         ))}
       </dl>
 
+      <div className="entitlement-source-note">
+        <BadgeCheck size={14} />
+        <span title={snapshot.approvalReason}>
+          Approved {formatApprovalTime(snapshot.approvedAtUtc)}: {snapshot.approvalReason}
+        </span>
+      </div>
+
       {sourceInvoiceNumber !== null && (
         <div className="entitlement-source-note">
           <BadgeCheck size={14} />
@@ -114,6 +121,40 @@ export function EntitlementModuleRegister({
       </div>
     </div>
   );
+}
+
+export function EntitlementFeatureLimitRegister({
+  featureLimits
+}: {
+  featureLimits: EntitlementSnapshot["featureLimits"];
+}) {
+  if ((featureLimits ?? []).length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="entitlement-feature-limit-register" aria-label="Entitlement feature limits">
+      <header>
+        <span>Feature limits</span>
+        <strong>{featureLimits.length}</strong>
+      </header>
+      <div>
+        {featureLimits.map((limit) => (
+          <span key={`${limit.moduleCode}-${limit.featureCode}`}>
+            <strong>{limit.moduleCode}.{limit.featureCode}</strong>
+            <small>{limit.limitValue} {limit.unit}</small>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatApprovalTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
 }
 
 function EntitlementFactItem({ fact }: { fact: EntitlementFact }) {

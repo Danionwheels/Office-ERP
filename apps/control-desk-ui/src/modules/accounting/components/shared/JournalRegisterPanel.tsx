@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   ClipboardList,
   ExternalLink,
   FileCheck2,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import type {
   JournalEntryFilters,
+  JournalEntryRegisterPage,
   JournalEntrySummary
 } from "../../types/accountingTypes";
 import { journalSourceTypeOptions } from "../../constants/accountingConstants";
@@ -27,6 +29,7 @@ import {
 
 type JournalRegisterPanelProps = {
   entries: JournalEntrySummary[];
+  page: Omit<JournalEntryRegisterPage, "entries">;
   filters: JournalEntryFilters;
   focusedJournalEntryId: string;
   focusedJournalEntry: JournalEntrySummary | null;
@@ -34,6 +37,7 @@ type JournalRegisterPanelProps = {
   reversalPeriodState: PostingPeriodState;
   onFiltersChange: (value: JournalEntryFilters) => void;
   onRefresh: () => Promise<void>;
+  onLoadMore: () => Promise<void>;
   onOpenVoucherEntry: () => void;
   onOpenOpeningBalance: () => void;
   onOpenJournalDetail: (journalEntryId: string) => Promise<void>;
@@ -45,6 +49,7 @@ type JournalRegisterPanelProps = {
 
 export function JournalRegisterPanel({
   entries,
+  page,
   filters,
   focusedJournalEntryId,
   focusedJournalEntry,
@@ -52,6 +57,7 @@ export function JournalRegisterPanel({
   reversalPeriodState,
   onFiltersChange,
   onRefresh,
+  onLoadMore,
   onOpenVoucherEntry,
   onOpenOpeningBalance,
   onOpenJournalDetail,
@@ -282,7 +288,7 @@ export function JournalRegisterPanel({
                           <strong className={`journal-register-status ${entry.status.toLowerCase()}`}>
                             {entry.status}
                           </strong>
-                          <small>{entry.lines.length} lines</small>
+                          <small>{entry.lineCount ?? entry.lines.length} lines</small>
                         </span>
                       </td>
                       <td>
@@ -330,6 +336,20 @@ export function JournalRegisterPanel({
             </tbody>
           </table>
         </div>
+        {page.hasMore && (
+          <div className="journal-register-continuation">
+            <span>{entries.length} / {page.filteredCount}</span>
+            <button
+              className="icon-button"
+              disabled={isBusy}
+              onClick={() => void onLoadMore()}
+              type="button"
+            >
+              <ChevronDown size={15} />
+              Load more
+            </button>
+          </div>
+        )}
       </section>
     </section>
   );

@@ -16,6 +16,7 @@ export type ControlCloudConnectionState = {
 
 export type CloudOutboxMessage = {
   cloudOutboxMessageId: string;
+  clientId: string | null;
   messageType: string;
   subjectType: string;
   subjectId: string;
@@ -28,6 +29,23 @@ export type CloudOutboxMessage = {
   sentAtUtc: string | null;
   failedAtUtc: string | null;
   failureReason: string | null;
+};
+
+export type CloudOutboxMessageRegisterSummary = {
+  totalCount: number;
+  pendingCount: number;
+  failedCount: number;
+  sentCount: number;
+  readyForPublishingCount: number;
+  totalAttemptCount: number;
+};
+
+export type CloudOutboxMessagePage = {
+  messages: CloudOutboxMessage[];
+  pageSize: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+  summary: CloudOutboxMessageRegisterSummary;
 };
 
 export type PublishedCloudOutboxMessage = {
@@ -455,10 +473,22 @@ export type LocalServerBootstrapPackageRegister = {
   packages: LocalServerBootstrapPackageSummary[];
 };
 
+export const SETUP_PREFLIGHT_ACKNOWLEDGEMENT_KEYS = [
+  "docker-target",
+  "clean-target",
+  "trust-custody",
+  "app-runtime-profile",
+  "windows-local-api-tls"
+] as const;
+
+export type SetupPreflightAcknowledgementKey =
+  typeof SETUP_PREFLIGHT_ACKNOWLEDGEMENT_KEYS[number];
+
 export type CloudBootstrapPackageHandoffFormInput = {
   channel: string;
   recipient: string;
   markedBy: string;
+  preflightAcknowledgements: SetupPreflightAcknowledgementKey[];
   note: string;
 };
 
@@ -466,6 +496,7 @@ export type MarkCloudBootstrapPackageHandoffInput = {
   channel: string;
   recipient: string;
   markedBy: string;
+  preflightAcknowledgements: string[];
   note?: string;
 };
 
@@ -478,6 +509,7 @@ export type LocalServerBootstrapPackageHandoff = {
   channel: string;
   recipient: string;
   markedBy: string;
+  preflightAcknowledgements: string[];
   note: string | null;
   markedAtUtc: string;
 };
@@ -686,6 +718,7 @@ export type LocalServerHeartbeat = {
   detail: string | null;
   deploymentProfile?: LocalServerDeploymentProfile | null;
   pairingStatus?: LocalServerPairingStatus | null;
+  entitlementState?: ControlCloudEntitlementStateValues | null;
 };
 
 export type LocalServerPairingStatus = {
@@ -704,6 +737,10 @@ export type ControlCloudInstallationEntitlementStatus = {
   bundleIssueId: string;
   entitlementVersion: number;
   entitlementSnapshotId: string;
+  clientAccessRevisionId: string;
+  contractRevisionNumber: number;
+  productCatalogRevisionId: string;
+  productCatalogRevisionNumber: number;
   issuedAtUtc: string;
   paidUntil: string;
   warningStartsAt: string;
@@ -711,6 +748,57 @@ export type ControlCloudInstallationEntitlementStatus = {
   offlineValidUntil: string;
   keyId: string;
   payloadSha256: string;
+  allowedNamedUsers: number | null;
+  allowedConcurrentUsers: number | null;
+  featureLimitCount: number;
+  effectiveFromUtc: string | null;
+};
+
+export type ControlCloudEntitlementStateModule = {
+  moduleCode: string;
+  isEnabled: boolean;
+};
+
+export type ControlCloudEntitlementStateFeatureLimit = {
+  moduleCode: string;
+  featureCode: string;
+  limitValue: number;
+  unit: string;
+};
+
+export type ControlCloudEntitlementStateValues = {
+  entitlementVersion: number;
+  effectiveFromUtc: string;
+  status: string;
+  paidUntil: string;
+  warningStartsAt: string | null;
+  graceUntil: string;
+  offlineValidUntil: string;
+  allowedDevices: number | null;
+  allowedBranches: number | null;
+  allowedNamedUsers: number | null;
+  allowedConcurrentUsers: number | null;
+  modules: ControlCloudEntitlementStateModule[];
+  featureLimits: ControlCloudEntitlementStateFeatureLimit[];
+};
+
+export type ControlCloudEntitlementDifference = {
+  field: string;
+  desiredValue: string | null;
+  deliveredValue: string | null;
+  observedValue: string | null;
+  state: string;
+  detail: string;
+};
+
+export type ControlCloudEntitlementReconciliation = {
+  evaluatedAtUtc: string;
+  state: string;
+  detail: string;
+  desired: ControlCloudEntitlementStateValues | null;
+  delivered: ControlCloudEntitlementStateValues | null;
+  observed: ControlCloudEntitlementStateValues | null;
+  differences: ControlCloudEntitlementDifference[];
 };
 
 export type ControlCloudInstallationCommandStatus = {
@@ -725,6 +813,14 @@ export type ControlCloudInstallationCommandStatus = {
   latestAcknowledgementDetail: string | null;
 };
 
+export type ControlCloudEntitlementSyncStatus = {
+  desiredVersion: number | null;
+  signedVersion: number | null;
+  observedVersion: number | null;
+  state: "InSync" | "Scheduled" | "SigningPending" | "ApplyPending" | "Ahead" | "Unknown" | string;
+  detail: string;
+};
+
 export type ControlCloudInstallationStatus = {
   clientId: string;
   installationId: string;
@@ -735,5 +831,7 @@ export type ControlCloudInstallationStatus = {
   latestEntitlementVersion: number;
   latestHeartbeat: LocalServerHeartbeat | null;
   latestEntitlement: ControlCloudInstallationEntitlementStatus | null;
+  entitlementSync: ControlCloudEntitlementSyncStatus;
   commandStatus: ControlCloudInstallationCommandStatus;
+  reconciliation: ControlCloudEntitlementReconciliation | null;
 };

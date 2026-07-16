@@ -267,7 +267,13 @@ function getEntitlementReadiness(
   const hasContractMismatch = latestSnapshot.contractId !== contract.contractId;
   const hasLimitMismatch =
     latestSnapshot.allowedDevices !== contract.allowedDevices
-    || latestSnapshot.allowedBranches !== contract.allowedBranches;
+    || latestSnapshot.allowedBranches !== contract.allowedBranches
+    || latestSnapshot.allowedNamedUsers !== contract.allowedNamedUsers
+    || latestSnapshot.allowedConcurrentUsers !== contract.allowedConcurrentUsers
+    || !featureLimitsMatch(
+      latestSnapshot.featureLimits ?? [],
+      contract.featureLimits ?? []
+    );
 
   if (
     !hasContractMismatch
@@ -302,6 +308,17 @@ function getEntitlementReadiness(
     hasLimitMismatch,
     hasContractMismatch
   };
+}
+
+function featureLimitsMatch(
+  left: Array<{ moduleCode: string; featureCode: string; limitValue: number; unit: string }>,
+  right: Array<{ moduleCode: string; featureCode: string; limitValue: number; unit: string }>
+): boolean {
+  const normalize = (limits: typeof left) => limits
+    .map((limit) => `${limit.moduleCode}:${limit.featureCode}:${limit.limitValue}:${limit.unit}`)
+    .sort((first, second) => first.localeCompare(second));
+
+  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
 }
 
 function normalizeOptionalModuleCode(value: string | null | undefined): string | null {

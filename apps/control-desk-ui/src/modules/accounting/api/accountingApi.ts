@@ -13,6 +13,7 @@ import type {
   BalanceSheetFilters,
   ChartOfAccountsImportTextPreview,
   JournalEntryFilters,
+  JournalEntryRegisterPage,
   JournalEntrySourceDocument,
   JournalEntrySummary,
   JournalVoucherNumberPreview,
@@ -66,10 +67,6 @@ type ListAccountingPeriodsResponse = {
 type ListVoucherNumberingRulesResponse = {
   companyCode: string;
   rules: VoucherNumberingRule[];
-};
-
-type ListJournalEntriesResponse = {
-  entries: JournalEntrySummary[];
 };
 
 type LedgerAccountWriteResponse = {
@@ -419,19 +416,29 @@ export async function reopenAccountingPeriod(
 }
 
 export async function listJournalEntries(
-  filters: JournalEntryFilters
-): Promise<JournalEntrySummary[]> {
+  filters: JournalEntryFilters,
+  cursor?: string | null
+): Promise<JournalEntryRegisterPage> {
   const query = new URLSearchParams();
   setQuery(query, "fromDate", filters.fromDate);
   setQuery(query, "toDate", filters.toDate);
   setQuery(query, "sourceType", filters.sourceType);
+  setQuery(query, "search", filters.search ?? "");
+  setQuery(query, "cursor", cursor ?? "");
+  query.set("take", "50");
 
   const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
-  const response = await apiRequest<ListJournalEntriesResponse>(
+  const response = await apiRequest<JournalEntryRegisterPage>(
     `/api/v1/accounting/journal-entries${suffix}`
   );
 
-  return response.entries;
+  return {
+    ...response,
+    entries: response.entries.map((entry) => ({
+      ...entry,
+      lines: entry.lines ?? []
+    }))
+  };
 }
 
 export async function getJournalEntry(journalEntryId: string): Promise<JournalEntrySummary> {

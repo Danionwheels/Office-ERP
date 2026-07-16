@@ -55,6 +55,7 @@ import type {
   BalanceSheetLine,
   ChartOfAccountsImportTextPreview,
   JournalEntryFilters,
+  JournalEntryRegisterPage,
   JournalEntrySourceDocument,
   JournalEntrySummary,
   JournalVoucherNumberPreview,
@@ -171,6 +172,14 @@ export function useAccountingWorkspace({
   const [accountingPeriodCloseJournalPreview, setAccountingPeriodCloseJournalPreview] =
     useState<AccountingPeriodCloseJournalPreview | null>(null);
   const [journalEntries, setJournalEntries] = useState<JournalEntrySummary[]>([]);
+  const [journalEntryPage, setJournalEntryPage] = useState<
+    Omit<JournalEntryRegisterPage, "entries">
+  >({
+    pageSize: 50,
+    hasMore: false,
+    nextCursor: null,
+    filteredCount: 0
+  });
   const [manualJournalVoucherPreview, setManualJournalVoucherPreview] =
     useState<JournalVoucherNumberPreview | null>(null);
   const [focusedJournalEntryId, setFocusedJournalEntryId] = useState("");
@@ -592,9 +601,31 @@ export function useAccountingWorkspace({
 
   async function refreshJournalEntries(filters = journalEntryFilters) {
     await runAction(async () => {
-      const entries = await listJournalEntries(filters);
-      setJournalEntries(entries);
+      const page = await listJournalEntries(filters);
+      applyJournalEntryPage(page);
     });
+  }
+
+  async function loadMoreJournalEntries() {
+    if (!journalEntryPage.hasMore || journalEntryPage.nextCursor === null
+      || journalEntryPage.nextCursor === undefined) {
+      return;
+    }
+
+    await runAction(async () => {
+      const page = await listJournalEntries(journalEntryFilters, journalEntryPage.nextCursor);
+      setJournalEntries((current) => [
+        ...current,
+        ...page.entries.filter((entry) =>
+          !current.some((existing) => existing.journalEntryId === entry.journalEntryId))
+      ]);
+      setJournalEntryPage(toJournalEntryPageState(page));
+    });
+  }
+
+  function applyJournalEntryPage(page: JournalEntryRegisterPage) {
+    setJournalEntries(page.entries);
+    setJournalEntryPage(toJournalEntryPageState(page));
   }
 
   async function refreshTrialBalance(filters = trialBalanceFilters) {
@@ -640,7 +671,7 @@ export function useAccountingWorkspace({
     setTrialBalanceFilters(filters.trialBalanceFilters);
     setProfitAndLossFilters(filters.profitAndLossFilters);
     setBalanceSheetFilters(filters.balanceSheetFilters);
-    setJournalEntries(entries);
+    applyJournalEntryPage(entries);
     setTrialBalance(balance);
     setProfitAndLossStatement(profitAndLoss);
     setBalanceSheet(position);
@@ -1134,7 +1165,7 @@ export function useAccountingWorkspace({
         getBalanceSheet(balanceSheetFilters)
       ]);
 
-      setJournalEntries(entries);
+      applyJournalEntryPage(entries);
       setTrialBalance(balance);
       setProfitAndLossStatement(profitAndLoss);
       setBalanceSheet(position);
@@ -1231,7 +1262,7 @@ export function useAccountingWorkspace({
         getBalanceSheet(balanceSheetFilters)
       ]);
 
-      setJournalEntries(entries);
+      applyJournalEntryPage(entries);
       setTrialBalance(balance);
       setProfitAndLossStatement(profitAndLoss);
       setBalanceSheet(position);
@@ -1263,7 +1294,7 @@ export function useAccountingWorkspace({
         getJournalEntry(result.reversalJournalEntryId)
       ]);
 
-      setJournalEntries(entries);
+      applyJournalEntryPage(entries);
       setTrialBalance(balance);
       setProfitAndLossStatement(profitAndLoss);
       setBalanceSheet(position);
@@ -1309,6 +1340,7 @@ export function useAccountingWorkspace({
     accountingPeriodReadiness,
     accountingPeriodCloseJournalPreview,
     journalEntries,
+    journalEntryPage,
     manualJournalVoucherPreview,
     focusedJournalEntryId,
     focusedJournalEntry,
@@ -1362,6 +1394,7 @@ export function useAccountingWorkspace({
     refreshAccountingPeriods,
     refreshLedgerAccountReconciliation,
     refreshJournalEntries,
+    loadMoreJournalEntries,
     refreshAccountingReports,
     refreshTrialBalance,
     refreshProfitAndLossStatement,
@@ -1556,6 +1589,17 @@ function formatLedgerAccountCodeSuggestionMessage(
   return parentName === ""
     ? `${verb} ${suggestion.displayCode} under ${parentCode}.`
     : `${verb} ${suggestion.displayCode} under ${parentCode} / ${parentName}.`;
+}
+
+function toJournalEntryPageState(
+  page: JournalEntryRegisterPage
+): Omit<JournalEntryRegisterPage, "entries"> {
+  return {
+    pageSize: page.pageSize,
+    hasMore: page.hasMore,
+    nextCursor: page.nextCursor,
+    filteredCount: page.filteredCount
+  };
 }
 
 function toLedgerAccountSaveErrors(caughtError: unknown): ApiErrorItem[] {

@@ -1,17 +1,23 @@
 import {
   CheckCircle2,
   Edit3,
+  GitBranch,
+  History,
   Package,
+  PauseCircle,
+  PlayCircle,
   Plus,
   RefreshCw,
   Save,
   Send,
-  Trash2
+  Trash2,
+  Upload
 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import type {
   ProductAccessCatalog,
   ProductAccessKind,
+  ProductModule,
   ProductModuleGroup,
   ProductResource,
   PublishedProductAccessCatalogCommand,
@@ -20,13 +26,26 @@ import type {
 
 type ProductAccessCatalogPanelProps = {
   catalog: ProductAccessCatalog | null;
+  revisions: ProductAccessCatalog[];
   publishedCommand: PublishedProductAccessCatalogCommand | null;
   value: PublishProductAccessCatalogCommandInput;
   isBusy: boolean;
   onChange: (value: PublishProductAccessCatalogCommandInput) => void;
   onRefresh: () => Promise<void>;
   onSaveCatalog: (catalog: ProductAccessCatalog, requestedBy: string) => Promise<void>;
+  onPublishRevision: () => Promise<void>;
   onPublish: () => Promise<void>;
+};
+
+type ProductModuleFormInput = {
+  moduleCode: string;
+  displayName: string;
+  description: string;
+  commercialMode: string;
+  isActive: boolean;
+  minimumSafarSuiteVersion: string;
+  minimumLocalServerVersion: string;
+  supportedDeploymentModes: string;
 };
 
 type ProductModuleGroupFormInput = {
@@ -51,6 +70,17 @@ const emptyGroupForm: ProductModuleGroupFormInput = {
   moduleCodes: ""
 };
 
+const emptyModuleForm: ProductModuleFormInput = {
+  moduleCode: "",
+  displayName: "",
+  description: "",
+  commercialMode: "PaidAddOn",
+  isActive: true,
+  minimumSafarSuiteVersion: "",
+  minimumLocalServerVersion: "",
+  supportedDeploymentModes: ""
+};
+
 const emptyResourceForm: ProductResourceFormInput = {
   resourceId: "",
   displayName: "",
@@ -61,24 +91,59 @@ const emptyResourceForm: ProductResourceFormInput = {
 
 export function ProductAccessCatalogPanel({
   catalog,
+  revisions,
   publishedCommand,
   value,
   isBusy,
   onChange,
   onRefresh,
   onSaveCatalog,
+  onPublishRevision,
   onPublish
 }: ProductAccessCatalogPanelProps) {
+  const [moduleForm, setModuleForm] = useState<ProductModuleFormInput>(emptyModuleForm);
+  const [editingModuleCode, setEditingModuleCode] = useState("");
   const [groupForm, setGroupForm] = useState<ProductModuleGroupFormInput>(emptyGroupForm);
   const [resourceForm, setResourceForm] = useState<ProductResourceFormInput>(emptyResourceForm);
-  const editableCatalog: ProductAccessCatalog = catalog ?? { moduleGroups: [], resources: [] };
+  const editableCatalog: ProductAccessCatalog = catalog ?? emptyCatalog();
+  const modules = editableCatalog.modules;
   const groups = editableCatalog.moduleGroups;
   const resources = editableCatalog.resources;
-  const moduleCount = countDistinct(groups.flatMap((group) => group.moduleCodes));
+  const moduleCount = modules.length;
 
   async function handlePublish(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await onPublish();
+  }
+
+  async function handleSaveModule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const existing = modules.find((module) => equalsId(module.moduleCode, moduleForm.moduleCode));
+    const module: ProductModule = {
+      moduleCode: moduleForm.moduleCode.trim().toUpperCase(),
+      displayName: moduleForm.displayName.trim(),
+      description: moduleForm.description.trim(),
+      commercialMode: existing?.commercialMode ?? moduleForm.commercialMode,
+      isActive: moduleForm.isActive,
+      billingDefaults: existing?.billingDefaults ?? null,
+      compatibility: {
+        minimumSafarSuiteVersion: nullIfEmpty(moduleForm.minimumSafarSuiteVersion),
+        minimumLocalServerVersion: nullIfEmpty(moduleForm.minimumLocalServerVersion),
+        supportedDeploymentModes: splitValues(moduleForm.supportedDeploymentModes)
+      },
+      referencedBy: existing?.referencedBy ?? []
+    };
+    const nextCatalog = withChangeReason(
+      {
+        ...editableCatalog,
+        modules: upsertById(modules, module, (item) => item.moduleCode, module.moduleCode)
+      },
+      value.changeReason);
+
+    await onSaveCatalog(nextCatalog, requestedBy(value));
+    setModuleForm(emptyModuleForm);
+    setEditingModuleCode("");
   }
 
   async function handleSaveGroup(event: FormEvent<HTMLFormElement>) {
@@ -99,7 +164,7 @@ export function ProductAccessCatalogPanel({
         group.groupId)
     };
 
-    await onSaveCatalog(nextCatalog, requestedBy(value));
+    await onSaveCatalog(withChangeReason(nextCatalog, value.changeReason), requestedBy(value));
     setGroupForm(emptyGroupForm);
   }
 
@@ -123,12 +188,13 @@ export function ProductAccessCatalogPanel({
         resource.resourceId)
     };
 
-    await onSaveCatalog(nextCatalog, requestedBy(value));
+    await onSaveCatalog(withChangeReason(nextCatalog, value.changeReason), requestedBy(value));
     setResourceForm(emptyResourceForm);
   }
 
   async function handleRemoveGroup(groupId: string) {
     const nextCatalog = {
+      ...editableCatalog,
       moduleGroups: groups.filter((group) => !equalsId(group.groupId, groupId)),
       resources: resources.map((resource) => ({
         ...resource,
@@ -136,13 +202,26 @@ export function ProductAccessCatalogPanel({
       }))
     };
 
-    await onSaveCatalog(nextCatalog, requestedBy(value));
+    await onSaveCatalog(withChangeReason(nextCatalog, value.changeReason), requestedBy(value));
+  }
+
+  async function handleSetModuleStatus(moduleCode: string, isActive: boolean) {
+    await onSaveCatalog(
+      withChangeReason(
+        {
+          ...editableCatalog,
+          modules: modules.map((module) =>
+            equalsId(module.moduleCode, moduleCode) ? { ...module, isActive } : module
+          )
+        },
+        value.changeReason),
+      requestedBy(value));
   }
 
   async function handleRemoveResource(resourceId: string) {
     await onSaveCatalog(
       {
-        ...editableCatalog,
+        ...withChangeReason(editableCatalog, value.changeReason),
         resources: resources.filter((resource) => !equalsId(resource.resourceId, resourceId))
       },
       requestedBy(value));
@@ -169,6 +248,37 @@ export function ProductAccessCatalogPanel({
         </div>
       </div>
 
+      {catalog !== null && (
+        <div className="product-catalog-revision-bar">
+          <div>
+            <span className={`status-pill ${catalog.state.toLowerCase()}`}>{catalog.state}</span>
+            <strong>{catalogRevisionLabel(catalog)}</strong>
+            <small>
+              {catalog.changedBy === "" ? "-" : catalog.changedBy}
+              {catalog.changedAtUtc === null ? "" : ` / ${formatDateTime(catalog.changedAtUtc)}`}
+            </small>
+          </div>
+          <label className="form-field product-catalog-reason-field">
+            <span>Change reason</span>
+            <input
+              value={value.changeReason}
+              onChange={(event) => onChange({ ...value, changeReason: event.target.value })}
+              disabled={isBusy}
+            />
+          </label>
+          <button
+            className="icon-button primary"
+            type="button"
+            disabled={isBusy || catalog.state.toLowerCase() !== "draft"}
+            onClick={onPublishRevision}
+            title="Publish immutable catalog revision"
+          >
+            <Upload size={16} />
+            Publish revision
+          </button>
+        </div>
+      )}
+
       <div className="product-access-summary-grid">
         <ProductAccessSummaryCard label="Groups" value={groups.length.toString()} />
         <ProductAccessSummaryCard label="Resources" value={resources.length.toString()} />
@@ -176,6 +286,103 @@ export function ProductAccessCatalogPanel({
       </div>
 
       <div className="product-access-editor-grid">
+        <form className="product-access-edit-form" onSubmit={handleSaveModule}>
+          <div className="product-access-section-heading">
+            <span>Commercial module</span>
+            <strong>{moduleForm.moduleCode.trim() === "" ? "New" : "Edit"}</strong>
+          </div>
+          <label className="form-field">
+            <span>Module code</span>
+            <input
+              value={moduleForm.moduleCode}
+              onChange={(event) => setModuleForm({ ...moduleForm, moduleCode: event.target.value })}
+              disabled={isBusy}
+              readOnly={editingModuleCode !== ""}
+            />
+          </label>
+          <label className="form-field">
+            <span>Description</span>
+            <textarea
+              maxLength={1000}
+              rows={2}
+              value={moduleForm.description}
+              onChange={(event) => setModuleForm({ ...moduleForm, description: event.target.value })}
+              disabled={isBusy}
+            />
+          </label>
+          <label className="form-field">
+            <span>Name</span>
+            <input
+              value={moduleForm.displayName}
+              onChange={(event) => setModuleForm({ ...moduleForm, displayName: event.target.value })}
+              disabled={isBusy}
+            />
+          </label>
+          <label className="form-field">
+            <span>Commercial mode</span>
+            <select
+              value={moduleForm.commercialMode}
+              onChange={(event) => setModuleForm({ ...moduleForm, commercialMode: event.target.value })}
+              disabled={isBusy || editingModuleCode !== ""}
+            >
+              <option value="IncludedForAll">Included for all</option>
+              <option value="PaidAddOn">Paid add-on</option>
+            </select>
+          </label>
+          <label className="checkbox-field product-catalog-active-field">
+            <input
+              type="checkbox"
+              checked={moduleForm.isActive}
+              onChange={(event) => setModuleForm({ ...moduleForm, isActive: event.target.checked })}
+              disabled={isBusy}
+            />
+            <span>Active</span>
+          </label>
+          <label className="form-field">
+            <span>Minimum SafarSuite</span>
+            <input
+              value={moduleForm.minimumSafarSuiteVersion}
+              onChange={(event) => setModuleForm({ ...moduleForm, minimumSafarSuiteVersion: event.target.value })}
+              disabled={isBusy}
+            />
+          </label>
+          <label className="form-field">
+            <span>Minimum local server</span>
+            <input
+              value={moduleForm.minimumLocalServerVersion}
+              onChange={(event) => setModuleForm({ ...moduleForm, minimumLocalServerVersion: event.target.value })}
+              disabled={isBusy}
+            />
+          </label>
+          <label className="form-field">
+            <span>Deployment modes</span>
+            <textarea
+              className="product-access-textarea"
+              rows={2}
+              value={moduleForm.supportedDeploymentModes}
+              onChange={(event) => setModuleForm({ ...moduleForm, supportedDeploymentModes: event.target.value })}
+              disabled={isBusy}
+            />
+          </label>
+          <div className="product-access-form-actions">
+            <button
+              className="mini-button"
+              type="button"
+              onClick={() => {
+                setModuleForm(emptyModuleForm);
+                setEditingModuleCode("");
+              }}
+            >
+              <Plus size={13} />
+              New
+            </button>
+            <button className="mini-button" type="submit" disabled={isBusy}>
+              <Save size={13} />
+              Save draft
+            </button>
+          </div>
+        </form>
+
         <form className="product-access-edit-form" onSubmit={handleSaveGroup}>
           <div className="product-access-section-heading">
             <span>Module group</span>
@@ -297,6 +504,10 @@ export function ProductAccessCatalogPanel({
         </form>
       </div>
 
+      <div className="product-access-section-heading product-access-delivery-heading">
+        <span>Server delivery</span>
+        <strong>Published revision only</strong>
+      </div>
       <form className="product-access-publish-form" onSubmit={handlePublish}>
         <label className="form-field">
           <span>Activation request id</span>
@@ -329,10 +540,10 @@ export function ProductAccessCatalogPanel({
           className="icon-button primary product-access-publish-button"
           type="submit"
           disabled={isBusy}
-          title="Publish catalog command"
+          title="Send published catalog to server"
         >
           <Send size={16} />
-          Publish
+          Send to server
         </button>
       </form>
 
@@ -343,6 +554,27 @@ export function ProductAccessCatalogPanel({
         </div>
       ) : (
         <div className="product-access-layout">
+          <section className="product-access-list-panel" aria-label="Commercial modules">
+            <div className="product-access-section-heading">
+              <span>Commercial modules</span>
+              <strong>{modules.length}</strong>
+            </div>
+            <div className="product-access-list">
+              {modules.map((module) => (
+                <ProductModuleItem
+                  module={module}
+                  key={module.moduleCode}
+                  isBusy={isBusy}
+                  onEdit={() => {
+                    setModuleForm(toModuleForm(module));
+                    setEditingModuleCode(module.moduleCode);
+                  }}
+                  onStatusChange={() => handleSetModuleStatus(module.moduleCode, !module.isActive)}
+                />
+              ))}
+            </div>
+          </section>
+
           <section className="product-access-list-panel" aria-label="Module groups">
             <div className="product-access-section-heading">
               <span>Module groups</span>
@@ -380,6 +612,35 @@ export function ProductAccessCatalogPanel({
           </section>
         </div>
       )}
+
+      <section className="product-catalog-history" aria-label="Published catalog history">
+        <div className="product-access-section-heading">
+          <span>Published history</span>
+          <strong>{revisions.length}</strong>
+        </div>
+        {revisions.length === 0 ? (
+          <div className="client-empty-state product-access-empty-state">
+            <History size={18} />
+            <span>No published revisions</span>
+          </div>
+        ) : (
+          <div className="product-catalog-history-list">
+            {revisions.map((revision) => (
+              <article
+                className="product-catalog-history-item"
+                key={revision.catalogRevisionId ?? `revision-${revision.revisionNumber ?? "unknown"}`}
+              >
+                <GitBranch size={15} />
+                <span>
+                  <strong>Revision #{revision.revisionNumber ?? "-"}</strong>
+                  <small>{revision.changeReason || "No change reason recorded"}</small>
+                </span>
+                <em>{revision.changedAtUtc === null ? "-" : formatDateTime(revision.changedAtUtc)}</em>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       {publishedCommand !== null && (
         <section className="product-access-command-result">
@@ -427,6 +688,72 @@ function ProductAccessSummaryCard({ label, value }: { label: string; value: stri
         <strong>{value}</strong>
         <small>{label}</small>
       </span>
+    </article>
+  );
+}
+
+function ProductModuleItem({
+  module,
+  isBusy,
+  onEdit,
+  onStatusChange
+}: {
+  module: ProductModule;
+  isBusy: boolean;
+  onEdit: () => void;
+  onStatusChange: () => void;
+}) {
+  const compatibility = module.compatibility ?? {
+    minimumSafarSuiteVersion: null,
+    minimumLocalServerVersion: null,
+    supportedDeploymentModes: []
+  };
+
+  return (
+    <article className="product-access-item">
+      <header>
+        <span>
+          <strong>{module.displayName}</strong>
+          <small>{module.moduleCode}</small>
+        </span>
+        <em className={`product-access-kind ${module.isActive ? "coreincluded" : "public"}`}>
+          {module.isActive ? "Active" : "Inactive"}
+        </em>
+      </header>
+      <dl className="product-access-resource-facts">
+        <div>
+          <dt>Commercial</dt>
+          <dd>{formatAccessKind(module.commercialMode)}</dd>
+        </div>
+        <div>
+          <dt>SafarSuite</dt>
+          <dd>{compatibility.minimumSafarSuiteVersion || "Any"}</dd>
+        </div>
+        <div>
+          <dt>Local server</dt>
+          <dd>{compatibility.minimumLocalServerVersion || "Any"}</dd>
+        </div>
+        <div>
+          <dt>Deployments</dt>
+          <dd>{joinValues(compatibility.supportedDeploymentModes)}</dd>
+        </div>
+      </dl>
+      {module.billingDefaults !== null && module.billingDefaults !== undefined && (
+        <p>
+          {module.billingDefaults.chargeCode} / {module.billingDefaults.currencyCode}{" "}
+          {module.billingDefaults.defaultUnitPriceAmount.toLocaleString()}
+        </p>
+      )}
+      <div className="product-access-item-actions">
+        <button className="mini-button" type="button" disabled={isBusy} onClick={onEdit}>
+          <Edit3 size={13} />
+          Edit
+        </button>
+        <button className="mini-button" type="button" disabled={isBusy} onClick={onStatusChange}>
+          {module.isActive ? <PauseCircle size={13} /> : <PlayCircle size={13} />}
+          {module.isActive ? "Deactivate" : "Activate"}
+        </button>
+      </div>
     </article>
   );
 }
@@ -527,6 +854,25 @@ function toGroupForm(group: ProductModuleGroup): ProductModuleGroupFormInput {
   };
 }
 
+function toModuleForm(module: ProductModule): ProductModuleFormInput {
+  const compatibility = module.compatibility ?? {
+    minimumSafarSuiteVersion: null,
+    minimumLocalServerVersion: null,
+    supportedDeploymentModes: []
+  };
+
+  return {
+    moduleCode: module.moduleCode,
+    displayName: module.displayName,
+    description: module.description,
+    commercialMode: module.commercialMode,
+    isActive: module.isActive,
+    minimumSafarSuiteVersion: compatibility.minimumSafarSuiteVersion ?? "",
+    minimumLocalServerVersion: compatibility.minimumLocalServerVersion ?? "",
+    supportedDeploymentModes: compatibility.supportedDeploymentModes.join(", ")
+  };
+}
+
 function toResourceForm(resource: ProductResource): ProductResourceFormInput {
   return {
     resourceId: resource.resourceId,
@@ -541,6 +887,47 @@ function requestedBy(value: PublishProductAccessCatalogCommandInput): string {
   const normalized = value.requestedBy.trim();
 
   return normalized === "" ? "Control Desk" : normalized;
+}
+
+function withChangeReason(
+  catalog: ProductAccessCatalog,
+  changeReason: string
+): ProductAccessCatalog {
+  return {
+    ...catalog,
+    changeReason: changeReason.trim()
+  };
+}
+
+function nullIfEmpty(value: string): string | null {
+  const normalized = value.trim();
+  return normalized === "" ? null : normalized;
+}
+
+function catalogRevisionLabel(catalog: ProductAccessCatalog): string {
+  if (catalog.state.toLowerCase() === "draft") {
+    return `Draft from revision #${catalog.baseCatalogRevisionNumber ?? "-"}`;
+  }
+
+  return `Revision #${catalog.revisionNumber ?? "-"}`;
+}
+
+function emptyCatalog(): ProductAccessCatalog {
+  return {
+    state: "Published",
+    catalogRevisionId: null,
+    revisionNumber: null,
+    supersedesCatalogRevisionId: null,
+    draftId: null,
+    baseCatalogRevisionId: null,
+    baseCatalogRevisionNumber: null,
+    changeReason: "",
+    changedBy: "",
+    changedAtUtc: null,
+    modules: [],
+    moduleGroups: [],
+    resources: []
+  };
 }
 
 function upsertById<T>(
@@ -576,10 +963,6 @@ function splitValues(value: string): string[] {
 
 function equalsId(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
-}
-
-function countDistinct(values: string[]): number {
-  return new Set(values.map((value) => value.trim()).filter((value) => value !== "")).size;
 }
 
 function joinValues(values: string[]): string {

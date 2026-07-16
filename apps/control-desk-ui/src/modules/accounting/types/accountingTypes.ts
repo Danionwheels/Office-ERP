@@ -433,6 +433,15 @@ export type JournalEntrySummary = {
   totalDebit: number;
   totalCredit: number;
   lines: JournalEntryLine[];
+  lineCount?: number;
+};
+
+export type JournalEntryRegisterPage = {
+  entries: JournalEntrySummary[];
+  pageSize: number;
+  hasMore: boolean;
+  nextCursor?: string | null;
+  filteredCount: number;
 };
 
 export type JournalEntrySourceDocument = {
@@ -482,6 +491,7 @@ export type JournalEntryFilters = {
   fromDate: string;
   toDate: string;
   sourceType: string;
+  search?: string;
 };
 
 export type JournalVoucherNumberPreview = {

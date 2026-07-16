@@ -1,6 +1,7 @@
 import type {
   CloudAppActivationTokenFormInput,
   CloudOutboxMessage,
+  CloudOutboxMessageRegisterSummary,
   ControlCloudConnectionState,
   IssuedSafarSuiteAppActivationToken
 } from "../types/controlCloudTypes";
@@ -350,7 +351,20 @@ export function cloudConnectionStatusClass(state: ControlCloudConnectionState): 
   }
 }
 
-export function getCloudOutboxCounts(messages: CloudOutboxMessage[]) {
+export function getCloudOutboxCounts(
+  messages: CloudOutboxMessage[],
+  summary?: CloudOutboxMessageRegisterSummary | null
+) {
+  if (summary !== undefined && summary !== null) {
+    return {
+      pending: summary.pendingCount,
+      failed: summary.failedCount,
+      sent: summary.sentCount,
+      ready: summary.readyForPublishingCount,
+      attempts: summary.totalAttemptCount
+    };
+  }
+
   const now = Date.now();
 
   return messages.reduce(

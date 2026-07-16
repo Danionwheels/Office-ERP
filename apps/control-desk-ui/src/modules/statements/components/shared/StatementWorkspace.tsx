@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import {
   BookOpenCheck,
   CalendarDays,
@@ -321,8 +320,7 @@ export function StatementJournalPostingRegister({ statement }: { statement: Clie
           <StatementEmptyRow colSpan={7} message="No journal postings" />
         ) : (
           statement.journalPostings.map((posting) => (
-            <Fragment key={posting.journalEntryId}>
-              <tr className={isBalancedPosting(posting) ? "ready" : "warning"}>
+              <tr className={isBalancedPosting(posting) ? "ready" : "warning"} key={posting.journalEntryId}>
                 <td>{formatDate(posting.entryDate)}</td>
                 <td>
                   <span className="statement-source-cell">
@@ -343,42 +341,8 @@ export function StatementJournalPostingRegister({ statement }: { statement: Clie
                 </td>
                 <td className="numeric">{formatMoney(posting.totalDebit, posting.currencyCode)}</td>
                 <td className="numeric">{formatMoney(posting.totalCredit, posting.currencyCode)}</td>
-                <td>{posting.lines.length} lines</td>
+                <td>{posting.lineCount} lines</td>
               </tr>
-              <tr className="statement-journal-lines-row">
-                <td colSpan={7}>
-                  {posting.lines.length === 0 ? (
-                    <span className="statement-journal-empty">No debit/credit lines</span>
-                  ) : (
-                    <table
-                      className="statement-journal-lines-table"
-                      aria-label={`Journal lines for ${posting.sourceReference ?? posting.journalEntryId}`}
-                    >
-                      <thead>
-                        <tr>
-                          <th>Account</th>
-                          <th>Description</th>
-                          <th className="numeric">Debit</th>
-                          <th className="numeric">Credit</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {posting.lines.map((line, index) => (
-                          <tr key={`${posting.journalEntryId}-${line.ledgerAccountId}-${index}`}>
-                            <td>
-                              <StatementJournalAccountCell line={line} />
-                            </td>
-                            <td>{line.description?.trim() === "" || line.description === null || line.description === undefined ? "-" : line.description}</td>
-                            <td className="numeric">{line.debit === 0 ? "-" : formatMoney(line.debit, posting.currencyCode)}</td>
-                            <td className="numeric">{line.credit === 0 ? "-" : formatMoney(line.credit, posting.currencyCode)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </td>
-              </tr>
-            </Fragment>
           ))
         )}
       </tbody>
@@ -399,33 +363,6 @@ function StatementEmptyRow({
         <span>{message}</span>
       </td>
     </tr>
-  );
-}
-
-function StatementJournalAccountCell({
-  line
-}: {
-  line: ClientStatement["journalPostings"][number]["lines"][number];
-}) {
-  const accountCode = cleanOptional(line.ledgerAccountCode) ?? shortId(line.ledgerAccountId);
-  const accountName = cleanOptional(line.ledgerAccountName) ?? "Ledger account";
-  const meta = [
-    cleanOptional(line.ledgerAccountType),
-    cleanOptional(line.ledgerAccountLevel),
-    line.isPostingAccount === null || line.isPostingAccount === undefined
-      ? null
-      : line.isPostingAccount
-        ? "Posting"
-        : "Non-posting",
-    cleanOptional(line.ledgerAccountStatus)
-  ].filter((item): item is string => item !== null);
-
-  return (
-    <span className="statement-account-cell">
-      <strong>{accountCode}</strong>
-      <small>{accountName}</small>
-      {meta.length > 0 && <em>{meta.join(" / ")}</em>}
-    </span>
   );
 }
 

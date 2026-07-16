@@ -10,6 +10,7 @@ import type {
   CloudBootstrapPackageHandoffFormInput,
   CloudInstallationSupportCommandFormInput,
   CloudOutboxMessage,
+  CloudOutboxMessageRegisterSummary,
   ControlCloudAuditEvent,
   ControlCloudConnectionState,
   ControlCloudInstallationStatus,
@@ -48,6 +49,7 @@ export type CloudInstallationStatusPanelProps = {
   appActivationIssueSearch: string;
   appActivationRevocationValue: CloudAppActivationRevocationFormInput;
   outboxMessages: CloudOutboxMessage[];
+  outboxSummary: CloudOutboxMessageRegisterSummary | null;
   latestOutboxPublish: PublishCloudOutboxMessagesResult | null;
   auditEvents: ControlCloudAuditEvent[];
   diagnosticsReport: LocalServerDiagnosticReport | null;
