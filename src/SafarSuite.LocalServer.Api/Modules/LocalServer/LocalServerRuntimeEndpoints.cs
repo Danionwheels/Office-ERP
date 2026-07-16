@@ -50,6 +50,21 @@ public static class LocalServerRuntimeEndpoints
         group.MapGet("/pairing/descriptor", GetPairingDescriptorAsync)
             .WithName("GetLocalServerPairingDescriptor");
 
+        group.MapGet("/pairing/security-events", ListPairingSecurityEventsAsync)
+            .WithName("ListLocalServerPairingSecurityEvents");
+
+        group.MapGet("/pairing/abuse-summary", GetPairingAbuseSummaryAsync)
+            .WithName("GetLocalServerPairingAbuseSummary");
+
+        group.MapPost("/pairing/abuse-sources/{sourceKey}/quarantine", QuarantinePairingAbuseSourceAsync)
+            .WithName("QuarantineLocalServerPairingAbuseSource");
+
+        group.MapPost("/pairing/abuse-sources/{sourceKey}/deny", DenyPairingAbuseSourceAsync)
+            .WithName("DenyLocalServerPairingAbuseSource");
+
+        group.MapPost("/pairing/abuse-sources/{sourceKey}/release", ReleasePairingAbuseSourceAsync)
+            .WithName("ReleaseLocalServerPairingAbuseSource");
+
         group.MapPost("/device-credentials/verify", VerifyDeviceCredentialAsync)
             .WithName("VerifyLocalServerDeviceCredential");
 
@@ -95,15 +110,29 @@ public static class LocalServerRuntimeEndpoints
         group.MapGet("/modules/{moduleCode}/access", EvaluateModuleAccessFromBootstrapAsync)
             .WithName("EvaluateLocalServerModuleAccessFromBootstrap");
 
+        group.MapGet("/limits", GetEntitlementLimitsAsync)
+            .WithName("GetLocalServerEntitlementLimits");
+
         return endpoints;
     }
 
     private static async Task<IResult> GetPairingDiscoveryAsync(
         HttpRequest httpRequest,
         LocalServerPairingOptions pairingOptions,
+        LocalServerPairingAbuseControlService abuseControls,
         ILocalServerBootstrapConfigurationStore configurationStore,
         CancellationToken cancellationToken)
     {
+        var guard = await abuseControls.GuardAsync(
+            httpRequest,
+            LocalServerPairingAbuseEndpointGroups.Discovery,
+            cancellationToken);
+
+        if (guard.Failure is not null)
+        {
+            return guard.Failure;
+        }
+
         var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
         var generatedAtUtc = DateTimeOffset.UtcNow;
 
@@ -130,10 +159,21 @@ public static class LocalServerRuntimeEndpoints
         HttpRequest httpRequest,
         LocalServerPairingHelloRequest request,
         LocalServerPairingOptions pairingOptions,
+        LocalServerPairingAbuseControlService abuseControls,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerEntitlementCache entitlementCache,
         CancellationToken cancellationToken)
     {
+        var guard = await abuseControls.GuardAsync(
+            httpRequest,
+            LocalServerPairingAbuseEndpointGroups.PairingHello,
+            cancellationToken);
+
+        if (guard.Failure is not null)
+        {
+            return guard.Failure;
+        }
+
         var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
 
         if (configuration is null)
@@ -191,12 +231,25 @@ public static class LocalServerRuntimeEndpoints
     }
 
     private static async Task<IResult> CreateDevicePairingRequestAsync(
+        HttpRequest httpRequest,
         LocalServerDevicePairingRequest request,
         LocalServerPairingOptions pairingOptions,
+        LocalServerPairingAbuseControlOptions abuseOptions,
+        LocalServerPairingAbuseControlService abuseControls,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
         CancellationToken cancellationToken)
     {
+        var guard = await abuseControls.GuardAsync(
+            httpRequest,
+            LocalServerPairingAbuseEndpointGroups.PairingRequest,
+            cancellationToken);
+
+        if (guard.Failure is not null)
+        {
+            return guard.Failure;
+        }
+
         var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
 
         if (configuration is null)
@@ -252,17 +305,41 @@ public static class LocalServerRuntimeEndpoints
         }
 
         var devicePublicKeySha256 = Sha256Hex(devicePublicKey);
-        var existing = (await pairingStore.ListAsync(cancellationToken))
+        var requestedAtUtc = request.RequestedAtUtc ?? DateTimeOffset.UtcNow;
+        var existingRecords = await pairingStore.ListAsync(cancellationToken);
+        var existing = existingRecords
             .FirstOrDefault(record => record.IsActiveRequestForPublicKey(
-                configuration.InstallationId,
-                devicePublicKeySha256));
+                    configuration.InstallationId,
+                    devicePublicKeySha256)
+                && (record.ExpiresAtUtc is null || record.ExpiresAtUtc > requestedAtUtc));
 
         if (existing is not null)
         {
-            return Results.Ok(ToPairingRequestResponse(existing));
+            await abuseControls.RecordDuplicateCoalescedAsync(
+                guard,
+                existing.PairingRequestId,
+                existing.DeviceId,
+                request.DeviceFingerprintHash,
+                cancellationToken);
+
+            return Results.Ok(ToPairingRequestResponse(existing, coalesced: true));
         }
 
-        var requestedAtUtc = request.RequestedAtUtc ?? DateTimeOffset.UtcNow;
+        var pendingQueueLimit = Math.Clamp(abuseOptions.PendingQueueMaxRecords, 1, 100000);
+        var activePendingCount = existingRecords.Count(record =>
+            string.Equals(record.InstallationId, configuration.InstallationId, StringComparison.Ordinal)
+            && string.Equals(record.DeviceStatus, LocalServerDevicePairingRecordStatuses.Pending, StringComparison.Ordinal)
+            && (record.ExpiresAtUtc is null || record.ExpiresAtUtc > requestedAtUtc));
+
+        if (activePendingCount >= pendingQueueLimit)
+        {
+            return await abuseControls.RejectPendingQueueFullAsync(
+                httpRequest,
+                guard,
+                request.DeviceFingerprintHash,
+                cancellationToken);
+        }
+
         var record = new LocalServerDevicePairingRecord(
             PairingRequestId: Guid.NewGuid(),
             DeviceId: Guid.NewGuid(),
@@ -291,10 +368,22 @@ public static class LocalServerRuntimeEndpoints
     }
 
     private static async Task<IResult> GetDevicePairingRequestAsync(
+        HttpRequest httpRequest,
         Guid pairingRequestId,
+        LocalServerPairingAbuseControlService abuseControls,
         ILocalServerDevicePairingStore pairingStore,
         CancellationToken cancellationToken)
     {
+        var guard = await abuseControls.GuardAsync(
+            httpRequest,
+            LocalServerPairingAbuseEndpointGroups.PairingStatus,
+            cancellationToken);
+
+        if (guard.Failure is not null)
+        {
+            return guard.Failure;
+        }
+
         var record = await pairingStore.GetByPairingRequestIdAsync(
             pairingRequestId,
             cancellationToken);
@@ -305,18 +394,35 @@ public static class LocalServerRuntimeEndpoints
     }
 
     private static async Task<IResult> ImportFirstManagerSetupTokenAsync(
+        HttpRequest httpRequest,
         LocalServerSignedFirstManagerSetupTokenResponse? request,
+        LocalServerPairingAbuseControlService abuseControls,
         ILocalServerFirstManagerSetupTokenVerifier verifier,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
         ILocalServerDeviceCredentialService deviceCredentialService,
         CancellationToken cancellationToken)
     {
+        var guard = await abuseControls.GuardAsync(
+            httpRequest,
+            LocalServerPairingAbuseEndpointGroups.FirstManagerTokenImport,
+            cancellationToken);
+
+        if (guard.Failure is not null)
+        {
+            return guard.Failure;
+        }
+
         var importedAtUtc = DateTimeOffset.UtcNow;
         var verification = verifier.Verify(request, importedAtUtc);
 
         if (!verification.IsSuccess)
         {
+            await abuseControls.RecordFirstManagerTokenRejectedAsync(
+                httpRequest,
+                verification.FailureCode,
+                cancellationToken);
+
             return ToFailureResult(verification.FailureCode, verification.Detail);
         }
 
@@ -453,13 +559,25 @@ public static class LocalServerRuntimeEndpoints
     }
 
     private static async Task<IResult> CreateManagerSessionAsync(
+        HttpRequest httpRequest,
         CreateLocalServerManagerSessionRequest? request,
+        LocalServerPairingAbuseControlService abuseControls,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
         LocalServerManagerSessionService managerSessionService,
         ILocalServerDeviceCredentialService deviceCredentialService,
         CancellationToken cancellationToken)
     {
+        var guard = await abuseControls.GuardAsync(
+            httpRequest,
+            LocalServerPairingAbuseEndpointGroups.ManagerSession,
+            cancellationToken);
+
+        if (guard.Failure is not null)
+        {
+            return guard.Failure;
+        }
+
         if (request is null)
         {
             return ToFailureResult(
@@ -489,6 +607,12 @@ public static class LocalServerRuntimeEndpoints
 
         if (!credentialVerification.IsSuccess)
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.ManagerSession,
+                credentialVerification.FailureCode,
+                cancellationToken);
+
             return ToFailureResult(
                 credentialVerification.FailureCode,
                 credentialVerification.Detail);
@@ -528,6 +652,12 @@ public static class LocalServerRuntimeEndpoints
             || !credentialMatch.IsMatch
             || !string.Equals(device.DevicePublicKeySha256, payload.DevicePublicKeySha256, StringComparison.Ordinal))
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.ManagerSession,
+                "ManagerDeviceCredentialsInvalid",
+                cancellationToken);
+
             return ToFailureResult(
                 "ManagerDeviceCredentialsInvalid",
                 "Manager device credentials are invalid.");
@@ -616,14 +746,217 @@ public static class LocalServerRuntimeEndpoints
         });
     }
 
+    private static async Task<IResult> ListPairingSecurityEventsAsync(
+        HttpRequest httpRequest,
+        int? take,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        ILocalServerPairingSecurityEventStore securityEventStore,
+        LocalServerPairingAbuseControlOptions abuseOptions,
+        LocalServerManagerSessionService managerSessionService,
+        CancellationToken cancellationToken)
+    {
+        var session = await AuthorizeManagerSessionAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            managerSessionService,
+            cancellationToken);
+
+        if (session.Failure is not null)
+        {
+            return session.Failure;
+        }
+
+        var readLimit = Math.Clamp(
+            take ?? abuseOptions.SecurityEventReadLimit,
+            1,
+            Math.Clamp(abuseOptions.SecurityEventReadLimit, 1, 1000));
+        var events = (await securityEventStore.ListEventsAsync(readLimit, cancellationToken))
+            .Select(ToPairingSecurityEventResponse)
+            .ToArray();
+
+        return Results.Ok(new LocalServerPairingSecurityEventsResponse(events));
+    }
+
+    private static async Task<IResult> GetPairingAbuseSummaryAsync(
+        HttpRequest httpRequest,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        ILocalServerPairingSecurityEventStore securityEventStore,
+        LocalServerPairingAbuseControlOptions abuseOptions,
+        LocalServerManagerSessionService managerSessionService,
+        CancellationToken cancellationToken)
+    {
+        var session = await AuthorizeManagerSessionAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            managerSessionService,
+            cancellationToken);
+
+        if (session.Failure is not null)
+        {
+            return session.Failure;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var events = (await securityEventStore.ListEventsAsync(
+            Math.Clamp(abuseOptions.SecurityEventMaxRecords, 100, 100000),
+            cancellationToken)).ToArray();
+        var sourceDecisions = await securityEventStore.ListSourceDecisionsAsync(cancellationToken);
+        var activeSourceDecisions = sourceDecisions
+            .GroupBy(decision => decision.SourceKey, StringComparer.Ordinal)
+            .Select(group => group.OrderByDescending(decision => decision.CreatedAtUtc).First())
+            .Where(decision => LocalServerPairingAbuseControlService.IsSourceDecisionActive(decision, now))
+            .Select(decision => ToPairingAbuseSourceDecisionResponse(decision, now))
+            .ToArray();
+
+        return Results.Ok(new LocalServerPairingAbuseSummaryResponse(
+            TotalEventCount: events.Length,
+            ActiveSourceDecisionCount: activeSourceDecisions.Length,
+            RateLimitedEventCount: events.Count(eventRecord => string.Equals(
+                eventRecord.EventType,
+                LocalServerPairingSecurityEventTypes.RateLimited,
+                StringComparison.Ordinal)),
+            RequestTooLargeEventCount: events.Count(eventRecord => string.Equals(
+                eventRecord.EventType,
+                LocalServerPairingSecurityEventTypes.RequestTooLarge,
+                StringComparison.Ordinal)),
+            DuplicateCoalescedEventCount: events.Count(eventRecord => string.Equals(
+                eventRecord.EventType,
+                LocalServerPairingSecurityEventTypes.DuplicateCoalesced,
+                StringComparison.Ordinal)),
+            PendingQueueFullEventCount: events.Count(eventRecord => string.Equals(
+                eventRecord.EventType,
+                LocalServerPairingSecurityEventTypes.PendingQueueFull,
+                StringComparison.Ordinal)),
+            LastEventAtUtc: events
+                .OrderByDescending(eventRecord => eventRecord.OccurredAtUtc)
+                .FirstOrDefault()
+                ?.OccurredAtUtc,
+            ActiveSourceDecisions: activeSourceDecisions));
+    }
+
+    private static Task<IResult> QuarantinePairingAbuseSourceAsync(
+        HttpRequest httpRequest,
+        string sourceKey,
+        ChangeLocalServerPairingAbuseSourceRequest? request,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        LocalServerPairingAbuseControlService abuseControls,
+        LocalServerManagerSessionService managerSessionService,
+        CancellationToken cancellationToken)
+    {
+        return ChangePairingAbuseSourceAsync(
+            httpRequest,
+            sourceKey,
+            LocalServerPairingAbuseActions.Quarantine,
+            request,
+            configurationStore,
+            pairingStore,
+            abuseControls,
+            managerSessionService,
+            cancellationToken);
+    }
+
+    private static Task<IResult> DenyPairingAbuseSourceAsync(
+        HttpRequest httpRequest,
+        string sourceKey,
+        ChangeLocalServerPairingAbuseSourceRequest? request,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        LocalServerPairingAbuseControlService abuseControls,
+        LocalServerManagerSessionService managerSessionService,
+        CancellationToken cancellationToken)
+    {
+        return ChangePairingAbuseSourceAsync(
+            httpRequest,
+            sourceKey,
+            LocalServerPairingAbuseActions.Deny,
+            request,
+            configurationStore,
+            pairingStore,
+            abuseControls,
+            managerSessionService,
+            cancellationToken);
+    }
+
+    private static Task<IResult> ReleasePairingAbuseSourceAsync(
+        HttpRequest httpRequest,
+        string sourceKey,
+        ChangeLocalServerPairingAbuseSourceRequest? request,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        LocalServerPairingAbuseControlService abuseControls,
+        LocalServerManagerSessionService managerSessionService,
+        CancellationToken cancellationToken)
+    {
+        return ChangePairingAbuseSourceAsync(
+            httpRequest,
+            sourceKey,
+            LocalServerPairingAbuseActions.Release,
+            request,
+            configurationStore,
+            pairingStore,
+            abuseControls,
+            managerSessionService,
+            cancellationToken);
+    }
+
+    private static async Task<IResult> ChangePairingAbuseSourceAsync(
+        HttpRequest httpRequest,
+        string sourceKey,
+        string action,
+        ChangeLocalServerPairingAbuseSourceRequest? request,
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerDevicePairingStore pairingStore,
+        LocalServerPairingAbuseControlService abuseControls,
+        LocalServerManagerSessionService managerSessionService,
+        CancellationToken cancellationToken)
+    {
+        var session = await AuthorizeManagerSessionAsync(
+            httpRequest,
+            configurationStore,
+            pairingStore,
+            managerSessionService,
+            cancellationToken);
+
+        if (session.Failure is not null)
+        {
+            return session.Failure;
+        }
+
+        var decision = await abuseControls.SaveSourceDecisionAsync(
+            sourceKey,
+            action,
+            request,
+            session.Actor!,
+            cancellationToken);
+
+        return Results.Ok(new LocalServerPairingAbuseSourceResponse(
+            ToPairingAbuseSourceDecisionResponse(decision, DateTimeOffset.UtcNow)));
+    }
+
     private static async Task<IResult> VerifyDeviceCredentialAsync(
         HttpRequest httpRequest,
         VerifyLocalServerDeviceCredentialRequest? request,
+        LocalServerPairingAbuseControlService abuseControls,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
         ILocalServerDeviceCredentialService deviceCredentialService,
         CancellationToken cancellationToken)
     {
+        var guard = await abuseControls.GuardAsync(
+            httpRequest,
+            LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+            cancellationToken);
+
+        if (guard.Failure is not null)
+        {
+            return guard.Failure;
+        }
+
         var credential = NormalizeRequired(
             request?.DeviceCredential ?? ReadDeviceCredentialHeader(httpRequest),
             8192);
@@ -642,6 +975,12 @@ public static class LocalServerRuntimeEndpoints
 
         if (!credentialVerification.IsSuccess)
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+                credentialVerification.FailureCode,
+                cancellationToken);
+
             return ToFailureResult(
                 credentialVerification.FailureCode,
                 credentialVerification.Detail);
@@ -659,6 +998,12 @@ public static class LocalServerRuntimeEndpoints
         if (payload.ClientId != configuration.ClientId
             || !string.Equals(payload.InstallationId, configuration.InstallationId, StringComparison.Ordinal))
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+                "DeviceCredentialScopeMismatch",
+                cancellationToken);
+
             return ToFailureResult(
                 "DeviceCredentialScopeMismatch",
                 "Device credential belongs to another client or LocalServer installation.");
@@ -679,6 +1024,12 @@ public static class LocalServerRuntimeEndpoints
             || !credentialMatch.IsMatch
             || !string.Equals(device.DevicePublicKeySha256, payload.DevicePublicKeySha256, StringComparison.Ordinal))
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+                "DeviceCredentialInvalid",
+                cancellationToken);
+
             return ToFailureResult(
                 "DeviceCredentialInvalid",
                 "Device credential is not valid for this LocalServer device.");
@@ -686,6 +1037,12 @@ public static class LocalServerRuntimeEndpoints
 
         if (!string.Equals(device.DeviceStatus, LocalServerDevicePairingRecordStatuses.Approved, StringComparison.Ordinal))
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+                "DeviceCredentialStatusInvalid",
+                cancellationToken);
+
             return ToFailureResult(
                 "DeviceCredentialStatusInvalid",
                 "Device credential is not active for an approved device.");
@@ -708,12 +1065,23 @@ public static class LocalServerRuntimeEndpoints
     private static async Task<IResult> RefreshDeviceCredentialAsync(
         HttpRequest httpRequest,
         RefreshLocalServerDeviceCredentialRequest? request,
+        LocalServerPairingAbuseControlService abuseControls,
         ILocalServerBootstrapConfigurationStore configurationStore,
         ILocalServerDevicePairingStore pairingStore,
         ILocalServerDeviceCredentialService deviceCredentialService,
         LocalServerDeviceCredentialOptions credentialOptions,
         CancellationToken cancellationToken)
     {
+        var guard = await abuseControls.GuardAsync(
+            httpRequest,
+            LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+            cancellationToken);
+
+        if (guard.Failure is not null)
+        {
+            return guard.Failure;
+        }
+
         var credential = NormalizeRequired(
             request?.DeviceCredential ?? ReadDeviceCredentialHeader(httpRequest),
             8192);
@@ -732,6 +1100,12 @@ public static class LocalServerRuntimeEndpoints
 
         if (!credentialVerification.IsSuccess)
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+                credentialVerification.FailureCode,
+                cancellationToken);
+
             return ToFailureResult(
                 credentialVerification.FailureCode,
                 credentialVerification.Detail);
@@ -749,6 +1123,12 @@ public static class LocalServerRuntimeEndpoints
         if (payload.ClientId != configuration.ClientId
             || !string.Equals(payload.InstallationId, configuration.InstallationId, StringComparison.Ordinal))
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+                "DeviceCredentialScopeMismatch",
+                cancellationToken);
+
             return ToFailureResult(
                 "DeviceCredentialScopeMismatch",
                 "Device credential belongs to another client or LocalServer installation.");
@@ -769,6 +1149,12 @@ public static class LocalServerRuntimeEndpoints
             || !credentialMatch.IsMatch
             || !string.Equals(device.DevicePublicKeySha256, payload.DevicePublicKeySha256, StringComparison.Ordinal))
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+                "DeviceCredentialInvalid",
+                cancellationToken);
+
             return ToFailureResult(
                 "DeviceCredentialInvalid",
                 "Device credential is not valid for this LocalServer device.");
@@ -776,6 +1162,12 @@ public static class LocalServerRuntimeEndpoints
 
         if (!string.Equals(device.DeviceStatus, LocalServerDevicePairingRecordStatuses.Approved, StringComparison.Ordinal))
         {
+            await abuseControls.RecordCredentialRejectedAsync(
+                httpRequest,
+                LocalServerPairingAbuseEndpointGroups.DeviceCredential,
+                "DeviceCredentialStatusInvalid",
+                cancellationToken);
+
             return ToFailureResult(
                 "DeviceCredentialStatusInvalid",
                 "Device credential is not active for an approved device.");
@@ -1309,6 +1701,59 @@ public static class LocalServerRuntimeEndpoints
             : ToFailureResult(result.FailureCode, result.Detail);
     }
 
+    private static async Task<IResult> GetEntitlementLimitsAsync(
+        ILocalServerBootstrapConfigurationStore configurationStore,
+        ILocalServerEntitlementCache entitlementCache,
+        LocalServerEntitlementPolicy entitlementPolicy,
+        CancellationToken cancellationToken)
+    {
+        var configuration = await configurationStore.GetCurrentAsync(cancellationToken);
+
+        if (configuration is null)
+        {
+            return ToFailureResult(
+                "BootstrapConfigurationMissing",
+                "A verified bootstrap configuration is required before reading entitlement limits.");
+        }
+
+        var entitlement = await entitlementCache.GetCurrentAsync(cancellationToken);
+
+        if (entitlement is null)
+        {
+            return ToFailureResult(
+                "EntitlementMissing",
+                "A verified entitlement bundle is required before reading entitlement limits.");
+        }
+
+        var checkedAtUtc = DateTimeOffset.UtcNow;
+        var access = entitlementPolicy.EvaluateEntitlementState(
+            entitlement,
+            configuration.InstallationId,
+            DateOnly.FromDateTime(checkedAtUtc.UtcDateTime));
+
+        return Results.Ok(new LocalServerEntitlementLimitsResponse(
+            LocalServerLimitGatewayFormat.Version,
+            entitlement.ClientId,
+            entitlement.InstallationId,
+            entitlement.EntitlementVersion,
+            access.IsAllowed,
+            access.AccessState,
+            entitlement.AllowedDevices,
+            entitlement.AllowedBranches,
+            entitlement.AllowedNamedUsers,
+            entitlement.AllowedConcurrentUsers,
+            (entitlement.FeatureLimits ?? [])
+                .OrderBy(limit => limit.ModuleCode, StringComparer.Ordinal)
+                .ThenBy(limit => limit.FeatureCode, StringComparer.Ordinal)
+                .Select(limit => new LocalServerFeatureLimitResponse(
+                    limit.ModuleCode,
+                    limit.FeatureCode,
+                    limit.LimitValue,
+                    limit.Unit))
+                .ToArray(),
+            checkedAtUtc));
+    }
+
     private static LocalServerRuntimeStatusResponse ToStatusResponse(
         LocalServerBootstrapConfiguration? configuration,
         LocalServerCachedEntitlement? entitlement,
@@ -1332,7 +1777,10 @@ public static class LocalServerRuntimeEndpoints
             OfflineValidUntil: entitlement?.OfflineValidUntil,
             LastSuccessfulCloudTimeUtc: trustState?.LastSuccessfulCloudTimeUtc,
             LastLocalCheckAtUtc: trustState?.LastLocalCheckAtUtc,
-            ClockMovedBackwards: trustState?.ClockMovedBackwards ?? false);
+            ClockMovedBackwards: trustState?.ClockMovedBackwards ?? false,
+            AllowedNamedUsers: entitlement?.AllowedNamedUsers,
+            AllowedConcurrentUsers: entitlement?.AllowedConcurrentUsers,
+            FeatureLimitCount: entitlement?.FeatureLimits?.Count ?? 0);
     }
 
     private static async Task<ManagerSessionLookup> AuthorizeManagerSessionAsync(
@@ -1395,7 +1843,8 @@ public static class LocalServerRuntimeEndpoints
     }
 
     private static LocalServerDevicePairingRequestResponse ToPairingRequestResponse(
-        LocalServerDevicePairingRecord record)
+        LocalServerDevicePairingRecord record,
+        bool coalesced = false)
     {
         return new LocalServerDevicePairingRequestResponse(
             record.PairingRequestId,
@@ -1406,7 +1855,44 @@ public static class LocalServerRuntimeEndpoints
             record.DeviceStatus,
             record.DeviceDisplayName,
             record.RequestedAtUtc,
-            record.ExpiresAtUtc);
+            record.ExpiresAtUtc,
+            coalesced);
+    }
+
+    private static LocalServerPairingSecurityEventResponse ToPairingSecurityEventResponse(
+        LocalServerPairingSecurityEvent record)
+    {
+        return new LocalServerPairingSecurityEventResponse(
+            record.EventId,
+            record.OccurredAtUtc,
+            record.EventType,
+            record.Severity,
+            record.EndpointGroup,
+            record.SourceKey,
+            record.RemoteAddress,
+            record.DeviceInstallIdHash,
+            record.DeviceFingerprintHash,
+            record.PairingRequestId,
+            record.DeviceId,
+            record.Count,
+            record.WindowStartedAtUtc,
+            record.WindowExpiresAtUtc,
+            record.Action,
+            record.Detail);
+    }
+
+    private static LocalServerPairingAbuseSourceDecisionResponse ToPairingAbuseSourceDecisionResponse(
+        LocalServerPairingAbuseSourceDecision decision,
+        DateTimeOffset asOfUtc)
+    {
+        return new LocalServerPairingAbuseSourceDecisionResponse(
+            decision.SourceKey,
+            decision.Action,
+            decision.Reason,
+            decision.Actor,
+            decision.CreatedAtUtc,
+            decision.ExpiresAtUtc,
+            LocalServerPairingAbuseControlService.IsSourceDecisionActive(decision, asOfUtc));
     }
 
     private static LocalServerDeviceResponse ToDeviceResponse(
@@ -1840,7 +2326,10 @@ public sealed record LocalServerRuntimeStatusResponse(
     DateOnly? OfflineValidUntil,
     DateTimeOffset? LastSuccessfulCloudTimeUtc,
     DateTimeOffset? LastLocalCheckAtUtc,
-    bool ClockMovedBackwards);
+    bool ClockMovedBackwards,
+    int? AllowedNamedUsers,
+    int? AllowedConcurrentUsers,
+    int FeatureLimitCount);
 
 public sealed record LocalServerBootstrapImportResponse(
     Guid ClientId,

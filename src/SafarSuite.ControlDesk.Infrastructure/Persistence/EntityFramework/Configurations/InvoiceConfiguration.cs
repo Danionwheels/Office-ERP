@@ -89,6 +89,25 @@ internal sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.HasIndex(invoice => invoice.ClientId)
             .HasDatabaseName("ix_invoices_client_id");
 
+        builder.HasIndex(invoice => new
+            {
+                invoice.ClientId,
+                invoice.IssueDate,
+                invoice.CreatedAtUtc,
+                invoice.Id
+            })
+            .HasDatabaseName("ix_invoices_client_issue_created_id");
+
+        builder.HasIndex(invoice => new
+            {
+                invoice.ClientId,
+                invoice.Status,
+                invoice.IssueDate,
+                invoice.CreatedAtUtc,
+                invoice.Id
+            })
+            .HasDatabaseName("ix_invoices_client_status_issue_created_id");
+
         builder.Navigation(invoice => invoice.Lines)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
 
@@ -104,6 +123,9 @@ internal sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
                 .ValueGeneratedOnAdd();
 
             line.HasKey("invoice_line_row_id");
+
+            line.HasIndex("invoice_id")
+                .HasDatabaseName("ix_invoice_lines_invoice_id");
 
             line.Property(invoiceLine => invoiceLine.Description)
                 .HasColumnName("description")

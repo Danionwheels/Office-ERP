@@ -15,4 +15,5 @@ public sealed record ReportInstallationHeartbeatCommand(
     DateOnly? OfflineValidUntil,
     string? Detail,
     LocalServerDeploymentProfileResponse? DeploymentProfile = null,
-    LocalServerPairingStatusResponse? PairingStatus = null);
+    LocalServerPairingStatusResponse? PairingStatus = null,
+    ControlCloudEntitlementStateValuesResponse? EntitlementState = null);

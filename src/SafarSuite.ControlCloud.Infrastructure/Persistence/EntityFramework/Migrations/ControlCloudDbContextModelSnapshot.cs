@@ -29,14 +29,58 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasColumnType("uuid")
                         .HasColumnName("client_id");
 
+                    b.Property<decimal>("AvailableCredit")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("available_credit");
+
+                    b.Property<decimal>("BalanceDue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("balance_due");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<bool>("IsPaid")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_paid");
+
                     b.Property<DateTimeOffset>("LastUpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_updated_at_utc");
 
-                    b.Property<string>("ProjectionJson")
-                        .IsRequired()
+                    b.Property<string>("LatestEntitlementJson")
                         .HasColumnType("jsonb")
-                        .HasColumnName("projection_json");
+                        .HasColumnName("latest_entitlement_json");
+
+                    b.Property<decimal>("TotalCreditApplied")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("total_credit_applied");
+
+                    b.Property<decimal>("TotalCredited")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("total_credited");
+
+                    b.Property<decimal>("TotalInvoiced")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("total_invoiced");
+
+                    b.Property<decimal>("TotalPaid")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("total_paid");
+
+                    b.Property<decimal>("TotalRefunded")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("total_refunded");
 
                     b.HasKey("ClientId");
 
@@ -116,6 +160,59 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasDatabaseName("ix_client_installations_client_id");
 
                     b.ToTable("client_installations", "cloud");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientPortalAttachmentEntity", b =>
+                {
+                    b.Property<Guid>("AttachmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("attachment_id");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("content");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("content_type");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sha256");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<DateTimeOffset>("UploadedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("uploaded_at_utc");
+
+                    b.Property<Guid>("UploadedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("uploaded_by_user_id");
+
+                    b.HasKey("AttachmentId");
+
+                    b.HasIndex("ClientId", "UploadedAtUtc")
+                        .HasDatabaseName("ix_client_portal_attachments_client_uploaded");
+
+                    b.ToTable("client_portal_attachments", "cloud");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientPortalInvitationEntity", b =>
@@ -198,6 +295,323 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                     b.ToTable("client_portal_invitations", "cloud");
                 });
 
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientPortalMailDeliveryEntity", b =>
+                {
+                    b.Property<Guid>("DeliveryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("delivery_id");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempt_count");
+
+                    b.Property<Guid?>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateTimeOffset?>("FailedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("failed_at_utc");
+
+                    b.Property<DateTimeOffset?>("LastAttemptedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_attempted_at_utc");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_expires_at_utc");
+
+                    b.Property<Guid?>("LeaseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lease_id");
+
+                    b.Property<DateTimeOffset>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at_utc");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("recipient_email");
+
+                    b.Property<string>("RecipientName")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)")
+                        .HasColumnName("recipient_name");
+
+                    b.Property<DateTimeOffset?>("SentAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at_utc");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("subject");
+
+                    b.Property<string>("TextBody")
+                        .IsRequired()
+                        .HasMaxLength(100000)
+                        .HasColumnType("character varying(100000)")
+                        .HasColumnName("text_body");
+
+                    b.HasKey("DeliveryId");
+
+                    b.HasIndex("ClientId")
+                        .HasDatabaseName("ix_client_portal_mail_deliveries_client_id");
+
+                    b.HasIndex("Status", "LeaseExpiresAtUtc")
+                        .HasDatabaseName("ix_client_portal_mail_deliveries_status_lease_expiry");
+
+                    b.HasIndex("Status", "NextAttemptAtUtc")
+                        .HasDatabaseName("ix_client_portal_mail_deliveries_status_next_attempt");
+
+                    b.ToTable("client_portal_mail_deliveries", "cloud");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientPortalPasswordResetEntity", b =>
+                {
+                    b.Property<Guid>("PasswordResetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("password_reset_id");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<Guid>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("concurrency_token");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at_utc");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at_utc");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("PasswordResetId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_portal_password_resets_token_hash");
+
+                    b.HasIndex("UserId", "ExpiresAtUtc")
+                        .HasDatabaseName("ix_client_portal_password_resets_user_expiry");
+
+                    b.ToTable("client_portal_password_resets", "cloud");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientPortalPaymentClaimEntity", b =>
+                {
+                    b.Property<Guid>("ClaimId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("claim_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<Guid>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("concurrency_token");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("invoice_number");
+
+                    b.Property<string>("NormalizedTransferReferenceNumber")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("normalized_transfer_reference_number");
+
+                    b.Property<Guid?>("ProofAttachmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proof_attachment_id");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("rejection_reason");
+
+                    b.Property<DateTimeOffset?>("ReviewedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at_utc");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("SubmittedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("submitted_at_utc");
+
+                    b.Property<Guid>("SubmittedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("submitted_by_user_id");
+
+                    b.Property<string>("TransferReferenceNumber")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("transfer_reference_number");
+
+                    b.Property<Guid?>("VerifiedPaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("verified_payment_id");
+
+                    b.HasKey("ClaimId");
+
+                    b.HasIndex("InvoiceId")
+                        .HasDatabaseName("ix_client_portal_payment_claims_invoice_id");
+
+                    b.HasIndex("ClientId", "NormalizedTransferReferenceNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_portal_payment_claims_client_reference");
+
+                    b.HasIndex("ClientId", "Status", "SubmittedAtUtc")
+                        .HasDatabaseName("ix_client_portal_payment_claims_client_status_submitted");
+
+                    b.ToTable("client_portal_payment_claims", "cloud");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientPortalSessionEntity", b =>
+                {
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.Property<DateTimeOffset>("AbsoluteExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("absolute_expires_at_utc");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<Guid>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("concurrency_token");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateTimeOffset>("IdleExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("idle_expires_at_utc");
+
+                    b.Property<DateTimeOffset>("LastActivityAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_activity_at_utc");
+
+                    b.Property<string>("PreviousRefreshTokenHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("previous_refresh_token_hash");
+
+                    b.Property<string>("RefreshTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("refresh_token_hash");
+
+                    b.Property<DateTimeOffset?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at_utc");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("revoked_reason");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("role");
+
+                    b.Property<int>("SecurityVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("security_version");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("SessionId");
+
+                    b.HasIndex("IdleExpiresAtUtc")
+                        .HasDatabaseName("ix_client_portal_sessions_idle_expiry");
+
+                    b.HasIndex("PreviousRefreshTokenHash")
+                        .HasDatabaseName("ix_client_portal_sessions_previous_refresh_hash");
+
+                    b.HasIndex("RefreshTokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_portal_sessions_refresh_hash");
+
+                    b.HasIndex("UserId", "RevokedAtUtc")
+                        .HasDatabaseName("ix_client_portal_sessions_user_revoked");
+
+                    b.ToTable("client_portal_sessions", "cloud");
+                });
+
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientPortalUserEntity", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -207,6 +621,11 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uuid")
                         .HasColumnName("client_id");
+
+                    b.Property<Guid>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid")
+                        .HasColumnName("concurrency_token");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -228,6 +647,14 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_login_at_utc");
 
+                    b.Property<DateTimeOffset?>("LastRecoveryCodeUsedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_recovery_code_used_at_utc");
+
+                    b.Property<long?>("LastTotpStep")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_totp_step");
+
                     b.Property<string>("NormalizedEmail")
                         .IsRequired()
                         .HasMaxLength(320)
@@ -240,17 +667,59 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasColumnType("character varying(220)")
                         .HasColumnName("password_hash");
 
+                    b.Property<string>("PendingProtectedTotpSecret")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("pending_protected_totp_secret");
+
+                    b.Property<string>("PendingRecoveryCodeHashesJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("pending_recovery_code_hashes_json");
+
+                    b.Property<string>("ProtectedTotpSecret")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("protected_totp_secret");
+
+                    b.Property<string>("RecoveryCodeHashesJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("recovery_code_hashes_json");
+
+                    b.Property<DateTimeOffset?>("RecoveryCodesGeneratedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recovery_codes_generated_at_utc");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)")
                         .HasColumnName("role");
 
+                    b.Property<int>("SecurityVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("security_version");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("TotpEnabledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("totp_enabled_at_utc");
+
+                    b.Property<DateTimeOffset?>("TotpEnrollmentStartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("totp_enrollment_started_at_utc");
 
                     b.HasKey("UserId");
 
@@ -262,6 +731,87 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasDatabaseName("ix_client_portal_users_client_status");
 
                     b.ToTable("client_portal_users", "cloud");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudCommercialDocumentEntity", b =>
+                {
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<string>("DocumentType")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("document_type");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("document_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<decimal>("BalanceAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("balance_amount");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency_code");
+
+                    b.Property<string>("DetailJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("detail_json");
+
+                    b.Property<DateOnly>("DocumentDate")
+                        .HasColumnType("date")
+                        .HasColumnName("document_date");
+
+                    b.Property<Guid>("LastMessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("last_message_id");
+
+                    b.Property<DateTimeOffset>("LastUpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_updated_at_utc");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("reference");
+
+                    b.Property<Guid?>("RelatedDocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("related_document_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.HasKey("ClientId", "DocumentType", "DocumentId");
+
+                    b.HasIndex("ClientId", "DocumentType", "DocumentDate", "DocumentId")
+                        .IsDescending(false, false, true, true)
+                        .HasDatabaseName("ix_commercial_documents_client_type_date_id");
+
+                    b.HasIndex("ClientId", "DocumentType", "RelatedDocumentId", "DocumentDate", "DocumentId")
+                        .IsDescending(false, false, false, true, true)
+                        .HasDatabaseName("ix_commercial_documents_related_date_id");
+
+                    b.ToTable("commercial_documents", "cloud");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudEntitlementBundleIssueEntity", b =>
@@ -276,9 +826,25 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasColumnType("character varying(40)")
                         .HasColumnName("algorithm");
 
+                    b.Property<int?>("AllowedConcurrentUsers")
+                        .HasColumnType("integer")
+                        .HasColumnName("allowed_concurrent_users");
+
+                    b.Property<int?>("AllowedNamedUsers")
+                        .HasColumnType("integer")
+                        .HasColumnName("allowed_named_users");
+
+                    b.Property<Guid>("ClientAccessRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_access_revision_id");
+
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uuid")
                         .HasColumnName("client_id");
+
+                    b.Property<long>("ContractRevisionNumber")
+                        .HasColumnType("bigint")
+                        .HasColumnName("contract_revision_number");
 
                     b.Property<Guid>("EntitlementSnapshotId")
                         .HasColumnType("uuid")
@@ -287,6 +853,10 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                     b.Property<long>("EntitlementVersion")
                         .HasColumnType("bigint")
                         .HasColumnName("entitlement_version");
+
+                    b.Property<int>("FeatureLimitCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("feature_limit_count");
 
                     b.Property<DateOnly>("GraceUntil")
                         .HasColumnType("date")
@@ -327,6 +897,14 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasColumnType("character varying(64)")
                         .HasColumnName("payload_sha256");
 
+                    b.Property<Guid>("ProductCatalogRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_catalog_revision_id");
+
+                    b.Property<long>("ProductCatalogRevisionNumber")
+                        .HasColumnType("bigint")
+                        .HasColumnName("product_catalog_revision_number");
+
                     b.Property<string>("SignatureValue")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -339,16 +917,31 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
 
                     b.HasKey("BundleIssueId");
 
+                    b.HasIndex("ClientAccessRevisionId")
+                        .HasDatabaseName("ix_entitlement_bundle_issues_access_revision");
+
                     b.HasIndex("ClientId")
                         .HasDatabaseName("ix_entitlement_bundle_issues_client_id");
 
                     b.HasIndex("InstallationId")
                         .HasDatabaseName("ix_entitlement_bundle_issues_installation_id");
 
+                    b.HasIndex("ProductCatalogRevisionId")
+                        .HasDatabaseName("ix_entitlement_bundle_issues_product_catalog_revision");
+
                     b.HasIndex("InstallationId", "EntitlementVersion")
                         .HasDatabaseName("ix_entitlement_bundle_issues_installation_version");
 
-                    b.ToTable("entitlement_bundle_issues", "cloud");
+                    b.ToTable("entitlement_bundle_issues", "cloud", t =>
+                        {
+                            t.HasCheckConstraint("ck_entitlement_bundle_issues_concurrent_users", "allowed_concurrent_users IS NULL OR allowed_concurrent_users >= 0");
+
+                            t.HasCheckConstraint("ck_entitlement_bundle_issues_feature_limit_count", "feature_limit_count >= 0");
+
+                            t.HasCheckConstraint("ck_entitlement_bundle_issues_named_users", "allowed_named_users IS NULL OR allowed_named_users >= 0");
+
+                            t.HasCheckConstraint("ck_entitlement_bundle_issues_user_limit_order", "allowed_named_users IS NULL OR allowed_concurrent_users IS NULL OR allowed_concurrent_users <= allowed_named_users");
+                        });
                 });
 
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudInstallationCommandAcknowledgementEntity", b =>
@@ -633,6 +1226,10 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)")
                         .HasColumnName("local_server_version");
+
+                    b.Property<string>("ObservedEntitlementStateJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("observed_entitlement_state_json");
 
                     b.Property<DateOnly?>("OfflineValidUntil")
                         .HasColumnType("date")
@@ -968,6 +1565,52 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                     b.ToTable("provider_access_operators", "cloud");
                 });
 
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudProviderBankDetailsEntity", b =>
+                {
+                    b.Property<string>("BankDetailsId")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("bank_details_id");
+
+                    b.Property<string>("AccountNumber")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("account_number");
+
+                    b.Property<string>("AccountTitle")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)")
+                        .HasColumnName("account_title");
+
+                    b.Property<string>("BankName")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("character varying(180)")
+                        .HasColumnName("bank_name");
+
+                    b.Property<string>("BranchOrRoutingInfo")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("branch_or_routing_info");
+
+                    b.Property<string>("Iban")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("iban");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("BankDetailsId");
+
+                    b.ToTable("provider_bank_details", "cloud");
+                });
+
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlDeskEnvelopeReceiptEntity", b =>
                 {
                     b.Property<Guid>("ReceiptId")
@@ -1069,6 +1712,15 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Mig
                         .HasDatabaseName("ix_control_desk_envelope_receipts_status_idempotency_key");
 
                     b.ToTable("control_desk_envelope_receipts", "cloud");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudCommercialDocumentEntity", b =>
+                {
+                    b.HasOne("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudClientCommercialProjectionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities.ControlCloudEntitlementBundleIssueEntity", b =>

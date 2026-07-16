@@ -160,13 +160,13 @@ public sealed class ReverseInvoicePaymentHandler
         Payment payment,
         CancellationToken cancellationToken)
     {
-        var receiptJournals = await _journalEntries.ListAsync(
-            sourceType: JournalSourceType.PaymentReceipt,
-            cancellationToken: cancellationToken);
+        var receiptJournals = await _journalEntries.ListForSourceDocumentAsync(
+            JournalSourceType.PaymentReceipt,
+            payment.Id.Value,
+            cancellationToken);
 
         return receiptJournals
             .Where(entry => entry.Status == JournalEntryStatus.Posted)
-            .Where(entry => string.Equals(entry.SourceReference, payment.Reference.Value, StringComparison.OrdinalIgnoreCase))
             .Where(entry => string.Equals(entry.CurrencyCode, payment.Amount.CurrencyCode, StringComparison.Ordinal))
             .Where(entry => entry.TotalDebit.Amount == payment.Amount.Amount)
             .OrderBy(entry => entry.EntryDate)

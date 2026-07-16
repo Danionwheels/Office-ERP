@@ -31,7 +31,9 @@ public sealed record CloudProductKernelCommandResponse(
 
 public sealed record ProductAccessCatalogCommandPayload(
     IReadOnlyCollection<ProductModuleGroupCommandPayload> ModuleGroups,
-    IReadOnlyCollection<ProductResourceCommandPayload> Resources);
+    IReadOnlyCollection<ProductResourceCommandPayload> Resources,
+    Guid? CatalogRevisionId = null,
+    long? CatalogRevisionNumber = null);
 
 public sealed record ProductModuleGroupCommandPayload(
     string GroupId,

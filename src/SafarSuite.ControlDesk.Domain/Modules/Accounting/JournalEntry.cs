@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Domain.SharedKernel;
+using SafarSuite.ControlDesk.Domain.Modules.Clients;
 
 namespace SafarSuite.ControlDesk.Domain.Modules.Accounting;
 
@@ -13,7 +14,9 @@ public sealed class JournalEntry : Entity<JournalEntryId>
         JournalSourceType sourceType,
         string? sourceReference,
         string? memo,
-        DateTimeOffset createdAtUtc)
+        DateTimeOffset createdAtUtc,
+        ClientId? clientId,
+        Guid? sourceDocumentId)
         : base(id)
     {
         EntryDate = entryDate;
@@ -22,6 +25,8 @@ public sealed class JournalEntry : Entity<JournalEntryId>
         SourceReference = sourceReference;
         Memo = memo;
         CreatedAtUtc = createdAtUtc;
+        ClientId = clientId;
+        SourceDocumentId = sourceDocumentId;
         Status = JournalEntryStatus.Draft;
     }
 
@@ -34,6 +39,10 @@ public sealed class JournalEntry : Entity<JournalEntryId>
     public string? SourceReference { get; }
 
     public string? Memo { get; }
+
+    public ClientId? ClientId { get; }
+
+    public Guid? SourceDocumentId { get; }
 
     public JournalEntryStatus Status { get; private set; }
 
@@ -56,7 +65,9 @@ public sealed class JournalEntry : Entity<JournalEntryId>
         JournalSourceType sourceType,
         string? sourceReference,
         string? memo,
-        DateTimeOffset createdAtUtc)
+        DateTimeOffset createdAtUtc,
+        ClientId? clientId = null,
+        Guid? sourceDocumentId = null)
     {
         if (string.IsNullOrWhiteSpace(currencyCode))
         {
@@ -70,7 +81,9 @@ public sealed class JournalEntry : Entity<JournalEntryId>
             sourceType,
             CleanText(sourceReference),
             CleanText(memo),
-            createdAtUtc);
+            createdAtUtc,
+            clientId,
+            sourceDocumentId);
     }
 
     public void AddLine(JournalLine line)

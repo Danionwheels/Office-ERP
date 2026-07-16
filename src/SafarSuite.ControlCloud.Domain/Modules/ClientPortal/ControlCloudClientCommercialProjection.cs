@@ -193,6 +193,19 @@ public sealed class ControlCloudClientCommercialProjection
         ControlCloudEntitlementProjection entitlement,
         DateTimeOffset updatedAtUtc)
     {
+        if (entitlement.EntitlementVersion <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(entitlement),
+                "Entitlement version must be greater than zero.");
+        }
+
+        if (LatestEntitlement is not null
+            && entitlement.EntitlementVersion <= LatestEntitlement.EntitlementVersion)
+        {
+            return;
+        }
+
         LatestEntitlement = entitlement;
         LastUpdatedAtUtc = updatedAtUtc;
     }
@@ -282,7 +295,22 @@ public sealed record ControlCloudInvoiceProjection(
     decimal BalanceDue,
     string CurrencyCode,
     DateOnly? VoidedOn = null,
-    string? VoidReason = null);
+    string? VoidReason = null,
+    ControlCloudClientBillingDetailProjection? Client = null,
+    IReadOnlyCollection<ControlCloudInvoiceLineProjection>? Lines = null);
+
+public sealed record ControlCloudClientBillingDetailProjection(
+    string Name,
+    string? ContactName,
+    string? Email,
+    string? Phone);
+
+public sealed record ControlCloudInvoiceLineProjection(
+    string Description,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal LineTotal,
+    string CurrencyCode);
 
 public sealed record ControlCloudPaymentProjection(
     Guid PaymentId,
@@ -337,7 +365,12 @@ public sealed record ControlCloudCreditApplicationProjection(
 
 public sealed record ControlCloudEntitlementProjection(
     Guid EntitlementSnapshotId,
+    Guid ClientAccessRevisionId,
     Guid ContractId,
+    long ContractRevisionNumber,
+    Guid ProductCatalogRevisionId,
+    long ProductCatalogRevisionNumber,
+    long EntitlementVersion,
     Guid SourceInvoiceId,
     string SourceInvoiceNumber,
     string Status,
@@ -347,8 +380,18 @@ public sealed record ControlCloudEntitlementProjection(
     int AllowedDevices,
     int AllowedBranches,
     DateTimeOffset IssuedAtUtc,
-    IReadOnlyCollection<ControlCloudEntitlementModuleProjection> Modules);
+    IReadOnlyCollection<ControlCloudEntitlementModuleProjection> Modules,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<ControlCloudEntitlementFeatureLimitProjection>? FeatureLimits = null,
+    DateTimeOffset? EffectiveFromUtc = null);
 
 public sealed record ControlCloudEntitlementModuleProjection(
     string ModuleCode,
     bool IsEnabled);
+
+public sealed record ControlCloudEntitlementFeatureLimitProjection(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);

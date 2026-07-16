@@ -425,7 +425,23 @@ public sealed record AccountingPeriodCloseCurrencyResponse(
     int DraftJournalCount);
 
 public sealed record ListJournalEntriesResponse(
-    IReadOnlyCollection<JournalEntrySummaryResponse> Entries);
+    IReadOnlyCollection<JournalEntryRegisterItemResponse> Entries,
+    int PageSize,
+    bool HasMore,
+    string? NextCursor,
+    long FilteredCount);
+
+public sealed record JournalEntryRegisterItemResponse(
+    Guid JournalEntryId,
+    DateOnly EntryDate,
+    string CurrencyCode,
+    string SourceType,
+    string? SourceReference,
+    string? Memo,
+    string Status,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    int LineCount);
 
 public sealed record JournalVoucherNumberPreviewResponse(
     string SourceType,

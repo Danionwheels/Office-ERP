@@ -43,26 +43,7 @@ public sealed class ClientPortalProviderAccessOptions
 
     public string OperatorStorePath { get; set; } = "App_Data/provider-access-operators.json";
 
-    public ProviderAccessUserOptions[] Users { get; set; } =
-    [
-        new ProviderAccessUserOptions
-        {
-            UserId = "local-provider-admin",
-            Email = "provider.admin@safarsuite.local",
-            FullName = "Local Provider Admin",
-            PasswordHash = "pbkdf2-sha256.120000.AQIDBAUGBwgJCgsMDQ4PEA.bKfX3l_4QOvv59HDi9Wq1UzY3FYjDWr3w5qQgkLufc4",
-            Status = "Active",
-            Scopes =
-            [
-                "app-activation:read",
-                "app-activation:write",
-                "client-portal:manage",
-                "deployment-packages:read",
-                "deployment-packages:write",
-                "provider-operators:manage"
-            ]
-        }
-    ];
+    public ProviderAccessUserOptions[] Users { get; set; } = [];
 
     public static ClientPortalProviderAccessOptions FromConfiguration(
         IConfiguration configuration,

@@ -8,7 +8,5 @@ public interface IClientRepository
 
     Task<Client?> GetByIdAsync(ClientId id, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyCollection<Client>> ListAsync(CancellationToken cancellationToken = default);
-
     Task<bool> ExistsByCodeAsync(ClientCode code, CancellationToken cancellationToken = default);
 }

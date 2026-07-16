@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Domain.Modules.LocalServer;
@@ -8,6 +9,8 @@ namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework;
 public sealed class EfControlCloudInstallationHeartbeatRepository
     : IControlCloudInstallationHeartbeatRepository
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly ControlCloudDbContext _dbContext;
 
     public EfControlCloudInstallationHeartbeatRepository(
@@ -57,7 +60,8 @@ public sealed class EfControlCloudInstallationHeartbeatRepository
             entity.OfflineValidUntil,
             entity.LocalServerVersion,
             entity.Detail,
-            ToPairingStatus(entity));
+            ToPairingStatus(entity),
+            DeserializeEntitlementState(entity.ObservedEntitlementStateJson));
     }
 
     private static ControlCloudInstallationHeartbeatEntity FromDomain(
@@ -87,7 +91,10 @@ public sealed class EfControlCloudInstallationHeartbeatRepository
             PairingRevokedDeviceCount = heartbeat.PairingStatus?.RevokedDeviceCount,
             PairingFirstManagerDeviceApproved = heartbeat.PairingStatus?.FirstManagerDeviceApproved,
             PairingFirstManagerDeviceApprovedAtUtc = heartbeat.PairingStatus?.FirstManagerDeviceApprovedAtUtc,
-            PairingLastDeviceUpdatedAtUtc = heartbeat.PairingStatus?.LastDeviceUpdatedAtUtc
+            PairingLastDeviceUpdatedAtUtc = heartbeat.PairingStatus?.LastDeviceUpdatedAtUtc,
+            ObservedEntitlementStateJson = heartbeat.EntitlementState is null
+                ? null
+                : JsonSerializer.Serialize(heartbeat.EntitlementState, JsonOptions)
         };
     }
 
@@ -109,5 +116,12 @@ public sealed class EfControlCloudInstallationHeartbeatRepository
             entity.PairingFirstManagerDeviceApproved ?? false,
             entity.PairingFirstManagerDeviceApprovedAtUtc,
             entity.PairingLastDeviceUpdatedAtUtc);
+    }
+
+    private static ControlCloudObservedEntitlementState? DeserializeEntitlementState(string? json)
+    {
+        return string.IsNullOrWhiteSpace(json)
+            ? null
+            : JsonSerializer.Deserialize<ControlCloudObservedEntitlementState>(json, JsonOptions);
     }
 }

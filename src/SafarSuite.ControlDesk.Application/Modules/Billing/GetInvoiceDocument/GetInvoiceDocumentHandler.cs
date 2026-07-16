@@ -49,13 +49,13 @@ public sealed class GetInvoiceDocumentHandler
 
         var issueJournal = await FindJournalAsync(
             JournalSourceType.BillingInvoice,
-            invoice.Number.Value,
+            invoice.Id.Value,
             invoice.CurrencyCode,
             invoice.TotalAmount.Amount,
             cancellationToken);
         var voidJournal = await FindJournalAsync(
             JournalSourceType.BillingInvoiceVoid,
-            invoice.Number.Value,
+            invoice.Id.Value,
             invoice.CurrencyCode,
             invoice.TotalAmount.Amount,
             cancellationToken);
@@ -64,7 +64,7 @@ public sealed class GetInvoiceDocumentHandler
             ? null
             : await FindJournalAsync(
                 JournalSourceType.BillingCreditNote,
-                creditNote.Number.Value,
+                creditNote.Id.Value,
                 creditNote.CurrencyCode,
                 creditNote.TotalAmount.Amount,
                 cancellationToken);
@@ -94,17 +94,17 @@ public sealed class GetInvoiceDocumentHandler
 
     private async Task<JournalEntry?> FindJournalAsync(
         JournalSourceType sourceType,
-        string sourceReference,
+        Guid sourceDocumentId,
         string currencyCode,
         decimal amount,
         CancellationToken cancellationToken)
     {
-        var entries = await _journalEntries.ListAsync(
-            sourceType: sourceType,
-            cancellationToken: cancellationToken);
+        var entries = await _journalEntries.ListForSourceDocumentAsync(
+            sourceType,
+            sourceDocumentId,
+            cancellationToken);
 
         return entries
-            .Where(entry => string.Equals(entry.SourceReference, sourceReference, StringComparison.OrdinalIgnoreCase))
             .Where(entry => string.Equals(entry.CurrencyCode, currencyCode, StringComparison.OrdinalIgnoreCase))
             .Where(entry => entry.TotalDebit.Amount == amount)
             .OrderBy(entry => entry.EntryDate)

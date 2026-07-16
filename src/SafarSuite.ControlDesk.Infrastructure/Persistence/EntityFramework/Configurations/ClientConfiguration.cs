@@ -57,6 +57,26 @@ internal sealed class ClientConfiguration : IEntityTypeConfiguration<Client>
         builder.Property(client => client.SuspendedAtUtc)
             .HasColumnName("suspended_at_utc");
 
+        builder.Property<string>("SearchText")
+            .HasColumnName("search_text")
+            .HasComputedColumnSql(
+                "lower(code || ' ' || display_name || ' ' || legal_name || ' ' || status)",
+                stored: true);
+
+        builder.HasIndex("SearchText")
+            .HasMethod("gin")
+            .HasOperators("gin_trgm_ops")
+            .HasDatabaseName("ix_clients_search_text");
+
+        builder.HasIndex(client => new { client.DisplayName, client.Code, client.Id })
+            .HasDatabaseName("ix_clients_display_name_code_id");
+
+        builder.HasIndex(client => new { client.LegalName, client.Code, client.Id })
+            .HasDatabaseName("ix_clients_legal_name_code_id");
+
+        builder.HasIndex(client => new { client.Status, client.Code, client.Id })
+            .HasDatabaseName("ix_clients_status_code_id");
+
         builder.Navigation(client => client.Contacts)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
 
@@ -111,6 +131,9 @@ internal sealed class ClientConfiguration : IEntityTypeConfiguration<Client>
                 .IsUnique()
                 .HasDatabaseName("ux_client_contacts_primary_role")
                 .HasFilter("is_primary");
+
+            contact.HasIndex("client_id")
+                .HasDatabaseName("ix_client_contacts_client_id");
         });
 
         builder.Navigation(client => client.SupportNotes)

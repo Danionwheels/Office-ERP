@@ -9,7 +9,9 @@ public sealed class AcceptClientPortalInvitationResult
         string fullName,
         string role,
         string? accessToken,
+        string? refreshToken,
         DateTimeOffset? expiresAtUtc,
+        DateTimeOffset? idleExpiresAtUtc,
         string? failureCode,
         string? detail)
     {
@@ -19,7 +21,9 @@ public sealed class AcceptClientPortalInvitationResult
         FullName = fullName;
         Role = role;
         AccessToken = accessToken;
+        RefreshToken = refreshToken;
         ExpiresAtUtc = expiresAtUtc;
+        IdleExpiresAtUtc = idleExpiresAtUtc;
         FailureCode = failureCode;
         Detail = detail;
     }
@@ -38,7 +42,11 @@ public sealed class AcceptClientPortalInvitationResult
 
     public string? AccessToken { get; }
 
+    public string? RefreshToken { get; }
+
     public DateTimeOffset? ExpiresAtUtc { get; }
+
+    public DateTimeOffset? IdleExpiresAtUtc { get; }
 
     public string? FailureCode { get; }
 
@@ -51,7 +59,9 @@ public sealed class AcceptClientPortalInvitationResult
         string fullName,
         string role,
         string accessToken,
-        DateTimeOffset expiresAtUtc)
+        string refreshToken,
+        DateTimeOffset expiresAtUtc,
+        DateTimeOffset idleExpiresAtUtc)
     {
         return new AcceptClientPortalInvitationResult(
             userId,
@@ -60,7 +70,9 @@ public sealed class AcceptClientPortalInvitationResult
             fullName,
             role,
             accessToken,
+            refreshToken,
             expiresAtUtc,
+            idleExpiresAtUtc,
             failureCode: null,
             detail: null);
     }
@@ -76,7 +88,9 @@ public sealed class AcceptClientPortalInvitationResult
             fullName: "",
             role: "",
             accessToken: null,
+            refreshToken: null,
             expiresAtUtc: null,
+            idleExpiresAtUtc: null,
             failureCode,
             detail);
     }

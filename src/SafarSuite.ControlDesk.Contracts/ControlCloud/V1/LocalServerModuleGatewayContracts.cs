@@ -5,6 +5,11 @@ public static class LocalServerModuleGatewayFormat
     public const string Version = "safarsuite-local-module-gateway-v1";
 }
 
+public static class LocalServerLimitGatewayFormat
+{
+    public const string Version = "safarsuite-local-limit-gateway-v1";
+}
+
 public sealed record LocalServerModuleAccessRequest(
     string InstallationId,
     string ModuleCode,
@@ -24,3 +29,23 @@ public sealed record LocalServerModuleAccessResponse(
     DateOnly? GraceUntil,
     DateOnly? OfflineValidUntil,
     DateTimeOffset CheckedAtUtc);
+
+public sealed record LocalServerEntitlementLimitsResponse(
+    string FormatVersion,
+    Guid ClientId,
+    string InstallationId,
+    long EntitlementVersion,
+    bool IsEntitlementUsable,
+    string AccessState,
+    int AllowedDevices,
+    int AllowedBranches,
+    int? AllowedNamedUsers,
+    int? AllowedConcurrentUsers,
+    IReadOnlyCollection<LocalServerFeatureLimitResponse> FeatureLimits,
+    DateTimeOffset CheckedAtUtc);
+
+public sealed record LocalServerFeatureLimitResponse(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);

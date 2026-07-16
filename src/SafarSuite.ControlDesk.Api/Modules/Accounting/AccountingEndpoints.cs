@@ -780,11 +780,20 @@ public static class AccountingEndpoints
         DateOnly? fromDate,
         DateOnly? toDate,
         string? sourceType,
+        string? search,
+        int? take,
+        string? cursor,
         ListJournalEntriesHandler handler,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new ListJournalEntriesQuery(fromDate, toDate, sourceType),
+            new ListJournalEntriesQuery(
+                fromDate,
+                toDate,
+                sourceType,
+                search,
+                take ?? 50,
+                cursor),
             cancellationToken);
 
         if (result.IsFailure)
@@ -793,7 +802,7 @@ public static class AccountingEndpoints
         }
 
         var response = new ListJournalEntriesResponse(
-            result.Value.Entries.Select(entry => new JournalEntrySummaryResponse(
+            result.Value.Entries.Select(entry => new JournalEntryRegisterItemResponse(
                 entry.JournalEntryId,
                 entry.EntryDate,
                 entry.CurrencyCode,
@@ -803,11 +812,11 @@ public static class AccountingEndpoints
                 entry.Status,
                 entry.TotalDebit,
                 entry.TotalCredit,
-                entry.Lines.Select(line => new JournalEntryLineResponse(
-                    line.LedgerAccountId,
-                    line.Debit,
-                    line.Credit,
-                    line.Description)).ToArray())).ToArray());
+                entry.LineCount)).ToArray(),
+            result.Value.PageSize,
+            result.Value.HasMore,
+            result.Value.NextCursor,
+            result.Value.FilteredCount);
 
         return Results.Ok(response);
     }

@@ -9,7 +9,18 @@ internal sealed class ClientContractConfiguration : IEntityTypeConfiguration<Cli
 {
     public void Configure(EntityTypeBuilder<ClientContract> builder)
     {
-        builder.ToTable("client_contracts");
+        builder.ToTable("client_contracts", table =>
+        {
+            table.HasCheckConstraint(
+                "ck_client_contracts_named_users",
+                "allowed_named_users IS NULL OR allowed_named_users >= 0");
+            table.HasCheckConstraint(
+                "ck_client_contracts_concurrent_users",
+                "allowed_concurrent_users IS NULL OR allowed_concurrent_users >= 0");
+            table.HasCheckConstraint(
+                "ck_client_contracts_user_limit_order",
+                "allowed_named_users IS NULL OR allowed_concurrent_users IS NULL OR allowed_concurrent_users <= allowed_named_users");
+        });
 
         builder.HasKey(contract => contract.Id);
 
@@ -30,6 +41,21 @@ internal sealed class ClientContractConfiguration : IEntityTypeConfiguration<Cli
         builder.HasOne<Client>()
             .WithMany()
             .HasForeignKey(contract => contract.ClientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(contract => contract.RevisionNumber)
+            .HasColumnName("revision_number")
+            .IsRequired();
+
+        builder.Property(contract => contract.SupersedesContractId)
+            .HasColumnName("supersedes_contract_id")
+            .HasConversion(
+                id => id.HasValue ? id.Value.Value : (Guid?)null,
+                value => value.HasValue ? ContractId.Create(value.Value) : null);
+
+        builder.HasOne<ClientContract>()
+            .WithMany()
+            .HasForeignKey(contract => contract.SupersedesContractId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.Property(contract => contract.Number)
@@ -102,6 +128,18 @@ internal sealed class ClientContractConfiguration : IEntityTypeConfiguration<Cli
         builder.Navigation(contract => contract.BranchAllowance)
             .IsRequired();
 
+        builder.OwnsOne(contract => contract.UserAllowance, allowance =>
+        {
+            allowance.Property(value => value.AllowedNamedUsers)
+                .HasColumnName("allowed_named_users");
+
+            allowance.Property(value => value.AllowedConcurrentUsers)
+                .HasColumnName("allowed_concurrent_users");
+        });
+
+        builder.Navigation(contract => contract.UserAllowance)
+            .IsRequired();
+
         builder.Property(contract => contract.Status)
             .HasColumnName("status")
             .HasMaxLength(32)
@@ -115,8 +153,64 @@ internal sealed class ClientContractConfiguration : IEntityTypeConfiguration<Cli
         builder.Property(contract => contract.ActivatedAtUtc)
             .HasColumnName("activated_at_utc");
 
+        builder.Property(contract => contract.ApprovedBy)
+            .HasColumnName("approved_by")
+            .HasMaxLength(256)
+            .IsRequired();
+
+        builder.Property(contract => contract.ApprovalReason)
+            .HasColumnName("approval_reason")
+            .HasMaxLength(1000)
+            .IsRequired();
+
+        builder.Property(contract => contract.ApprovedAtUtc)
+            .HasColumnName("approved_at_utc")
+            .IsRequired();
+
         builder.HasIndex(contract => new { contract.ClientId, contract.Status })
             .HasDatabaseName("ix_client_contracts_client_status");
+
+        builder.HasIndex(contract => new { contract.ClientId, contract.RevisionNumber })
+            .IsUnique()
+            .HasDatabaseName("ux_client_contracts_client_revision");
+
+        builder.HasIndex(contract => contract.SupersedesContractId)
+            .IsUnique()
+            .HasFilter("supersedes_contract_id IS NOT NULL")
+            .HasDatabaseName("ux_client_contracts_supersedes");
+
+        builder.Property(contract => contract.ProductCatalogRevisionId)
+            .HasColumnName("product_catalog_revision_id")
+            .HasConversion(
+                id => id.Value,
+                value => ProductCatalogRevisionId.Create(value))
+            .IsRequired();
+
+        builder.HasOne<ProductCatalogRevisionRecord>()
+            .WithMany()
+            .HasForeignKey(contract => new
+            {
+                contract.ProductCatalogRevisionId,
+                contract.ProductCatalogRevisionNumber
+            })
+            .HasPrincipalKey(revision => new
+            {
+                revision.CatalogRevisionId,
+                revision.RevisionNumber
+            })
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(contract => contract.ProductCatalogRevisionNumber)
+            .HasColumnName("product_catalog_revision_number")
+            .IsRequired();
+
+        builder.HasIndex(contract => contract.ProductCatalogRevisionId)
+            .HasDatabaseName("ix_client_contracts_product_catalog_revision");
+
+        builder.HasIndex(contract => contract.ClientId)
+            .IsUnique()
+            .HasFilter("status = 'Active'")
+            .HasDatabaseName("ux_client_contracts_client_active");
 
         builder.Navigation(contract => contract.ModuleAllowances)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
@@ -150,5 +244,57 @@ internal sealed class ClientContractConfiguration : IEntityTypeConfiguration<Cli
                 .IsUnique()
                 .HasDatabaseName("ux_client_contract_modules_contract_code");
         });
+
+        builder.OwnsMany(contract => contract.FeatureLimits, limit =>
+        {
+            limit.ToTable("client_contract_feature_limits", table =>
+                table.HasCheckConstraint(
+                    "ck_client_contract_feature_limits_value",
+                    "limit_value >= 0"));
+
+            limit.WithOwner()
+                .HasForeignKey("contract_id");
+
+            limit.Property<int>("client_contract_feature_limit_row_id")
+                .HasColumnName("client_contract_feature_limit_row_id")
+                .ValueGeneratedOnAdd();
+
+            limit.HasKey("client_contract_feature_limit_row_id");
+
+            limit.Property(featureLimit => featureLimit.ModuleCode)
+                .HasColumnName("module_code")
+                .HasMaxLength(64)
+                .HasConversion(
+                    moduleCode => moduleCode.Value,
+                    value => ModuleCode.Create(value))
+                .IsRequired();
+
+            limit.Property(featureLimit => featureLimit.FeatureCode)
+                .HasColumnName("feature_code")
+                .HasMaxLength(64)
+                .HasConversion(
+                    featureCode => featureCode.Value,
+                    value => ModuleFeatureCode.Create(value))
+                .IsRequired();
+
+            limit.Property(featureLimit => featureLimit.LimitValue)
+                .HasColumnName("limit_value")
+                .IsRequired();
+
+            limit.Property(featureLimit => featureLimit.Unit)
+                .HasColumnName("unit")
+                .HasMaxLength(32)
+                .IsRequired();
+
+            limit.HasIndex(
+                    "contract_id",
+                    nameof(ModuleFeatureLimit.ModuleCode),
+                    nameof(ModuleFeatureLimit.FeatureCode))
+                .IsUnique()
+                .HasDatabaseName("ux_client_contract_feature_limits_contract_key");
+        });
+
+        builder.Navigation(contract => contract.FeatureLimits)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

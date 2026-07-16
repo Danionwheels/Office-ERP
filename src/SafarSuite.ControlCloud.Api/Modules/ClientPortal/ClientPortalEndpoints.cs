@@ -3,6 +3,7 @@ using SafarSuite.ControlCloud.Application.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.GetInstallationStatus;
 using SafarSuite.ControlCloud.Domain.Modules.ClientPortal;
+using SafarSuite.ControlCloud.Infrastructure.ClientPortal;
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 
 namespace SafarSuite.ControlCloud.Api.Modules.ClientPortal;
@@ -28,11 +29,37 @@ public static class ClientPortalEndpoints
                 RevokeInvitationAsync)
             .WithName("RevokeClientPortalInvitation");
         group.MapPost("/invitations/accept", AcceptInvitationAsync)
-            .WithName("AcceptClientPortalInvitation");
+            .WithName("AcceptClientPortalInvitation")
+            .RequireRateLimiting("client-portal-auth");
         group.MapPost("/sessions", CreateSessionAsync)
-            .WithName("CreateClientPortalSession");
+            .WithName("CreateClientPortalSession")
+            .RequireRateLimiting("client-portal-auth");
+        group.MapPost("/sessions/refresh", RefreshSessionAsync)
+            .WithName("RefreshClientPortalSession")
+            .RequireRateLimiting("client-portal-auth");
+        group.MapDelete("/sessions/current", RevokeCurrentSessionAsync)
+            .WithName("RevokeCurrentClientPortalSession");
+        group.MapDelete("/sessions/all", RevokeAllSessionsAsync)
+            .WithName("RevokeAllClientPortalSessions");
+        group.MapPost("/mfa/totp/enrollment", BeginTotpEnrollmentAsync)
+            .WithName("BeginClientPortalTotpEnrollment")
+            .RequireRateLimiting("client-portal-auth");
+        group.MapPost("/mfa/totp/confirm", ConfirmTotpEnrollmentAsync)
+            .WithName("ConfirmClientPortalTotpEnrollment")
+            .RequireRateLimiting("client-portal-auth");
+        group.MapPost("/password-reset-requests", RequestPasswordResetAsync)
+            .WithName("RequestClientPortalPasswordReset")
+            .RequireRateLimiting("client-portal-auth");
+        group.MapPost("/password-resets/validate", ValidatePasswordResetAsync)
+            .WithName("ValidateClientPortalPasswordReset")
+            .RequireRateLimiting("client-portal-auth");
+        group.MapPost("/password-resets", CompletePasswordResetAsync)
+            .WithName("CompleteClientPortalPasswordReset")
+            .RequireRateLimiting("client-portal-auth");
         group.MapGet("/clients/{clientId:guid}/commercial-summary", GetCommercialSummaryAsync)
             .WithName("GetClientPortalCommercialSummary");
+        group.MapGet("/clients/{clientId:guid}/commercial-documents", GetCommercialDocumentsAsync)
+            .WithName("GetClientPortalCommercialDocuments");
         group.MapGet("/clients/{clientId:guid}/entitlement-bundle", GetSignedEntitlementBundleAsync)
             .WithName("GetClientPortalSignedEntitlementBundle");
         group.MapGet(
@@ -391,7 +418,9 @@ public static class ClientPortalEndpoints
                 accepted.FullName,
                 accepted.Role,
                 accepted.AccessToken!,
-                accepted.ExpiresAtUtc!.Value));
+                accepted.RefreshToken!,
+                accepted.ExpiresAtUtc!.Value,
+                accepted.IdleExpiresAtUtc!.Value));
         }
 
         return accepted.FailureCode switch
@@ -412,15 +441,20 @@ public static class ClientPortalEndpoints
             new CreateClientPortalSessionCommand(
                 request.ClientId,
                 request.Email,
-                request.Password),
+                request.Password,
+                request.TotpCode,
+                request.RecoveryCode),
             cancellationToken);
 
         if (session.IsSuccess)
         {
             return Results.Ok(new ClientPortalSessionResponse(
+                session.UserId,
                 session.ClientId,
                 session.AccessToken!,
+                session.RefreshToken!,
                 session.ExpiresAtUtc!.Value,
+                session.IdleExpiresAtUtc!.Value,
                 session.Role!));
         }
 
@@ -429,9 +463,172 @@ public static class ClientPortalEndpoints
             "InvalidCredentials" => Results.Json(
                 new { code = session.FailureCode, detail = session.Detail },
                 statusCode: StatusCodes.Status401Unauthorized),
+            "ClientPortalMfaRequired" or "ClientPortalMfaInvalid" or "ClientPortalMfaUnavailable" => Results.Json(
+                new { code = session.FailureCode, detail = session.Detail },
+                statusCode: StatusCodes.Status401Unauthorized),
             _ => Results.BadRequest(new { code = session.FailureCode, detail = session.Detail })
         };
     }
+
+    private static async Task<IResult> RefreshSessionAsync(
+        RefreshClientPortalSessionRequest request,
+        IClientPortalSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var session = await sessions.RefreshAsync(request.RefreshToken, cancellationToken);
+        return session.IsSuccess
+            ? Results.Ok(ToSessionResponse(session))
+            : Results.Json(
+                new { code = session.FailureCode, detail = session.Detail },
+                statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    private static async Task<IResult> RevokeCurrentSessionAsync(
+        HttpRequest request,
+        IClientPortalSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var revoked = await sessions.RevokeCurrentAsync(
+            request.Headers.Authorization.ToString(),
+            "Client requested logout.",
+            cancellationToken);
+        return revoked
+            ? Results.NoContent()
+            : Results.Json(
+                new { code = "PortalSessionInvalid", detail = "Client Portal session is invalid or already revoked." },
+                statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    private static async Task<IResult> RevokeAllSessionsAsync(
+        HttpRequest request,
+        IClientPortalSessionService sessions,
+        CancellationToken cancellationToken)
+    {
+        var validation = await sessions.ValidateAsync(
+            request.Headers.Authorization.ToString(),
+            touchActivity: false,
+            cancellationToken);
+
+        if (!validation.IsSuccess)
+        {
+            return ToSessionAuthorizationFailure(validation);
+        }
+
+        await sessions.RevokeAllForUserAsync(
+            validation.Principal!.UserId,
+            "Client requested logout on all devices.",
+            cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> BeginTotpEnrollmentAsync(
+        BeginClientPortalMfaEnrollmentRequest enrollmentRequest,
+        HttpRequest request,
+        IClientPortalSessionService sessions,
+        BeginClientPortalMfaEnrollmentHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var validation = await sessions.ValidateAsync(
+            request.Headers.Authorization.ToString(),
+            cancellationToken: cancellationToken);
+
+        if (!validation.IsSuccess)
+        {
+            return ToSessionAuthorizationFailure(validation);
+        }
+
+        var result = await handler.HandleAsync(
+            new BeginClientPortalMfaEnrollmentCommand(
+                validation.Principal!.UserId,
+                enrollmentRequest.Password),
+            cancellationToken);
+        return result.IsSuccess
+            ? Results.Ok(new BeginClientPortalMfaEnrollmentResponse(
+                result.Secret!,
+                result.OtpAuthUri!,
+                result.QrCodeDataUri!,
+                result.RecoveryCodes))
+            : Results.BadRequest(new { code = result.FailureCode, detail = result.Detail });
+    }
+
+    private static async Task<IResult> ConfirmTotpEnrollmentAsync(
+        ConfirmClientPortalMfaEnrollmentRequest request,
+        HttpRequest httpRequest,
+        IClientPortalSessionService sessions,
+        ConfirmClientPortalMfaEnrollmentHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var validation = await sessions.ValidateAsync(
+            httpRequest.Headers.Authorization.ToString(),
+            cancellationToken: cancellationToken);
+
+        if (!validation.IsSuccess)
+        {
+            return ToSessionAuthorizationFailure(validation);
+        }
+
+        var result = await handler.HandleAsync(
+            new ConfirmClientPortalMfaEnrollmentCommand(validation.Principal!.UserId, request.Code),
+            cancellationToken);
+        return result.IsSuccess
+            ? Results.Ok(ToSessionResponse(result.Session!))
+            : Results.BadRequest(new { code = result.FailureCode, detail = result.Detail });
+    }
+
+    private static async Task<IResult> RequestPasswordResetAsync(
+        RequestClientPortalPasswordResetRequest request,
+        HttpRequest httpRequest,
+        RequestClientPortalPasswordResetHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var accessOptions = httpRequest.HttpContext.RequestServices
+            .GetRequiredService<ClientPortalAccessOptions>();
+        await handler.HandleAsync(
+            new RequestClientPortalPasswordResetCommand(
+                request.ClientId,
+                request.Email,
+                accessOptions.PublicPortalUrl,
+                accessOptions.PasswordResetMinutes,
+                accessOptions.PasswordResetTokenBytes),
+            cancellationToken);
+        return Results.Accepted(value: new
+        {
+            accepted = true,
+            detail = "If the account exists, password reset instructions have been queued."
+        });
+    }
+
+    private static async Task<IResult> ValidatePasswordResetAsync(
+        ValidateClientPortalPasswordResetRequest request,
+        ValidateClientPortalPasswordResetHandler handler,
+        CancellationToken cancellationToken)
+    {
+        return Results.Ok(new ClientPortalPasswordResetValidationResponse(
+            await handler.HandleAsync(request.ResetToken, cancellationToken)));
+    }
+
+    private static async Task<IResult> CompletePasswordResetAsync(
+        CompleteClientPortalPasswordResetRequest request,
+        CompleteClientPortalPasswordResetHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new CompleteClientPortalPasswordResetCommand(request.ResetToken, request.NewPassword),
+            cancellationToken);
+        return result.IsSuccess
+            ? Results.Ok(new { completed = true })
+            : Results.BadRequest(new { code = result.FailureCode, detail = result.Detail });
+    }
+
+    private static ClientPortalSessionResponse ToSessionResponse(CreateClientPortalSessionResult session) =>
+        new(
+            session.UserId,
+            session.ClientId,
+            session.AccessToken!,
+            session.RefreshToken!,
+            session.ExpiresAtUtc!.Value,
+            session.IdleExpiresAtUtc!.Value,
+            session.Role!);
 
     private static async Task<IResult> GetCommercialSummaryAsync(
         Guid clientId,
@@ -440,7 +637,13 @@ public static class ClientPortalEndpoints
         GetClientPortalCommercialSummaryHandler handler,
         CancellationToken cancellationToken)
     {
-        var authorizationFailure = AuthorizeClientSession(request, sessions, clientId);
+        var authorizationFailure = AuthorizeClientSession(
+            request,
+            sessions,
+            clientId,
+            "ClientOwner",
+            "ClientBilling",
+            "ClientViewer");
 
         if (authorizationFailure is not null)
         {
@@ -456,6 +659,62 @@ public static class ClientPortalEndpoints
             : Results.Ok(ToResponse(projection));
     }
 
+    private static async Task<IResult> GetCommercialDocumentsAsync(
+        Guid clientId,
+        string? documentType,
+        int? take,
+        string? cursor,
+        HttpRequest request,
+        IClientPortalSessionService sessions,
+        GetClientPortalCommercialDocumentsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var authorizationFailure = AuthorizeClientSession(
+            request,
+            sessions,
+            clientId,
+            "ClientOwner",
+            "ClientBilling",
+            "ClientViewer");
+
+        if (authorizationFailure is not null)
+        {
+            return authorizationFailure;
+        }
+
+        var page = await handler.HandleAsync(
+            new GetClientPortalCommercialDocumentsQuery(
+                clientId,
+                documentType ?? "",
+                take ?? 25,
+                cursor),
+            cancellationToken);
+
+        if (!page.IsSuccess)
+        {
+            return Results.BadRequest(new { code = page.FailureCode, detail = page.Detail });
+        }
+
+        return Results.Ok(new ClientPortalCommercialDocumentsPageResponse(
+            page.ClientId,
+            page.DocumentType!,
+            page.PageSize,
+            page.HasMore,
+            page.NextCursor,
+            page.Items.Select(document => new ClientPortalCommercialDocumentSummaryResponse(
+                document.DocumentType,
+                document.DocumentId,
+                document.RelatedDocumentId,
+                document.Reference,
+                document.Status,
+                document.DocumentDate,
+                document.Amount,
+                document.BalanceAmount,
+                document.CurrencyCode,
+                document.OccurredAtUtc,
+                document.LastUpdatedAtUtc)).ToArray()));
+    }
+
     private static async Task<IResult> GetSignedEntitlementBundleAsync(
         Guid clientId,
         string? installationId,
@@ -464,7 +723,14 @@ public static class ClientPortalEndpoints
         GetClientPortalSignedEntitlementBundleHandler handler,
         CancellationToken cancellationToken)
     {
-        var authorizationFailure = AuthorizeClientSession(request, sessions, clientId);
+        var authorizationFailure = AuthorizeClientSession(
+            request,
+            sessions,
+            clientId,
+            "ClientOwner",
+            "ClientBilling",
+            "ClientTechnical",
+            "ClientViewer");
 
         if (authorizationFailure is not null)
         {
@@ -497,7 +763,12 @@ public static class ClientPortalEndpoints
         GetInstallationStatusHandler handler,
         CancellationToken cancellationToken)
     {
-        var authorizationFailure = AuthorizeClientSession(request, sessions, clientId);
+        var authorizationFailure = AuthorizeClientSession(
+            request,
+            sessions,
+            clientId,
+            "ClientOwner",
+            "ClientTechnical");
 
         if (authorizationFailure is not null)
         {
@@ -524,7 +795,8 @@ public static class ClientPortalEndpoints
     private static IResult? AuthorizeClientSession(
         HttpRequest request,
         IClientPortalSessionService sessions,
-        Guid clientId)
+        Guid clientId,
+        params string[] allowedRoles)
     {
         var session = sessions.Validate(request.Headers.Authorization.ToString());
 
@@ -546,12 +818,35 @@ public static class ClientPortalEndpoints
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
+        if (allowedRoles.Length > 0
+            && !allowedRoles.Any(role => role.Equals(session.Principal.Role, StringComparison.Ordinal)))
+        {
+            return Results.Json(
+                new
+                {
+                    code = "ClientPortalRoleDenied",
+                    detail = "Client Portal role is not allowed to read this resource."
+                },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
         return null;
+    }
+
+    private static IResult ToSessionAuthorizationFailure(
+        ClientPortalSessionValidationResult session)
+    {
+        return Results.Json(
+            new { code = session.FailureCode, detail = session.Detail },
+            statusCode: StatusCodes.Status401Unauthorized);
     }
 
     private static string BuildInvitationUrl(HttpRequest request, string invitationToken)
     {
-        return $"{request.Scheme}://{request.Host}/client-portal/index.html?invite={Uri.EscapeDataString(invitationToken)}";
+        var publicPortalUrl = request.HttpContext.RequestServices
+            .GetRequiredService<ClientPortalAccessOptions>()
+            .PublicPortalUrl;
+        return $"{publicPortalUrl.Split('#')[0]}#invite={Uri.EscapeDataString(invitationToken)}";
     }
 
     private static ClientPortalCommercialSummaryResponse ToResponse(
@@ -652,7 +947,14 @@ public static class ClientPortalEndpoints
                 ? null
                 : new ClientPortalEntitlementSummaryResponse(
                     projection.LatestEntitlement.EntitlementSnapshotId,
+                    projection.LatestEntitlement.ClientAccessRevisionId == Guid.Empty
+                        ? projection.LatestEntitlement.EntitlementSnapshotId
+                        : projection.LatestEntitlement.ClientAccessRevisionId,
+                    projection.LatestEntitlement.EntitlementVersion,
                     projection.LatestEntitlement.ContractId,
+                    projection.LatestEntitlement.ContractRevisionNumber,
+                    projection.LatestEntitlement.ProductCatalogRevisionId,
+                    projection.LatestEntitlement.ProductCatalogRevisionNumber,
                     projection.LatestEntitlement.SourceInvoiceId,
                     projection.LatestEntitlement.SourceInvoiceNumber,
                     projection.LatestEntitlement.Status,
@@ -667,6 +969,17 @@ public static class ClientPortalEndpoints
                         .Select(module => new ClientPortalEntitlementModuleSummaryResponse(
                             module.ModuleCode,
                             module.IsEnabled))
+                        .ToArray(),
+                    projection.LatestEntitlement.AllowedNamedUsers,
+                    projection.LatestEntitlement.AllowedConcurrentUsers,
+                    (projection.LatestEntitlement.FeatureLimits ?? [])
+                        .OrderBy(limit => limit.ModuleCode, StringComparer.Ordinal)
+                        .ThenBy(limit => limit.FeatureCode, StringComparer.Ordinal)
+                        .Select(limit => new ClientPortalEntitlementFeatureLimitSummaryResponse(
+                            limit.ModuleCode,
+                            limit.FeatureCode,
+                            limit.LimitValue,
+                            limit.Unit))
                         .ToArray()));
     }
 

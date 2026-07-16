@@ -1,12 +1,12 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using OtpNet;
 
 namespace SafarSuite.ControlCloud.Api.Modules.ProviderAccess;
 
 public static class ProviderAccessTotp
 {
-    private const string Base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     private const int SecretByteCount = 20;
     private const int Digits = 6;
     private const int PeriodSeconds = 30;
@@ -14,10 +14,8 @@ public static class ProviderAccessTotp
 
     public static string CreateSecret()
     {
-        Span<byte> secretBytes = stackalloc byte[SecretByteCount];
-        RandomNumberGenerator.Fill(secretBytes);
-
-        return Base32Encode(secretBytes);
+        return Base32Encoding.ToString(
+            RandomNumberGenerator.GetBytes(SecretByteCount));
     }
 
     public static string CreateOtpAuthUri(
@@ -44,8 +42,7 @@ public static class ProviderAccessTotp
         string secret,
         DateTimeOffset now)
     {
-        return ComputeCode(DecodeBase32(secret), GetStep(now))
-            .ToString($"D{Digits}", CultureInfo.InvariantCulture);
+        return CreateTotp(secret).ComputeTotp(now.UtcDateTime);
     }
 
     public static bool TryVerifyCode(
@@ -65,11 +62,15 @@ public static class ProviderAccessTotp
             return false;
         }
 
-        byte[] secretBytes;
+        Totp totp;
 
         try
         {
-            secretBytes = DecodeBase32(secret);
+            totp = CreateTotp(secret);
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
         catch (FormatException)
         {
@@ -88,8 +89,10 @@ public static class ProviderAccessTotp
                 continue;
             }
 
-            var expectedCode = ComputeCode(secretBytes, candidateStep)
-                .ToString($"D{Digits}", CultureInfo.InvariantCulture);
+            var candidateTime = DateTimeOffset
+                .FromUnixTimeSeconds(candidateStep * PeriodSeconds)
+                .UtcDateTime;
+            var expectedCode = totp.ComputeTotp(candidateTime);
 
             if (!FixedTimeEquals(normalizedCode, expectedCode))
             {
@@ -108,27 +111,27 @@ public static class ProviderAccessTotp
         return now.ToUnixTimeSeconds() / PeriodSeconds;
     }
 
-    private static int ComputeCode(
-        byte[] secretBytes,
-        long step)
+    private static Totp CreateTotp(string secret)
     {
-        var counter = BitConverter.GetBytes(step);
+        var normalizedSecret = NormalizeSecret(secret);
 
-        if (BitConverter.IsLittleEndian)
+        if (string.IsNullOrWhiteSpace(normalizedSecret))
         {
-            Array.Reverse(counter);
+            throw new FormatException("TOTP secret is required.");
         }
 
-        using var hmac = new HMACSHA1(secretBytes);
-        var hash = hmac.ComputeHash(counter);
-        var offset = hash[^1] & 0x0f;
-        var binaryCode =
-            ((hash[offset] & 0x7f) << 24)
-            | ((hash[offset + 1] & 0xff) << 16)
-            | ((hash[offset + 2] & 0xff) << 8)
-            | (hash[offset + 3] & 0xff);
+        var secretBytes = Base32Encoding.ToBytes(normalizedSecret);
 
-        return binaryCode % (int)Math.Pow(10, Digits);
+        if (secretBytes.Length == 0)
+        {
+            throw new FormatException("TOTP secret is required.");
+        }
+
+        return new Totp(
+            secretBytes,
+            step: PeriodSeconds,
+            mode: OtpHashMode.Sha1,
+            totpSize: Digits);
     }
 
     private static string NormalizeSecret(string secret)
@@ -144,76 +147,6 @@ public static class ProviderAccessTotp
         return new string((code ?? "")
             .Where(character => !char.IsWhiteSpace(character) && character != '-')
             .ToArray());
-    }
-
-    private static string Base32Encode(ReadOnlySpan<byte> data)
-    {
-        var output = new StringBuilder((data.Length + 4) / 5 * 8);
-        var buffer = (int)data[0];
-        var next = 1;
-        var bitsLeft = 8;
-
-        while (bitsLeft > 0 || next < data.Length)
-        {
-            if (bitsLeft < 5)
-            {
-                if (next < data.Length)
-                {
-                    buffer <<= 8;
-                    buffer |= data[next++] & 0xff;
-                    bitsLeft += 8;
-                }
-                else
-                {
-                    var padding = 5 - bitsLeft;
-                    buffer <<= padding;
-                    bitsLeft += padding;
-                }
-            }
-
-            var index = (buffer >> (bitsLeft - 5)) & 0x1f;
-            bitsLeft -= 5;
-            output.Append(Base32Alphabet[index]);
-        }
-
-        return output.ToString();
-    }
-
-    private static byte[] DecodeBase32(string secret)
-    {
-        var normalizedSecret = NormalizeSecret(secret);
-
-        if (string.IsNullOrWhiteSpace(normalizedSecret))
-        {
-            throw new FormatException("TOTP secret is required.");
-        }
-
-        var bytes = new List<byte>();
-        var buffer = 0;
-        var bitsLeft = 0;
-
-        foreach (var character in normalizedSecret)
-        {
-            var value = Base32Alphabet.IndexOf(character);
-
-            if (value < 0)
-            {
-                throw new FormatException("TOTP secret is not base32 encoded.");
-            }
-
-            buffer = (buffer << 5) | value;
-            bitsLeft += 5;
-
-            if (bitsLeft < 8)
-            {
-                continue;
-            }
-
-            bytes.Add((byte)((buffer >> (bitsLeft - 8)) & 0xff));
-            bitsLeft -= 8;
-        }
-
-        return bytes.ToArray();
     }
 
     private static bool FixedTimeEquals(

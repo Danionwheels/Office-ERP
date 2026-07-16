@@ -9,11 +9,17 @@ namespace SafarSuite.ControlCloud.Application.Modules.InboundControlDesk;
 public sealed class ControlDeskEnvelopeProjectionService
 {
     private readonly IControlCloudClientCommercialProjectionRepository _projections;
+    private readonly IClientPortalPaymentClaimRepository _paymentClaims;
+    private readonly IControlCloudProviderBankDetailsRepository _bankDetails;
 
     public ControlDeskEnvelopeProjectionService(
-        IControlCloudClientCommercialProjectionRepository projections)
+        IControlCloudClientCommercialProjectionRepository projections,
+        IClientPortalPaymentClaimRepository paymentClaims,
+        IControlCloudProviderBankDetailsRepository bankDetails)
     {
         _projections = projections;
+        _paymentClaims = paymentClaims;
+        _bankDetails = bankDetails;
     }
 
     public async Task<bool> ProjectAsync(
@@ -32,6 +38,8 @@ public sealed class ControlDeskEnvelopeProjectionService
             "ClientRefundIssued" => await ProjectClientRefundIssuedAsync(envelope, projectedAtUtc, cancellationToken),
             "ClientCreditApplied" => await ProjectClientCreditAppliedAsync(envelope, projectedAtUtc, cancellationToken),
             "EntitlementSnapshotIssued" => await ProjectEntitlementSnapshotIssuedAsync(envelope, projectedAtUtc, cancellationToken),
+            "ProviderBankDetailsUpdated" => await ProjectProviderBankDetailsUpdatedAsync(envelope, cancellationToken),
+            "PortalPaymentClaimDecided" => await ProjectPortalPaymentClaimDecidedAsync(envelope, cancellationToken),
             _ => false
         };
     }
@@ -43,7 +51,36 @@ public sealed class ControlDeskEnvelopeProjectionService
     {
         var payload = envelope.Payload;
         var clientId = GetGuid(payload, "clientId");
-        var projection = await LoadProjectionAsync(clientId, GetString(payload, "currencyCode"), cancellationToken);
+        var currencyCode = GetString(payload, "currencyCode");
+        ControlCloudClientBillingDetailProjection? client = null;
+        if (payload.TryGetProperty("client", out var clientProperty)
+            && clientProperty.ValueKind == JsonValueKind.Object)
+        {
+            client = new ControlCloudClientBillingDetailProjection(
+                GetString(clientProperty, "name"),
+                GetOptionalString(clientProperty, "contactName"),
+                GetOptionalString(clientProperty, "email"),
+                GetOptionalString(clientProperty, "phone"));
+        }
+
+        var lines = payload.TryGetProperty("lines", out var linesProperty)
+                    && linesProperty.ValueKind == JsonValueKind.Array
+            ? linesProperty.EnumerateArray()
+                .Select(line =>
+                {
+                    var lineTotal = GetOptionalDecimal(line, "lineTotal")
+                        ?? GetOptionalDecimal(line, "amount")
+                        ?? 0;
+                    var quantity = GetOptionalDecimal(line, "quantity") ?? 1;
+                    return new ControlCloudInvoiceLineProjection(
+                        GetString(line, "description"),
+                        quantity,
+                        GetOptionalDecimal(line, "unitPrice") ?? lineTotal,
+                        lineTotal,
+                        GetOptionalString(line, "currencyCode") ?? currencyCode);
+                })
+                .ToArray()
+            : [];
         var invoice = new ControlCloudInvoiceProjection(
             GetGuid(payload, "invoiceId"),
             GetString(payload, "invoiceNumber"),
@@ -53,12 +90,86 @@ public sealed class ControlDeskEnvelopeProjectionService
             GetDateOnly(payload, "dueDate"),
             GetDecimal(payload, "totalAmount"),
             GetDecimal(payload, "balanceDue"),
-            GetString(payload, "currencyCode"));
+            currencyCode,
+            Client: client,
+            Lines: lines);
 
-        projection.ApplyInvoiceIssued(invoice, projectedAtUtc);
+        await _projections.ApplyChangeAsync(
+            new ControlCloudInvoiceIssuedChange(
+                clientId,
+                currencyCode,
+                envelope.MessageId,
+                envelope.OccurredAtUtc,
+                projectedAtUtc,
+                invoice),
+            cancellationToken);
 
-        await _projections.SaveAsync(projection, cancellationToken);
+        return true;
+    }
 
+    private async Task<bool> ProjectProviderBankDetailsUpdatedAsync(
+        ControlCloudEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var payload = envelope.Payload;
+        var updatedAtUtc = GetOptionalDateTimeOffset(payload, "updatedAtUtc") ?? envelope.OccurredAtUtc;
+        var existing = await _bankDetails.GetAsync(cancellationToken);
+        if (existing is not null && existing.UpdatedAtUtc > updatedAtUtc)
+        {
+            return true;
+        }
+
+        await _bankDetails.SaveAsync(
+            new ControlCloudProviderBankDetails(
+                GetOptionalString(payload, "bankName") ?? "",
+                GetOptionalString(payload, "accountTitle") ?? "",
+                GetOptionalString(payload, "accountNumber") ?? "",
+                GetOptionalString(payload, "iban") ?? "",
+                GetOptionalString(payload, "branchOrRoutingInfo") ?? "",
+                updatedAtUtc),
+            cancellationToken);
+        return true;
+    }
+
+    private async Task<bool> ProjectPortalPaymentClaimDecidedAsync(
+        ControlCloudEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        var payload = envelope.Payload;
+        var claimId = GetGuid(payload, "claimId");
+        var clientId = GetGuid(payload, "clientId");
+        var claim = await _paymentClaims.GetByIdAsync(claimId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Portal payment claim '{claimId:D}' was not found.");
+        if (claim.ClientId != clientId)
+        {
+            throw new InvalidOperationException("Portal payment claim decision client does not match the claim.");
+        }
+
+        var status = GetString(payload, "status");
+        var reviewedAtUtc = GetOptionalDateTimeOffset(payload, "reviewedAtUtc") ?? envelope.OccurredAtUtc;
+        if (status.Equals("verified", StringComparison.OrdinalIgnoreCase))
+        {
+            claim.MarkVerified(
+                GetOptionalGuid(payload, "paymentId")
+                    ?? throw new InvalidOperationException("Verified payment claim decision requires a payment id."),
+                reviewedAtUtc);
+        }
+        else if (status.Equals("rejected", StringComparison.OrdinalIgnoreCase))
+        {
+            var reason = GetOptionalString(payload, "rejectionReason")
+                ?? GetOptionalString(payload, "reason")
+                ?? "Rejected by provider.";
+            if (claim.Status != ControlCloudClientPortalPaymentClaimStatus.Rejected)
+            {
+                claim.Reject(reason, reviewedAtUtc);
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException($"Unsupported portal payment claim decision status '{status}'.");
+        }
+
+        await _paymentClaims.SaveAsync(claim, cancellationToken);
         return true;
     }
 
@@ -69,18 +180,21 @@ public sealed class ControlDeskEnvelopeProjectionService
     {
         var payload = envelope.Payload;
         var clientId = GetGuid(payload, "clientId");
-        var projection = await LoadProjectionAsync(clientId, GetString(payload, "currencyCode"), cancellationToken);
+        var currencyCode = GetString(payload, "currencyCode");
 
-        projection.ApplyInvoiceVoided(
-            GetGuid(payload, "invoiceId"),
-            GetString(payload, "invoiceStatus"),
-            GetDecimal(payload, "balanceDue"),
-            GetString(payload, "currencyCode"),
-            GetDateOnly(payload, "voidDate"),
-            GetString(payload, "reason"),
-            projectedAtUtc);
-
-        await _projections.SaveAsync(projection, cancellationToken);
+        await _projections.ApplyChangeAsync(
+            new ControlCloudInvoiceVoidedChange(
+                clientId,
+                currencyCode,
+                envelope.MessageId,
+                envelope.OccurredAtUtc,
+                projectedAtUtc,
+                GetGuid(payload, "invoiceId"),
+                GetString(payload, "invoiceStatus"),
+                GetDecimal(payload, "balanceDue"),
+                GetDateOnly(payload, "voidDate"),
+                GetString(payload, "reason")),
+            cancellationToken);
 
         return true;
     }
@@ -92,7 +206,7 @@ public sealed class ControlDeskEnvelopeProjectionService
     {
         var payload = envelope.Payload;
         var clientId = GetGuid(payload, "clientId");
-        var projection = await LoadProjectionAsync(clientId, GetString(payload, "currencyCode"), cancellationToken);
+        var currencyCode = GetString(payload, "currencyCode");
         var payment = new ControlCloudPaymentProjection(
             GetGuid(payload, "paymentId"),
             GetGuid(payload, "invoiceId"),
@@ -102,12 +216,18 @@ public sealed class ControlDeskEnvelopeProjectionService
             GetString(payload, "paymentReference"),
             GetDecimal(payload, "amount"),
             GetDecimal(payload, "invoiceBalanceDue"),
-            GetString(payload, "currencyCode"),
+            currencyCode,
             GetDateOnly(payload, "receivedOn"));
 
-        projection.ApplyPaymentRecorded(payment, projectedAtUtc);
-
-        await _projections.SaveAsync(projection, cancellationToken);
+        await _projections.ApplyChangeAsync(
+            new ControlCloudPaymentRecordedChange(
+                clientId,
+                currencyCode,
+                envelope.MessageId,
+                envelope.OccurredAtUtc,
+                projectedAtUtc,
+                payment),
+            cancellationToken);
 
         return true;
     }
@@ -119,18 +239,21 @@ public sealed class ControlDeskEnvelopeProjectionService
     {
         var payload = envelope.Payload;
         var clientId = GetGuid(payload, "clientId");
-        var projection = await LoadProjectionAsync(clientId, GetString(payload, "currencyCode"), cancellationToken);
+        var currencyCode = GetString(payload, "currencyCode");
 
-        projection.ApplyPaymentReversed(
-            GetGuid(payload, "paymentId"),
-            GetGuid(payload, "invoiceId"),
-            GetString(payload, "paymentStatus"),
-            GetDecimal(payload, "amount"),
-            GetDecimal(payload, "invoiceBalanceDue"),
-            GetString(payload, "currencyCode"),
-            projectedAtUtc);
-
-        await _projections.SaveAsync(projection, cancellationToken);
+        await _projections.ApplyChangeAsync(
+            new ControlCloudPaymentReversedChange(
+                clientId,
+                currencyCode,
+                envelope.MessageId,
+                envelope.OccurredAtUtc,
+                projectedAtUtc,
+                GetGuid(payload, "paymentId"),
+                GetGuid(payload, "invoiceId"),
+                GetString(payload, "paymentStatus"),
+                GetDecimal(payload, "amount"),
+                GetDecimal(payload, "invoiceBalanceDue")),
+            cancellationToken);
 
         return true;
     }
@@ -142,16 +265,19 @@ public sealed class ControlDeskEnvelopeProjectionService
     {
         var payload = envelope.Payload;
         var clientId = GetGuid(payload, "clientId");
-        var projection = await LoadProjectionAsync(clientId, GetString(payload, "currencyCode"), cancellationToken);
+        var currencyCode = GetString(payload, "currencyCode");
 
-        projection.ApplyInvoiceStatus(
-            GetGuid(payload, "invoiceId"),
-            GetString(payload, "invoiceStatus"),
-            GetDecimal(payload, "balanceDue"),
-            GetString(payload, "currencyCode"),
-            projectedAtUtc);
-
-        await _projections.SaveAsync(projection, cancellationToken);
+        await _projections.ApplyChangeAsync(
+            new ControlCloudInvoiceStatusChangedChange(
+                clientId,
+                currencyCode,
+                envelope.MessageId,
+                envelope.OccurredAtUtc,
+                projectedAtUtc,
+                GetGuid(payload, "invoiceId"),
+                GetString(payload, "invoiceStatus"),
+                GetDecimal(payload, "balanceDue")),
+            cancellationToken);
 
         return true;
     }
@@ -163,7 +289,7 @@ public sealed class ControlDeskEnvelopeProjectionService
     {
         var payload = envelope.Payload;
         var clientId = GetGuid(payload, "clientId");
-        var projection = await LoadProjectionAsync(clientId, GetString(payload, "currencyCode"), cancellationToken);
+        var currencyCode = GetString(payload, "currencyCode");
         var creditNote = new ControlCloudCreditNoteProjection(
             GetGuid(payload, "creditNoteId"),
             GetString(payload, "creditNoteNumber"),
@@ -172,12 +298,18 @@ public sealed class ControlDeskEnvelopeProjectionService
             GetString(payload, "creditNoteStatus"),
             GetDateOnly(payload, "creditDate"),
             GetDecimal(payload, "amount"),
-            GetString(payload, "currencyCode"),
+            currencyCode,
             GetString(payload, "reason"));
 
-        projection.ApplyCreditNote(creditNote, projectedAtUtc);
-
-        await _projections.SaveAsync(projection, cancellationToken);
+        await _projections.ApplyChangeAsync(
+            new ControlCloudCreditNoteIssuedChange(
+                clientId,
+                currencyCode,
+                envelope.MessageId,
+                envelope.OccurredAtUtc,
+                projectedAtUtc,
+                creditNote),
+            cancellationToken);
 
         return true;
     }
@@ -189,7 +321,7 @@ public sealed class ControlDeskEnvelopeProjectionService
     {
         var payload = envelope.Payload;
         var clientId = GetGuid(payload, "clientId");
-        var projection = await LoadProjectionAsync(clientId, GetString(payload, "currencyCode"), cancellationToken);
+        var currencyCode = GetString(payload, "currencyCode");
         var refund = new ControlCloudClientRefundProjection(
             GetGuid(payload, "refundId"),
             GetString(payload, "refundStatus"),
@@ -198,12 +330,18 @@ public sealed class ControlDeskEnvelopeProjectionService
             GetDecimal(payload, "amount"),
             GetDecimal(payload, "clientBalanceBefore"),
             GetDecimal(payload, "clientBalanceAfter"),
-            GetString(payload, "currencyCode"),
+            currencyCode,
             GetDateOnly(payload, "refundedOn"));
 
-        projection.ApplyRefund(refund, projectedAtUtc);
-
-        await _projections.SaveAsync(projection, cancellationToken);
+        await _projections.ApplyChangeAsync(
+            new ControlCloudRefundIssuedChange(
+                clientId,
+                currencyCode,
+                envelope.MessageId,
+                envelope.OccurredAtUtc,
+                projectedAtUtc,
+                refund),
+            cancellationToken);
 
         return true;
     }
@@ -215,7 +353,7 @@ public sealed class ControlDeskEnvelopeProjectionService
     {
         var payload = envelope.Payload;
         var clientId = GetGuid(payload, "clientId");
-        var projection = await LoadProjectionAsync(clientId, GetString(payload, "currencyCode"), cancellationToken);
+        var currencyCode = GetString(payload, "currencyCode");
         var application = new ControlCloudCreditApplicationProjection(
             GetGuid(payload, "creditApplicationId"),
             GetGuid(payload, "invoiceId"),
@@ -230,12 +368,18 @@ public sealed class ControlDeskEnvelopeProjectionService
             GetDecimal(payload, "availableCreditAfter"),
             GetDecimal(payload, "clientBalanceBefore"),
             GetDecimal(payload, "clientBalanceAfter"),
-            GetString(payload, "currencyCode"),
+            currencyCode,
             GetDateOnly(payload, "appliedOn"));
 
-        projection.ApplyCreditApplication(application, projectedAtUtc);
-
-        await _projections.SaveAsync(projection, cancellationToken);
+        await _projections.ApplyChangeAsync(
+            new ControlCloudCreditAppliedChange(
+                clientId,
+                currencyCode,
+                envelope.MessageId,
+                envelope.OccurredAtUtc,
+                projectedAtUtc,
+                application),
+            cancellationToken);
 
         return true;
     }
@@ -247,16 +391,33 @@ public sealed class ControlDeskEnvelopeProjectionService
     {
         var payload = envelope.Payload;
         var clientId = GetGuid(payload, "clientId");
-        var projection = await LoadProjectionAsync(clientId, "PKR", cancellationToken);
         var modules = payload.GetProperty("modules")
             .EnumerateArray()
             .Select(module => new ControlCloudEntitlementModuleProjection(
                 GetString(module, "moduleCode"),
                 GetBoolean(module, "isEnabled")))
             .ToArray();
+        var featureLimits = payload.TryGetProperty("featureLimits", out var featureLimitsProperty)
+                            && featureLimitsProperty.ValueKind == JsonValueKind.Array
+            ? featureLimitsProperty
+                .EnumerateArray()
+                .Select(limit => new ControlCloudEntitlementFeatureLimitProjection(
+                    GetString(limit, "moduleCode"),
+                    GetString(limit, "featureCode"),
+                    GetInt64(limit, "limitValue"),
+                    GetString(limit, "unit")))
+                .ToArray()
+            : [];
+        var entitlementSnapshotId = GetGuid(payload, "entitlementSnapshotId");
+        var issuedAtUtc = GetDateTimeOffset(payload, "issuedAtUtc");
         var entitlement = new ControlCloudEntitlementProjection(
-            GetGuid(payload, "entitlementSnapshotId"),
+            entitlementSnapshotId,
+            GetOptionalGuid(payload, "clientAccessRevisionId") ?? entitlementSnapshotId,
             GetGuid(payload, "contractId"),
+            GetOptionalInt64(payload, "contractRevisionNumber") ?? 0,
+            GetOptionalGuid(payload, "productCatalogRevisionId") ?? Guid.Empty,
+            GetOptionalInt64(payload, "productCatalogRevisionNumber") ?? 0,
+            GetInt64(payload, "entitlementVersion"),
             GetGuid(payload, "sourceInvoiceId"),
             GetString(payload, "sourceInvoiceNumber"),
             GetString(payload, "status"),
@@ -265,23 +426,24 @@ public sealed class ControlDeskEnvelopeProjectionService
             GetDateOnly(payload, "offlineValidUntil"),
             GetInt32(payload, "allowedDevices"),
             GetInt32(payload, "allowedBranches"),
-            GetDateTimeOffset(payload, "issuedAtUtc"),
-            modules);
+            issuedAtUtc,
+            modules,
+            GetOptionalInt32(payload, "allowedNamedUsers"),
+            GetOptionalInt32(payload, "allowedConcurrentUsers"),
+            featureLimits,
+            GetOptionalDateTimeOffset(payload, "effectiveFromUtc") ?? issuedAtUtc);
 
-        projection.ApplyEntitlement(entitlement, projectedAtUtc);
-
-        await _projections.SaveAsync(projection, cancellationToken);
+        await _projections.ApplyChangeAsync(
+            new ControlCloudEntitlementIssuedChange(
+                clientId,
+                "PKR",
+                envelope.MessageId,
+                envelope.OccurredAtUtc,
+                projectedAtUtc,
+                entitlement),
+            cancellationToken);
 
         return true;
-    }
-
-    private async Task<ControlCloudClientCommercialProjection> LoadProjectionAsync(
-        Guid clientId,
-        string currencyCode,
-        CancellationToken cancellationToken)
-    {
-        return await _projections.GetByClientIdAsync(clientId, cancellationToken)
-            ?? ControlCloudClientCommercialProjection.Create(clientId, currencyCode);
     }
 
     private static Guid GetGuid(JsonElement payload, string propertyName)
@@ -289,9 +451,30 @@ public sealed class ControlDeskEnvelopeProjectionService
         return payload.GetProperty(propertyName).GetGuid();
     }
 
+    private static Guid? GetOptionalGuid(JsonElement payload, string propertyName)
+    {
+        return payload.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.String
+            && property.TryGetGuid(out var value)
+                ? value
+                : null;
+    }
+
     private static string GetString(JsonElement payload, string propertyName)
     {
         return payload.GetProperty(propertyName).GetString()?.Trim() ?? "";
+    }
+
+    private static string? GetOptionalString(JsonElement payload, string propertyName)
+    {
+        if (!payload.TryGetProperty(propertyName, out var property)
+            || property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        var value = property.GetString()?.Trim();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     private static decimal GetDecimal(JsonElement payload, string propertyName)
@@ -299,9 +482,40 @@ public sealed class ControlDeskEnvelopeProjectionService
         return payload.GetProperty(propertyName).GetDecimal();
     }
 
+    private static decimal? GetOptionalDecimal(JsonElement payload, string propertyName)
+    {
+        return payload.TryGetProperty(propertyName, out var property)
+               && property.ValueKind != JsonValueKind.Null
+               && property.TryGetDecimal(out var value)
+            ? value
+            : null;
+    }
+
     private static int GetInt32(JsonElement payload, string propertyName)
     {
         return payload.GetProperty(propertyName).GetInt32();
+    }
+
+    private static int? GetOptionalInt32(JsonElement payload, string propertyName)
+    {
+        return payload.TryGetProperty(propertyName, out var property)
+            && property.ValueKind != JsonValueKind.Null
+            && property.TryGetInt32(out var value)
+                ? value
+                : null;
+    }
+
+    private static long GetInt64(JsonElement payload, string propertyName)
+    {
+        return payload.GetProperty(propertyName).GetInt64();
+    }
+
+    private static long? GetOptionalInt64(JsonElement payload, string propertyName)
+    {
+        return payload.TryGetProperty(propertyName, out var property)
+            && property.TryGetInt64(out var value)
+                ? value
+                : null;
     }
 
     private static bool GetBoolean(JsonElement payload, string propertyName)
@@ -317,5 +531,14 @@ public sealed class ControlDeskEnvelopeProjectionService
     private static DateTimeOffset GetDateTimeOffset(JsonElement payload, string propertyName)
     {
         return payload.GetProperty(propertyName).GetDateTimeOffset();
+    }
+
+    private static DateTimeOffset? GetOptionalDateTimeOffset(JsonElement payload, string propertyName)
+    {
+        return payload.TryGetProperty(propertyName, out var property)
+               && property.ValueKind == JsonValueKind.String
+               && property.TryGetDateTimeOffset(out var value)
+            ? value
+            : null;
     }
 }

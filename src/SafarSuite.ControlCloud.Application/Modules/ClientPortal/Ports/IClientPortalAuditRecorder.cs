@@ -27,6 +27,15 @@ public static class ClientPortalAuditEventTypes
     public const string InvitationAccepted = "InvitationAccepted";
     public const string SessionCreated = "SessionCreated";
     public const string SessionRejected = "SessionRejected";
+    public const string SessionRefreshed = "SessionRefreshed";
+    public const string SessionRevoked = "SessionRevoked";
+    public const string MfaEnrollmentStarted = "MfaEnrollmentStarted";
+    public const string MfaEnrollmentConfirmed = "MfaEnrollmentConfirmed";
+    public const string PasswordResetRequested = "PasswordResetRequested";
+    public const string PasswordResetCompleted = "PasswordResetCompleted";
+    public const string PaymentClaimSubmitted = "PaymentClaimSubmitted";
+    public const string PaymentClaimRejected = "PaymentClaimRejected";
+    public const string PaymentProofUploaded = "PaymentProofUploaded";
     public const string SetupTokenCreated = "SetupTokenCreated";
     public const string BootstrapPackageGenerated = "BootstrapPackageGenerated";
     public const string BootstrapPackageHandedOff = "BootstrapPackageHandedOff";

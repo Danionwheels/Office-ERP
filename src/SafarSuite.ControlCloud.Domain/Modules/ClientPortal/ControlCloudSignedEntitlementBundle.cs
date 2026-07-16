@@ -16,7 +16,11 @@ public sealed record ControlCloudEntitlementBundlePayload(
     long EntitlementVersion,
     Guid BundleIssueId,
     Guid EntitlementSnapshotId,
+    Guid ClientAccessRevisionId,
     Guid ContractId,
+    long ContractRevisionNumber,
+    Guid ProductCatalogRevisionId,
+    long ProductCatalogRevisionNumber,
     Guid SourceInvoiceId,
     string SourceInvoiceNumber,
     string Status,
@@ -29,12 +33,22 @@ public sealed record ControlCloudEntitlementBundlePayload(
     DateOnly OfflineValidUntil,
     int AllowedDevices,
     int AllowedBranches,
-    IReadOnlyCollection<ControlCloudEntitlementBundleModule> Modules);
+    IReadOnlyCollection<ControlCloudEntitlementBundleModule> Modules,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<ControlCloudEntitlementBundleFeatureLimit>? FeatureLimits = null,
+    DateTimeOffset? EffectiveFromUtc = null);
 
 public sealed record ControlCloudEntitlementBundleModule(
     string ModuleCode,
     string Status,
     bool IsEnabled);
+
+public sealed record ControlCloudEntitlementBundleFeatureLimit(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);
 
 public sealed record ControlCloudEntitlementBundleSignature(
     string Algorithm,
@@ -168,6 +182,10 @@ public sealed record ControlCloudEntitlementBundleIssue(
     string InstallationId,
     long EntitlementVersion,
     Guid EntitlementSnapshotId,
+    Guid ClientAccessRevisionId,
+    long ContractRevisionNumber,
+    Guid ProductCatalogRevisionId,
+    long ProductCatalogRevisionNumber,
     DateTimeOffset IssuedAtUtc,
     string Algorithm,
     string KeyId,
@@ -177,4 +195,7 @@ public sealed record ControlCloudEntitlementBundleIssue(
     DateOnly PaidUntil,
     DateOnly WarningStartsAt,
     DateOnly GraceUntil,
-    DateOnly OfflineValidUntil);
+    DateOnly OfflineValidUntil,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    int FeatureLimitCount = 0);

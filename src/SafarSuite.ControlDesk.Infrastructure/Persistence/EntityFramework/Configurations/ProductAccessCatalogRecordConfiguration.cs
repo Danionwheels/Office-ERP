@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SafarSuite.ControlDesk.Domain.Modules.Contracts;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 
 namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Configurations;
@@ -17,6 +18,40 @@ internal sealed class ProductAccessCatalogRecordConfiguration : IEntityTypeConfi
             .HasMaxLength(64)
             .IsRequired();
 
+        builder.Property(catalog => catalog.DraftId)
+            .HasColumnName("draft_id")
+            .IsRequired();
+
+        builder.Property(catalog => catalog.BaseCatalogRevisionId)
+            .HasColumnName("base_catalog_revision_id")
+            .HasConversion(
+                id => id.Value,
+                value => ProductCatalogRevisionId.Create(value))
+            .IsRequired();
+
+        builder.HasOne<ProductCatalogRevisionRecord>()
+            .WithMany()
+            .HasForeignKey(catalog => new
+            {
+                catalog.BaseCatalogRevisionId,
+                catalog.BaseCatalogRevisionNumber
+            })
+            .HasPrincipalKey(revision => new
+            {
+                revision.CatalogRevisionId,
+                revision.RevisionNumber
+            })
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(catalog => catalog.BaseCatalogRevisionNumber)
+            .HasColumnName("base_catalog_revision_number")
+            .IsRequired();
+
+        builder.Property(catalog => catalog.ModulesJson)
+            .HasColumnName("modules_json")
+            .HasColumnType("jsonb")
+            .IsRequired();
+
         builder.Property(catalog => catalog.ModuleGroupsJson)
             .HasColumnName("module_groups_json")
             .HasColumnType("jsonb")
@@ -25,6 +60,11 @@ internal sealed class ProductAccessCatalogRecordConfiguration : IEntityTypeConfi
         builder.Property(catalog => catalog.ResourcesJson)
             .HasColumnName("resources_json")
             .HasColumnType("jsonb")
+            .IsRequired();
+
+        builder.Property(catalog => catalog.ChangeReason)
+            .HasColumnName("change_reason")
+            .HasMaxLength(1000)
             .IsRequired();
 
         builder.Property(catalog => catalog.UpdatedAtUtc)

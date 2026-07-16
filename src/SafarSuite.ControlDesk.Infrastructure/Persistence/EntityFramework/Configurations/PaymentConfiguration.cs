@@ -85,13 +85,45 @@ internal sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
             .HasColumnName("decision_note")
             .HasMaxLength(1000);
 
+        builder.Property(payment => payment.PortalClaimId)
+            .HasColumnName("portal_claim_id")
+            .HasConversion(
+                id => id.HasValue ? id.Value.Value : (Guid?)null,
+                value => value.HasValue
+                    ? PortalPaymentClaimId.Create(value.Value)
+                    : (PortalPaymentClaimId?)null);
+
         builder.HasIndex(payment => payment.ClientId)
             .HasDatabaseName("ix_payments_client_id");
+
+        builder.HasIndex(payment => new
+            {
+                payment.ClientId,
+                payment.ReceivedOn,
+                payment.RecordedAtUtc,
+                payment.Id
+            })
+            .HasDatabaseName("ix_payments_client_received_recorded_id");
+
+        builder.HasIndex(payment => new
+            {
+                payment.ClientId,
+                payment.Status,
+                payment.ReceivedOn,
+                payment.RecordedAtUtc,
+                payment.Id
+            })
+            .HasDatabaseName("ix_payments_client_status_received_recorded_id");
 
         builder.HasIndex(payment => payment.InvoiceId)
             .HasDatabaseName("ix_payments_invoice_id");
 
         builder.HasIndex(payment => payment.Reference)
             .HasDatabaseName("ix_payments_reference");
+
+        builder.HasIndex(payment => payment.PortalClaimId)
+            .IsUnique()
+            .HasFilter("\"portal_claim_id\" IS NOT NULL")
+            .HasDatabaseName("ux_payments_portal_claim_id");
     }
 }

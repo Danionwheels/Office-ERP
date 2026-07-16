@@ -12,43 +12,20 @@ public sealed class ListProductAccessCatalogHandler
         _catalog = catalog;
     }
 
-    public async Task<Result<ListProductAccessCatalogResult>> HandleAsync(
+    public async Task<Result<ProductCatalogSnapshotResult>> HandleAsync(
         CancellationToken cancellationToken = default)
     {
-        var catalog = await _catalog.GetAccessCatalogAsync(cancellationToken);
+        var draft = await _catalog.GetDraftAsync(cancellationToken);
 
-        return Result<ListProductAccessCatalogResult>.Success(new ListProductAccessCatalogResult(
-            catalog.ModuleGroups.Select(group => new ProductModuleGroupResult(
-                    group.GroupId,
-                    group.DisplayName,
-                    group.AccessKind,
-                    group.ModuleCodes.ToArray()))
-                .ToArray(),
-            catalog.Resources.Select(resource => new ProductResourceResult(
-                    resource.ResourceId,
-                    resource.DisplayName,
-                    resource.AccessKind,
-                    resource.RequiredGroupIds.ToArray(),
-                    resource.RequiredModuleCodes.ToArray(),
-                    resource.ResolvedModuleCodes.ToArray()))
-                .ToArray()));
+        if (draft is not null)
+        {
+            return Result<ProductCatalogSnapshotResult>.Success(
+                ProductCatalogSnapshotResultMapper.FromDraft(draft));
+        }
+
+        var published = await _catalog.GetPublishedRevisionAsync(cancellationToken);
+
+        return Result<ProductCatalogSnapshotResult>.Success(
+            ProductCatalogSnapshotResultMapper.FromPublished(published));
     }
 }
-
-public sealed record ListProductAccessCatalogResult(
-    IReadOnlyCollection<ProductModuleGroupResult> ModuleGroups,
-    IReadOnlyCollection<ProductResourceResult> Resources);
-
-public sealed record ProductModuleGroupResult(
-    string GroupId,
-    string DisplayName,
-    string AccessKind,
-    IReadOnlyCollection<string> ModuleCodes);
-
-public sealed record ProductResourceResult(
-    string ResourceId,
-    string DisplayName,
-    string AccessKind,
-    IReadOnlyCollection<string> RequiredGroupIds,
-    IReadOnlyCollection<string> RequiredModuleCodes,
-    IReadOnlyCollection<string> ResolvedModuleCodes);

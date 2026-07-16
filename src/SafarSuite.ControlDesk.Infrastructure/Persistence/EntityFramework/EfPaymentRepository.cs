@@ -25,6 +25,14 @@ public sealed class EfPaymentRepository : IPaymentRepository
             .SingleOrDefaultAsync(payment => payment.Id == id, cancellationToken);
     }
 
+    public async Task<Payment?> GetByPortalClaimIdAsync(
+        PortalPaymentClaimId portalClaimId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Payments
+            .SingleOrDefaultAsync(payment => payment.PortalClaimId == portalClaimId, cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<Payment>> ListByReferenceAsync(
         PaymentReference reference,
         CancellationToken cancellationToken = default)

@@ -4,6 +4,15 @@ namespace SafarSuite.ControlDesk.Application.Modules.Contracts.Ports;
 
 public interface IProductModuleCatalog
 {
+    Task<ProductCatalogRevision> GetPublishedRevisionAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<ProductCatalogDraft?> GetDraftAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<ProductCatalogRevision>> ListPublishedRevisionsAsync(
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<ProductModuleCatalogItem>> ListAsync(
         CancellationToken cancellationToken = default);
 
@@ -11,13 +20,28 @@ public interface IProductModuleCatalog
         CancellationToken cancellationToken = default);
 }
 
-public interface IProductAccessCatalogRepository
+public interface IProductCatalogRepository
 {
-    Task<ProductAccessCatalog?> GetAsync(CancellationToken cancellationToken = default);
+    Task<ProductCatalogRevision?> GetLatestPublishedAsync(
+        CancellationToken cancellationToken = default);
 
-    Task SaveAsync(
-        ProductAccessCatalog catalog,
-        string updatedBy,
-        DateTimeOffset updatedAtUtc,
+    Task<ProductCatalogRevision?> GetLatestPublishedForUpdateAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<ProductCatalogDraft?> GetDraftAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<ProductCatalogRevision>> ListPublishedAsync(
+        CancellationToken cancellationToken = default);
+
+    Task AddPublishedAsync(
+        ProductCatalogRevision revision,
+        CancellationToken cancellationToken = default);
+
+    Task SaveDraftAsync(
+        ProductCatalogDraft draft,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteDraftAsync(
         CancellationToken cancellationToken = default);
 }

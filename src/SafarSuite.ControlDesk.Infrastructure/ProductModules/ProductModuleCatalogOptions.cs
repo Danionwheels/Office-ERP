@@ -15,11 +15,24 @@ public sealed class ProductModuleCatalogEntryOptions
 
     public string DisplayName { get; set; } = string.Empty;
 
+    public string Description { get; set; } = string.Empty;
+
     public string CommercialMode { get; set; } = string.Empty;
 
     public bool IsActive { get; set; } = true;
 
     public ProductModuleBillingDefaultsOptions? BillingDefaults { get; set; }
+
+    public ProductModuleCompatibilityOptions Compatibility { get; set; } = new();
+}
+
+public sealed class ProductModuleCompatibilityOptions
+{
+    public string? MinimumSafarSuiteVersion { get; set; }
+
+    public string? MinimumLocalServerVersion { get; set; }
+
+    public List<string> SupportedDeploymentModes { get; set; } = [];
 }
 
 public sealed class ProductModuleBillingDefaultsOptions

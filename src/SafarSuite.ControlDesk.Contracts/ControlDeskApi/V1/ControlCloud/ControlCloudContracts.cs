@@ -1,10 +1,15 @@
 namespace SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.ControlCloud;
 
 public sealed record ListCloudOutboxMessagesResponse(
-    IReadOnlyCollection<CloudOutboxMessageResponse> Messages);
+    IReadOnlyCollection<CloudOutboxMessageResponse> Messages,
+    int PageSize,
+    bool HasMore,
+    string? NextCursor,
+    CloudOutboxMessageRegisterSummaryResponse Summary);
 
 public sealed record CloudOutboxMessageResponse(
     Guid CloudOutboxMessageId,
+    Guid? ClientId,
     string MessageType,
     string SubjectType,
     string SubjectId,
@@ -17,6 +22,14 @@ public sealed record CloudOutboxMessageResponse(
     DateTimeOffset? SentAtUtc,
     DateTimeOffset? FailedAtUtc,
     string? FailureReason);
+
+public sealed record CloudOutboxMessageRegisterSummaryResponse(
+    long TotalCount,
+    long PendingCount,
+    long FailedCount,
+    long SentCount,
+    long ReadyForPublishingCount,
+    long TotalAttemptCount);
 
 public sealed record PublishCloudOutboxMessagesResponse(
     int RequestedBatchSize,

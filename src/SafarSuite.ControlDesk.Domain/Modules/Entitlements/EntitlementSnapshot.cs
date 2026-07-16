@@ -7,6 +7,7 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Entitlements;
 public sealed class EntitlementSnapshot : Entity<EntitlementSnapshotId>
 {
     private readonly List<EntitlementModule> _modules = [];
+    private readonly List<ModuleFeatureLimit> _featureLimits = [];
 
     private EntitlementSnapshot()
     {
@@ -16,29 +17,43 @@ public sealed class EntitlementSnapshot : Entity<EntitlementSnapshotId>
         EntitlementSnapshotId id,
         ClientId clientId,
         ContractId contractId,
+        ClientAccessRevisionId clientAccessRevisionId,
+        long entitlementVersion,
         EntitlementStatus status,
         DateOnly paidUntil,
         DateOnly graceUntil,
         DateOnly offlineValidUntil,
         int allowedDevices,
         int allowedBranches,
+        int? allowedNamedUsers,
+        int? allowedConcurrentUsers,
+        DateTimeOffset effectiveFromUtc,
         DateTimeOffset issuedAtUtc)
         : base(id)
     {
         ClientId = clientId;
         ContractId = contractId;
+        ClientAccessRevisionId = clientAccessRevisionId;
+        EntitlementVersion = entitlementVersion;
         Status = status;
         PaidUntil = paidUntil;
         GraceUntil = graceUntil;
         OfflineValidUntil = offlineValidUntil;
         AllowedDevices = allowedDevices;
         AllowedBranches = allowedBranches;
+        AllowedNamedUsers = allowedNamedUsers;
+        AllowedConcurrentUsers = allowedConcurrentUsers;
+        EffectiveFromUtc = effectiveFromUtc;
         IssuedAtUtc = issuedAtUtc;
     }
 
     public ClientId ClientId { get; private set; }
 
     public ContractId ContractId { get; private set; }
+
+    public ClientAccessRevisionId ClientAccessRevisionId { get; private set; }
+
+    public long EntitlementVersion { get; private set; }
 
     public EntitlementStatus Status { get; private set; }
 
@@ -52,68 +67,53 @@ public sealed class EntitlementSnapshot : Entity<EntitlementSnapshotId>
 
     public int AllowedBranches { get; private set; }
 
+    public int? AllowedNamedUsers { get; private set; }
+
+    public int? AllowedConcurrentUsers { get; private set; }
+
+    public DateTimeOffset EffectiveFromUtc { get; private set; }
+
     public DateTimeOffset IssuedAtUtc { get; private set; }
 
     public IReadOnlyCollection<EntitlementModule> Modules => _modules.AsReadOnly();
 
-    public static EntitlementSnapshot Issue(
+    public IReadOnlyCollection<ModuleFeatureLimit> FeatureLimits => _featureLimits.AsReadOnly();
+
+    public static EntitlementSnapshot IssueFromApprovedRevision(
         EntitlementSnapshotId id,
-        ClientId clientId,
-        ContractId contractId,
+        ClientAccessRevision revision,
         EntitlementStatus status,
-        DateOnly paidUntil,
-        DateOnly graceUntil,
-        DateOnly offlineValidUntil,
-        int allowedDevices,
-        int allowedBranches,
-        IEnumerable<EntitlementModule> modules,
         DateTimeOffset issuedAtUtc)
     {
-        if (graceUntil < paidUntil)
-        {
-            throw new ArgumentException("Grace date cannot be before paid-until date.", nameof(graceUntil));
-        }
-
-        if (offlineValidUntil < paidUntil)
-        {
-            throw new ArgumentException("Offline validity cannot be before paid-until date.", nameof(offlineValidUntil));
-        }
-
-        if (allowedDevices < 0)
-        {
-            throw new ArgumentException("Allowed device count cannot be negative.", nameof(allowedDevices));
-        }
-
-        if (allowedBranches < 0)
-        {
-            throw new ArgumentException("Allowed branch count cannot be negative.", nameof(allowedBranches));
-        }
-
         var snapshot = new EntitlementSnapshot(
             id,
-            clientId,
-            contractId,
+            revision.ClientId,
+            revision.ContractId,
+            revision.Id,
+            revision.RevisionNumber,
             status,
-            paidUntil,
-            graceUntil,
-            offlineValidUntil,
-            allowedDevices,
-            allowedBranches,
+            revision.PaidUntil,
+            revision.GraceUntil,
+            revision.OfflineValidUntil,
+            revision.AllowedDevices,
+            revision.AllowedBranches,
+            revision.AllowedNamedUsers,
+            revision.AllowedConcurrentUsers,
+            revision.EffectiveFromUtc,
             issuedAtUtc);
 
-        foreach (var module in modules)
+        foreach (var module in revision.Modules)
         {
-            snapshot._modules.Add(module);
+            snapshot._modules.Add(EntitlementModule.Create(module.ModuleCode, module.IsEnabled));
         }
 
-        if (snapshot._modules.Count == 0)
+        foreach (var featureLimit in revision.FeatureLimits)
         {
-            throw new InvalidOperationException("Entitlement snapshot requires at least one module.");
-        }
-
-        if (!snapshot._modules.Any(module => module.IsEnabled))
-        {
-            throw new InvalidOperationException("Entitlement snapshot requires at least one enabled module.");
+            snapshot._featureLimits.Add(ModuleFeatureLimit.Create(
+                featureLimit.ModuleCode,
+                featureLimit.FeatureCode,
+                featureLimit.LimitValue,
+                featureLimit.Unit));
         }
 
         return snapshot;
@@ -121,6 +121,11 @@ public sealed class EntitlementSnapshot : Entity<EntitlementSnapshotId>
 
     public bool AllowsUseOn(DateOnly date)
     {
+        if (date < DateOnly.FromDateTime(EffectiveFromUtc.UtcDateTime))
+        {
+            return false;
+        }
+
         return Status switch
         {
             EntitlementStatus.Active => date <= PaidUntil,

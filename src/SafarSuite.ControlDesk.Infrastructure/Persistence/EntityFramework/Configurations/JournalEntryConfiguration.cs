@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
+using SafarSuite.ControlDesk.Domain.Modules.Clients;
 using SafarSuite.ControlDesk.Domain.SharedKernel;
 
 namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Configurations;
@@ -43,6 +44,20 @@ internal sealed class JournalEntryConfiguration : IEntityTypeConfiguration<Journ
             .HasColumnName("memo")
             .HasMaxLength(512);
 
+        builder.Property(entry => entry.ClientId)
+            .HasColumnName("client_id")
+            .HasConversion(
+                id => id!.Value.Value,
+                value => ClientId.Create(value));
+
+        builder.HasOne<Client>()
+            .WithMany()
+            .HasForeignKey(entry => entry.ClientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(entry => entry.SourceDocumentId)
+            .HasColumnName("source_document_id");
+
         builder.Property(entry => entry.Status)
             .HasColumnName("status")
             .HasMaxLength(32)
@@ -64,6 +79,12 @@ internal sealed class JournalEntryConfiguration : IEntityTypeConfiguration<Journ
 
         builder.HasIndex(entry => entry.SourceType)
             .HasDatabaseName("ix_journal_entries_source_type");
+
+        builder.HasIndex(entry => new { entry.ClientId, entry.EntryDate, entry.CreatedAtUtc, entry.Id })
+            .HasDatabaseName("ix_journal_entries_client_date_created_id");
+
+        builder.HasIndex(entry => new { entry.SourceType, entry.SourceDocumentId })
+            .HasDatabaseName("ix_journal_entries_source_document");
 
         builder.Navigation(entry => entry.Lines)
             .UsePropertyAccessMode(PropertyAccessMode.Field);

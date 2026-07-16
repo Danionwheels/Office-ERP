@@ -115,9 +115,26 @@ public sealed class FileClientPortalIdentityRepository : IClientPortalIdentityRe
             var normalizedEmail = ControlCloudClientPortalInvitation.NormalizeEmail(email);
             var store = await ReadStoreAsync(cancellationToken);
 
-            return store.Users.FirstOrDefault(user =>
+            return PrepareLoadedUser(store.Users.FirstOrDefault(user =>
                 user.ClientId == clientId
-                && ControlCloudClientPortalInvitation.NormalizeEmail(user.Email) == normalizedEmail);
+                && ControlCloudClientPortalInvitation.NormalizeEmail(user.Email) == normalizedEmail));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<ControlCloudClientPortalUser?> GetUserByIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var store = await ReadStoreAsync(cancellationToken);
+            return PrepareLoadedUser(store.Users.FirstOrDefault(user => user.UserId == userId));
         }
         finally
         {
@@ -144,11 +161,37 @@ public sealed class FileClientPortalIdentityRepository : IClientPortalIdentityRe
         }
     }
 
-    public Task SaveUserAsync(
+    public async Task SaveUserAsync(
         ControlCloudClientPortalUser user,
         CancellationToken cancellationToken = default)
     {
-        return AddUserAsync(user, cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            var store = await ReadStoreAsync(cancellationToken);
+            var index = store.Users.FindIndex(stored => stored.UserId == user.UserId);
+
+            if (index < 0)
+            {
+                throw new InvalidOperationException($"Client Portal user '{user.UserId}' was not found.");
+            }
+
+            var storedToken = store.Users[index].ConcurrencyToken;
+
+            if (storedToken != user.OriginalConcurrencyToken)
+            {
+                throw new InvalidOperationException("Client Portal user security state changed concurrently.");
+            }
+
+            user.OriginalConcurrencyToken = user.ConcurrencyToken;
+            store.Users[index] = user;
+            await WriteStoreAsync(store, cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private async Task<ClientPortalIdentityStore> ReadStoreAsync(CancellationToken cancellationToken)
@@ -200,6 +243,16 @@ public sealed class FileClientPortalIdentityRepository : IClientPortalIdentityRe
         return Path.IsPathRooted(path)
             ? path
             : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, path));
+    }
+
+    private static ControlCloudClientPortalUser? PrepareLoadedUser(ControlCloudClientPortalUser? user)
+    {
+        if (user is not null)
+        {
+            user.OriginalConcurrencyToken = user.ConcurrencyToken;
+        }
+
+        return user;
     }
 
     private sealed class ClientPortalIdentityStore

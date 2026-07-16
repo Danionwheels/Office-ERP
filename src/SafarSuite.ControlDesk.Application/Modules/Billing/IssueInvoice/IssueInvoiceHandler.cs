@@ -9,6 +9,7 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
 using SafarSuite.ControlDesk.Domain.Modules.Billing;
+using SafarSuite.ControlDesk.Domain.Modules.Clients;
 using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Domain.SharedKernel;
 
@@ -19,6 +20,7 @@ public sealed class IssueInvoiceHandler
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IInvoiceRepository _invoices;
+    private readonly IClientRepository _clients;
     private readonly IChargeCodeRepository _chargeCodes;
     private readonly IClientAccountingProfileRepository _clientAccountingProfiles;
     private readonly ILedgerAccountRepository _ledgerAccounts;
@@ -32,6 +34,7 @@ public sealed class IssueInvoiceHandler
 
     public IssueInvoiceHandler(
         IInvoiceRepository invoices,
+        IClientRepository clients,
         IChargeCodeRepository chargeCodes,
         IClientAccountingProfileRepository clientAccountingProfiles,
         ILedgerAccountRepository ledgerAccounts,
@@ -44,6 +47,7 @@ public sealed class IssueInvoiceHandler
         IssueInvoiceValidator validator)
     {
         _invoices = invoices;
+        _clients = clients;
         _chargeCodes = chargeCodes;
         _clientAccountingProfiles = clientAccountingProfiles;
         _ledgerAccounts = ledgerAccounts;
@@ -85,6 +89,15 @@ public sealed class IssueInvoiceHandler
                 return Result<IssueInvoiceResult>.Failure(ApplicationError.Validation(
                     nameof(command.InvoiceId),
                 "Only draft invoices can be issued."));
+            }
+
+            var client = await _clients.GetByIdAsync(invoice.ClientId, cancellationToken);
+
+            if (client is null)
+            {
+                return Result<IssueInvoiceResult>.Failure(ApplicationError.NotFound(
+                    nameof(invoice.ClientId),
+                    "Invoice client was not found."));
             }
 
             var receivableAccountIdResult = await ResolveReceivableAccountIdAsync(
@@ -141,7 +154,7 @@ public sealed class IssueInvoiceHandler
 
                     await _journalEntries.AddAsync(journalEntry, token);
                     await _cloudOutboxMessages.AddAsync(
-                        CreateInvoiceIssuedOutboxMessage(invoice, journalEntry, receivableAccountId),
+                        CreateInvoiceIssuedOutboxMessage(invoice, client, journalEntry, receivableAccountId),
                         token);
 
                     return await ToResultAsync(invoice, journalEntry, token);
@@ -304,7 +317,9 @@ public sealed class IssueInvoiceHandler
             JournalSourceType.BillingInvoice,
             invoice.Number.Value,
             $"Invoice {invoice.Number.Value}",
-            _clock.UtcNow);
+            _clock.UtcNow,
+            invoice.ClientId,
+            invoice.Id.Value);
 
         journalEntry.AddLine(JournalLine.DebitLine(
             receivableAccountId,
@@ -387,11 +402,16 @@ public sealed class IssueInvoiceHandler
 
     private CloudOutboxMessage CreateInvoiceIssuedOutboxMessage(
         Invoice invoice,
+        Client client,
         JournalEntry journalEntry,
         LedgerAccountId receivableAccountId)
     {
+        var billingContact = client.Contacts
+            .OrderBy(contact => contact.Role is ClientContactRole.Billing or ClientContactRole.Accounts ? 0 : 1)
+            .ThenByDescending(contact => contact.IsPrimary)
+            .FirstOrDefault();
         var payload = new InvoiceIssuedCloudPayload(
-            "1",
+            "2",
             invoice.Id.Value,
             invoice.Number.Value,
             invoice.ClientId.Value,
@@ -410,11 +430,20 @@ public sealed class IssueInvoiceHandler
                 line.ChargeCodeId?.Value,
                 line.LineType.ToString(),
                 line.Description,
+                1m,
                 line.Amount.Amount,
-                line.Amount.CurrencyCode)).ToArray());
+                line.Amount.Amount,
+                line.Amount.Amount,
+                line.Amount.CurrencyCode)).ToArray(),
+            new InvoiceIssuedCloudPayloadClient(
+                client.DisplayName,
+                billingContact?.FullName,
+                billingContact?.Email,
+                billingContact?.Phone));
 
         return CloudOutboxMessage.Create(
             CloudOutboxMessageId.Create(_idGenerator.NewGuid()),
+            invoice.ClientId,
             "InvoiceIssued",
             "Invoice",
             invoice.Id.Value.ToString(),
@@ -458,12 +487,22 @@ public sealed class IssueInvoiceHandler
         Guid JournalEntryId,
         DateOnly PostingDate,
         string JournalEntryStatus,
-        IReadOnlyCollection<InvoiceIssuedCloudPayloadLine> Lines);
+        IReadOnlyCollection<InvoiceIssuedCloudPayloadLine> Lines,
+        InvoiceIssuedCloudPayloadClient Client);
 
     private sealed record InvoiceIssuedCloudPayloadLine(
         Guid? ChargeCodeId,
         string LineType,
         string Description,
+        decimal Quantity,
+        decimal UnitPrice,
+        decimal LineTotal,
         decimal Amount,
         string CurrencyCode);
+
+    private sealed record InvoiceIssuedCloudPayloadClient(
+        string Name,
+        string? ContactName,
+        string? Email,
+        string? Phone);
 }

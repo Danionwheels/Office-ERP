@@ -19,7 +19,11 @@ public static class ControlCloudEntitlementBundleContractMapper
                 bundle.Payload.EntitlementVersion,
                 bundle.Payload.BundleIssueId,
                 bundle.Payload.EntitlementSnapshotId,
+                bundle.Payload.ClientAccessRevisionId,
                 bundle.Payload.ContractId,
+                bundle.Payload.ContractRevisionNumber,
+                bundle.Payload.ProductCatalogRevisionId,
+                bundle.Payload.ProductCatalogRevisionNumber,
                 bundle.Payload.SourceInvoiceId,
                 bundle.Payload.SourceInvoiceNumber,
                 bundle.Payload.Status,
@@ -38,7 +42,19 @@ public static class ControlCloudEntitlementBundleContractMapper
                         module.ModuleCode,
                         module.Status,
                         module.IsEnabled))
-                    .ToArray()),
+                    .ToArray(),
+                bundle.Payload.AllowedNamedUsers,
+                bundle.Payload.AllowedConcurrentUsers,
+                (bundle.Payload.FeatureLimits ?? [])
+                    .OrderBy(limit => limit.ModuleCode, StringComparer.Ordinal)
+                    .ThenBy(limit => limit.FeatureCode, StringComparer.Ordinal)
+                    .Select(limit => new ClientPortalEntitlementBundleFeatureLimitResponse(
+                        limit.ModuleCode,
+                        limit.FeatureCode,
+                        limit.LimitValue,
+                        limit.Unit))
+                    .ToArray(),
+                bundle.Payload.EffectiveFromUtc),
             new ClientPortalEntitlementBundleSignatureResponse(
                 bundle.Signature.Algorithm,
                 bundle.Signature.KeyId,

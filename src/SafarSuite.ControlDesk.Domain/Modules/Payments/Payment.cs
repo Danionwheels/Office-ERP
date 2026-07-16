@@ -20,7 +20,8 @@ public sealed class Payment : Entity<PaymentId>
         PaymentReference reference,
         Money amount,
         DateOnly receivedOn,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        PortalPaymentClaimId? portalClaimId)
         : base(id)
     {
         ClientId = clientId;
@@ -30,6 +31,7 @@ public sealed class Payment : Entity<PaymentId>
         Amount = amount;
         ReceivedOn = receivedOn;
         RecordedAtUtc = recordedAtUtc;
+        PortalClaimId = portalClaimId;
         Status = method == PaymentMethod.BankTransfer ? PaymentStatus.PendingReview : PaymentStatus.Approved;
     }
 
@@ -51,6 +53,8 @@ public sealed class Payment : Entity<PaymentId>
 
     public string? DecisionNote { get; private set; }
 
+    public PortalPaymentClaimId? PortalClaimId { get; private set; }
+
     public static Payment Record(
         PaymentId id,
         ClientId clientId,
@@ -59,14 +63,24 @@ public sealed class Payment : Entity<PaymentId>
         PaymentReference reference,
         Money amount,
         DateOnly receivedOn,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        PortalPaymentClaimId? portalClaimId = null)
     {
         if (amount.Amount <= 0)
         {
             throw new ArgumentException("Payment amount must be positive.", nameof(amount));
         }
 
-        return new Payment(id, clientId, invoiceId, method, reference, amount, receivedOn, recordedAtUtc);
+        return new Payment(
+            id,
+            clientId,
+            invoiceId,
+            method,
+            reference,
+            amount,
+            receivedOn,
+            recordedAtUtc,
+            portalClaimId);
     }
 
     public void Approve(string? decisionNote = null)

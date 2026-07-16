@@ -12,7 +12,8 @@ public sealed record ReportLocalServerHeartbeatRequest(
     DateOnly? OfflineValidUntil,
     string? Detail,
     LocalServerDeploymentProfileResponse? DeploymentProfile = null,
-    LocalServerPairingStatusResponse? PairingStatus = null);
+    LocalServerPairingStatusResponse? PairingStatus = null,
+    ControlCloudEntitlementStateValuesResponse? EntitlementState = null);
 
 public sealed record LocalServerHeartbeatResponse(
     Guid HeartbeatId,
@@ -30,4 +31,5 @@ public sealed record LocalServerHeartbeatResponse(
     string? LocalServerVersion,
     string? Detail,
     LocalServerDeploymentProfileResponse? DeploymentProfile = null,
-    LocalServerPairingStatusResponse? PairingStatus = null);
+    LocalServerPairingStatusResponse? PairingStatus = null,
+    ControlCloudEntitlementStateValuesResponse? EntitlementState = null);

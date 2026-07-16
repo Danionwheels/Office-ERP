@@ -1,14 +1,30 @@
 namespace SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Contracts;
 
 public sealed record ListProductModulesResponse(
-    IReadOnlyCollection<ProductModuleResponse> Modules);
+    IReadOnlyCollection<ProductModuleResponse> Modules,
+    Guid? CatalogRevisionId = null,
+    long? CatalogRevisionNumber = null);
 
 public sealed record ProductModuleResponse(
     string ModuleCode,
     string DisplayName,
     string CommercialMode,
     bool IsActive,
-    ProductModuleBillingDefaultsResponse? BillingDefaults);
+    ProductModuleBillingDefaultsResponse? BillingDefaults,
+    ProductModuleCompatibilityResponse? Compatibility = null,
+    string Description = "",
+    IReadOnlyCollection<ProductModuleContractReferenceResponse>? ReferencedBy = null);
+
+public sealed record ProductModuleContractReferenceResponse(
+    Guid ContractId,
+    string ContractNumber,
+    long ContractRevisionNumber,
+    Guid ClientId);
+
+public sealed record ProductModuleCompatibilityResponse(
+    string? MinimumSafarSuiteVersion,
+    string? MinimumLocalServerVersion,
+    IReadOnlyCollection<string> SupportedDeploymentModes);
 
 public sealed record ProductModuleBillingDefaultsResponse(
     string ChargeCode,
@@ -20,7 +36,21 @@ public sealed record ProductModuleBillingDefaultsResponse(
 
 public sealed record ProductAccessCatalogResponse(
     IReadOnlyCollection<ProductModuleGroupResponse> ModuleGroups,
-    IReadOnlyCollection<ProductResourceResponse> Resources);
+    IReadOnlyCollection<ProductResourceResponse> Resources,
+    IReadOnlyCollection<ProductModuleResponse>? Modules = null,
+    string State = "Published",
+    Guid? CatalogRevisionId = null,
+    long? RevisionNumber = null,
+    Guid? SupersedesCatalogRevisionId = null,
+    Guid? DraftId = null,
+    Guid? BaseCatalogRevisionId = null,
+    long? BaseCatalogRevisionNumber = null,
+    string ChangeReason = "",
+    string ChangedBy = "",
+    DateTimeOffset? ChangedAtUtc = null);
+
+public sealed record ListProductCatalogRevisionsResponse(
+    IReadOnlyCollection<ProductAccessCatalogResponse> Revisions);
 
 public sealed record ProductModuleGroupResponse(
     string GroupId,
@@ -44,7 +74,18 @@ public sealed record PublishProductAccessCatalogCommandRequest(
 public sealed record SaveProductAccessCatalogRequest(
     IReadOnlyCollection<SaveProductModuleGroupRequest> ModuleGroups,
     IReadOnlyCollection<SaveProductResourceRequest> Resources,
-    string RequestedBy);
+    string RequestedBy,
+    IReadOnlyCollection<SaveProductModuleRequest>? Modules = null,
+    string ChangeReason = "Product catalog definition updated.");
+
+public sealed record SaveProductModuleRequest(
+    string ModuleCode,
+    string DisplayName,
+    string CommercialMode,
+    bool IsActive,
+    ProductModuleBillingDefaultsResponse? BillingDefaults,
+    ProductModuleCompatibilityResponse? Compatibility,
+    string Description = "");
 
 public sealed record SaveProductModuleGroupRequest(
     string GroupId,
@@ -68,3 +109,5 @@ public sealed record PublishProductAccessCatalogCommandResponse(
     string SigningKeyId,
     DateTimeOffset ExpiresAt,
     ProductAccessCatalogResponse AccessCatalog);
+
+public sealed record PublishProductCatalogRevisionRequest(string RequestedBy);

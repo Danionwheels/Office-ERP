@@ -9,7 +9,21 @@ public sealed class ControlCloudEntitlementBundleIssueEntityConfiguration
 {
     public void Configure(EntityTypeBuilder<ControlCloudEntitlementBundleIssueEntity> builder)
     {
-        builder.ToTable("entitlement_bundle_issues");
+        builder.ToTable("entitlement_bundle_issues", table =>
+        {
+            table.HasCheckConstraint(
+                "ck_entitlement_bundle_issues_named_users",
+                "allowed_named_users IS NULL OR allowed_named_users >= 0");
+            table.HasCheckConstraint(
+                "ck_entitlement_bundle_issues_concurrent_users",
+                "allowed_concurrent_users IS NULL OR allowed_concurrent_users >= 0");
+            table.HasCheckConstraint(
+                "ck_entitlement_bundle_issues_user_limit_order",
+                "allowed_named_users IS NULL OR allowed_concurrent_users IS NULL OR allowed_concurrent_users <= allowed_named_users");
+            table.HasCheckConstraint(
+                "ck_entitlement_bundle_issues_feature_limit_count",
+                "feature_limit_count >= 0");
+        });
 
         builder.HasKey(issue => issue.BundleIssueId);
 
@@ -28,6 +42,18 @@ public sealed class ControlCloudEntitlementBundleIssueEntityConfiguration
             .IsRequired();
         builder.Property(issue => issue.EntitlementSnapshotId)
             .HasColumnName("entitlement_snapshot_id")
+            .IsRequired();
+        builder.Property(issue => issue.ClientAccessRevisionId)
+            .HasColumnName("client_access_revision_id")
+            .IsRequired();
+        builder.Property(issue => issue.ContractRevisionNumber)
+            .HasColumnName("contract_revision_number")
+            .IsRequired();
+        builder.Property(issue => issue.ProductCatalogRevisionId)
+            .HasColumnName("product_catalog_revision_id")
+            .IsRequired();
+        builder.Property(issue => issue.ProductCatalogRevisionNumber)
+            .HasColumnName("product_catalog_revision_number")
             .IsRequired();
         builder.Property(issue => issue.IssuedAtUtc)
             .HasColumnName("issued_at_utc")
@@ -64,6 +90,13 @@ public sealed class ControlCloudEntitlementBundleIssueEntityConfiguration
         builder.Property(issue => issue.OfflineValidUntil)
             .HasColumnName("offline_valid_until")
             .IsRequired();
+        builder.Property(issue => issue.AllowedNamedUsers)
+            .HasColumnName("allowed_named_users");
+        builder.Property(issue => issue.AllowedConcurrentUsers)
+            .HasColumnName("allowed_concurrent_users");
+        builder.Property(issue => issue.FeatureLimitCount)
+            .HasColumnName("feature_limit_count")
+            .IsRequired();
 
         builder.HasIndex(issue => issue.ClientId)
             .HasDatabaseName("ix_entitlement_bundle_issues_client_id");
@@ -71,6 +104,10 @@ public sealed class ControlCloudEntitlementBundleIssueEntityConfiguration
             .HasDatabaseName("ix_entitlement_bundle_issues_installation_id");
         builder.HasIndex(issue => new { issue.InstallationId, issue.EntitlementVersion })
             .HasDatabaseName("ix_entitlement_bundle_issues_installation_version");
+        builder.HasIndex(issue => issue.ClientAccessRevisionId)
+            .HasDatabaseName("ix_entitlement_bundle_issues_access_revision");
+        builder.HasIndex(issue => issue.ProductCatalogRevisionId)
+            .HasDatabaseName("ix_entitlement_bundle_issues_product_catalog_revision");
 
         builder.HasOne<ControlCloudClientInstallationEntity>()
             .WithMany()

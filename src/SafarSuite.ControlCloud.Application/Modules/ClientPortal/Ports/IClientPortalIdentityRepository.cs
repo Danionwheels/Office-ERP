@@ -29,6 +29,10 @@ public interface IClientPortalIdentityRepository
         string email,
         CancellationToken cancellationToken = default);
 
+    Task<ControlCloudClientPortalUser?> GetUserByIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     Task AddUserAsync(
         ControlCloudClientPortalUser user,
         CancellationToken cancellationToken = default);

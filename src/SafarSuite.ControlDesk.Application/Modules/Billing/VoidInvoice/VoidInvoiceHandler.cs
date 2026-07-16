@@ -140,12 +140,12 @@ public sealed class VoidInvoiceHandler
         Invoice invoice,
         CancellationToken cancellationToken)
     {
-        var journalEntries = await _journalEntries.ListAsync(
-            sourceType: JournalSourceType.BillingInvoice,
-            cancellationToken: cancellationToken);
+        var journalEntries = await _journalEntries.ListForSourceDocumentAsync(
+            JournalSourceType.BillingInvoice,
+            invoice.Id.Value,
+            cancellationToken);
 
         return journalEntries
-            .Where(entry => entry.SourceReference == invoice.Number.Value)
             .Where(entry => entry.Status == JournalEntryStatus.Posted)
             .OrderBy(entry => entry.EntryDate)
             .ThenBy(entry => entry.CreatedAtUtc)
@@ -157,11 +157,12 @@ public sealed class VoidInvoiceHandler
         Invoice invoice,
         CancellationToken cancellationToken)
     {
-        var journalEntries = await _journalEntries.ListAsync(
-            sourceType: JournalSourceType.BillingInvoiceVoid,
-            cancellationToken: cancellationToken);
+        var journalEntries = await _journalEntries.ListForSourceDocumentAsync(
+            JournalSourceType.BillingInvoiceVoid,
+            invoice.Id.Value,
+            cancellationToken);
 
-        return journalEntries.Any(entry => entry.SourceReference == invoice.Number.Value);
+        return journalEntries.Count > 0;
     }
 
     private JournalEntry CreateReversalJournal(
@@ -176,7 +177,9 @@ public sealed class VoidInvoiceHandler
             JournalSourceType.BillingInvoiceVoid,
             invoice.Number.Value,
             $"Void invoice {invoice.Number.Value}: {command.Reason.Trim()}",
-            _clock.UtcNow);
+            _clock.UtcNow,
+            invoice.ClientId,
+            invoice.Id.Value);
 
         foreach (var line in originalJournal.Lines)
         {
@@ -224,6 +227,7 @@ public sealed class VoidInvoiceHandler
 
         return CloudOutboxMessage.Create(
             CloudOutboxMessageId.Create(_idGenerator.NewGuid()),
+            invoice.ClientId,
             "InvoiceVoided",
             "Invoice",
             invoice.Id.Value.ToString(),

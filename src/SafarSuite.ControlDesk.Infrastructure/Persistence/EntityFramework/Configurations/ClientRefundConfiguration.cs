@@ -80,6 +80,15 @@ internal sealed class ClientRefundConfiguration : IEntityTypeConfiguration<Clien
         builder.HasIndex(refund => refund.ClientId)
             .HasDatabaseName("ix_client_refunds_client_id");
 
+        builder.HasIndex(refund => new
+            {
+                refund.ClientId,
+                refund.RefundedOn,
+                refund.CreatedAtUtc,
+                refund.Id
+            })
+            .HasDatabaseName("ix_client_refunds_client_refunded_created_id");
+
         builder.HasIndex(refund => refund.Reference)
             .IsUnique()
             .HasDatabaseName("ux_client_refunds_reference");

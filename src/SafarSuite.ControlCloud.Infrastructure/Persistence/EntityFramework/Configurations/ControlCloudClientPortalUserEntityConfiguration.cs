@@ -48,6 +48,40 @@ public sealed class ControlCloudClientPortalUserEntityConfiguration
             .IsRequired();
         builder.Property(user => user.LastLoginAtUtc)
             .HasColumnName("last_login_at_utc");
+        builder.Property(user => user.ProtectedTotpSecret)
+            .HasColumnName("protected_totp_secret")
+            .HasMaxLength(1024);
+        builder.Property(user => user.PendingProtectedTotpSecret)
+            .HasColumnName("pending_protected_totp_secret")
+            .HasMaxLength(1024);
+        builder.Property(user => user.TotpEnrollmentStartedAtUtc)
+            .HasColumnName("totp_enrollment_started_at_utc");
+        builder.Property(user => user.TotpEnabledAtUtc)
+            .HasColumnName("totp_enabled_at_utc");
+        builder.Property(user => user.LastTotpStep)
+            .HasColumnName("last_totp_step");
+        builder.Property(user => user.RecoveryCodeHashesJson)
+            .HasColumnName("recovery_code_hashes_json")
+            .HasColumnType("text")
+            .HasDefaultValue("[]")
+            .IsRequired();
+        builder.Property(user => user.PendingRecoveryCodeHashesJson)
+            .HasColumnName("pending_recovery_code_hashes_json")
+            .HasColumnType("text")
+            .HasDefaultValue("[]")
+            .IsRequired();
+        builder.Property(user => user.RecoveryCodesGeneratedAtUtc)
+            .HasColumnName("recovery_codes_generated_at_utc");
+        builder.Property(user => user.LastRecoveryCodeUsedAtUtc)
+            .HasColumnName("last_recovery_code_used_at_utc");
+        builder.Property(user => user.SecurityVersion)
+            .HasColumnName("security_version")
+            .HasDefaultValue(1)
+            .IsRequired();
+        builder.Property(user => user.ConcurrencyToken)
+            .HasColumnName("concurrency_token")
+            .IsConcurrencyToken()
+            .IsRequired();
 
         builder.HasIndex(user => new { user.ClientId, user.NormalizedEmail })
             .IsUnique()

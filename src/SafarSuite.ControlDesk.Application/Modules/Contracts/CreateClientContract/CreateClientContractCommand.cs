@@ -11,8 +11,19 @@ public sealed record CreateClientContractCommand(
     int BillingDayOfMonth,
     int AllowedDevices,
     int AllowedBranches,
-    IReadOnlyCollection<CreateClientContractModuleCommand> Modules);
+    string ApprovedBy,
+    string ApprovalReason,
+    IReadOnlyCollection<CreateClientContractModuleCommand> Modules,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<CreateClientContractFeatureLimitCommand>? FeatureLimits = null);
 
 public sealed record CreateClientContractModuleCommand(
     string ModuleCode,
     bool IsEnabled);
+
+public sealed record CreateClientContractFeatureLimitCommand(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);

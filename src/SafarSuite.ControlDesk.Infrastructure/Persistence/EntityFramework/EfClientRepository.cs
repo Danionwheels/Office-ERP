@@ -27,16 +27,6 @@ public sealed class EfClientRepository : IClientRepository
             .SingleOrDefaultAsync(client => client.Id == id, cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<Client>> ListAsync(CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.Clients
-            .IgnoreAutoIncludes()
-            .AsNoTracking()
-            .OrderBy(client => client.Code)
-            .ThenBy(client => client.DisplayName)
-            .ToArrayAsync(cancellationToken);
-    }
-
     public async Task<bool> ExistsByCodeAsync(ClientCode code, CancellationToken cancellationToken = default)
     {
         return await _dbContext.Clients.AnyAsync(client => client.Code == code, cancellationToken);

@@ -3,6 +3,10 @@ namespace SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContr
 public sealed record CreateClientContractResult(
     Guid ContractId,
     Guid ClientId,
+    long RevisionNumber,
+    Guid? SupersedesContractId,
+    Guid ProductCatalogRevisionId,
+    long ProductCatalogRevisionNumber,
     string ContractNumber,
     DateOnly StartsOn,
     DateOnly EndsOn,
@@ -15,8 +19,20 @@ public sealed record CreateClientContractResult(
     string Status,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset? ActivatedAtUtc,
-    IReadOnlyCollection<CreateClientContractModuleResult> Modules);
+    string ApprovedBy,
+    string ApprovalReason,
+    DateTimeOffset ApprovedAtUtc,
+    IReadOnlyCollection<CreateClientContractModuleResult> Modules,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<CreateClientContractFeatureLimitResult>? FeatureLimits = null);
 
 public sealed record CreateClientContractModuleResult(
     string ModuleCode,
     bool IsEnabled);
+
+public sealed record CreateClientContractFeatureLimitResult(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);

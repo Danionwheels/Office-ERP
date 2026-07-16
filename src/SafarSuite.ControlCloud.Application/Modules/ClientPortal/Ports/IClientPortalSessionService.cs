@@ -7,13 +7,60 @@ public interface IClientPortalSessionService
         string role,
         CancellationToken cancellationToken = default);
 
+    Task<CreateClientPortalSessionResult> CreateSessionAsync(
+        Guid userId,
+        Guid clientId,
+        string role,
+        int securityVersion,
+        CancellationToken cancellationToken = default)
+    {
+        return CreateSessionAsync(clientId, role, cancellationToken);
+    }
+
     ClientPortalSessionValidationResult Validate(string? authorizationHeader);
+
+    Task<ClientPortalSessionValidationResult> ValidateAsync(
+        string? authorizationHeader,
+        bool touchActivity = true,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Validate(authorizationHeader));
+    }
+
+    Task<CreateClientPortalSessionResult> RefreshAsync(
+        string refreshToken,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(CreateClientPortalSessionResult.Failure(
+            "PortalRefreshNotSupported",
+            "Client Portal session refresh is not supported."));
+    }
+
+    Task<bool> RevokeCurrentAsync(
+        string? authorizationHeader,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(false);
+    }
+
+    Task<int> RevokeAllForUserAsync(
+        Guid userId,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(0);
+    }
 }
 
 public sealed record ClientPortalSessionPrincipal(
     Guid ClientId,
     string Role,
-    DateTimeOffset ExpiresAtUtc);
+    DateTimeOffset ExpiresAtUtc,
+    Guid UserId = default,
+    Guid SessionId = default,
+    int SecurityVersion = 1,
+    DateTimeOffset? IdleExpiresAtUtc = null);
 
 public sealed class ClientPortalSessionValidationResult
 {

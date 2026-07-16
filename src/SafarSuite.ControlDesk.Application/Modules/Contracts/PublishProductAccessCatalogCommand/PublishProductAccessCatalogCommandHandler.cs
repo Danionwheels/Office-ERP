@@ -35,7 +35,8 @@ public sealed class PublishProductAccessCatalogCommandHandler
             return Result<PublishProductAccessCatalogCommandResult>.Failure(errors);
         }
 
-        var catalog = await _catalog.GetAccessCatalogAsync(cancellationToken);
+        var revision = await _catalog.GetPublishedRevisionAsync(cancellationToken);
+        var catalog = revision.Definition.AccessCatalog;
         var appCatalog = new ProductAccessCatalogCommandPayload(
             catalog.ModuleGroups.Select(group => new ProductModuleGroupCommandPayload(
                     group.GroupId,
@@ -50,7 +51,9 @@ public sealed class PublishProductAccessCatalogCommandHandler
                     resource.RequiredGroupIds.ToArray(),
                     resource.RequiredModuleCodes.ToArray(),
                     resource.ResolvedModuleCodes.ToArray()))
-                .ToArray());
+                .ToArray(),
+            revision.Id.Value,
+            revision.RevisionNumber);
         var request = new IssueProductKernelCommandRequest(
             SafarSuiteProductKernelCommandTypes.SetProductAccessCatalog,
             ModuleId: null,
@@ -81,6 +84,12 @@ public sealed class PublishProductAccessCatalogCommandHandler
             result.Command.Signature,
             result.Command.SigningKeyId,
             result.Command.ExpiresAt,
+            revision.Id.Value,
+            revision.RevisionNumber,
+            revision.SupersedesRevisionId?.Value,
+            revision.ChangeReason,
+            revision.PublishedBy,
+            revision.PublishedAtUtc,
             catalog.ModuleGroups.Select(group => new PublishedProductModuleGroupResult(
                     group.GroupId,
                     group.DisplayName,
@@ -176,6 +185,12 @@ public sealed record PublishProductAccessCatalogCommandResult(
     string Signature,
     string SigningKeyId,
     DateTimeOffset ExpiresAt,
+    Guid CatalogRevisionId,
+    long CatalogRevisionNumber,
+    Guid? SupersedesCatalogRevisionId,
+    string ChangeReason,
+    string PublishedBy,
+    DateTimeOffset PublishedAtUtc,
     IReadOnlyCollection<PublishedProductModuleGroupResult> ModuleGroups,
     IReadOnlyCollection<PublishedProductResourceResult> Resources);
 

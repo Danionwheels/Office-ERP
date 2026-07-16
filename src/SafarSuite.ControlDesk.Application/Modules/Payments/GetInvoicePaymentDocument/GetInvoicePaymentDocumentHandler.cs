@@ -92,12 +92,12 @@ public sealed class GetInvoicePaymentDocumentHandler
         Payment payment,
         CancellationToken cancellationToken)
     {
-        var entries = await _journalEntries.ListAsync(
-            sourceType: sourceType,
-            cancellationToken: cancellationToken);
+        var entries = await _journalEntries.ListForSourceDocumentAsync(
+            sourceType,
+            payment.Id.Value,
+            cancellationToken);
 
         return entries
-            .Where(entry => string.Equals(entry.SourceReference, payment.Reference.Value, StringComparison.OrdinalIgnoreCase))
             .Where(entry => string.Equals(entry.CurrencyCode, payment.Amount.CurrencyCode, StringComparison.OrdinalIgnoreCase))
             .Where(entry => entry.TotalDebit.Amount == payment.Amount.Amount)
             .OrderBy(entry => entry.EntryDate)

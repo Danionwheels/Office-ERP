@@ -76,7 +76,9 @@ public sealed class PaymentPostingService
             JournalSourceType.PaymentReceipt,
             payment.Reference.Value,
             $"Payment {payment.Reference.Value} for invoice {invoice.Number.Value}",
-            _clock.UtcNow);
+            _clock.UtcNow,
+            payment.ClientId,
+            payment.Id.Value);
 
         journalEntry.AddLine(JournalLine.DebitLine(
             cashOrBankAccountId,
@@ -104,7 +106,9 @@ public sealed class PaymentPostingService
             JournalSourceType.PaymentReversal,
             payment.Reference.Value,
             $"Reversal of payment {payment.Reference.Value} for invoice {invoice.Number.Value}",
-            _clock.UtcNow);
+            _clock.UtcNow,
+            payment.ClientId,
+            payment.Id.Value);
 
         foreach (var line in originalReceiptJournal.Lines)
         {
@@ -136,7 +140,9 @@ public sealed class PaymentPostingService
             JournalSourceType.ClientRefund,
             refund.Reference.Value,
             $"Client refund {refund.Reference.Value}",
-            _clock.UtcNow);
+            _clock.UtcNow,
+            refund.ClientId,
+            refund.Id.Value);
 
         journalEntry.AddLine(JournalLine.DebitLine(
             accountsReceivableAccountId,

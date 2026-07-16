@@ -47,4 +47,6 @@ public sealed class ControlCloudInstallationHeartbeatEntity
     public DateTimeOffset? PairingFirstManagerDeviceApprovedAtUtc { get; set; }
 
     public DateTimeOffset? PairingLastDeviceUpdatedAtUtc { get; set; }
+
+    public string? ObservedEntitlementStateJson { get; set; }
 }

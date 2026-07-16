@@ -29,6 +29,7 @@ public sealed class MarkCloudInstallationBootstrapPackageHandoffHandler
             command.Channel.Trim(),
             command.Recipient.Trim(),
             CloudInstallationProvisioningValidator.NormalizeActor(command.MarkedBy),
+            NormalizePreflightAcknowledgements(command.PreflightAcknowledgements),
             CloudInstallationProvisioningValidator.OptionalText(command.Note));
 
         var result = await _provisioningClient.MarkBootstrapPackageHandoffAsync(
@@ -70,8 +71,62 @@ public sealed class MarkCloudInstallationBootstrapPackageHandoffHandler
         AddOptionalText(errors, nameof(command.Recipient), command.Recipient, 160);
         AddRequiredText(errors, nameof(command.MarkedBy), command.MarkedBy, 120);
         AddOptionalText(errors, nameof(command.Note), command.Note, 500);
+        AddPreflightAcknowledgements(errors, command.PreflightAcknowledgements);
 
         return errors;
+    }
+
+    private static void AddPreflightAcknowledgements(
+        ICollection<ApplicationError> errors,
+        IReadOnlyCollection<string>? acknowledgements)
+    {
+        var normalized = NormalizePreflightAcknowledgements(acknowledgements);
+        var unsupported = GetUnsupportedPreflightAcknowledgements(acknowledgements);
+        var missing = LocalServerBootstrapPackageHandoffPreflight.RequiredKeys
+            .Where(requiredKey => !normalized.Contains(requiredKey, StringComparer.Ordinal))
+            .Select(LocalServerBootstrapPackageHandoffPreflight.ToLabel)
+            .ToArray();
+
+        if (unsupported.Count > 0)
+        {
+            errors.Add(ApplicationError.Validation(
+                "PreflightAcknowledgements",
+                $"Unsupported handoff preflight acknowledgement(s): {string.Join(", ", unsupported)}."));
+        }
+
+        if (missing.Length > 0)
+        {
+            errors.Add(ApplicationError.Validation(
+                "PreflightAcknowledgements",
+                $"Acknowledge setup preflight before handoff: {string.Join(", ", missing)}."));
+        }
+    }
+
+    private static IReadOnlyCollection<string> NormalizePreflightAcknowledgements(
+        IReadOnlyCollection<string>? acknowledgements)
+    {
+        var acknowledgedKeys = (acknowledgements ?? Array.Empty<string>())
+            .Select(value => value?.Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return LocalServerBootstrapPackageHandoffPreflight.RequiredKeys
+            .Where(acknowledgedKeys.Contains)
+            .ToArray();
+    }
+
+    private static IReadOnlyCollection<string> GetUnsupportedPreflightAcknowledgements(
+        IReadOnlyCollection<string>? acknowledgements)
+    {
+        return (acknowledgements ?? Array.Empty<string>())
+            .Select(value => value?.Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.Ordinal)
+            .Where(value => !LocalServerBootstrapPackageHandoffPreflight.RequiredKeys.Contains(value, StringComparer.Ordinal))
+            .ToArray();
     }
 
     private static void AddRequiredText(

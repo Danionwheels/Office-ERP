@@ -11,8 +11,19 @@ public sealed record ReplaceActiveClientContractCommand(
     int BillingDayOfMonth,
     int AllowedDevices,
     int AllowedBranches,
-    IReadOnlyCollection<ReplaceActiveClientContractModuleCommand> Modules);
+    string ApprovedBy,
+    string ApprovalReason,
+    IReadOnlyCollection<ReplaceActiveClientContractModuleCommand> Modules,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<ReplaceActiveClientContractFeatureLimitCommand>? FeatureLimits = null);
 
 public sealed record ReplaceActiveClientContractModuleCommand(
     string ModuleCode,
     bool IsEnabled);
+
+public sealed record ReplaceActiveClientContractFeatureLimitCommand(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);

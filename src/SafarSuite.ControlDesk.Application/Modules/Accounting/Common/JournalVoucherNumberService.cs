@@ -27,19 +27,12 @@ public sealed class JournalVoucherNumberService
         var prefix = rule.Prefix;
         var numberPaddingWidth = rule.NumberPaddingWidth;
         var sequenceYear = entryDate.Year;
-        var yearStart = new DateOnly(sequenceYear, 1, 1);
-        var yearEnd = new DateOnly(sequenceYear, 12, 31);
-        var entries = await _journalEntries.ListAsync(
-            yearStart,
-            yearEnd,
+        var maximumSequence = await _journalEntries.GetMaximumVoucherSequenceAsync(
             sourceType,
+            prefix,
+            sequenceYear,
             cancellationToken);
-        var nextSequence = entries
-            .Select(entry => TryParseSequence(entry.SourceReference, prefix, sequenceYear))
-            .Where(sequence => sequence.HasValue)
-            .Select(sequence => sequence!.Value)
-            .DefaultIfEmpty(0)
-            .Max() + 1;
+        var nextSequence = maximumSequence + 1;
 
         return new JournalVoucherNumberPreview(
             sourceType.ToString(),
@@ -89,26 +82,6 @@ public sealed class JournalVoucherNumberService
             $"{prefix}-{sequenceYear:0000}-{sequenceText}");
     }
 
-    private static int? TryParseSequence(string? sourceReference, string prefix, int sequenceYear)
-    {
-        if (string.IsNullOrWhiteSpace(sourceReference))
-        {
-            return null;
-        }
-
-        var parts = sourceReference.Trim().Split('-', StringSplitOptions.RemoveEmptyEntries);
-
-        if (parts.Length != 3
-            || !string.Equals(parts[0], prefix, StringComparison.OrdinalIgnoreCase)
-            || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var referenceYear)
-            || referenceYear != sequenceYear
-            || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var sequence))
-        {
-            return null;
-        }
-
-        return sequence;
-    }
 }
 
 public sealed record JournalVoucherNumberPreview(

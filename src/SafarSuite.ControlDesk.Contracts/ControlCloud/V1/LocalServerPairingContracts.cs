@@ -36,6 +36,48 @@ public static class LocalServerDevicePairingStatuses
     public const string Retired = "Retired";
 }
 
+public static class LocalServerPairingAbuseEndpointGroups
+{
+    public const string Discovery = "Discovery";
+    public const string PairingHello = "PairingHello";
+    public const string PairingRequest = "PairingRequest";
+    public const string PairingStatus = "PairingStatus";
+    public const string FirstManagerTokenImport = "FirstManagerTokenImport";
+    public const string DeviceCredential = "DeviceCredential";
+    public const string ManagerSession = "ManagerSession";
+}
+
+public static class LocalServerPairingSecurityEventTypes
+{
+    public const string RateLimited = "RateLimited";
+    public const string DuplicateCoalesced = "DuplicateCoalesced";
+    public const string PendingQueueFull = "PendingQueueFull";
+    public const string RequestTooLarge = "RequestTooLarge";
+    public const string CredentialRejected = "CredentialRejected";
+    public const string FirstManagerTokenRejected = "FirstManagerTokenRejected";
+    public const string SourceQuarantined = "SourceQuarantined";
+    public const string SourceDenied = "SourceDenied";
+    public const string SourceAllowed = "SourceAllowed";
+}
+
+public static class LocalServerPairingSecuritySeverities
+{
+    public const string Information = "Information";
+    public const string Warning = "Warning";
+    public const string Error = "Error";
+}
+
+public static class LocalServerPairingAbuseActions
+{
+    public const string Allow = "Allow";
+    public const string Coalesce = "Coalesce";
+    public const string Reject = "Reject";
+    public const string Throttle = "Throttle";
+    public const string Quarantine = "Quarantine";
+    public const string Deny = "Deny";
+    public const string Release = "Release";
+}
+
 public static class LocalServerFirstManagerSetupTokenActions
 {
     public const string CreateFirstManager = "CreateFirstManager";
@@ -172,13 +214,72 @@ public sealed record LocalServerDevicePairingRequestResponse(
     string DeviceStatus,
     string DeviceDisplayName,
     DateTimeOffset RequestedAtUtc,
-    DateTimeOffset? ExpiresAtUtc);
+    DateTimeOffset? ExpiresAtUtc,
+    bool Coalesced = false);
 
 public sealed record LocalServerDevicePairingRequestsResponse(
     IReadOnlyCollection<LocalServerDeviceResponse> Devices);
 
 public sealed record LocalServerDeviceRegisterResponse(
     IReadOnlyCollection<LocalServerDeviceResponse> Devices);
+
+public sealed record LocalServerPairingAbuseProblemResponse(
+    string Code,
+    string Detail,
+    Guid EventId,
+    string LimitScope,
+    string EndpointGroup,
+    int? RetryAfterSeconds,
+    DateTimeOffset? WindowStartedAtUtc,
+    DateTimeOffset? WindowExpiresAtUtc);
+
+public sealed record LocalServerPairingSecurityEventResponse(
+    Guid EventId,
+    DateTimeOffset OccurredAtUtc,
+    string EventType,
+    string Severity,
+    string EndpointGroup,
+    string SourceKey,
+    string? RemoteAddress,
+    string? DeviceInstallIdHash,
+    string? DeviceFingerprintHash,
+    Guid? PairingRequestId,
+    Guid? DeviceId,
+    int Count,
+    DateTimeOffset? WindowStartedAtUtc,
+    DateTimeOffset? WindowExpiresAtUtc,
+    string Action,
+    string Detail);
+
+public sealed record LocalServerPairingSecurityEventsResponse(
+    IReadOnlyCollection<LocalServerPairingSecurityEventResponse> Events);
+
+public sealed record LocalServerPairingAbuseSourceDecisionResponse(
+    string SourceKey,
+    string Action,
+    string Reason,
+    string Actor,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    bool IsActive);
+
+public sealed record LocalServerPairingAbuseSummaryResponse(
+    int TotalEventCount,
+    int ActiveSourceDecisionCount,
+    int RateLimitedEventCount,
+    int RequestTooLargeEventCount,
+    int DuplicateCoalescedEventCount,
+    int PendingQueueFullEventCount,
+    DateTimeOffset? LastEventAtUtc,
+    IReadOnlyCollection<LocalServerPairingAbuseSourceDecisionResponse> ActiveSourceDecisions);
+
+public sealed record ChangeLocalServerPairingAbuseSourceRequest(
+    string? Actor = null,
+    string? Reason = null,
+    int? ExpiresInMinutes = null);
+
+public sealed record LocalServerPairingAbuseSourceResponse(
+    LocalServerPairingAbuseSourceDecisionResponse SourceDecision);
 
 public sealed record CreateLocalServerManagerSessionRequest(
     Guid DeviceId,

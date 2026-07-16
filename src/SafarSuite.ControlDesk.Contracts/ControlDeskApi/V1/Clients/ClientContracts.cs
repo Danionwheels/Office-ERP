@@ -13,7 +13,19 @@ public sealed record CreateClientResponse(
     string Status);
 
 public sealed record ListClientsResponse(
-    IReadOnlyCollection<ClientLookupResponse> Clients);
+    IReadOnlyCollection<ClientLookupResponse> Clients,
+    int PageSize,
+    bool HasMore,
+    string? NextCursor,
+    long FilteredCount,
+    ClientDirectorySummaryResponse Summary);
+
+public sealed record ClientDirectorySummaryResponse(
+    long TotalCount,
+    long DraftCount,
+    long ActiveCount,
+    long SuspendedCount,
+    long ArchivedCount);
 
 public sealed record ClientLookupResponse(
     Guid ClientId,
@@ -170,26 +182,29 @@ public sealed record ListClientDeploymentsResponse(
     Guid ClientId,
     IReadOnlyCollection<ClientDeploymentResponse> Deployments);
 
-public sealed record ClientStatementResponse(
+public sealed record ClientFinancialSummaryResponse(
     Guid ClientId,
     DateOnly? FromDate,
     DateOnly? ToDate,
-    IReadOnlyCollection<ClientStatementCurrencySummaryResponse> CurrencySummaries,
-    IReadOnlyCollection<ClientStatementInvoiceResponse> Invoices,
-    IReadOnlyCollection<ClientStatementPaymentResponse> Payments,
-    IReadOnlyCollection<ClientStatementLineResponse> Lines,
-    IReadOnlyCollection<ClientStatementJournalPostingResponse> JournalPostings);
+    IReadOnlyCollection<ClientFinancialCurrencySummaryResponse> CurrencySummaries);
 
-public sealed record ClientStatementCurrencySummaryResponse(
+public sealed record ClientFinancialCurrencySummaryResponse(
     string CurrencyCode,
     decimal TotalInvoiced,
     decimal TotalPaid,
     decimal AvailableCredit,
     decimal BalanceDue,
-    int InvoiceCount,
-    int OpenInvoiceCount);
+    long InvoiceCount,
+    long OpenInvoiceCount);
 
-public sealed record ClientStatementInvoiceResponse(
+public sealed record ClientInvoiceRegisterPageResponse(
+    IReadOnlyCollection<ClientInvoiceRegisterItemResponse> Invoices,
+    int PageSize,
+    bool HasMore,
+    string? NextCursor,
+    long FilteredCount);
+
+public sealed record ClientInvoiceRegisterItemResponse(
     Guid InvoiceId,
     Guid ContractId,
     string InvoiceNumber,
@@ -202,7 +217,14 @@ public sealed record ClientStatementInvoiceResponse(
     string CurrencyCode,
     Guid? JournalEntryId);
 
-public sealed record ClientStatementPaymentResponse(
+public sealed record ClientPaymentRegisterPageResponse(
+    IReadOnlyCollection<ClientPaymentRegisterItemResponse> Payments,
+    int PageSize,
+    bool HasMore,
+    string? NextCursor,
+    long FilteredCount);
+
+public sealed record ClientPaymentRegisterItemResponse(
     Guid PaymentId,
     Guid InvoiceId,
     string Reference,
@@ -213,7 +235,14 @@ public sealed record ClientStatementPaymentResponse(
     DateOnly ReceivedOn,
     Guid? JournalEntryId);
 
-public sealed record ClientStatementLineResponse(
+public sealed record ClientFinancialActivityPageResponse(
+    IReadOnlyCollection<ClientFinancialActivityItemResponse> Lines,
+    int PageSize,
+    bool HasMore,
+    string? NextCursor,
+    long FilteredCount);
+
+public sealed record ClientFinancialActivityItemResponse(
     DateOnly EntryDate,
     string DocumentType,
     string Reference,
@@ -228,7 +257,14 @@ public sealed record ClientStatementLineResponse(
     string CurrencyCode,
     Guid? JournalEntryId);
 
-public sealed record ClientStatementJournalPostingResponse(
+public sealed record ClientJournalPostingPageResponse(
+    IReadOnlyCollection<ClientJournalPostingItemResponse> JournalPostings,
+    int PageSize,
+    bool HasMore,
+    string? NextCursor,
+    long FilteredCount);
+
+public sealed record ClientJournalPostingItemResponse(
     Guid JournalEntryId,
     DateOnly EntryDate,
     string SourceType,
@@ -238,16 +274,4 @@ public sealed record ClientStatementJournalPostingResponse(
     decimal TotalDebit,
     decimal TotalCredit,
     string CurrencyCode,
-    IReadOnlyCollection<ClientStatementJournalLineResponse> Lines);
-
-public sealed record ClientStatementJournalLineResponse(
-    Guid LedgerAccountId,
-    string? LedgerAccountCode,
-    string? LedgerAccountName,
-    string? LedgerAccountType,
-    string? LedgerAccountLevel,
-    bool? IsPostingAccount,
-    string? LedgerAccountStatus,
-    decimal Debit,
-    decimal Credit,
-    string? Description);
+    int LineCount);

@@ -7,4 +7,5 @@ public sealed record MarkLocalServerBootstrapPackageHandoffCommand(
     string Channel,
     string Recipient,
     string MarkedBy,
+    IReadOnlyCollection<string> PreflightAcknowledgements,
     string? Note);

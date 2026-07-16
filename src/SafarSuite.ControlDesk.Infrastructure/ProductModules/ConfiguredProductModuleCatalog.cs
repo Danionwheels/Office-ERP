@@ -4,7 +4,7 @@ using SafarSuite.ControlDesk.Domain.Modules.Contracts;
 
 namespace SafarSuite.ControlDesk.Infrastructure.ProductModules;
 
-public sealed class ConfiguredProductModuleCatalog : IProductModuleCatalog
+public sealed class ConfiguredProductModuleCatalog
 {
     private readonly IOptionsMonitor<ProductModuleCatalogOptions> _options;
 
@@ -19,6 +19,15 @@ public sealed class ConfiguredProductModuleCatalog : IProductModuleCatalog
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult(BuildCatalog(_options.CurrentValue));
+    }
+
+    public async Task<ProductCatalogDefinition> GetDefinitionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var modules = await ListAsync(cancellationToken);
+        var accessCatalog = await GetAccessCatalogAsync(cancellationToken);
+
+        return ProductCatalogDefinition.Create(modules, accessCatalog);
     }
 
     public Task<ProductAccessCatalog> GetAccessCatalogAsync(
@@ -43,7 +52,12 @@ public sealed class ConfiguredProductModuleCatalog : IProductModuleCatalog
                 entry.DisplayName,
                 commercialMode,
                 entry.IsActive,
-                BuildBillingDefaults(entry));
+                BuildBillingDefaults(entry),
+                ProductModuleCompatibility.Create(
+                    entry.Compatibility.MinimumSafarSuiteVersion,
+                    entry.Compatibility.MinimumLocalServerVersion,
+                    entry.Compatibility.SupportedDeploymentModes),
+                entry.Description);
 
             if (!moduleCodes.Add(module.ModuleCode.Value))
             {

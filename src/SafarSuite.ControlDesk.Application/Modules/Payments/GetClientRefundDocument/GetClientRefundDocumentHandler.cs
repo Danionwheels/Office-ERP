@@ -79,12 +79,12 @@ public sealed class GetClientRefundDocumentHandler
         ClientRefund refund,
         CancellationToken cancellationToken)
     {
-        var entries = await _journalEntries.ListAsync(
-            sourceType: JournalSourceType.ClientRefund,
-            cancellationToken: cancellationToken);
+        var entries = await _journalEntries.ListForSourceDocumentAsync(
+            JournalSourceType.ClientRefund,
+            refund.Id.Value,
+            cancellationToken);
 
         return entries
-            .Where(entry => string.Equals(entry.SourceReference, refund.Reference.Value, StringComparison.OrdinalIgnoreCase))
             .Where(entry => string.Equals(entry.CurrencyCode, refund.CurrencyCode, StringComparison.OrdinalIgnoreCase))
             .Where(entry => entry.TotalDebit.Amount == refund.Amount.Amount)
             .OrderBy(entry => entry.EntryDate)

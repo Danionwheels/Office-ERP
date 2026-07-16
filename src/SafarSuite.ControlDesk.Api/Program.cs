@@ -1,7 +1,9 @@
 using SafarSuite.ControlDesk.Api.Composition;
 using SafarSuite.ControlDesk.Api.Modules.Accounting;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Api.Modules.Billing;
 using SafarSuite.ControlDesk.Api.Modules.Clients;
+using SafarSuite.ControlDesk.Api.Modules.CommandCenter;
 using SafarSuite.ControlDesk.Api.Modules.Contracts;
 using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Api.Modules.Entitlements;
@@ -30,11 +32,16 @@ app.MapGet("/health", () =>
     return Results.Ok(response);
 });
 
+app.MapAuthEndpoints();
 app.MapClientEndpoints();
+app.MapCommandCenterEndpoints();
 app.MapContractEndpoints();
 app.MapAccountingEndpoints();
+app.MapAccountingReportEndpoints();
 app.MapBillingEndpoints();
+app.MapBillingReportEndpoints();
 app.MapPaymentsEndpoints();
+app.MapPaymentReportEndpoints();
 app.MapControlCloudEndpoints();
 app.MapEntitlementEndpoints();
 

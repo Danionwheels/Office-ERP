@@ -9,7 +9,11 @@ public sealed record LocalServerCachedEntitlement(
     long EntitlementVersion,
     Guid BundleIssueId,
     Guid EntitlementSnapshotId,
+    Guid ClientAccessRevisionId,
     Guid ContractId,
+    long ContractRevisionNumber,
+    Guid ProductCatalogRevisionId,
+    long ProductCatalogRevisionNumber,
     Guid SourceInvoiceId,
     string SourceInvoiceNumber,
     string Status,
@@ -28,7 +32,11 @@ public sealed record LocalServerCachedEntitlement(
     string SignatureKeyId,
     string PayloadSha256,
     string SignatureValue,
-    DateTimeOffset ImportedAtUtc)
+    DateTimeOffset ImportedAtUtc,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<LocalServerEntitlementFeatureLimit>? FeatureLimits = null,
+    DateTimeOffset? EffectiveFromUtc = null)
 {
     public LocalServerEntitlementModule? FindModule(string moduleCode)
     {
@@ -40,12 +48,30 @@ public sealed record LocalServerCachedEntitlement(
                 cleanModuleCode,
                 StringComparison.OrdinalIgnoreCase));
     }
+
+    public LocalServerEntitlementFeatureLimit? FindFeatureLimit(
+        string moduleCode,
+        string featureCode)
+    {
+        var cleanModuleCode = moduleCode.Trim();
+        var cleanFeatureCode = featureCode.Trim();
+
+        return (FeatureLimits ?? []).FirstOrDefault(limit =>
+            string.Equals(limit.ModuleCode, cleanModuleCode, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(limit.FeatureCode, cleanFeatureCode, StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 public sealed record LocalServerEntitlementModule(
     string ModuleCode,
     string Status,
     bool IsEnabled);
+
+public sealed record LocalServerEntitlementFeatureLimit(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);
 
 public sealed record LocalServerFeatureAccessDecision(
     string ModuleCode,

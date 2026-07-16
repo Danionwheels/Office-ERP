@@ -12,6 +12,14 @@ public sealed class ControlCloudEntitlementBundleIssueEntity
 
     public Guid EntitlementSnapshotId { get; set; }
 
+    public Guid ClientAccessRevisionId { get; set; }
+
+    public long ContractRevisionNumber { get; set; }
+
+    public Guid ProductCatalogRevisionId { get; set; }
+
+    public long ProductCatalogRevisionNumber { get; set; }
+
     public DateTimeOffset IssuedAtUtc { get; set; }
 
     public string Algorithm { get; set; } = "";
@@ -31,4 +39,10 @@ public sealed class ControlCloudEntitlementBundleIssueEntity
     public DateOnly GraceUntil { get; set; }
 
     public DateOnly OfflineValidUntil { get; set; }
+
+    public int? AllowedNamedUsers { get; set; }
+
+    public int? AllowedConcurrentUsers { get; set; }
+
+    public int FeatureLimitCount { get; set; }
 }

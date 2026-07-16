@@ -30,6 +30,9 @@ public sealed class MarkLocalServerBootstrapPackageHandoffHandler
         var recipient = NormalizeOptionalText(command.Recipient, 160);
         var markedBy = NormalizeOptionalText(command.MarkedBy, 120);
         var note = NormalizeOptionalText(command.Note, 500);
+        var preflightAcknowledgements = NormalizePreflightAcknowledgements(command.PreflightAcknowledgements);
+        var unsupportedPreflightAcknowledgements = GetUnsupportedPreflightAcknowledgements(command.PreflightAcknowledgements);
+        var missingPreflightAcknowledgements = GetMissingPreflightAcknowledgements(preflightAcknowledgements);
 
         if (command.ClientId == Guid.Empty)
         {
@@ -66,6 +69,20 @@ public sealed class MarkLocalServerBootstrapPackageHandoffHandler
                 "Marked by is required.");
         }
 
+        if (unsupportedPreflightAcknowledgements.Count > 0)
+        {
+            return MarkLocalServerBootstrapPackageHandoffResult.Failure(
+                "HandoffPreflightAcknowledgementUnsupported",
+                $"Unsupported handoff preflight acknowledgement(s): {string.Join(", ", unsupportedPreflightAcknowledgements)}.");
+        }
+
+        if (missingPreflightAcknowledgements.Count > 0)
+        {
+            return MarkLocalServerBootstrapPackageHandoffResult.Failure(
+                "HandoffPreflightAcknowledgementMissing",
+                $"Handoff preflight acknowledgement is missing for: {string.Join(", ", missingPreflightAcknowledgements.Select(LocalServerBootstrapPackageHandoffPreflight.ToLabel))}.");
+        }
+
         var setupToken = await _setupTokens.GetBootstrapPackageAsync(
             command.ClientId,
             installationId,
@@ -89,6 +106,7 @@ public sealed class MarkLocalServerBootstrapPackageHandoffHandler
             Channel: channel,
             Recipient: recipient ?? "",
             MarkedBy: markedBy,
+            PreflightAcknowledgements: preflightAcknowledgements,
             Note: note,
             MarkedAtUtc: markedAtUtc);
 
@@ -117,10 +135,49 @@ public sealed class MarkLocalServerBootstrapPackageHandoffHandler
             : handoff.Recipient;
         var detail =
             $"Bootstrap package '{handoff.BootstrapPackageId}' handed off for installation '{handoff.InstallationId}' via '{handoff.Channel}' to '{recipient}'.";
+        var preflightDetail = string.Join(
+            ", ",
+            handoff.PreflightAcknowledgements.Select(LocalServerBootstrapPackageHandoffPreflight.ToLabel));
+        detail = $"{detail} Preflight acknowledged: {preflightDetail}.";
 
         return string.IsNullOrWhiteSpace(handoff.Note)
             ? detail
             : $"{detail} Note: {handoff.Note}";
+    }
+
+    private static IReadOnlyCollection<string> NormalizePreflightAcknowledgements(
+        IReadOnlyCollection<string>? acknowledgements)
+    {
+        var acknowledgedKeys = (acknowledgements ?? Array.Empty<string>())
+            .Select(value => value?.Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return LocalServerBootstrapPackageHandoffPreflight.RequiredKeys
+            .Where(acknowledgedKeys.Contains)
+            .ToArray();
+    }
+
+    private static IReadOnlyCollection<string> GetUnsupportedPreflightAcknowledgements(
+        IReadOnlyCollection<string>? acknowledgements)
+    {
+        return (acknowledgements ?? Array.Empty<string>())
+            .Select(value => value?.Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.Ordinal)
+            .Where(value => !LocalServerBootstrapPackageHandoffPreflight.RequiredKeys.Contains(value, StringComparer.Ordinal))
+            .ToArray();
+    }
+
+    private static IReadOnlyCollection<string> GetMissingPreflightAcknowledgements(
+        IReadOnlyCollection<string> acknowledgements)
+    {
+        return LocalServerBootstrapPackageHandoffPreflight.RequiredKeys
+            .Where(requiredKey => !acknowledgements.Contains(requiredKey, StringComparer.Ordinal))
+            .ToArray();
     }
 
     private static string? NormalizeOptionalText(

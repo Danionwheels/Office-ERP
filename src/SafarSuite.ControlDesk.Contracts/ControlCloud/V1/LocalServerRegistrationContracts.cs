@@ -166,10 +166,42 @@ public sealed record LocalServerBootstrapPackageSummaryResponse(
     string BundleFileName,
     string BundleSha256);
 
+public static class LocalServerBootstrapPackageHandoffPreflight
+{
+    public const string DockerTarget = "docker-target";
+    public const string CleanTarget = "clean-target";
+    public const string TrustCustody = "trust-custody";
+    public const string AppRuntimeProfile = "app-runtime-profile";
+    public const string WindowsLocalApiTls = "windows-local-api-tls";
+
+    public static readonly IReadOnlyCollection<string> RequiredKeys =
+    [
+        DockerTarget,
+        CleanTarget,
+        TrustCustody,
+        AppRuntimeProfile,
+        WindowsLocalApiTls
+    ];
+
+    public static string ToLabel(string key)
+    {
+        return key switch
+        {
+            DockerTarget => "Docker target",
+            CleanTarget => "Clean target",
+            TrustCustody => "Provider trust custody",
+            AppRuntimeProfile => "App runtime profile",
+            WindowsLocalApiTls => "Windows Local API TLS",
+            _ => key
+        };
+    }
+}
+
 public sealed record MarkLocalServerBootstrapPackageHandoffRequest(
     string Channel,
     string Recipient,
     string MarkedBy,
+    IReadOnlyCollection<string> PreflightAcknowledgements,
     string? Note = null);
 
 public sealed record LocalServerBootstrapPackageHandoffResponse(
@@ -181,6 +213,7 @@ public sealed record LocalServerBootstrapPackageHandoffResponse(
     string Channel,
     string Recipient,
     string MarkedBy,
+    IReadOnlyCollection<string> PreflightAcknowledgements,
     string? Note,
     DateTimeOffset MarkedAtUtc);
 

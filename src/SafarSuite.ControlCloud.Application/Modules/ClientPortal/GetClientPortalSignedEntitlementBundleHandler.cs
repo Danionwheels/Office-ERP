@@ -6,7 +6,7 @@ namespace SafarSuite.ControlCloud.Application.Modules.ClientPortal;
 
 public sealed class GetClientPortalSignedEntitlementBundleHandler
 {
-    private const string BundleVersion = "1";
+    private const string BundleVersion = "5";
     private const int DefaultWarningDaysBeforePaidUntil = 7;
 
     private readonly IControlCloudClientCommercialProjectionRepository _projections;
@@ -59,10 +59,29 @@ public sealed class GetClientPortalSignedEntitlementBundleHandler
         }
 
         var bundleIssuedAtUtc = _clock.UtcNow;
-        var validFrom = DateOnly.FromDateTime(entitlement.IssuedAtUtc.UtcDateTime);
+        var effectiveFromUtc = (entitlement.EffectiveFromUtc ?? entitlement.IssuedAtUtc).ToUniversalTime();
+
+        if (effectiveFromUtc > bundleIssuedAtUtc)
+        {
+            return GetClientPortalSignedEntitlementBundleResult.Failure(
+                "EntitlementScheduled",
+                $"Entitlement version {entitlement.EntitlementVersion} is scheduled for {effectiveFromUtc:O} and cannot be signed yet.");
+        }
+
+        var validFrom = DateOnly.FromDateTime(effectiveFromUtc.UtcDateTime);
         var warningStartsAt = entitlement.PaidUntil.AddDays(-DefaultWarningDaysBeforePaidUntil);
-        var entitlementVersion = entitlement.IssuedAtUtc.UtcDateTime.Ticks;
+        var entitlementVersion = entitlement.EntitlementVersion;
+        var clientAccessRevisionId = entitlement.ClientAccessRevisionId == Guid.Empty
+            ? entitlement.EntitlementSnapshotId
+            : entitlement.ClientAccessRevisionId;
         var bundleIssueId = Guid.NewGuid();
+
+        if (entitlementVersion <= 0)
+        {
+            return GetClientPortalSignedEntitlementBundleResult.Failure(
+                "EntitlementVersionInvalid",
+                "The projected entitlement does not contain a valid Office-issued version.");
+        }
 
         if (warningStartsAt < validFrom)
         {
@@ -78,7 +97,11 @@ public sealed class GetClientPortalSignedEntitlementBundleHandler
             entitlementVersion,
             bundleIssueId,
             entitlement.EntitlementSnapshotId,
+            clientAccessRevisionId,
             entitlement.ContractId,
+            entitlement.ContractRevisionNumber,
+            entitlement.ProductCatalogRevisionId,
+            entitlement.ProductCatalogRevisionNumber,
             entitlement.SourceInvoiceId,
             entitlement.SourceInvoiceNumber,
             entitlement.Status,
@@ -97,7 +120,19 @@ public sealed class GetClientPortalSignedEntitlementBundleHandler
                     module.ModuleCode,
                     module.IsEnabled ? "Active" : "Disabled",
                     module.IsEnabled))
-                .ToArray());
+                .ToArray(),
+            entitlement.AllowedNamedUsers,
+            entitlement.AllowedConcurrentUsers,
+            (entitlement.FeatureLimits ?? [])
+                .OrderBy(limit => limit.ModuleCode, StringComparer.Ordinal)
+                .ThenBy(limit => limit.FeatureCode, StringComparer.Ordinal)
+                .Select(limit => new ControlCloudEntitlementBundleFeatureLimit(
+                    limit.ModuleCode,
+                    limit.FeatureCode,
+                    limit.LimitValue,
+                    limit.Unit))
+                .ToArray(),
+            effectiveFromUtc);
 
         try
         {
@@ -134,6 +169,10 @@ public sealed class GetClientPortalSignedEntitlementBundleHandler
                         installationId,
                         entitlementVersion,
                         entitlement.EntitlementSnapshotId,
+                        clientAccessRevisionId,
+                        entitlement.ContractRevisionNumber,
+                        entitlement.ProductCatalogRevisionId,
+                        entitlement.ProductCatalogRevisionNumber,
                         bundleIssuedAtUtc,
                         signedBundle.Signature.Algorithm,
                         signedBundle.Signature.KeyId,
@@ -143,7 +182,10 @@ public sealed class GetClientPortalSignedEntitlementBundleHandler
                         entitlement.PaidUntil,
                         warningStartsAt,
                         entitlement.GraceUntil,
-                        entitlement.OfflineValidUntil);
+                        entitlement.OfflineValidUntil,
+                        entitlement.AllowedNamedUsers,
+                        entitlement.AllowedConcurrentUsers,
+                        entitlement.FeatureLimits?.Count ?? 0);
 
                     installation.RecordBundleIssued(entitlementVersion, bundleIssuedAtUtc);
 

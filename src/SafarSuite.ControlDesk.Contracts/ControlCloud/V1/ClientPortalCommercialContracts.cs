@@ -19,6 +19,27 @@ public sealed record ClientPortalCommercialSummaryResponse(
     IReadOnlyCollection<ClientPortalCreditApplicationSummaryResponse> CreditApplications,
     ClientPortalEntitlementSummaryResponse? LatestEntitlement);
 
+public sealed record ClientPortalCommercialDocumentsPageResponse(
+    Guid ClientId,
+    string DocumentType,
+    int PageSize,
+    bool HasMore,
+    string? NextCursor,
+    IReadOnlyCollection<ClientPortalCommercialDocumentSummaryResponse> Items);
+
+public sealed record ClientPortalCommercialDocumentSummaryResponse(
+    string DocumentType,
+    Guid DocumentId,
+    Guid? RelatedDocumentId,
+    string Reference,
+    string Status,
+    DateOnly DocumentDate,
+    decimal Amount,
+    decimal BalanceAmount,
+    string CurrencyCode,
+    DateTimeOffset OccurredAtUtc,
+    DateTimeOffset LastUpdatedAtUtc);
+
 public sealed record ClientPortalInvoiceSummaryResponse(
     Guid InvoiceId,
     string InvoiceNumber,
@@ -85,7 +106,12 @@ public sealed record ClientPortalCreditApplicationSummaryResponse(
 
 public sealed record ClientPortalEntitlementSummaryResponse(
     Guid EntitlementSnapshotId,
+    Guid ClientAccessRevisionId,
+    long EntitlementVersion,
     Guid ContractId,
+    long ContractRevisionNumber,
+    Guid ProductCatalogRevisionId,
+    long ProductCatalogRevisionNumber,
     Guid SourceInvoiceId,
     string SourceInvoiceNumber,
     string Status,
@@ -95,8 +121,17 @@ public sealed record ClientPortalEntitlementSummaryResponse(
     int AllowedDevices,
     int AllowedBranches,
     DateTimeOffset IssuedAtUtc,
-    IReadOnlyCollection<ClientPortalEntitlementModuleSummaryResponse> Modules);
+    IReadOnlyCollection<ClientPortalEntitlementModuleSummaryResponse> Modules,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<ClientPortalEntitlementFeatureLimitSummaryResponse>? FeatureLimits = null);
 
 public sealed record ClientPortalEntitlementModuleSummaryResponse(
     string ModuleCode,
     bool IsEnabled);
+
+public sealed record ClientPortalEntitlementFeatureLimitSummaryResponse(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);

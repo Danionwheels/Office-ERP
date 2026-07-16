@@ -67,13 +67,6 @@ public sealed class CreateClientContractHandler
                     $"Contract {contractNumber.Value} already exists."));
             }
 
-            if (await _contracts.GetActiveForClientAsync(clientId, cancellationToken) is not null)
-            {
-                return Result<CreateClientContractResult>.Failure(ApplicationError.Conflict(
-                    nameof(command.ClientId),
-                    "Client already has an active contract."));
-            }
-
             if (!Enum.TryParse<BillingCycle>(command.BillingCycle, ignoreCase: true, out var billingCycle)
                 || !Enum.IsDefined(billingCycle))
             {
@@ -94,28 +87,67 @@ public sealed class CreateClientContractHandler
                 return Result<CreateClientContractResult>.Failure(moduleAllowances.Errors);
             }
 
-            var contract = ClientContract.Create(
-                ContractId.Create(_idGenerator.NewGuid()),
-                clientId,
-                contractNumber,
-                DateRange.Create(command.StartsOn, command.EndsOn),
-                ContractPricing.Create(
-                    Money.Of(command.RecurringAmount, command.CurrencyCode),
-                    billingCycle,
-                    command.BillingDayOfMonth),
-                DeviceAllowance.Create(command.AllowedDevices),
-                BranchAllowance.Create(command.AllowedBranches),
-                _clock.UtcNow);
+            var featureLimits = (command.FeatureLimits ?? [])
+                .Select(limit => ModuleFeatureLimit.Create(
+                    limit.ModuleCode,
+                    limit.FeatureCode,
+                    limit.LimitValue,
+                    limit.Unit))
+                .ToArray();
 
-            foreach (var moduleAllowance in moduleAllowances.Value)
+            var contract = await _unitOfWork.ExecuteInTransactionAsync(
+                async token =>
+                {
+                    var latest = await _contracts.GetLatestForClientForUpdateAsync(clientId, token);
+
+                    if (latest is not null)
+                    {
+                        return null;
+                    }
+
+                    var approvedAtUtc = _clock.UtcNow;
+                    var created = ClientContract.Create(
+                        ContractId.Create(_idGenerator.NewGuid()),
+                        clientId,
+                        revisionNumber: 1,
+                        supersedesContractId: null,
+                        moduleAllowances.Value.CatalogRevisionId,
+                        moduleAllowances.Value.CatalogRevisionNumber,
+                        contractNumber,
+                        DateRange.Create(command.StartsOn, command.EndsOn),
+                        ContractPricing.Create(
+                            Money.Of(command.RecurringAmount, command.CurrencyCode),
+                            billingCycle,
+                            command.BillingDayOfMonth),
+                        DeviceAllowance.Create(command.AllowedDevices),
+                        BranchAllowance.Create(command.AllowedBranches),
+                        command.ApprovedBy,
+                        command.ApprovalReason,
+                        approvedAtUtc,
+                        approvedAtUtc,
+                        UserAllowance.Create(
+                            command.AllowedNamedUsers,
+                            command.AllowedConcurrentUsers),
+                        featureLimits);
+
+                    foreach (var moduleAllowance in moduleAllowances.Value.Allowances)
+                    {
+                        created.SetModuleAllowance(moduleAllowance);
+                    }
+
+                    created.Activate(approvedAtUtc);
+                    await _contracts.AddAsync(created, token);
+
+                    return created;
+                },
+                cancellationToken);
+
+            if (contract is null)
             {
-                contract.SetModuleAllowance(moduleAllowance);
+                return Result<CreateClientContractResult>.Failure(ApplicationError.Conflict(
+                    nameof(command.ClientId),
+                    "Client already has contract history. Create a replacement revision instead."));
             }
-
-            contract.Activate(_clock.UtcNow);
-
-            await _contracts.AddAsync(contract, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result<CreateClientContractResult>.Success(ToResult(contract));
         }
@@ -138,6 +170,10 @@ public sealed class CreateClientContractHandler
         return new CreateClientContractResult(
             contract.Id.Value,
             contract.ClientId.Value,
+            contract.RevisionNumber,
+            contract.SupersedesContractId?.Value,
+            contract.ProductCatalogRevisionId.Value,
+            contract.ProductCatalogRevisionNumber,
             contract.Number.Value,
             contract.Term.StartsOn,
             contract.Term.EndsOn,
@@ -150,8 +186,18 @@ public sealed class CreateClientContractHandler
             contract.Status.ToString(),
             contract.CreatedAtUtc,
             contract.ActivatedAtUtc,
+            contract.ApprovedBy,
+            contract.ApprovalReason,
+            contract.ApprovedAtUtc,
             contract.ModuleAllowances.Select(module => new CreateClientContractModuleResult(
                 module.ModuleCode.Value,
-                module.IsEnabled)).ToArray());
+                module.IsEnabled)).ToArray(),
+            contract.UserAllowance.AllowedNamedUsers,
+            contract.UserAllowance.AllowedConcurrentUsers,
+            contract.FeatureLimits.Select(limit => new CreateClientContractFeatureLimitResult(
+                limit.ModuleCode.Value,
+                limit.FeatureCode.Value,
+                limit.LimitValue,
+                limit.Unit)).ToArray());
     }
 }

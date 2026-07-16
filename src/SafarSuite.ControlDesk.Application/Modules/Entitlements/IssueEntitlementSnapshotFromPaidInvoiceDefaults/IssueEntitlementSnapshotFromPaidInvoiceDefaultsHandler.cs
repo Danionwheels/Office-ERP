@@ -69,9 +69,19 @@ public sealed class IssueEntitlementSnapshotFromPaidInvoiceDefaultsHandler
                 contract.Term.EndsOn.AddDays(14),
                 contract.DeviceAllowance.AllowedDevices,
                 contract.BranchAllowance.AllowedBranches,
+                command.ApprovedBy,
+                command.ApprovalReason,
                 contract.ModuleAllowances.Select(module => new IssueEntitlementSnapshotModuleCommand(
                     module.ModuleCode.Value,
-                    module.IsEnabled)).ToArray());
+                    module.IsEnabled)).ToArray(),
+                contract.UserAllowance.AllowedNamedUsers,
+                contract.UserAllowance.AllowedConcurrentUsers,
+                contract.FeatureLimits.Select(limit => new IssueEntitlementSnapshotFeatureLimitCommand(
+                    limit.ModuleCode.Value,
+                    limit.FeatureCode.Value,
+                    limit.LimitValue,
+                    limit.Unit)).ToArray(),
+                command.EffectiveFromUtc);
 
             return await _issueHandler.HandleAsync(issueCommand, cancellationToken);
         }

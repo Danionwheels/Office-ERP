@@ -348,6 +348,7 @@ public static class LocalServerCommandEndpoints
                 request.Channel,
                 request.Recipient,
                 request.MarkedBy,
+                request.PreflightAcknowledgements,
                 request.Note),
             cancellationToken);
 
@@ -799,7 +800,8 @@ public static class LocalServerCommandEndpoints
                 request.OfflineValidUntil,
                 request.Detail,
                 request.DeploymentProfile,
-                request.PairingStatus),
+                request.PairingStatus,
+                request.EntitlementState),
             cancellationToken);
 
         if (result.IsSuccess)
@@ -859,6 +861,7 @@ public static class LocalServerCommandEndpoints
             "EntitlementInstallationMismatch" => Results.Conflict(response),
             "EntitlementPayloadInvalid" => Results.Conflict(response),
             "EntitlementVersionRejected" => Results.Conflict(response),
+            "EntitlementScheduled" => Results.Conflict(response),
             "InstallationCommandMismatch" => Results.Conflict(response),
             "SetupTokenScopeMismatch" => Results.Conflict(response),
             "SetupTokenNotUsable" => Results.Conflict(response),
@@ -882,6 +885,8 @@ public static class LocalServerCommandEndpoints
             "BootstrapModeUnsupported" => Results.BadRequest(response),
             "ClientDeploymentModeUnsupported" => Results.BadRequest(response),
             "SiteRoleUnsupported" => Results.BadRequest(response),
+            "HandoffPreflightAcknowledgementMissing" => Results.BadRequest(response),
+            "HandoffPreflightAcknowledgementUnsupported" => Results.BadRequest(response),
             "InstallationIdRequired" => Results.BadRequest(response),
             "ClientIdRequired" => Results.BadRequest(response),
             _ => Results.BadRequest(response)
@@ -948,7 +953,8 @@ public static class LocalServerCommandEndpoints
             heartbeat.LocalServerVersion,
             heartbeat.Detail,
             ToResponse(deploymentProfile),
-            ToResponse(heartbeat.PairingStatus));
+            ToResponse(heartbeat.PairingStatus),
+            ToResponse(heartbeat.EntitlementState));
     }
 
     private static LocalServerDeploymentProfileResponse ToResponse(
@@ -979,6 +985,33 @@ public static class LocalServerCommandEndpoints
                 pairingStatus.FirstManagerDeviceApproved,
                 pairingStatus.FirstManagerDeviceApprovedAtUtc,
                 pairingStatus.LastDeviceUpdatedAtUtc);
+    }
+
+    private static ControlCloudEntitlementStateValuesResponse? ToResponse(
+        ControlCloudObservedEntitlementState? state)
+    {
+        return state is null
+            ? null
+            : new ControlCloudEntitlementStateValuesResponse(
+                state.EntitlementVersion,
+                state.EffectiveFromUtc,
+                state.Status,
+                state.PaidUntil,
+                state.WarningStartsAt,
+                state.GraceUntil,
+                state.OfflineValidUntil,
+                state.AllowedDevices,
+                state.AllowedBranches,
+                state.AllowedNamedUsers,
+                state.AllowedConcurrentUsers,
+                state.Modules.Select(module => new ControlCloudEntitlementStateModuleResponse(
+                    module.ModuleCode,
+                    module.IsEnabled)).ToArray(),
+                state.FeatureLimits.Select(limit => new ControlCloudEntitlementStateFeatureLimitResponse(
+                    limit.ModuleCode,
+                    limit.FeatureCode,
+                    limit.LimitValue,
+                    limit.Unit)).ToArray());
     }
 
     private static LocalServerDiagnosticReportResponse ToResponse(

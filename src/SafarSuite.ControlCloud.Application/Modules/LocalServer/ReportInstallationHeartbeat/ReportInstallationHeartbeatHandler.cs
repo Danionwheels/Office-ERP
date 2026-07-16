@@ -68,6 +68,14 @@ public sealed class ReportInstallationHeartbeatHandler
                 "License status is not recognized for heartbeat reporting.");
         }
 
+        if (command.EntitlementState is not null
+            && command.EntitlementState.EntitlementVersion != command.EntitlementVersion)
+        {
+            return ReportInstallationHeartbeatResult.Failure(
+                "EntitlementStateInvalid",
+                "Observed entitlement values must describe the reported entitlement version.");
+        }
+
         return await _unitOfWork.ExecuteInTransactionAsync(
             async token =>
             {
@@ -108,7 +116,8 @@ public sealed class ReportInstallationHeartbeatHandler
                     command.OfflineValidUntil,
                     NormalizeOptionalText(command.LocalServerVersion, 80),
                     NormalizeOptionalText(command.Detail, 1000),
-                    ToPairingStatus(command.PairingStatus));
+                    ToPairingStatus(command.PairingStatus),
+                    ToEntitlementState(command.EntitlementState));
 
                 await _heartbeats.AddAsync(heartbeat, token);
 
@@ -166,5 +175,35 @@ public sealed class ReportInstallationHeartbeatHandler
             pairingStatus.FirstManagerDeviceApproved,
             pairingStatus.FirstManagerDeviceApprovedAtUtc,
             pairingStatus.LastDeviceUpdatedAtUtc);
+    }
+
+    private static ControlCloudObservedEntitlementState? ToEntitlementState(
+        ControlCloudEntitlementStateValuesResponse? state)
+    {
+        if (state is null)
+        {
+            return null;
+        }
+
+        return new ControlCloudObservedEntitlementState(
+            state.EntitlementVersion,
+            state.EffectiveFromUtc.ToUniversalTime(),
+            NormalizeOptionalText(state.Status, 32) ?? "Unknown",
+            state.PaidUntil,
+            state.WarningStartsAt,
+            state.GraceUntil,
+            state.OfflineValidUntil,
+            state.AllowedDevices,
+            state.AllowedBranches,
+            state.AllowedNamedUsers,
+            state.AllowedConcurrentUsers,
+            state.Modules.Select(module => new ControlCloudObservedEntitlementModule(
+                NormalizeOptionalText(module.ModuleCode, 64) ?? "UNKNOWN",
+                module.IsEnabled)).ToArray(),
+            state.FeatureLimits.Select(limit => new ControlCloudObservedEntitlementFeatureLimit(
+                NormalizeOptionalText(limit.ModuleCode, 64) ?? "UNKNOWN",
+                NormalizeOptionalText(limit.FeatureCode, 64) ?? "UNKNOWN",
+                Math.Max(0, limit.LimitValue),
+                NormalizeOptionalText(limit.Unit, 32) ?? "COUNT")).ToArray());
     }
 }

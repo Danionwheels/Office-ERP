@@ -23,4 +23,16 @@ public sealed class ClientPortalInvitationDeliveryOptions
     public string Username { get; set; } = "";
 
     public string Password { get; set; } = "";
+
+    public int SmtpTimeoutSeconds { get; set; } = 30;
+
+    public string MailQueueStorePath { get; set; } = "App_Data/client-portal-mail-deliveries.json";
+
+    public int MailQueuePollIntervalSeconds { get; set; } = 10;
+
+    public int MailQueueClaimLeaseSeconds { get; set; } = 120;
+
+    public int MailQueueBatchSize { get; set; } = 1;
+
+    public int MailQueueInitialRetryDelaySeconds { get; set; } = 30;
 }

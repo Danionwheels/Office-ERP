@@ -21,4 +21,16 @@ public sealed class ControlCloudClientPortalUserEntity
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public DateTimeOffset? LastLoginAtUtc { get; set; }
+
+    public string? ProtectedTotpSecret { get; set; }
+    public string? PendingProtectedTotpSecret { get; set; }
+    public DateTimeOffset? TotpEnrollmentStartedAtUtc { get; set; }
+    public DateTimeOffset? TotpEnabledAtUtc { get; set; }
+    public long? LastTotpStep { get; set; }
+    public string RecoveryCodeHashesJson { get; set; } = "[]";
+    public string PendingRecoveryCodeHashesJson { get; set; } = "[]";
+    public DateTimeOffset? RecoveryCodesGeneratedAtUtc { get; set; }
+    public DateTimeOffset? LastRecoveryCodeUsedAtUtc { get; set; }
+    public int SecurityVersion { get; set; } = 1;
+    public Guid ConcurrencyToken { get; set; }
 }

@@ -72,6 +72,9 @@ public sealed class ControlCloudInstallationHeartbeatEntityConfiguration
             .HasColumnName("pairing_first_manager_device_approved_at_utc");
         builder.Property(heartbeat => heartbeat.PairingLastDeviceUpdatedAtUtc)
             .HasColumnName("pairing_last_device_updated_at_utc");
+        builder.Property(heartbeat => heartbeat.ObservedEntitlementStateJson)
+            .HasColumnName("observed_entitlement_state_json")
+            .HasColumnType("jsonb");
 
         builder.HasIndex(heartbeat => heartbeat.ClientId)
             .HasDatabaseName("ix_installation_heartbeats_client_id");

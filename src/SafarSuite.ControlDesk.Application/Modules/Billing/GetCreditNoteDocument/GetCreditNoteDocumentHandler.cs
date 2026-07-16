@@ -82,12 +82,12 @@ public sealed class GetCreditNoteDocumentHandler
         CreditNote creditNote,
         CancellationToken cancellationToken)
     {
-        var entries = await _journalEntries.ListAsync(
-            sourceType: JournalSourceType.BillingCreditNote,
-            cancellationToken: cancellationToken);
+        var entries = await _journalEntries.ListForSourceDocumentAsync(
+            JournalSourceType.BillingCreditNote,
+            creditNote.Id.Value,
+            cancellationToken);
 
         return entries
-            .Where(entry => string.Equals(entry.SourceReference, creditNote.Number.Value, StringComparison.OrdinalIgnoreCase))
             .Where(entry => string.Equals(entry.CurrencyCode, creditNote.CurrencyCode, StringComparison.OrdinalIgnoreCase))
             .Where(entry => entry.TotalDebit.Amount == creditNote.TotalAmount.Amount)
             .OrderBy(entry => entry.EntryDate)

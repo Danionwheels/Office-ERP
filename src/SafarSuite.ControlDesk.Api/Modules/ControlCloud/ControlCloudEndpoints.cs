@@ -373,6 +373,7 @@ public static class ControlCloudEndpoints
                 request.Channel,
                 request.Recipient,
                 request.MarkedBy,
+                request.PreflightAcknowledgements,
                 request.Note),
             cancellationToken);
 
@@ -563,11 +564,14 @@ public static class ControlCloudEndpoints
     private static async Task<IResult> ListOutboxMessagesAsync(
         string? status,
         string? messageType,
+        Guid? clientId,
+        int? take,
+        string? cursor,
         ListCloudOutboxMessagesHandler handler,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new ListCloudOutboxMessagesQuery(status, messageType),
+            new ListCloudOutboxMessagesQuery(status, messageType, clientId, take ?? 50, cursor),
             cancellationToken);
 
         if (result.IsFailure)
@@ -578,6 +582,7 @@ public static class ControlCloudEndpoints
         var response = new ListCloudOutboxMessagesResponse(
             result.Value.Messages.Select(message => new CloudOutboxMessageResponse(
                 message.CloudOutboxMessageId,
+                message.ClientId,
                 message.MessageType,
                 message.SubjectType,
                 message.SubjectId,
@@ -589,7 +594,17 @@ public static class ControlCloudEndpoints
                 message.NextAttemptAtUtc,
                 message.SentAtUtc,
                 message.FailedAtUtc,
-                message.FailureReason)).ToArray());
+                message.FailureReason)).ToArray(),
+            result.Value.PageSize,
+            result.Value.HasMore,
+            result.Value.NextCursor,
+            new CloudOutboxMessageRegisterSummaryResponse(
+                result.Value.Summary.TotalCount,
+                result.Value.Summary.PendingCount,
+                result.Value.Summary.FailedCount,
+                result.Value.Summary.SentCount,
+                result.Value.Summary.ReadyForPublishingCount,
+                result.Value.Summary.TotalAttemptCount));
 
         return Results.Ok(response);
     }

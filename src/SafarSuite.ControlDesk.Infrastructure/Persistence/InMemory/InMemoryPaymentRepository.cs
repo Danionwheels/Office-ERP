@@ -23,6 +23,16 @@ public sealed class InMemoryPaymentRepository : IPaymentRepository
         return Task.FromResult(payment);
     }
 
+    public Task<Payment?> GetByPortalClaimIdAsync(
+        PortalPaymentClaimId portalClaimId,
+        CancellationToken cancellationToken = default)
+    {
+        var payment = _paymentsById.Values
+            .SingleOrDefault(candidate => candidate.PortalClaimId == portalClaimId);
+
+        return Task.FromResult(payment);
+    }
+
     public Task<IReadOnlyCollection<Payment>> ListByReferenceAsync(
         PaymentReference reference,
         CancellationToken cancellationToken = default)
@@ -66,4 +76,6 @@ public sealed class InMemoryPaymentRepository : IPaymentRepository
 
         return Task.FromResult<IReadOnlyCollection<Payment>>(sortedPayments);
     }
+
+    internal Payment[] Snapshot() => _paymentsById.Values.ToArray();
 }

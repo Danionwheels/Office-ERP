@@ -22,6 +22,37 @@ public sealed class InMemoryJournalEntryRepository : IJournalEntryRepository
         return Task.FromResult(journalEntry);
     }
 
+    public Task<IReadOnlyCollection<JournalEntry>> ListForSourceDocumentAsync(
+        JournalSourceType sourceType,
+        Guid sourceDocumentId,
+        CancellationToken cancellationToken = default)
+    {
+        var entries = _entriesById.Values
+            .Where(entry => entry.SourceType == sourceType)
+            .Where(entry => entry.SourceDocumentId == sourceDocumentId)
+            .OrderBy(entry => entry.EntryDate)
+            .ThenBy(entry => entry.CreatedAtUtc)
+            .ThenBy(entry => entry.Id.Value)
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyCollection<JournalEntry>>(entries);
+    }
+
+    public Task<int> GetMaximumVoucherSequenceAsync(
+        JournalSourceType sourceType,
+        string prefix,
+        int sequenceYear,
+        CancellationToken cancellationToken = default)
+    {
+        var maximum = _entriesById.Values
+            .Where(entry => entry.SourceType == sourceType)
+            .Select(entry => ParseVoucherSequence(entry.SourceReference, prefix, sequenceYear))
+            .DefaultIfEmpty(0)
+            .Max();
+
+        return Task.FromResult(maximum);
+    }
+
     public Task<IReadOnlyCollection<JournalEntry>> ListAsync(
         DateOnly? fromDate = null,
         DateOnly? toDate = null,
@@ -76,5 +107,21 @@ public sealed class InMemoryJournalEntryRepository : IJournalEntryRepository
         }
 
         return entries;
+    }
+
+    private static int ParseVoucherSequence(
+        string? sourceReference,
+        string prefix,
+        int sequenceYear)
+    {
+        var parts = sourceReference?.Split('-', StringSplitOptions.RemoveEmptyEntries);
+
+        return parts is { Length: 3 }
+            && string.Equals(parts[0], prefix, StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(parts[1], out var year)
+            && year == sequenceYear
+            && int.TryParse(parts[2], out var sequence)
+                ? sequence
+                : 0;
     }
 }

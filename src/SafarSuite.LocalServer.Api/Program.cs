@@ -49,6 +49,9 @@ var automationOptions =
 var runtimeAccessOptions = LocalServerRuntimeAccessOptions.FromConfiguration(builder.Configuration);
 var pairingOptions = LocalServerPairingOptions.FromConfiguration(builder.Configuration);
 var managerSessionOptions = LocalServerManagerSessionOptions.FromConfiguration(builder.Configuration);
+var pairingAbuseControlOptions =
+    builder.Configuration.GetSection(LocalServerPairingAbuseControlOptions.SectionName).Get<LocalServerPairingAbuseControlOptions>()
+    ?? new LocalServerPairingAbuseControlOptions();
 var pairingStoreOptions =
     builder.Configuration.GetSection(LocalServerPairingStoreOptions.SectionName).Get<LocalServerPairingStoreOptions>()
     ?? new LocalServerPairingStoreOptions();
@@ -64,9 +67,11 @@ builder.Services.AddSingleton(automationOptions);
 builder.Services.AddSingleton(runtimeAccessOptions);
 builder.Services.AddSingleton(pairingOptions);
 builder.Services.AddSingleton(managerSessionOptions);
+builder.Services.AddSingleton(pairingAbuseControlOptions);
 builder.Services.AddSingleton(pairingStoreOptions);
 builder.Services.AddSingleton(deviceCredentialOptions);
 builder.Services.AddSingleton<LocalServerManagerSessionService>();
+builder.Services.AddSingleton<LocalServerPairingAbuseControlService>();
 builder.Services.AddSingleton<ILocalServerClock, SystemLocalServerClock>();
 builder.Services.AddSingleton<LocalServerEntitlementPolicy>();
 builder.Services.AddSingleton<ILocalServerEntitlementCache, FileLocalServerEntitlementCache>();
@@ -76,6 +81,7 @@ builder.Services.AddSingleton<ILocalServerEntitlementBundleVerifier, HmacLocalSe
 builder.Services.AddSingleton<ILocalServerInstallationCommandVerifier, HmacLocalServerInstallationCommandVerifier>();
 builder.Services.AddSingleton<ILocalServerAppActivationRevocationStore, FileLocalServerAppActivationRevocationStore>();
 builder.Services.AddSingleton<ILocalServerDevicePairingStore, FileLocalServerDevicePairingStore>();
+builder.Services.AddSingleton<ILocalServerPairingSecurityEventStore, FileLocalServerPairingSecurityEventStore>();
 builder.Services.AddSingleton<ILocalServerFirstManagerSetupTokenVerifier, HmacLocalServerFirstManagerSetupTokenVerifier>();
 builder.Services.AddSingleton<ILocalServerDeviceCredentialService, HmacLocalServerDeviceCredentialService>();
 builder.Services.AddSingleton<ILocalServerHeartbeatPairingStatusProvider, LocalServerHeartbeatPairingStatusProvider>();
@@ -117,6 +123,7 @@ app.MapGet("/health", () => Results.Ok(new
     status = "Healthy"
 }));
 
+app.UseLocalServerPairingAbuseControls();
 app.MapLocalServerRuntimeEndpoints();
 
 app.Run();

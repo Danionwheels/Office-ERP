@@ -166,12 +166,12 @@ public sealed class IssueCreditNoteHandler
         Invoice invoice,
         CancellationToken cancellationToken)
     {
-        var journalEntries = await _journalEntries.ListAsync(
-            sourceType: JournalSourceType.BillingInvoice,
-            cancellationToken: cancellationToken);
+        var journalEntries = await _journalEntries.ListForSourceDocumentAsync(
+            JournalSourceType.BillingInvoice,
+            invoice.Id.Value,
+            cancellationToken);
 
         return journalEntries
-            .Where(entry => entry.SourceReference == invoice.Number.Value)
             .Where(entry => entry.Status == JournalEntryStatus.Posted)
             .OrderBy(entry => entry.EntryDate)
             .ThenBy(entry => entry.CreatedAtUtc)
@@ -191,7 +191,9 @@ public sealed class IssueCreditNoteHandler
             JournalSourceType.BillingCreditNote,
             creditNote.Number.Value,
             $"Credit note {creditNote.Number.Value} for invoice {invoice.Number.Value}: {creditNote.Reason}",
-            _clock.UtcNow);
+            _clock.UtcNow,
+            creditNote.ClientId,
+            creditNote.Id.Value);
 
         foreach (var line in originalJournal.Lines)
         {
@@ -236,6 +238,7 @@ public sealed class IssueCreditNoteHandler
 
         return CloudOutboxMessage.Create(
             CloudOutboxMessageId.Create(_idGenerator.NewGuid()),
+            creditNote.ClientId,
             "CreditNoteIssued",
             "CreditNote",
             creditNote.Id.Value.ToString(),
