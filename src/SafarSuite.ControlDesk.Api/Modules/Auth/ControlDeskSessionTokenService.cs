@@ -183,9 +183,16 @@ public sealed class ControlDeskSessionTokenService(
     {
         try
         {
+            var suppliedBytes = Base64UrlDecode(supplied);
+
+            if (!string.Equals(Base64UrlEncode(suppliedBytes), supplied, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
             return CryptographicOperations.FixedTimeEquals(
                 Base64UrlDecode(expected),
-                Base64UrlDecode(supplied));
+                suppliedBytes);
         }
         catch (FormatException)
         {

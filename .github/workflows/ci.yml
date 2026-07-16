@@ -1,0 +1,108 @@
+name: CI Release Gates
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-release-gate:
+    name: backend-release-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.301
+
+      - name: Restore solution and tools
+        run: |
+          dotnet restore SafarSuite.ControlDesk.sln
+          dotnet tool restore
+
+      - name: Build solution
+        run: dotnet build SafarSuite.ControlDesk.sln --configuration Release --no-restore
+
+      - name: Run xUnit tests
+        run: dotnet test SafarSuite.ControlDesk.sln --configuration Release --no-build --no-restore
+
+      - name: Run accounting smoke
+        run: dotnet run --project tools/SafarSuite.ControlDesk.AccountingSmoke --configuration Release --no-build --no-restore
+
+      - name: Run entitlement and security smoke
+        run: dotnet run --project tools/SafarSuite.LocalServer.EntitlementSmoke --configuration Release --no-build --no-restore
+
+      - name: Validate Control Desk migrations
+        run: >-
+          dotnet tool run dotnet-ef migrations has-pending-model-changes
+          --project src/SafarSuite.ControlDesk.Infrastructure
+          --startup-project src/SafarSuite.ControlDesk.Api
+          --context ControlDeskDbContext
+          --configuration Release
+          --no-build
+
+      - name: Validate Control Cloud migrations
+        run: >-
+          dotnet tool run dotnet-ef migrations has-pending-model-changes
+          --project src/SafarSuite.ControlCloud.Infrastructure/SafarSuite.ControlCloud.Infrastructure.csproj
+          --startup-project src/SafarSuite.ControlCloud.Infrastructure/SafarSuite.ControlCloud.Infrastructure.csproj
+          --context ControlCloudDbContext
+          --configuration Release
+          --no-build
+
+  ui-release-gate:
+    name: ui-release-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: apps/control-desk-ui
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/control-desk-ui/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build production UI
+        run: npm run build
+
+  deployment-release-gate:
+    name: deployment-release-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare placeholder staging configuration
+        run: cp deploy/staging/.env.example deploy/staging/.env
+
+      - name: Validate staging Compose configuration
+        run: docker compose -f deploy/staging/docker-compose.yml config --quiet
