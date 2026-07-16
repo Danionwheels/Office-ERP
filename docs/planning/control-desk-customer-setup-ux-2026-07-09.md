@@ -25,6 +25,8 @@ Let a provider operator create a customer deployment package, hand off everythin
 - [x] Add local API TLS troubleshooting guidance to the downloaded customer setup guide after the real clean-machine proof exposed a Windows Schannel/.NET verification edge.
 - [x] Add an in-app Control Desk setup preflight panel so provider operators see Docker target, clean volume, trust custody, app-runtime profile, and Windows TLS review items before handoff.
 - [x] Return non-secret signing readiness with generated packages, include the active signing key id in the generated install command/environment template, and surface required install-time provider variable names without exposing secret values.
+- [x] Require operators to acknowledge every setup preflight item before Control Desk can persist a bootstrap package handoff audit event.
+- [ ] Add LocalServer pairing abuse-hardening controls for unrecognized LAN devices: rate limits, pending-device quotas, duplicate coalescing, request-size/connection limits, temporary quarantine/deny rules, and manager-visible noisy-device events.
 
 ## Notes
 
@@ -48,6 +50,10 @@ The setup packet now also includes a non-secret pairing descriptor. The normal D
 
 The deployment package register now lets operators mark a package as handed off with channel, recipient, actor, and note fields. The durable state is a `BootstrapPackageHandedOff` Control Cloud audit event matched by package id, so the package list can show "Handed off" evidence without returning setup-token plaintext after creation.
 
+The handoff action now requires explicit operator acknowledgement of the setup preflight items before the audit event is accepted. Control Desk sends the acknowledged keys through the proxy, Control Cloud rejects missing or unsupported keys, and the non-secret audit detail records that Docker target, clean target, provider trust custody, app-runtime profile, and Windows Local API TLS were acknowledged.
+
 The guided setup checklist now treats handoff as its own evidence-backed step between setup packet generation and local-server registration. It uses the latest loaded package and the matching `BootstrapPackageHandedOff` audit event, so operators can see when the customer-facing delivery step is still waiting even if the package itself has already been generated.
 
 The live PostgreSQL proof now marks a generated package as handed off, reads back the `BootstrapPackageHandedOff` audit event, and asserts the audit detail identifies the package and installation without leaking setup-token plaintext. The Control Desk provider-access proxy proof now verifies the same handoff and audit path through the operator-facing API. A browser pass on the Control Desk Cloud tab created a bootstrap package, marked handoff from the package register, showed the "Handed off" badge/timestamp, and displayed the handoff audit event without the setup token id.
+
+Later pairing security tightening should keep the per-device LocalServer connection model, because every approved device needs its own durable credential, refresh lifecycle, rights assignment, suspension, and revocation state. Unrecognized devices must remain treated as untrusted traffic: they cannot gain approved access without manager action, but a scripted noisy client could still load discovery, pairing-request, status, or login-adjacent endpoints. The parked hardening work should add rate limits, pending caps, duplicate coalescing, bounded request sizes/connections, quarantine or deny controls, and operator-visible security events before production tightening.

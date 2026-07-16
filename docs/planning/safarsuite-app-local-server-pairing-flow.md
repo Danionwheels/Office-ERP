@@ -2,7 +2,7 @@
 
 Date added: 2026-07-09
 
-Status: Windows app v1/manual discovery, native LAN candidate generation, UDP broadcast discovery, protected pairing storage, signed descriptor handoff, manager recovery, LocalServer credential refresh, and pre-login credential maintenance wired; unrecognized-device abuse controls are recorded for later security hardening; mDNS/DNS-SD remains optional
+Status: Windows app v1/manual discovery, native LAN candidate generation, UDP broadcast discovery, protected pairing storage, signed descriptor handoff, manager recovery, LocalServer credential refresh, and pre-login credential maintenance wired; unrecognized-device abuse-control contract is defined for later security hardening implementation; mDNS/DNS-SD remains optional
 
 Purpose: define how a SafarSuite Windows app finds, trusts, activates against, and keeps using the client-site LocalServer without repeated client-side setup.
 
@@ -29,7 +29,9 @@ Purpose: define how a SafarSuite Windows app finds, trusts, activates against, a
 - [x] Add explicit provider-assisted manager recovery token purpose and Control Desk ceremony.
 - [x] Add LocalServer device credential refresh so approved devices can rotate credentials without repeating setup.
 - [x] Add native Windows UDP broadcast discovery for deployment networks that need active service discovery beyond DNS/subnet candidates.
-- [ ] Add unrecognized-device abuse controls: rate limits, pending-request caps, duplicate coalescing, request-size limits, quarantine/deny controls, and observability for noisy LAN clients.
+- [x] Define the unrecognized-device abuse-control contract: rate-limit buckets, pending-request caps, duplicate coalescing, request-size limits, quarantine/deny controls, manager-visible events, and proof criteria.
+- [x] Implement the LocalServer abuse-control foundation: request-size middleware, route/source rate guards, duplicate coalescing flag, pending queue cap, credential/token failure events with automatic quarantine, persisted security events, and manager-protected summary/quarantine/deny/release actions.
+- [ ] Add full route-level HTTP proof coverage for throttling, oversized requests, queue cap, manager source actions, and approved-device continuity.
 - [ ] Add native Windows mDNS/DNS-SD service browsing only if customer networks need multicast DNS advertisements.
 
 ## App Workspace Verification - 2026-07-09
@@ -142,6 +144,162 @@ Later security tightening should add:
 - Manager-visible noisy-device indicators with approve/block/quarantine actions, without letting noise hide already-approved devices.
 - Structured metrics/audit for rejected, throttled, duplicate, expired, and quarantined pairing attempts.
 - Optional reverse-proxy or Kestrel limits in generated deployment templates so abuse controls exist below the application layer too.
+
+## Abuse-Control Contract
+
+This section is the implementation target for later security tightening. It deliberately keeps the current per-device pairing model: each approved workstation still gets its own credential, manager assignment, refresh lifecycle, suspension, revocation, and audit trail. The new controls only govern unapproved/noisy traffic before it can create operational cost or clutter.
+
+### Policy Defaults
+
+LocalServer should expose these settings under `LocalServer:PairingAbuseControls` and include the effective non-secret policy in diagnostics.
+
+| Setting | Default target | Notes |
+| --- | ---: | --- |
+| `Enabled` | `true` | Can be disabled only for controlled support proofs. |
+| `AnonymousRequestBodyLimitBytes` | `16384` | Applies before JSON parsing on public/pre-pairing routes. |
+| `AnonymousConcurrentRequestsPerRemote` | `4` | Protects connection slots for public/pre-pairing routes. |
+| `DiscoveryRequestsPerRemotePerMinute` | `120` | UDP/TCP discovery should stay cheap and non-persistent. |
+| `HelloRequestsPerRemotePerMinute` | `60` | Pairing hello validates candidate identity but should not write state. |
+| `PairingRequestsPerRemotePerHour` | `12` | Limits new pending-device request attempts from one LAN source. |
+| `PairingRequestsPerDeviceInstallIdPerDay` | `4` | Caps churn from one app install id when provided. |
+| `PairingRequestsPerFingerprintPerDay` | `4` | Caps churn from one device public-key fingerprint. |
+| `PairingStatusPollsPerRequestPerMinute` | `30` | Lets the app poll while waiting without allowing tight loops. |
+| `CredentialFailuresPerDevicePer15Minutes` | `10` | Covers bad device credential verify/refresh attempts. |
+| `LoginFailuresPerActorPer15Minutes` | `10` | Covers local login/session-adjacent failures. |
+| `PendingQueueMaxRecords` | `100` | Manager queue cap before new unknown devices are rejected/coalesced. |
+| `PendingRequestTtlHours` | `48` | Expired pending rows are hidden from the active queue and eligible for cleanup. |
+| `DuplicateCoalescingWindowHours` | `24` | Duplicate active requests return the existing pending request id. |
+| `TemporaryQuarantineMinutes` | `30` | Applied after repeated limit/failure events. |
+| `ManualDenyTtlHours` | `24` | Manager can deny a noisy source temporarily without deleting approved devices. |
+
+### Endpoint Coverage
+
+| Route group | Required control |
+| --- | --- |
+| `GET /.well-known/safarsuite-local-server` and UDP discovery | Bodyless/cheap response, per-remote rate limit, no state write. |
+| `POST /api/v1/local-server/pairing/hello` | Body limit, per-remote rate limit, no state write before cheap client nonce validation. |
+| `POST /api/v1/local-server/pairing/requests` | Body limit, per-remote/device/fingerprint rate limits, duplicate coalescing, pending queue cap, quarantine/deny check before persistence. |
+| `GET /api/v1/local-server/pairing/requests/{pairingRequestId}` | Per-request and per-remote poll limits, no leakage beyond the request id already known to the caller. |
+| `POST /api/v1/local-server/pairing/first-manager-token/import` | Body limit, replay/failure backoff, quarantine after repeated bad tokens, but no source can approve without a valid signed token. |
+| `POST /api/v1/local-server/device-credentials/verify` and `/refresh` | Per-device/per-remote bad credential backoff, no credential detail in failure events. |
+| `POST /api/v1/local-server/pairing/manager-sessions` and local login/session routes | Login-adjacent failure backoff and manager-visible security events. |
+| Manager-protected device/user/admin routes | Normal manager authorization first; abuse events are read/actions only and never bypass manager session checks. |
+
+### Response Contracts
+
+When a request is throttled, quarantined, denied, too large, or blocked by queue limits, LocalServer should return a stable problem response:
+
+```json
+{
+  "code": "PairingRateLimited",
+  "detail": "Too many pairing requests from this source.",
+  "eventId": "security-event-guid",
+  "limitScope": "RemoteAddress",
+  "endpointGroup": "PairingRequest",
+  "retryAfterSeconds": 900,
+  "windowStartedAtUtc": "2026-07-10T00:00:00Z",
+  "windowExpiresAtUtc": "2026-07-10T00:15:00Z"
+}
+```
+
+Required failure codes:
+
+| Code | HTTP | Meaning |
+| --- | ---: | --- |
+| `PairingRequestTooLarge` | `413` | Request body exceeded the anonymous limit. |
+| `PairingRateLimited` | `429` | A rate bucket was exhausted. |
+| `PairingSourceQuarantined` | `429` | Temporary automatic quarantine is active. |
+| `PairingSourceDenied` | `403` | Manager deny/block is active. |
+| `PairingPendingQueueFull` | `409` | Pending queue is full and no duplicate can be coalesced. |
+| `PairingDuplicateCoalesced` | `200` or `202` | A duplicate active pending request was reused instead of creating a new row. |
+
+Duplicate pairing requests should not create new manager queue rows. They should return the existing active pending request id plus `coalesced: true`:
+
+```json
+{
+  "pairingRequestId": "existing-request-guid",
+  "deviceId": "existing-device-guid",
+  "requestStatus": "Pending",
+  "coalesced": true,
+  "expiresAtUtc": "2026-07-12T00:00:00Z"
+}
+```
+
+### Security Event Contract
+
+LocalServer should persist compact, local-only security events for manager visibility and diagnostics. Control Cloud heartbeat may receive aggregate counts, but raw remote addresses and request material stay local.
+
+```json
+{
+  "eventId": "security-event-guid",
+  "occurredAtUtc": "2026-07-10T00:00:00Z",
+  "eventType": "RateLimited",
+  "severity": "Warning",
+  "endpointGroup": "PairingRequest",
+  "sourceKey": "remote:sha256-prefix",
+  "remoteAddress": "192.168.10.42",
+  "deviceInstallIdHash": "sha256-prefix",
+  "deviceFingerprintHash": "sha256-prefix",
+  "pairingRequestId": "request-guid-or-null",
+  "deviceId": "device-guid-or-null",
+  "count": 13,
+  "windowStartedAtUtc": "2026-07-10T00:00:00Z",
+  "windowExpiresAtUtc": "2026-07-10T00:15:00Z",
+  "action": "Throttle",
+  "detail": "Pairing request rate exceeded for remote address."
+}
+```
+
+Event types:
+
+- `RateLimited`
+- `DuplicateCoalesced`
+- `PendingQueueFull`
+- `PendingRequestExpired`
+- `RequestTooLarge`
+- `CredentialFailure`
+- `LoginFailure`
+- `FirstManagerTokenRejected`
+- `QuarantineStarted`
+- `QuarantineReleased`
+- `SourceDenied`
+- `SourceAllowed`
+
+Manager-visible actions:
+
+```text
+GET  /api/v1/local-server/pairing/security-events?take=50
+GET  /api/v1/local-server/pairing/abuse-summary
+POST /api/v1/local-server/pairing/abuse-sources/{sourceKey}/quarantine
+POST /api/v1/local-server/pairing/abuse-sources/{sourceKey}/deny
+POST /api/v1/local-server/pairing/abuse-sources/{sourceKey}/release
+```
+
+All of these routes are manager-protected. Source actions affect only unknown or not-yet-approved traffic. They must not suspend, revoke, or hide already-approved devices; those remain controlled by the existing device lifecycle actions.
+
+### Processing Order
+
+The implementation should reject cheaply before expensive work:
+
+1. Kestrel/body-size limit.
+2. Remote/source deny or quarantine check.
+3. Per-endpoint rate bucket check.
+4. Minimal JSON shape validation.
+5. Duplicate coalescing or queue cap check.
+6. Signature/credential verification when the route requires it.
+7. Store write, audit/security event write, and response.
+
+### Proof Criteria
+
+The hardening slice is not accepted until proofs cover:
+
+- Repeated discovery/hello calls are throttled without writing pairing rows.
+- Oversized anonymous request returns `413` and records a local security event.
+- Repeated identical pairing requests coalesce to one pending row and return `coalesced: true`.
+- Pending queue cap returns `PairingPendingQueueFull` for new unknown devices while still allowing existing approved device credential verify/refresh.
+- Repeated bad credential or bad first-manager token attempts trigger backoff/quarantine without leaking credential/token material.
+- Manager can list security events, quarantine a source, deny a source, release a source, and still approve/revoke legitimate devices.
+- Heartbeat/diagnostics expose aggregate counts only; no setup tokens, device credentials, raw request bodies, provider secrets, or database credentials are emitted.
 
 ## Flow Overview
 
@@ -508,6 +666,11 @@ POST /api/v1/local-server/devices/{deviceId}/revoke
 POST /api/v1/local-server/users
 POST /api/v1/local-server/users/{userId}/roles
 GET  /api/v1/local-server/audit/device-access
+GET  /api/v1/local-server/pairing/security-events
+GET  /api/v1/local-server/pairing/abuse-summary
+POST /api/v1/local-server/pairing/abuse-sources/{sourceKey}/quarantine
+POST /api/v1/local-server/pairing/abuse-sources/{sourceKey}/deny
+POST /api/v1/local-server/pairing/abuse-sources/{sourceKey}/release
 ```
 
 Device-protected:
@@ -651,6 +814,8 @@ This flow is for lost/replaced manager devices, not silent device takeover. Alre
 | Certificate regenerated | Allow refresh only when higher-level LocalServer identity is still proven and manager confirms. |
 | Device cloned | Device key and local credential are bound to protected storage; manager can revoke suspicious duplicate use. |
 | Device credential near expiry | App calls the refresh endpoint silently; LocalServer rotates the credential and keeps the previous credential valid only for the configured grace period. |
+| Unknown script floods discovery or pairing request routes | LocalServer rate-limits/quarantines the source, coalesces duplicates, caps the pending queue, and records manager-visible security events without granting trust. |
+| Unknown script sends oversized anonymous payloads | LocalServer rejects before expensive parsing/signature work, records `RequestTooLarge`, and does not write pairing rows. |
 | Manager lost access | Provider-assisted recovery issues a new signed manager recovery/setup token with audit. |
 | LocalServer replaced | New installation id requires provider-controlled replacement or migration flow. |
 | Device revoked while offline | Device is blocked when it next reaches LocalServer; local audit records the attempt. |
@@ -669,10 +834,13 @@ This flow is for lost/replaced manager devices, not silent device takeover. Alre
 9. Add Windows app LAN discovery, manual URL, descriptor import, and fingerprint confirmation UI in the SafarSuite app workspace. Done for the v1/manual URL path, descriptor import, LAN hostname candidate probing, native Tauri host/subnet candidate generation, UDP broadcast discovery, and explicit fingerprint confirmation: the Windows client now prefers `.well-known` plus pairing hello, stores URL candidates and trust pins, and falls back to legacy discovery. Remaining: true mDNS/DNS-SD service browsing only if customer networks need multicast DNS advertisements.
 10. Add protected client storage for pairing profiles and silent reconnect across IP changes. Done for packaged Windows: the Tauri local-client secret is now stored as a Windows DPAPI current-user envelope, with legacy plaintext reads supported and reconnect candidates pinned by server installation/fingerprint/pairing key/TLS hashes.
 11. Add Control Desk/Client Portal visibility for first device approved and pairing-mode status. Done: Control Desk and the static Client Portal preview both read the shared installation status pairing snapshot.
-12. Add smoke proofs for online pairing, offline-assisted first manager, revoked device, changed IP same trust, changed certificate manager refresh, credential refresh with previous-token grace, and server replacement block.
+12. Define unrecognized-device abuse-control contract. Done: this document now specifies default policy, endpoint coverage, stable response codes, security event shape, manager actions, processing order, and proof criteria.
+13. Implement unrecognized-device abuse controls in LocalServer and generated deployment limits from the contract above. In progress: LocalServer now has configurable pairing abuse controls, request-size rejection middleware, public pairing/source rate guards, duplicate coalescing with `coalesced: true`, pending queue caps, credential/setup-token rejection events with automatic quarantine, local persisted security events, and manager-protected event summary/quarantine/deny/release endpoints. Remaining: generated deployment/Kestrel connection limits and full route-level proof coverage.
+14. Add smoke proofs for online pairing, offline-assisted first manager, revoked device, changed IP same trust, changed certificate manager refresh, credential refresh with previous-token grace, server replacement block, duplicate request coalescing, pending queue cap, rate-limit/quarantine, manager release, and noisy-device observability. Started: LocalServer entitlement smoke now proves the pairing security-event store and source deny/release persistence semantics.
 
 ## Open Decisions
 
 - Final discovery stack: mDNS/DNS-SD first, local DNS first, or both with a feature flag.
 - Exact privacy-preserving device fingerprint fields for Windows.
 - Whether manager approval should support time-limited guest devices in V1.
+- Exact production defaults for each abuse-control bucket after the first customer LAN soak.

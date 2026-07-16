@@ -4,6 +4,14 @@ This is the separate workspace for the provider-owned office software.
 
 It is not the SafarSuite client product. It is the internal desktop system we use to manage SafarSuite customers, pricing, renewals, portal invoices, payment status, allowed devices, allowed branches, and module entitlements.
 
+## Current Direction
+
+The canonical product direction is `docs/architecture/product-charter-2026-07-11.md`.
+
+SafarSuite Control Desk is the desktop operating experience for a connected provider-control system. The durable source of truth is the shared Office Control API and central PostgreSQL database, not one employee workstation. Approved state moves through SafarSuite Control Cloud to SafarSuite Server, which enforces signed entitlements and returns observed state.
+
+Active priorities are tracked in `docs/planning/active-roadmap-2026-07-11.md`. Existing implementation history remains in `docs/planning/project-tracker.md` but does not set current priority.
+
 Canonical project names:
 
 - Product / desktop app: SafarSuite Control Desk
@@ -15,8 +23,8 @@ Canonical project names:
 ## Product Boundary
 
 ```text
-SafarSuite Control Desk
-  internal desktop app used by our office
+SafarSuite Office Control System
+  Control Desk desktop UI + Office Control API + central PostgreSQL
   source of truth for client contracts, pricing, billing, and commercial controls
 
 SafarSuite Control Cloud + SafarSuite Client Portal
@@ -31,6 +39,10 @@ SafarSuite Client Systems
 
 ## Initial Docs
 
+- `docs/architecture/product-charter-2026-07-11.md`
+- `docs/architecture/control-model-gap-map-2026-07-11.md`
+- `docs/planning/active-roadmap-2026-07-11.md`
+- `docs/planning/existing-work-disposition-2026-07-11.md`
 - `docs/architecture/product-direction.md`
 - `docs/architecture/product-naming.md`
 - `docs/architecture/layered-architecture.md`
@@ -56,11 +68,11 @@ SafarSuite Client Systems
 
 ## Legacy Reference
 
-Use `E:/travel tour/survey` as the canonical reference folder for cloning core legacy behavior. The rule is to clone business meaning and important workflows, not the old Access implementation directly.
+Use `E:/travel tour/survey` only as legacy research evidence. Preserve a behavior only when a current SafarSuite provider workflow independently requires it; legacy parity is not a product objective.
 
-## Local Database
+## Development Database
 
-Development uses PostgreSQL through Docker Compose.
+Development uses PostgreSQL through Docker Compose. It represents the authoritative Office Control database during local development; the production design must use a centrally managed database that is not bound to one Control Desk workstation.
 
 ```powershell
 dotnet tool restore
@@ -75,7 +87,36 @@ Connection string used by `appsettings.Development.json`:
 Host=localhost;Port=54329;Database=safarsuite_control_desk;Username=safarsuite;Password=safarsuite_dev_password
 ```
 
-The current control-spine persistence slices store clients, contacts, support notes, client accounting profiles, client contracts, contract module allowances, ledger accounts, journal entries, journal lines, charge codes, client charge rules, invoices, invoice lines, payments, entitlement snapshots, entitlement modules, and cloud outbox messages in PostgreSQL.
+The current control-spine persistence slices store clients, contacts, support notes, client accounting profiles, client contracts, contract module allowances, ledger accounts, journal entries, journal lines, charge codes, client charge rules, invoices, invoice lines, payments, immutable approved client-access revisions, derived entitlement snapshots, module rows, and cloud outbox messages in PostgreSQL.
+
+Office outbox reads are client-aware keyset pages rather than unbounded payload scans. For example:
+
+```text
+GET /api/v1/control-cloud/outbox-messages?clientId={clientId}&take=50&cursor={opaqueCursor}
+```
+
+The response includes the bounded rows, continuation metadata, and complete filtered pending/failed/sent/ready/attempt counts. See `docs/architecture/office-outbox-scale-boundary.md`.
+
+Client discovery and daily operator work are bounded too:
+
+```text
+GET /api/v1/clients?search={text}&sort=code&take=50&cursor={opaqueCursor}
+GET /api/v1/command-center/client-work?lane=setup&sort=priority&take=25&cursor={opaqueCursor}
+```
+
+The client response includes filtered matches plus whole-register status totals. The Command Center response reads a transactionally refreshed per-client projection and includes exact search-scoped lane totals, replacing the former browser-side all-client load and per-client request fan-out. See `docs/architecture/office-client-directory-work-queue-scale-boundary.md`.
+
+Office financial history is composed from an exact summary and independent register pages:
+
+```text
+GET /api/v1/clients/{clientId}/financial-summary
+GET /api/v1/clients/{clientId}/invoices?take=25&cursor={opaqueCursor}
+GET /api/v1/clients/{clientId}/payments?take=25&cursor={opaqueCursor}
+GET /api/v1/clients/{clientId}/financial-activity?take=25&cursor={opaqueCursor}
+GET /api/v1/clients/{clientId}/journal-postings?take=20&cursor={opaqueCursor}
+```
+
+Commercial journals store their client and immutable source document ID. The company journal register is paged too, and journal lines load only when one entry is opened. See `docs/architecture/office-financial-read-spine-scale-boundary.md`.
 
 For local development, pending cloud outbox messages can be marked sent through:
 

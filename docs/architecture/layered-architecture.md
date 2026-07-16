@@ -2,6 +2,8 @@
 
 Date decided: 2026-06-30
 
+Direction update: 2026-07-11. This layer contract now sits under `docs/architecture/product-charter-2026-07-11.md`.
+
 This is the architecture contract for SafarSuite Control Desk.
 
 The goal is to keep the project slow, clean, modular, DRY, and update friendly. We should be able to add or change a module without hunting business rules across unrelated files.
@@ -10,7 +12,7 @@ The goal is to keep the project slow, clean, modular, DRY, and update friendly. 
 
 Use a modular monolith with clean architecture boundaries.
 
-Do not start with microservices. SafarSuite Control Desk is an internal desktop app with a local PostgreSQL database and a controlled integration with SafarSuite Control Cloud. A modular monolith gives us strong boundaries without deployment complexity.
+Do not start with microservices. SafarSuite Control Desk is an internal desktop experience backed by a modular Office Control API and central PostgreSQL database, with a controlled integration to SafarSuite Control Cloud. A modular monolith gives us strong boundaries without premature deployment complexity.
 
 ## Non-Negotiable Rules
 

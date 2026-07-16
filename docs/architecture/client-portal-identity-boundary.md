@@ -87,6 +87,7 @@ The login response is a signed, expiring bearer token scoped to one client.
 
 ```text
 GET /api/v1/client-portal/clients/{clientId}/commercial-summary
+GET /api/v1/client-portal/clients/{clientId}/commercial-documents?documentType={type}&take={1..100}&cursor={cursor}
 GET /api/v1/client-portal/clients/{clientId}/entitlement-bundle?installationId={installationId}
 GET /api/v1/client-portal/clients/{clientId}/installations/{installationId}/status
 ```

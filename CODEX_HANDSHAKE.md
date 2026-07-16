@@ -1,5 +1,13 @@
 # Codex Handshake: SafarSuite Control Desk Phase
 
+## Direction Reset - 2026-07-11
+
+Read `docs/architecture/product-charter-2026-07-11.md` before all older architecture and planning notes. Active priorities live in `docs/planning/active-roadmap-2026-07-11.md`.
+
+The Control Desk desktop application remains the primary office experience, but durable source-of-truth data belongs behind a shared Office Control API in central PostgreSQL rather than on one employee workstation. Legacy Survey/FAS material is research evidence only; legacy parity is not a product goal.
+
+Current control-model checkpoint: every new entitlement is derived from an immutable approved `ClientAccessRevision`; its Office-owned version and revision ID propagate through Control Cloud signing/status into the SafarSuite Server cache. See the active roadmap for the remaining model breadth and production gaps.
+
 Use this file to start a separate Codex project/thread for the SafarSuite Control Desk phase.
 
 ## Opening Prompt For New Codex Thread
@@ -50,7 +58,7 @@ It will manage:
 - expenses and assets
 - support/admin notes
 
-The office app should become the source of truth for commercial decisions. The cloud/portal should mirror approved client-facing data and issue signed entitlements.
+The Office Control System should be the source of truth for commercial decisions. The desktop app operates that system; the Office Control API and central database preserve its durable truth. The cloud/portal should mirror approved client-facing data and issue signed entitlements.
 
 ## Final Product Direction
 
@@ -72,7 +80,7 @@ Recommended stack:
 .NET 10 backend/application layer
 React + TypeScript frontend
 Tauri desktop wrapper for production
-PostgreSQL local database
+Central PostgreSQL database behind the Office Control API
 SafarSuite Control Cloud API integration
 ```
 
@@ -83,8 +91,8 @@ Do not treat this as a normal public web app. The browser is only a development 
 The clean model is:
 
 ```text
-SafarSuite Control Desk
-  internal desktop app
+SafarSuite Office Control System
+  Control Desk desktop UI + Office Control API + central PostgreSQL
   source of truth for clients, pricing, billing, renewals, device/module limits
 
 SafarSuite Control Cloud + SafarSuite Client Portal
@@ -278,7 +286,9 @@ This proves the new business value before pulling in every legacy Survey/FAS scr
 - SafarSuite Control Desk is office-use only.
 - Final app should be desktop.
 - Development UI can run in browser.
-- `docs/architecture/product-direction.md` is the canonical direction note for keeping Control Desk, Control Cloud, Client Portal, and SafarSuite responsibilities aligned.
+- The desktop is the primary operator surface, not the only durable copy of office truth.
+- A central Office Control API and PostgreSQL database support multi-operator use, backup, growth, and shared authority.
+- `docs/architecture/product-charter-2026-07-11.md` is the canonical direction; `docs/architecture/product-direction.md` remains a detailed subsystem alignment note.
 - Cloud sync for client business data is optional.
 - Control Cloud for billing/licensing/portal is still needed.
 - Dynamic pricing is per client and owned by SafarSuite Control Desk.
@@ -298,6 +308,8 @@ This proves the new business value before pulling in every legacy Survey/FAS scr
 - Do not make client business-data cloud sync mandatory.
 - Do not hard-code one payment provider into core billing rules.
 - Do not rely on in-memory activation storage for production.
+- Do not make one Control Desk workstation the production database authority.
+- Do not preserve legacy forms, navigation, or schema for parity alone.
 
 ## Useful Next Question
 

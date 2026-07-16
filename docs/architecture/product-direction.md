@@ -2,13 +2,17 @@
 
 Date added: 2026-07-02
 
-This is the canonical direction note for SafarSuite Control Desk, SafarSuite Control Cloud, SafarSuite Client Portal, and the SafarSuite client product.
+Direction reset: 2026-07-11
+
+Canonical authority now lives in `docs/architecture/product-charter-2026-07-11.md`. This document remains a detailed subsystem boundary reference. Where the two differ, the charter wins.
+
+This is the detailed subsystem alignment note for SafarSuite Control Desk, SafarSuite Control Cloud, SafarSuite Client Portal, and the SafarSuite client product.
 
 Use this document when deciding where a feature belongs, which system owns a decision, and how to avoid mixing provider-control work with client business-data work.
 
 ## North Star
 
-Build a provider-controlled commercial, licensing, entitlement, deployment, and support spine for SafarSuite.
+Build a provider-controlled commercial, accounting, licensing, entitlement, deployment, and support system for SafarSuite, operated through the Control Desk desktop experience and backed by a central Office Control API/database.
 
 ```text
 SafarSuite Control Desk
@@ -38,14 +42,14 @@ create client
 
 | System | Owns | Does Not Own |
 | --- | --- | --- |
-| SafarSuite Control Desk | Provider office source of truth for clients, contracts, pricing, billing, payments, accounting, module/device/branch limits, support notes, and entitlement decisions | Client portal passwords, hosted client business data sync, or deployed SafarSuite runtime state |
+| Office Control System (Control Desk + Office Control API/database) | Provider office source of truth for clients, contracts, pricing, billing, payments, accounting, module/device/branch limits, support notes, and entitlement decisions | Client portal passwords, hosted client business data sync, or deployed SafarSuite runtime state |
 | SafarSuite Control Cloud | Online control plane for accepted commercial projections, signed entitlement bundles, local-server setup/registration, command queue, heartbeat/status, portal state, and audit | Original accounting truth or direct editing of client contracts/pricing without Control Desk approval |
 | SafarSuite Client Portal | Client-facing view of invoices, payment state, subscription/license status, setup packages, renewal files, and permitted self-service | Provider-only accounting decisions or local SafarSuite feature enforcement |
 | SafarSuite local server/app | Client business runtime, cached signed entitlement verification, module/limit enforcement, heartbeat, command pull/acknowledgement, diagnostics export | Pricing, billing policy, portal identity, or provider commercial decisions |
 
 ## Control Desk Goal
 
-SafarSuite Control Desk is our internal desktop app for office use. The browser-hosted React UI is a development surface; the final product should be packaged as a desktop app.
+SafarSuite Control Desk is our internal desktop app for office use. The browser-hosted React UI is a development surface; the final product should be packaged as a desktop app. The desktop is the primary operator surface, while the central Office Control API and PostgreSQL database hold durable multi-operator truth.
 
 Control Desk must help the provider:
 

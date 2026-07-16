@@ -38,6 +38,13 @@ The app workspace module-gateway enforcement slice was verified on 2026-07-04 in
 - Reporting execution/audit consume the gateway decision for `reporting-core`, with explicit read-only `Restricted` access still allowed.
 - `Dockerfile.localserver`, `.dockerignore`, `docker-compose.runtime.yml`, and `docker/localserver.env.template` now define the first app runtime image wrapper. Docker build, pushed image `ghcr.io/danionwheels/localserver:0.1.0`, anonymous pull, Compose startup, container `/health`, 39 local migrations, and v1 module-gateway probes passed on 2026-07-04.
 
+The Office-owned control revision slice was validated on 2026-07-11:
+
+- Each new entitlement is derived from an immutable approved `ClientAccessRevision`.
+- Event version 2 and signed server bundles preserve the Office revision ID and version.
+- In-memory accounting and LocalServer entitlement smokes pass, and both Office and Cloud migration SQL/model snapshots validate.
+- Live PostgreSQL proof execution remains pending until Docker/PostgreSQL is available.
+
 ## Preflight
 
 Run these checks sequentially. Parallel .NET builds/smokes can hit compiler file locks on Windows.
@@ -122,7 +129,7 @@ Invoke-RestMethod http://localhost:51046/health
 8. Issue or refresh the entitlement snapshot from the paid invoice. The default dev endpoint can do this directly when you have the paid invoice id:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "http://localhost:5188/api/v1/entitlements/snapshots/from-paid-invoice/defaults" -ContentType "application/json" -Body '{"invoiceId":"<paid-invoice-id>"}'
+Invoke-RestMethod -Method Post -Uri "http://localhost:5188/api/v1/entitlements/snapshots/from-paid-invoice/defaults" -ContentType "application/json" -Headers @{ "X-Safar-Actor" = "Demo operator" } -Body '{"invoiceId":"<paid-invoice-id>","approvalReason":"Paid invoice and active contract verified for the control-spine demo."}'
 ```
 
 9. Publish pending outbox messages to Control Cloud:
@@ -148,6 +155,7 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:51046/api/v1/local-server/
 - Control Desk can maintain the client, contract, billing, payment, entitlement, deployment profile, and support command surfaces.
 - Control Desk outbox messages are accepted by Control Cloud, not only marked locally.
 - Control Cloud status shows installation identity, latest entitlement, heartbeat, pending command count, and latest acknowledgement summary.
+- The issued entitlement, cloud bundle audit, status, and Local Server cache retain one Office-approved access revision ID.
 - Local Server can import or pull entitlement, evaluate module access, report heartbeat, upload diagnostics, and acknowledge both low-risk commands.
 - Command-triggered diagnostics include runtime/bootstrap/service facts from the signed bootstrap runtime manifest, Docker/Compose availability, live Compose service state, each service's manifest intent, recent warning/error log-tail lines, and the dormant `safarsuite-app` profile slot.
 - The placeholder app runtime probe can consume the same local module-gateway v1 response shape that the real SafarSuite app workspace must use.

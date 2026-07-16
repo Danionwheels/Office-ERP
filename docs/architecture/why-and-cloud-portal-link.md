@@ -2,6 +2,8 @@
 
 Date: 2026-06-30
 
+Direction update: 2026-07-11. The canonical product and scale decisions now live in `docs/architecture/product-charter-2026-07-11.md`; this note remains the original problem statement.
+
 ## Purpose
 
 SafarSuite Control Desk is our internal desktop system for managing the commercial side of SafarSuite.
@@ -42,14 +44,14 @@ Backend
   business rules, billing, contracts, entitlements, sync to cloud
 
 Database
-  local PostgreSQL for office data
+  central PostgreSQL for shared office data
 ```
 
-Because this is for one office, it does not need a multi-branch internal deployment in V1. It should still be multi-user-capable for office staff, but not designed like a SaaS tenant platform.
+Because this is for one provider organization, it does not need a multi-tenant provider SaaS design in V1. It must still support concurrent office staff through the shared Office Control API and centrally managed database.
 
 ## System Boundary
 
-SafarSuite Control Desk is the source of truth for commercial decisions. SafarSuite Control Cloud is the online bridge. SafarSuite consumes signed decisions.
+The Office Control System, operated through SafarSuite Control Desk, is the source of truth for commercial decisions. SafarSuite Control Cloud is the online bridge. SafarSuite consumes signed decisions.
 
 ```text
 SafarSuite Control Desk

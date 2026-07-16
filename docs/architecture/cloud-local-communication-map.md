@@ -47,7 +47,8 @@ There is one production SafarSuite Control Cloud. Older CloudServer work is refe
 | Direction | Purpose | Endpoint/Boundary | Status |
 | --- | --- | --- | --- |
 | Control Desk -> Control Cloud | Publish approved commercial/control events | `POST /api/v1/control-desk/messages` | Basic done |
-| Control Cloud -> Client Portal | Client commercial summary | `GET /api/v1/client-portal/clients/{clientId}/commercial-summary` | Basic done |
+| Control Cloud -> Client Portal | Bounded client commercial summary | `GET /api/v1/client-portal/clients/{clientId}/commercial-summary` | Done |
+| Control Cloud -> Client Portal | Keyset-paged commercial documents | `GET /api/v1/client-portal/clients/{clientId}/commercial-documents` | Done |
 | Control Desk -> Control Cloud | Manage client contact portal invitations | `POST /api/v1/clients/{clientId}/contacts/{clientContactId}/portal-invitation`, `GET/POST /api/v1/clients/{clientId}/portal-invitations...` -> provider-key-protected Control Cloud invitation endpoints | Basic done with pluggable delivery and audit |
 | Local server -> Control Cloud | Pull latest signed entitlement bundle | `GET /api/v1/local-server/installations/{installationId}/entitlement-bundle?clientId={clientId}` | Basic done |
 | Control Cloud admin -> Control Cloud | Queue installation command | `POST /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/commands` | Basic done |

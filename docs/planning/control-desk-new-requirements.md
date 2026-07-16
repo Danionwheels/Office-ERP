@@ -2,6 +2,8 @@
 
 Date started: 2026-06-30
 
+Direction update: 2026-07-11. Active product and scale requirements are governed by `docs/architecture/product-charter-2026-07-11.md` and tracked in `docs/planning/active-roadmap-2026-07-11.md`.
+
 These requirements are not simply old Survey/FAS clone work. They are the reason the new SafarSuite Control Desk exists.
 
 ## Commercial Control
@@ -46,9 +48,9 @@ These requirements are not simply old Survey/FAS clone work. They are the reason
 | Audit every change | Record who changed pricing/license/payment status | High | Partial in CloudServer |
 | Key rotation | Signing keys must support production rotation | High | Partial concept |
 
-## Current Focus
+## Original Implementation Focus
 
-The active implementation path is:
+The implementation path recorded when this note was created was:
 
 ```text
 client maintenance (basic done)
@@ -87,7 +89,7 @@ The first installation/deployment profile foundation now exists in Control Cloud
 | --- | --- | --- | --- |
 | Desktop packaging | Final product must run as desktop app | High | Open |
 | Dev browser UI | React UI may run in browser during development | High | Client desk active |
-| Local database | Office data stored locally in PostgreSQL | High | Open |
+| Central office database | Office truth stored in centrally managed PostgreSQL behind the Office Control API | High | Direction accepted; production topology open |
 | Backup/export | Office can back up and export critical data | High | Open |
 | Multi-user office access | Multiple office staff can use app if needed | Medium | Open |
 | Role permissions | Owner/admin/accounts/support roles | High | Open |
