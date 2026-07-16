@@ -1,0 +1,7 @@
+{$CONTROL_CLOUD_HOST} {
+    reverse_proxy control-cloud-api:8080
+}
+
+{$CONTROL_DESK_HOST} {
+    reverse_proxy control-desk-ui:8080
+}
