@@ -171,16 +171,18 @@ The remaining accounting scale work is report-specific: trial balance, balance s
 
 ## Then: Connected Acceptance Chain
 
-- [ ] Create or select a client.
-- [ ] Configure a contract, custom pricing, modules, and limits.
-- [ ] Issue an invoice with provider accounting proof.
-- [ ] Record or approve payment.
-- [ ] Approve and issue the next entitlement version.
-- [ ] Publish through the Office Control outbox.
-- [ ] Accept, sign, and distribute through Control Cloud.
-- [ ] Apply and enforce through SafarSuite Server.
-- [ ] Return acknowledgement and observed state.
-- [ ] Display the complete state and audit chain in Control Desk.
+- [x] Create or select a client.
+- [x] Configure a contract, custom pricing, modules, and limits.
+- [x] Issue an invoice with provider accounting proof.
+- [x] Record or approve payment.
+- [x] Approve and issue the next entitlement version.
+- [x] Publish through the Office Control outbox.
+- [x] Accept, sign, and distribute through Control Cloud.
+- [x] Apply and enforce through SafarSuite Server.
+- [x] Return acknowledgement and observed state.
+- [x] Display the complete state and audit chain in Control Desk.
+
+Completed on 2026-07-17 with one clean PostgreSQL-backed run, 135 executable assertions, retained accounting/outbox/receipt/signature/audit IDs, deterministic local allow and deny decisions, and final exact-value reconciliation at `InSync` with zero differences. See `docs/planning/connected-acceptance-chain-proof-2026-07-17.md`.
 
 ## After The Chain: Product Operation
 

@@ -1,0 +1,1565 @@
+{
+  "formatVersion": "safarsuite-connected-acceptance-v1",
+  "runId": "ca-20260717022147-1b0d6cc671e1476aa",
+  "startedAtUtc": "2026-07-17T02:21:47.7563114+00:00",
+  "completedAtUtc": "2026-07-17T02:22:07.0559231+00:00",
+  "endpoints": {
+    "controlDeskBaseUrl": "http://127.0.0.1:5188/",
+    "controlCloudBaseUrl": "http://127.0.0.1:5127/",
+    "localServerBaseUrl": "http://127.0.0.1:51046/"
+  },
+  "passedAssertions": [
+    "Control Desk health is Healthy",
+    "Control Cloud health is Healthy",
+    "Local Server health is Healthy",
+    "Control Desk issued an operator bearer token",
+    "operator token carries the control-desk:admin scope",
+    "standard chart of accounts was created",
+    "client receivable account is postable",
+    "cash or bank account is postable",
+    "subscription revenue account is postable",
+    "client ID was allocated",
+    "client is Active",
+    "client activation timestamp was retained",
+    "accounting profile belongs to the client",
+    "deployment uses the intended installation ID",
+    "deployment is CloudSyncMultiBranch",
+    "contract ID was allocated",
+    "contract revision is Active",
+    "contract starts at immutable revision 1",
+    "product catalog revision ID was retained",
+    "product catalog revision number was retained",
+    "contract enables PAYROLL",
+    "contract disables TOUR",
+    "contract retains the PAYROLL feature limit",
+    "charge code ID was allocated",
+    "client charge rule ID was allocated",
+    "invoice draft total matches contract price",
+    "invoice is Issued",
+    "invoice journal entry ID was allocated",
+    "invoice journal is balanced",
+    "issued invoice reads back with the same journal ID",
+    "bank transfer enters PendingReview",
+    "pending bank transfer has no journal posting",
+    "payment is Approved",
+    "invoice is Paid",
+    "paid invoice balance is zero",
+    "payment journal entry ID was allocated",
+    "payment journal is balanced",
+    "payment reads back with the same journal ID",
+    "entitlement snapshot ID was allocated",
+    "client access revision ID was allocated",
+    "global entitlement version was allocated",
+    "entitlement retains contract provenance",
+    "entitlement retains contract revision",
+    "entitlement retains catalog revision ID",
+    "entitlement retains catalog revision number",
+    "entitlement retains device allowance",
+    "entitlement retains branch allowance",
+    "entitlement retains named-user allowance",
+    "entitlement retains concurrent-user allowance",
+    "latest snapshot reads back at the issued version",
+    "office outbox contains InvoiceIssued",
+    "office outbox contains PaymentRecorded",
+    "office outbox contains ClientPaidStatusChanged",
+    "office outbox contains EntitlementSnapshotIssued",
+    "target outbox messages are Pending before publish",
+    "outbox publish has zero failures",
+    "every target outbox message has a publish result",
+    "every target outbox message is Sent",
+    "every target publish has a cloud reference",
+    "every target publish has an envelope signature",
+    "office outbox reads back as Sent",
+    "office outbox retains sent timestamps",
+    "Control Cloud rejects the replay as Duplicate",
+    "duplicate receipt retains the original message ID",
+    "duplicate replay returns the retained receipt ID",
+    "duplicate replay returns the retained cloud reference",
+    "bootstrap package ID was allocated",
+    "one-time setup token ID was allocated",
+    "bootstrap package SHA-256 was retained",
+    "bootstrap package is signed",
+    "Local Server bootstrap belongs to the client",
+    "Local Server bootstrap belongs to the installation",
+    "Local Server retained the verified bootstrap registration",
+    "Control Cloud activated the Local Server registration",
+    "Local Server pulled the issued entitlement version",
+    "Local Server pulled the exact paid-until date",
+    "Local Server pulled the exact offline-valid-until date",
+    "PAYROLL is allowed locally",
+    "PAYROLL local access state is Active",
+    "TOUR is denied locally",
+    "TOUR denial is deterministic ModuleDisabled",
+    "local limits use the issued entitlement version",
+    "local device limit matches entitlement",
+    "local branch limit matches entitlement",
+    "local named-user limit matches entitlement",
+    "local concurrent-user limit matches entitlement",
+    "local feature limit matches entitlement",
+    "Control Cloud received the Local Server heartbeat",
+    "heartbeat reports the issued entitlement version",
+    "heartbeat reports exact entitlement state values",
+    "Control Cloud installation is Active",
+    "desired entitlement version matches issued version",
+    "signed entitlement version matches issued version",
+    "observed entitlement version matches issued version",
+    "entitlement version sync is InSync",
+    "Control Cloud retains the signed entitlement issue",
+    "signed bundle issue ID was retained",
+    "Control Cloud retains the latest heartbeat",
+    "heartbeat ID was retained",
+    "Control Cloud produced exact-value reconciliation",
+    "exact-value reconciliation is InSync",
+    "exact-value reconciliation has zero differences",
+    "reconciliation contains desired state",
+    "reconciliation contains delivered state",
+    "reconciliation contains observed state",
+    "desired and delivered versions match",
+    "desired and delivered effective timestamps match",
+    "desired and delivered statuses match",
+    "desired and delivered paid-until dates match",
+    "desired and delivered grace dates match",
+    "desired and delivered offline-valid dates match",
+    "desired and delivered device limits match",
+    "desired and delivered branch limits match",
+    "desired and delivered named-user limits match",
+    "desired and delivered concurrent-user limits match",
+    "desired and delivered module values match",
+    "desired and delivered feature-limit values match",
+    "desired and observed versions match",
+    "desired and observed effective timestamps match",
+    "desired and observed statuses match",
+    "desired and observed paid-until dates match",
+    "desired and observed grace dates match",
+    "desired and observed offline-valid dates match",
+    "desired and observed device limits match",
+    "desired and observed branch limits match",
+    "desired and observed named-user limits match",
+    "desired and observed concurrent-user limits match",
+    "desired and observed module values match",
+    "desired and observed feature-limit values match",
+    "delivered and observed derived warning dates match",
+    "signed bundle and delivered warning dates match",
+    "Control Cloud audit contains SetupTokenCreated",
+    "Control Cloud audit contains BootstrapPackageGenerated",
+    "Control Cloud audit contains LocalServerRegistrationAccepted",
+    "local import audit retains the accepted Control Cloud pull"
+  ],
+  "accounting": {
+    "bootstrap": {
+      "companyCode": "MAIN",
+      "createdCount": 21,
+      "reusedCount": 0,
+      "accounts": [
+        {
+          "ledgerAccountId": "4e41bb8b-f41d-46d7-954f-9e3e27df4931",
+          "role": "AssetHeader",
+          "action": "Created",
+          "code": "10000",
+          "name": "Assets",
+          "type": "Asset",
+          "normalBalance": "Debit",
+          "level": "Header",
+          "parentAccountId": null,
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "7f0e15e9-6b07-4503-a855-a634b2a8b514",
+          "role": "AssetTotal",
+          "action": "Created",
+          "code": "19000",
+          "name": "Total assets",
+          "type": "Asset",
+          "normalBalance": "Debit",
+          "level": "Total",
+          "parentAccountId": "4e41bb8b-f41d-46d7-954f-9e3e27df4931",
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "ba0fde23-b29a-4f45-a4b5-54a9c9a04d4c",
+          "role": "CashBankControl",
+          "action": "Created",
+          "code": "14100",
+          "name": "Cash and bank control",
+          "type": "Asset",
+          "normalBalance": "Debit",
+          "level": "Control",
+          "parentAccountId": "7f0e15e9-6b07-4503-a855-a634b2a8b514",
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "b55130e9-8b0f-4a56-8f51-3be0f7c85d51",
+          "role": "CashBank",
+          "action": "Created",
+          "code": "14110",
+          "name": "Cash on hand and bank",
+          "type": "Asset",
+          "normalBalance": "Debit",
+          "level": "Detail",
+          "parentAccountId": "ba0fde23-b29a-4f45-a4b5-54a9c9a04d4c",
+          "isPostingAccount": true,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "2637f3fb-eb41-416a-852b-e67d4f67aadb",
+          "role": "Refund",
+          "action": "Created",
+          "code": "14200",
+          "name": "Client refund clearing",
+          "type": "Asset",
+          "normalBalance": "Debit",
+          "level": "Detail",
+          "parentAccountId": null,
+          "isPostingAccount": true,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "812bf085-cf12-48e4-9187-81f7b2d3d096",
+          "role": "ReceivableControl",
+          "action": "Created",
+          "code": "15100",
+          "name": "Accounts receivable control",
+          "type": "Asset",
+          "normalBalance": "Debit",
+          "level": "Control",
+          "parentAccountId": "7f0e15e9-6b07-4503-a855-a634b2a8b514",
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "95ad9fb9-9988-45a8-bb3e-f3e02ae70754",
+          "role": "ClientReceivable",
+          "action": "Created",
+          "code": "151000001",
+          "name": "Client receivables",
+          "type": "Asset",
+          "normalBalance": "Debit",
+          "level": "Subsidiary",
+          "parentAccountId": "812bf085-cf12-48e4-9187-81f7b2d3d096",
+          "isPostingAccount": true,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "25d5166a-e581-4ae6-86fb-a3023981c086",
+          "role": "EquityHeader",
+          "action": "Created",
+          "code": "20000",
+          "name": "Equity",
+          "type": "Equity",
+          "normalBalance": "Credit",
+          "level": "Header",
+          "parentAccountId": null,
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "70184821-9119-46b6-b664-df3467a5f92b",
+          "role": "EquityTotal",
+          "action": "Created",
+          "code": "29000",
+          "name": "Total equity",
+          "type": "Equity",
+          "normalBalance": "Credit",
+          "level": "Total",
+          "parentAccountId": "25d5166a-e581-4ae6-86fb-a3023981c086",
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "33777e14-8e90-43a1-9e8f-7858e5a06365",
+          "role": "RetainedEarnings",
+          "action": "Created",
+          "code": "21000",
+          "name": "Retained earnings",
+          "type": "Equity",
+          "normalBalance": "Credit",
+          "level": "Detail",
+          "parentAccountId": null,
+          "isPostingAccount": true,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "da0adde8-7c02-4513-9e94-3670da81fbbb",
+          "role": "IncomeSummary",
+          "action": "Created",
+          "code": "23000",
+          "name": "Income summary",
+          "type": "Equity",
+          "normalBalance": "Credit",
+          "level": "Detail",
+          "parentAccountId": null,
+          "isPostingAccount": true,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "9689c252-e88a-47e0-b6d0-a89091873819",
+          "role": "LiabilityHeader",
+          "action": "Created",
+          "code": "30000",
+          "name": "Liabilities",
+          "type": "Liability",
+          "normalBalance": "Credit",
+          "level": "Header",
+          "parentAccountId": null,
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "339841a6-2b57-42f6-96ca-6cc05872bf37",
+          "role": "LiabilityTotal",
+          "action": "Created",
+          "code": "39000",
+          "name": "Total liabilities",
+          "type": "Liability",
+          "normalBalance": "Credit",
+          "level": "Total",
+          "parentAccountId": "9689c252-e88a-47e0-b6d0-a89091873819",
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "d80341ce-3afa-4589-82aa-b3e7273b42f0",
+          "role": "TaxPayable",
+          "action": "Created",
+          "code": "32100",
+          "name": "Tax payable",
+          "type": "Liability",
+          "normalBalance": "Credit",
+          "level": "Detail",
+          "parentAccountId": null,
+          "isPostingAccount": true,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "7201aad8-1eaa-46fa-af2a-8c626f423a00",
+          "role": "RevenueHeader",
+          "action": "Created",
+          "code": "40000",
+          "name": "Revenue",
+          "type": "Revenue",
+          "normalBalance": "Credit",
+          "level": "Header",
+          "parentAccountId": null,
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "ca1d6bc1-5f42-456d-81c8-9f346d674144",
+          "role": "RevenueTotal",
+          "action": "Created",
+          "code": "59000",
+          "name": "Total revenue",
+          "type": "Revenue",
+          "normalBalance": "Credit",
+          "level": "Total",
+          "parentAccountId": "7201aad8-1eaa-46fa-af2a-8c626f423a00",
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "88b4d82c-2ce9-4cad-adca-685291263d0f",
+          "role": "SubscriptionRevenue",
+          "action": "Created",
+          "code": "41000",
+          "name": "Subscription revenue",
+          "type": "Revenue",
+          "normalBalance": "Credit",
+          "level": "Detail",
+          "parentAccountId": null,
+          "isPostingAccount": true,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "3b214d79-fdcd-4560-94bc-ffff8ebeabd1",
+          "role": "Discount",
+          "action": "Created",
+          "code": "52000",
+          "name": "Client discounts",
+          "type": "Revenue",
+          "normalBalance": "Debit",
+          "level": "Detail",
+          "parentAccountId": null,
+          "isPostingAccount": true,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "8c872c4f-d1d8-4dc6-9488-3dc332131098",
+          "role": "ExpenseHeader",
+          "action": "Created",
+          "code": "60000",
+          "name": "Expenses",
+          "type": "Expense",
+          "normalBalance": "Debit",
+          "level": "Header",
+          "parentAccountId": null,
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "38193981-ab11-4041-9423-20eca02f6f5b",
+          "role": "ExpenseTotal",
+          "action": "Created",
+          "code": "99000",
+          "name": "Total expenses",
+          "type": "Expense",
+          "normalBalance": "Debit",
+          "level": "Total",
+          "parentAccountId": "8c872c4f-d1d8-4dc6-9488-3dc332131098",
+          "isPostingAccount": false,
+          "status": "Active"
+        },
+        {
+          "ledgerAccountId": "bfeb1d9f-78db-4f38-873b-a679a32dcd5c",
+          "role": "RoundingAdjustment",
+          "action": "Created",
+          "code": "61000",
+          "name": "Rounding adjustment",
+          "type": "Expense",
+          "normalBalance": "Debit",
+          "level": "Detail",
+          "parentAccountId": null,
+          "isPostingAccount": true,
+          "status": "Active"
+        }
+      ]
+    },
+    "accountsReceivableAccountId": "95ad9fb9-9988-45a8-bb3e-f3e02ae70754",
+    "cashOrBankAccountId": "b55130e9-8b0f-4a56-8f51-3be0f7c85d51",
+    "revenueAccountId": "88b4d82c-2ce9-4cad-adca-685291263d0f"
+  },
+  "client": {
+    "created": {
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "code": "ACC1E1476AA",
+      "legalName": "Connected Acceptance Client 1E1476AA",
+      "displayName": "Acceptance 1E1476AA",
+      "status": "Draft"
+    },
+    "activated": {
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "code": "ACC1E1476AA",
+      "legalName": "Connected Acceptance Client 1E1476AA",
+      "displayName": "Acceptance 1E1476AA",
+      "status": "Active",
+      "createdAtUtc": "2026-07-17T02:21:49.841273+00:00",
+      "activatedAtUtc": "2026-07-17T02:21:50.0358493+00:00",
+      "suspendedAtUtc": null,
+      "contacts": [],
+      "supportNotes": []
+    },
+    "accountingProfile": {
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "accountsReceivableAccountId": "95ad9fb9-9988-45a8-bb3e-f3e02ae70754",
+      "defaultCurrencyCode": "PKR",
+      "cloudCustomerId": null,
+      "createdAtUtc": "2026-07-17T02:21:50.0839816+00:00",
+      "updatedAtUtc": "2026-07-17T02:21:50.0839816+00:00"
+    },
+    "deployment": {
+      "clientDeploymentId": "b9a48179-387b-4ba8-84c0-d828a6fee1ce",
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "displayName": "Connected acceptance HQ",
+      "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+      "bootstrapMode": "OnlineBootstrap",
+      "clientDeploymentMode": "CloudSyncMultiBranch",
+      "siteId": "acceptance-hq",
+      "siteRole": "Hq",
+      "parentSiteId": null,
+      "branchCode": "HQ",
+      "syncTopologyId": "acceptance-topology-1e1476aa",
+      "localServerVersion": "acceptance-1.0.0",
+      "safarSuiteAppVersion": "acceptance-app-1.0.0",
+      "isPrimary": true,
+      "createdAtUtc": "2026-07-17T02:21:50.138343+00:00",
+      "updatedAtUtc": "2026-07-17T02:21:50.138343+00:00"
+    }
+  },
+  "contract": {
+    "contractId": "7d2464b0-8432-4353-bbca-bb1782e827ea",
+    "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+    "revisionNumber": 1,
+    "supersedesContractId": null,
+    "productCatalogRevisionId": "9c1da88b-c763-4bb0-8dda-2d95fe63ec8f",
+    "productCatalogRevisionNumber": 1,
+    "contractNumber": "ACC-CON-1E1476AA",
+    "startsOn": "2026-07-17",
+    "endsOn": "2027-07-16",
+    "recurringAmount": 12500,
+    "currencyCode": "PKR",
+    "billingCycle": "Monthly",
+    "billingDayOfMonth": 17,
+    "allowedDevices": 12,
+    "allowedBranches": 4,
+    "status": "Active",
+    "createdAtUtc": "2026-07-17T02:21:50.3306006+00:00",
+    "activatedAtUtc": "2026-07-17T02:21:50.3306006+00:00",
+    "approvedBy": "Local Control Desk Admin",
+    "approvalReason": "P0 connected acceptance proof",
+    "approvedAtUtc": "2026-07-17T02:21:50.3306006+00:00",
+    "modules": [
+      {
+        "moduleCode": "CONTROL_DESK",
+        "isEnabled": true
+      },
+      {
+        "moduleCode": "PAYROLL",
+        "isEnabled": true
+      },
+      {
+        "moduleCode": "TOUR",
+        "isEnabled": false
+      }
+    ],
+    "allowedNamedUsers": 80,
+    "allowedConcurrentUsers": 25,
+    "featureLimits": [
+      {
+        "moduleCode": "PAYROLL",
+        "featureCode": "MONTHLY_PAYSLIPS",
+        "limitValue": 500,
+        "unit": "COUNT"
+      }
+    ]
+  },
+  "billing": {
+    "chargeCode": {
+      "chargeCodeId": "157e967b-6fe1-4a4d-b6ef-6d9fd6b69eb4",
+      "code": "ACC-1E1476AA",
+      "name": "Connected acceptance subscription",
+      "defaultUnitPriceAmount": 12500,
+      "currencyCode": "PKR",
+      "revenueAccountId": "88b4d82c-2ce9-4cad-adca-685291263d0f",
+      "taxAccountId": null,
+      "status": "Active"
+    },
+    "chargeRule": {
+      "clientChargeRuleId": "070e644b-ff2f-4722-a0b4-2dc0ea7b3d12",
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "contractId": "7d2464b0-8432-4353-bbca-bb1782e827ea",
+      "chargeCodeId": "157e967b-6fe1-4a4d-b6ef-6d9fd6b69eb4",
+      "productModuleCode": "PAYROLL",
+      "unitPriceAmount": 12500,
+      "currencyCode": "PKR",
+      "quantity": 1,
+      "taxPercent": 0,
+      "taxAmount": 0,
+      "lineAmount": 12500,
+      "totalLineAmount": 12500,
+      "billingCycle": "Monthly",
+      "billingDayOfMonth": 17,
+      "effectiveStartsOn": "2026-07-17",
+      "effectiveEndsOn": "2027-07-16",
+      "status": "Active"
+    },
+    "draft": {
+      "invoiceId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "contractId": "7d2464b0-8432-4353-bbca-bb1782e827ea",
+      "invoiceNumber": "ACC-INV-1E1476AA",
+      "issueDate": "2026-07-17",
+      "dueDate": "2026-07-24",
+      "billingDate": "2026-07-17",
+      "totalAmount": 12500.00,
+      "balanceDue": 12500.00,
+      "currencyCode": "PKR",
+      "status": "Draft",
+      "lines": [
+        {
+          "chargeCodeId": "157e967b-6fe1-4a4d-b6ef-6d9fd6b69eb4",
+          "productModuleCode": "PAYROLL",
+          "lineType": "Charge",
+          "description": "Connected acceptance subscription",
+          "amount": 12500.00,
+          "currencyCode": "PKR"
+        }
+      ]
+    },
+    "issued": {
+      "invoiceId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+      "invoiceNumber": "ACC-INV-1E1476AA",
+      "invoiceStatus": "Issued",
+      "journalEntryId": "ac0b151c-277f-4d3c-adf1-e7b77c63807c",
+      "journalEntryStatus": "Posted",
+      "postingDate": "2026-07-17",
+      "totalDebit": 12500.00,
+      "totalCredit": 12500.00,
+      "currencyCode": "PKR",
+      "journalLines": [
+        {
+          "ledgerAccountId": "95ad9fb9-9988-45a8-bb3e-f3e02ae70754",
+          "debit": 12500.00,
+          "credit": 0,
+          "description": "Accounts receivable for invoice ACC-INV-1E1476AA",
+          "ledgerAccountCode": "151000001",
+          "ledgerAccountName": "Client receivables",
+          "ledgerAccountType": "Asset",
+          "ledgerAccountNormalBalance": "Debit",
+          "ledgerAccountLevel": "Subsidiary",
+          "isPostingAccount": true,
+          "ledgerAccountStatus": "Active"
+        },
+        {
+          "ledgerAccountId": "88b4d82c-2ce9-4cad-adca-685291263d0f",
+          "debit": 0,
+          "credit": 12500.00,
+          "description": "Connected acceptance subscription",
+          "ledgerAccountCode": "41000",
+          "ledgerAccountName": "Subscription revenue",
+          "ledgerAccountType": "Revenue",
+          "ledgerAccountNormalBalance": "Credit",
+          "ledgerAccountLevel": "Detail",
+          "isPostingAccount": true,
+          "ledgerAccountStatus": "Active"
+        }
+      ]
+    },
+    "readBack": {
+      "invoice": {
+        "invoiceId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+        "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+        "contractId": "7d2464b0-8432-4353-bbca-bb1782e827ea",
+        "invoiceNumber": "ACC-INV-1E1476AA",
+        "issueDate": "2026-07-17",
+        "dueDate": "2026-07-24",
+        "billingDate": "2026-07-17",
+        "totalAmount": 12500.00,
+        "balanceDue": 12500.00,
+        "currencyCode": "PKR",
+        "status": "Issued",
+        "lines": [
+          {
+            "chargeCodeId": "157e967b-6fe1-4a4d-b6ef-6d9fd6b69eb4",
+            "productModuleCode": "PAYROLL",
+            "lineType": "Charge",
+            "description": "Connected acceptance subscription",
+            "amount": 12500.00,
+            "currencyCode": "PKR"
+          }
+        ]
+      },
+      "issuedInvoice": {
+        "invoiceId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+        "invoiceNumber": "ACC-INV-1E1476AA",
+        "invoiceStatus": "Issued",
+        "journalEntryId": "ac0b151c-277f-4d3c-adf1-e7b77c63807c",
+        "journalEntryStatus": "Posted",
+        "postingDate": "2026-07-17",
+        "totalDebit": 12500.00,
+        "totalCredit": 12500.00,
+        "currencyCode": "PKR",
+        "journalLines": [
+          {
+            "ledgerAccountId": "95ad9fb9-9988-45a8-bb3e-f3e02ae70754",
+            "debit": 12500.00,
+            "credit": 0.00,
+            "description": "Accounts receivable for invoice ACC-INV-1E1476AA",
+            "ledgerAccountCode": "151000001",
+            "ledgerAccountName": "Client receivables",
+            "ledgerAccountType": "Asset",
+            "ledgerAccountNormalBalance": "Debit",
+            "ledgerAccountLevel": "Subsidiary",
+            "isPostingAccount": true,
+            "ledgerAccountStatus": "Active"
+          },
+          {
+            "ledgerAccountId": "88b4d82c-2ce9-4cad-adca-685291263d0f",
+            "debit": 0.00,
+            "credit": 12500.00,
+            "description": "Connected acceptance subscription",
+            "ledgerAccountCode": "41000",
+            "ledgerAccountName": "Subscription revenue",
+            "ledgerAccountType": "Revenue",
+            "ledgerAccountNormalBalance": "Credit",
+            "ledgerAccountLevel": "Detail",
+            "isPostingAccount": true,
+            "ledgerAccountStatus": "Active"
+          }
+        ]
+      },
+      "voidedInvoice": null,
+      "creditNote": null
+    }
+  },
+  "payment": {
+    "recorded": {
+      "paymentId": "6502a7cf-2353-4ad5-9a0f-3aae558dad45",
+      "invoiceId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+      "invoiceNumber": "ACC-INV-1E1476AA",
+      "invoiceStatus": "Issued",
+      "paymentStatus": "PendingReview",
+      "amount": 12500,
+      "balanceDue": 12500.00,
+      "currencyCode": "PKR",
+      "journalEntryId": null,
+      "journalEntryStatus": null,
+      "postingDate": null,
+      "totalDebit": 0,
+      "totalCredit": 0,
+      "journalLines": []
+    },
+    "approved": {
+      "paymentId": "6502a7cf-2353-4ad5-9a0f-3aae558dad45",
+      "invoiceId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+      "invoiceNumber": "ACC-INV-1E1476AA",
+      "invoiceStatus": "Paid",
+      "paymentStatus": "Approved",
+      "amount": 12500.00,
+      "balanceDue": 0.00,
+      "currencyCode": "PKR",
+      "journalEntryId": "b65266bd-725f-423a-9782-d22f553007ee",
+      "journalEntryStatus": "Posted",
+      "postingDate": "2026-07-17",
+      "totalDebit": 12500.00,
+      "totalCredit": 12500.00,
+      "journalLines": [
+        {
+          "ledgerAccountId": "b55130e9-8b0f-4a56-8f51-3be0f7c85d51",
+          "debit": 12500.00,
+          "credit": 0,
+          "description": "Receipt for invoice ACC-INV-1E1476AA",
+          "ledgerAccountCode": "14110",
+          "ledgerAccountName": "Cash on hand and bank",
+          "ledgerAccountType": "Asset",
+          "ledgerAccountNormalBalance": "Debit",
+          "ledgerAccountLevel": "Detail",
+          "isPostingAccount": true,
+          "ledgerAccountStatus": "Active"
+        },
+        {
+          "ledgerAccountId": "95ad9fb9-9988-45a8-bb3e-f3e02ae70754",
+          "debit": 0,
+          "credit": 12500.00,
+          "description": "Accounts receivable settlement for invoice ACC-INV-1E1476AA",
+          "ledgerAccountCode": "151000001",
+          "ledgerAccountName": "Client receivables",
+          "ledgerAccountType": "Asset",
+          "ledgerAccountNormalBalance": "Debit",
+          "ledgerAccountLevel": "Subsidiary",
+          "isPostingAccount": true,
+          "ledgerAccountStatus": "Active"
+        }
+      ]
+    },
+    "readBack": {
+      "invoice": {
+        "invoiceId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+        "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+        "contractId": "7d2464b0-8432-4353-bbca-bb1782e827ea",
+        "invoiceNumber": "ACC-INV-1E1476AA",
+        "issueDate": "2026-07-17",
+        "dueDate": "2026-07-24",
+        "billingDate": "2026-07-17",
+        "totalAmount": 12500.00,
+        "balanceDue": 0.00,
+        "currencyCode": "PKR",
+        "status": "Paid",
+        "lines": [
+          {
+            "chargeCodeId": "157e967b-6fe1-4a4d-b6ef-6d9fd6b69eb4",
+            "productModuleCode": "PAYROLL",
+            "lineType": "Charge",
+            "description": "Connected acceptance subscription",
+            "amount": 12500.00,
+            "currencyCode": "PKR"
+          }
+        ]
+      },
+      "payment": {
+        "paymentId": "6502a7cf-2353-4ad5-9a0f-3aae558dad45",
+        "invoiceId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+        "invoiceNumber": "ACC-INV-1E1476AA",
+        "invoiceStatus": "Paid",
+        "paymentStatus": "Approved",
+        "amount": 12500.00,
+        "balanceDue": 0.00,
+        "currencyCode": "PKR",
+        "journalEntryId": "b65266bd-725f-423a-9782-d22f553007ee",
+        "journalEntryStatus": "Posted",
+        "postingDate": "2026-07-17",
+        "totalDebit": 12500.00,
+        "totalCredit": 12500.00,
+        "journalLines": [
+          {
+            "ledgerAccountId": "b55130e9-8b0f-4a56-8f51-3be0f7c85d51",
+            "debit": 12500.00,
+            "credit": 0.00,
+            "description": "Receipt for invoice ACC-INV-1E1476AA",
+            "ledgerAccountCode": "14110",
+            "ledgerAccountName": "Cash on hand and bank",
+            "ledgerAccountType": "Asset",
+            "ledgerAccountNormalBalance": "Debit",
+            "ledgerAccountLevel": "Detail",
+            "isPostingAccount": true,
+            "ledgerAccountStatus": "Active"
+          },
+          {
+            "ledgerAccountId": "95ad9fb9-9988-45a8-bb3e-f3e02ae70754",
+            "debit": 0.00,
+            "credit": 12500.00,
+            "description": "Accounts receivable settlement for invoice ACC-INV-1E1476AA",
+            "ledgerAccountCode": "151000001",
+            "ledgerAccountName": "Client receivables",
+            "ledgerAccountType": "Asset",
+            "ledgerAccountNormalBalance": "Debit",
+            "ledgerAccountLevel": "Subsidiary",
+            "isPostingAccount": true,
+            "ledgerAccountStatus": "Active"
+          }
+        ]
+      },
+      "reversal": null
+    }
+  },
+  "entitlement": {
+    "issued": {
+      "entitlementSnapshotId": "e2fe9e14-fcff-4e75-bc05-fde809330c66",
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "contractId": "7d2464b0-8432-4353-bbca-bb1782e827ea",
+      "contractRevisionNumber": 1,
+      "productCatalogRevisionId": "9c1da88b-c763-4bb0-8dda-2d95fe63ec8f",
+      "productCatalogRevisionNumber": 1,
+      "clientAccessRevisionId": "034b7084-02ce-422f-b658-8c81daf0b29c",
+      "entitlementVersion": 1,
+      "invoiceId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+      "invoiceNumber": "ACC-INV-1E1476AA",
+      "status": "Active",
+      "paidUntil": "2027-07-16",
+      "graceUntil": "2027-07-23",
+      "offlineValidUntil": "2027-07-30",
+      "allowedDevices": 12,
+      "allowedBranches": 4,
+      "issuedAtUtc": "2026-07-17T02:21:51.3219768+00:00",
+      "effectiveFromUtc": "2026-07-17T02:21:51.3219768+00:00",
+      "supersedesClientAccessRevisionId": null,
+      "approvedBy": "Local Control Desk Admin",
+      "approvalReason": "Paid invoice authorizes P0 connected acceptance",
+      "approvedAtUtc": "2026-07-17T02:21:51.3219768+00:00",
+      "modules": [
+        {
+          "moduleCode": "CONTROL_DESK",
+          "isEnabled": true
+        },
+        {
+          "moduleCode": "PAYROLL",
+          "isEnabled": true
+        },
+        {
+          "moduleCode": "TOUR",
+          "isEnabled": false
+        }
+      ],
+      "allowedNamedUsers": 80,
+      "allowedConcurrentUsers": 25,
+      "featureLimits": [
+        {
+          "moduleCode": "PAYROLL",
+          "featureCode": "MONTHLY_PAYSLIPS",
+          "limitValue": 500,
+          "unit": "COUNT"
+        }
+      ]
+    },
+    "readBack": {
+      "entitlementSnapshotId": "e2fe9e14-fcff-4e75-bc05-fde809330c66",
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "contractId": "7d2464b0-8432-4353-bbca-bb1782e827ea",
+      "contractRevisionNumber": 1,
+      "productCatalogRevisionId": "9c1da88b-c763-4bb0-8dda-2d95fe63ec8f",
+      "productCatalogRevisionNumber": 1,
+      "clientAccessRevisionId": "034b7084-02ce-422f-b658-8c81daf0b29c",
+      "entitlementVersion": 1,
+      "status": "Active",
+      "paidUntil": "2027-07-16",
+      "graceUntil": "2027-07-23",
+      "offlineValidUntil": "2027-07-30",
+      "allowedDevices": 12,
+      "allowedBranches": 4,
+      "issuedAtUtc": "2026-07-17T02:21:51.321976+00:00",
+      "effectiveFromUtc": "2026-07-17T02:21:51.321976+00:00",
+      "supersedesClientAccessRevisionId": null,
+      "approvedBy": "Local Control Desk Admin",
+      "approvalReason": "Paid invoice authorizes P0 connected acceptance",
+      "approvedAtUtc": "2026-07-17T02:21:51.321976+00:00",
+      "modules": [
+        {
+          "moduleCode": "CONTROL_DESK",
+          "isEnabled": true
+        },
+        {
+          "moduleCode": "PAYROLL",
+          "isEnabled": true
+        },
+        {
+          "moduleCode": "TOUR",
+          "isEnabled": false
+        }
+      ],
+      "allowedNamedUsers": 80,
+      "allowedConcurrentUsers": 25,
+      "featureLimits": [
+        {
+          "moduleCode": "PAYROLL",
+          "featureCode": "MONTHLY_PAYSLIPS",
+          "limitValue": 500,
+          "unit": "COUNT"
+        }
+      ]
+    }
+  },
+  "cloudPublishing": {
+    "beforePublish": {
+      "messages": [
+        {
+          "cloudOutboxMessageId": "c0aa6321-7af8-49c2-96e9-f0dc43f93f24",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "messageType": "EntitlementSnapshotIssued",
+          "subjectType": "EntitlementSnapshot",
+          "subjectId": "e2fe9e14-fcff-4e75-bc05-fde809330c66",
+          "payloadJson": "{\u0022status\u0022: \u0022Active\u0022, \u0022modules\u0022: [{\u0022isEnabled\u0022: true, \u0022moduleCode\u0022: \u0022CONTROL_DESK\u0022}, {\u0022isEnabled\u0022: true, \u0022moduleCode\u0022: \u0022PAYROLL\u0022}, {\u0022isEnabled\u0022: false, \u0022moduleCode\u0022: \u0022TOUR\u0022}], \u0022clientId\u0022: \u0022b581e053-7460-4f0d-9ac8-e11029e5ea6b\u0022, \u0022paidUntil\u0022: \u00222027-07-16\u0022, \u0022contractId\u0022: \u00227d2464b0-8432-4353-bbca-bb1782e827ea\u0022, \u0022graceUntil\u0022: \u00222027-07-23\u0022, \u0022issuedAtUtc\u0022: \u00222026-07-17T02:21:51.3219768\u002B00:00\u0022, \u0022eventVersion\u0022: \u00226\u0022, \u0022featureLimits\u0022: [{\u0022unit\u0022: \u0022COUNT\u0022, \u0022limitValue\u0022: 500, \u0022moduleCode\u0022: \u0022PAYROLL\u0022, \u0022featureCode\u0022: \u0022MONTHLY_PAYSLIPS\u0022}], \u0022allowedDevices\u0022: 12, \u0022allowedBranches\u0022: 4, \u0022sourceInvoiceId\u0022: \u002200e0e583-00b0-4dce-875a-1307c2fe3369\u0022, \u0022effectiveFromUtc\u0022: \u00222026-07-17T02:21:51.3219768\u002B00:00\u0022, \u0022allowedNamedUsers\u0022: 80, \u0022offlineValidUntil\u0022: \u00222027-07-30\u0022, \u0022entitlementVersion\u0022: 1, \u0022sourceInvoiceNumber\u0022: \u0022ACC-INV-1E1476AA\u0022, \u0022entitlementSnapshotId\u0022: \u0022e2fe9e14-fcff-4e75-bc05-fde809330c66\u0022, \u0022allowedConcurrentUsers\u0022: 25, \u0022clientAccessRevisionId\u0022: \u0022034b7084-02ce-422f-b658-8c81daf0b29c\u0022, \u0022contractRevisionNumber\u0022: 1, \u0022productCatalogRevisionId\u0022: \u00229c1da88b-c763-4bb0-8dda-2d95fe63ec8f\u0022, \u0022productCatalogRevisionNumber\u0022: 1}",
+          "status": "Pending",
+          "attemptCount": 0,
+          "occurredAtUtc": "2026-07-17T02:21:51.413087+00:00",
+          "lastAttemptedAtUtc": null,
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": null,
+          "failedAtUtc": null,
+          "failureReason": null
+        },
+        {
+          "cloudOutboxMessageId": "4970490b-c528-44eb-99a5-e8004a129b74",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "messageType": "ClientPaidStatusChanged",
+          "subjectType": "Client",
+          "subjectId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "payloadJson": "{\u0022isPaid\u0022: true, \u0022clientId\u0022: \u0022b581e053-7460-4f0d-9ac8-e11029e5ea6b\u0022, \u0022invoiceId\u0022: \u002200e0e583-00b0-4dce-875a-1307c2fe3369\u0022, \u0022paymentId\u0022: \u00226502a7cf-2353-4ad5-9a0f-3aae558dad45\u0022, \u0022balanceDue\u0022: 0.00, \u0022postingDate\u0022: \u00222026-07-17\u0022, \u0022currencyCode\u0022: \u0022PKR\u0022, \u0022eventVersion\u0022: \u00221\u0022, \u0022invoiceNumber\u0022: \u0022ACC-INV-1E1476AA\u0022, \u0022invoiceStatus\u0022: \u0022Paid\u0022, \u0022journalEntryId\u0022: \u0022b65266bd-725f-423a-9782-d22f553007ee\u0022}",
+          "status": "Pending",
+          "attemptCount": 0,
+          "occurredAtUtc": "2026-07-17T02:21:51.182644+00:00",
+          "lastAttemptedAtUtc": null,
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": null,
+          "failedAtUtc": null,
+          "failureReason": null
+        },
+        {
+          "cloudOutboxMessageId": "9463b733-2d9f-4922-99d3-fa3b6bf28f56",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "messageType": "PaymentRecorded",
+          "subjectType": "Payment",
+          "subjectId": "6502a7cf-2353-4ad5-9a0f-3aae558dad45",
+          "payloadJson": "{\u0022amount\u0022: 12500.00, \u0022clientId\u0022: \u0022b581e053-7460-4f0d-9ac8-e11029e5ea6b\u0022, \u0022invoiceId\u0022: \u002200e0e583-00b0-4dce-875a-1307c2fe3369\u0022, \u0022paymentId\u0022: \u00226502a7cf-2353-4ad5-9a0f-3aae558dad45\u0022, \u0022receivedOn\u0022: \u00222026-07-17\u0022, \u0022postingDate\u0022: \u00222026-07-17\u0022, \u0022currencyCode\u0022: \u0022PKR\u0022, \u0022eventVersion\u0022: \u00221\u0022, \u0022invoiceNumber\u0022: \u0022ACC-INV-1E1476AA\u0022, \u0022paymentMethod\u0022: \u0022BankTransfer\u0022, \u0022paymentStatus\u0022: \u0022Approved\u0022, \u0022portalClaimId\u0022: null, \u0022journalEntryId\u0022: \u0022b65266bd-725f-423a-9782-d22f553007ee\u0022, \u0022paymentReference\u0022: \u0022ACC-PAY-1E1476AA\u0022, \u0022invoiceBalanceDue\u0022: 0.00, \u0022journalEntryStatus\u0022: \u0022Posted\u0022}",
+          "status": "Pending",
+          "attemptCount": 0,
+          "occurredAtUtc": "2026-07-17T02:21:51.180901+00:00",
+          "lastAttemptedAtUtc": null,
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": null,
+          "failedAtUtc": null,
+          "failureReason": null
+        },
+        {
+          "cloudOutboxMessageId": "f291b15a-d5ec-4f73-94a8-8cebb2282dbf",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "messageType": "InvoiceIssued",
+          "subjectType": "Invoice",
+          "subjectId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+          "payloadJson": "{\u0022lines\u0022: [{\u0022amount\u0022: 12500.00, \u0022lineType\u0022: \u0022Charge\u0022, \u0022quantity\u0022: 1, \u0022lineTotal\u0022: 12500.00, \u0022unitPrice\u0022: 12500.00, \u0022description\u0022: \u0022Connected acceptance subscription\u0022, \u0022chargeCodeId\u0022: \u0022157e967b-6fe1-4a4d-b6ef-6d9fd6b69eb4\u0022, \u0022currencyCode\u0022: \u0022PKR\u0022}], \u0022client\u0022: {\u0022name\u0022: \u0022Acceptance 1E1476AA\u0022, \u0022email\u0022: null, \u0022phone\u0022: null, \u0022contactName\u0022: null}, \u0022dueDate\u0022: \u00222026-07-24\u0022, \u0022clientId\u0022: \u0022b581e053-7460-4f0d-9ac8-e11029e5ea6b\u0022, \u0022invoiceId\u0022: \u002200e0e583-00b0-4dce-875a-1307c2fe3369\u0022, \u0022issueDate\u0022: \u00222026-07-17\u0022, \u0022balanceDue\u0022: 12500.00, \u0022contractId\u0022: \u00227d2464b0-8432-4353-bbca-bb1782e827ea\u0022, \u0022postingDate\u0022: \u00222026-07-17\u0022, \u0022totalAmount\u0022: 12500.00, \u0022currencyCode\u0022: \u0022PKR\u0022, \u0022eventVersion\u0022: \u00222\u0022, \u0022invoiceNumber\u0022: \u0022ACC-INV-1E1476AA\u0022, \u0022invoiceStatus\u0022: \u0022Issued\u0022, \u0022journalEntryId\u0022: \u0022ac0b151c-277f-4d3c-adf1-e7b77c63807c\u0022, \u0022journalEntryStatus\u0022: \u0022Posted\u0022, \u0022accountsReceivableAccountId\u0022: \u002295ad9fb9-9988-45a8-bb3e-f3e02ae70754\u0022}",
+          "status": "Pending",
+          "attemptCount": 0,
+          "occurredAtUtc": "2026-07-17T02:21:50.934368+00:00",
+          "lastAttemptedAtUtc": null,
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": null,
+          "failedAtUtc": null,
+          "failureReason": null
+        }
+      ],
+      "pageSize": 100,
+      "hasMore": false,
+      "nextCursor": null,
+      "summary": {
+        "totalCount": 4,
+        "pendingCount": 4,
+        "failedCount": 0,
+        "sentCount": 0,
+        "readyForPublishingCount": 4,
+        "totalAttemptCount": 0
+      }
+    },
+    "publishResult": {
+      "requestedBatchSize": 100,
+      "publishedCount": 4,
+      "failedCount": 0,
+      "messages": [
+        {
+          "cloudOutboxMessageId": "f291b15a-d5ec-4f73-94a8-8cebb2282dbf",
+          "messageType": "InvoiceIssued",
+          "subjectType": "Invoice",
+          "subjectId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+          "status": "Sent",
+          "attemptCount": 1,
+          "lastAttemptedAtUtc": "2026-07-17T02:21:53.9955586+00:00",
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": "2026-07-17T02:21:53.9955586+00:00",
+          "failedAtUtc": null,
+          "failureReason": null,
+          "cloudReference": "cc-f291b15ad5ec4f7394a88cebb2282dbf",
+          "envelopeSignature": "Du9KkeIA2BoqHFVNZoyE3vNuFWFpFSnbrJ3DXPmpeMw="
+        },
+        {
+          "cloudOutboxMessageId": "9463b733-2d9f-4922-99d3-fa3b6bf28f56",
+          "messageType": "PaymentRecorded",
+          "subjectType": "Payment",
+          "subjectId": "6502a7cf-2353-4ad5-9a0f-3aae558dad45",
+          "status": "Sent",
+          "attemptCount": 1,
+          "lastAttemptedAtUtc": "2026-07-17T02:21:54.0281315+00:00",
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": "2026-07-17T02:21:54.0281315+00:00",
+          "failedAtUtc": null,
+          "failureReason": null,
+          "cloudReference": "cc-9463b7332d9f492299d3fa3b6bf28f56",
+          "envelopeSignature": "K82n9OWd4ArlXvu9Aspfi\u002BfehrkwGkoWkcVjpGeKVsQ="
+        },
+        {
+          "cloudOutboxMessageId": "4970490b-c528-44eb-99a5-e8004a129b74",
+          "messageType": "ClientPaidStatusChanged",
+          "subjectType": "Client",
+          "subjectId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "status": "Sent",
+          "attemptCount": 1,
+          "lastAttemptedAtUtc": "2026-07-17T02:21:54.0462605+00:00",
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": "2026-07-17T02:21:54.0462605+00:00",
+          "failedAtUtc": null,
+          "failureReason": null,
+          "cloudReference": "cc-4970490bc52844eb99a5e8004a129b74",
+          "envelopeSignature": "VVcrLoCWTlyg\u002BpzN\u002B6PDC225zVZxHavZAsJXPhDJj7c="
+        },
+        {
+          "cloudOutboxMessageId": "c0aa6321-7af8-49c2-96e9-f0dc43f93f24",
+          "messageType": "EntitlementSnapshotIssued",
+          "subjectType": "EntitlementSnapshot",
+          "subjectId": "e2fe9e14-fcff-4e75-bc05-fde809330c66",
+          "status": "Sent",
+          "attemptCount": 1,
+          "lastAttemptedAtUtc": "2026-07-17T02:21:54.0650068+00:00",
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": "2026-07-17T02:21:54.0650068+00:00",
+          "failedAtUtc": null,
+          "failureReason": null,
+          "cloudReference": "cc-c0aa63217af849c296e9f0dc43f93f24",
+          "envelopeSignature": "GhNPpDSIwSHKbxgSChe1OhAbisRqR6YoWiCmuOM24\u002Bc="
+        }
+      ]
+    },
+    "afterPublish": {
+      "messages": [
+        {
+          "cloudOutboxMessageId": "c0aa6321-7af8-49c2-96e9-f0dc43f93f24",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "messageType": "EntitlementSnapshotIssued",
+          "subjectType": "EntitlementSnapshot",
+          "subjectId": "e2fe9e14-fcff-4e75-bc05-fde809330c66",
+          "payloadJson": "{\u0022status\u0022: \u0022Active\u0022, \u0022modules\u0022: [{\u0022isEnabled\u0022: true, \u0022moduleCode\u0022: \u0022CONTROL_DESK\u0022}, {\u0022isEnabled\u0022: true, \u0022moduleCode\u0022: \u0022PAYROLL\u0022}, {\u0022isEnabled\u0022: false, \u0022moduleCode\u0022: \u0022TOUR\u0022}], \u0022clientId\u0022: \u0022b581e053-7460-4f0d-9ac8-e11029e5ea6b\u0022, \u0022paidUntil\u0022: \u00222027-07-16\u0022, \u0022contractId\u0022: \u00227d2464b0-8432-4353-bbca-bb1782e827ea\u0022, \u0022graceUntil\u0022: \u00222027-07-23\u0022, \u0022issuedAtUtc\u0022: \u00222026-07-17T02:21:51.3219768\u002B00:00\u0022, \u0022eventVersion\u0022: \u00226\u0022, \u0022featureLimits\u0022: [{\u0022unit\u0022: \u0022COUNT\u0022, \u0022limitValue\u0022: 500, \u0022moduleCode\u0022: \u0022PAYROLL\u0022, \u0022featureCode\u0022: \u0022MONTHLY_PAYSLIPS\u0022}], \u0022allowedDevices\u0022: 12, \u0022allowedBranches\u0022: 4, \u0022sourceInvoiceId\u0022: \u002200e0e583-00b0-4dce-875a-1307c2fe3369\u0022, \u0022effectiveFromUtc\u0022: \u00222026-07-17T02:21:51.3219768\u002B00:00\u0022, \u0022allowedNamedUsers\u0022: 80, \u0022offlineValidUntil\u0022: \u00222027-07-30\u0022, \u0022entitlementVersion\u0022: 1, \u0022sourceInvoiceNumber\u0022: \u0022ACC-INV-1E1476AA\u0022, \u0022entitlementSnapshotId\u0022: \u0022e2fe9e14-fcff-4e75-bc05-fde809330c66\u0022, \u0022allowedConcurrentUsers\u0022: 25, \u0022clientAccessRevisionId\u0022: \u0022034b7084-02ce-422f-b658-8c81daf0b29c\u0022, \u0022contractRevisionNumber\u0022: 1, \u0022productCatalogRevisionId\u0022: \u00229c1da88b-c763-4bb0-8dda-2d95fe63ec8f\u0022, \u0022productCatalogRevisionNumber\u0022: 1}",
+          "status": "Sent",
+          "attemptCount": 1,
+          "occurredAtUtc": "2026-07-17T02:21:51.413087+00:00",
+          "lastAttemptedAtUtc": "2026-07-17T02:21:54.065006+00:00",
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": "2026-07-17T02:21:54.065006+00:00",
+          "failedAtUtc": null,
+          "failureReason": null
+        },
+        {
+          "cloudOutboxMessageId": "4970490b-c528-44eb-99a5-e8004a129b74",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "messageType": "ClientPaidStatusChanged",
+          "subjectType": "Client",
+          "subjectId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "payloadJson": "{\u0022isPaid\u0022: true, \u0022clientId\u0022: \u0022b581e053-7460-4f0d-9ac8-e11029e5ea6b\u0022, \u0022invoiceId\u0022: \u002200e0e583-00b0-4dce-875a-1307c2fe3369\u0022, \u0022paymentId\u0022: \u00226502a7cf-2353-4ad5-9a0f-3aae558dad45\u0022, \u0022balanceDue\u0022: 0.00, \u0022postingDate\u0022: \u00222026-07-17\u0022, \u0022currencyCode\u0022: \u0022PKR\u0022, \u0022eventVersion\u0022: \u00221\u0022, \u0022invoiceNumber\u0022: \u0022ACC-INV-1E1476AA\u0022, \u0022invoiceStatus\u0022: \u0022Paid\u0022, \u0022journalEntryId\u0022: \u0022b65266bd-725f-423a-9782-d22f553007ee\u0022}",
+          "status": "Sent",
+          "attemptCount": 1,
+          "occurredAtUtc": "2026-07-17T02:21:51.182644+00:00",
+          "lastAttemptedAtUtc": "2026-07-17T02:21:54.04626+00:00",
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": "2026-07-17T02:21:54.04626+00:00",
+          "failedAtUtc": null,
+          "failureReason": null
+        },
+        {
+          "cloudOutboxMessageId": "9463b733-2d9f-4922-99d3-fa3b6bf28f56",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "messageType": "PaymentRecorded",
+          "subjectType": "Payment",
+          "subjectId": "6502a7cf-2353-4ad5-9a0f-3aae558dad45",
+          "payloadJson": "{\u0022amount\u0022: 12500.00, \u0022clientId\u0022: \u0022b581e053-7460-4f0d-9ac8-e11029e5ea6b\u0022, \u0022invoiceId\u0022: \u002200e0e583-00b0-4dce-875a-1307c2fe3369\u0022, \u0022paymentId\u0022: \u00226502a7cf-2353-4ad5-9a0f-3aae558dad45\u0022, \u0022receivedOn\u0022: \u00222026-07-17\u0022, \u0022postingDate\u0022: \u00222026-07-17\u0022, \u0022currencyCode\u0022: \u0022PKR\u0022, \u0022eventVersion\u0022: \u00221\u0022, \u0022invoiceNumber\u0022: \u0022ACC-INV-1E1476AA\u0022, \u0022paymentMethod\u0022: \u0022BankTransfer\u0022, \u0022paymentStatus\u0022: \u0022Approved\u0022, \u0022portalClaimId\u0022: null, \u0022journalEntryId\u0022: \u0022b65266bd-725f-423a-9782-d22f553007ee\u0022, \u0022paymentReference\u0022: \u0022ACC-PAY-1E1476AA\u0022, \u0022invoiceBalanceDue\u0022: 0.00, \u0022journalEntryStatus\u0022: \u0022Posted\u0022}",
+          "status": "Sent",
+          "attemptCount": 1,
+          "occurredAtUtc": "2026-07-17T02:21:51.180901+00:00",
+          "lastAttemptedAtUtc": "2026-07-17T02:21:54.028131+00:00",
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": "2026-07-17T02:21:54.028131+00:00",
+          "failedAtUtc": null,
+          "failureReason": null
+        },
+        {
+          "cloudOutboxMessageId": "f291b15a-d5ec-4f73-94a8-8cebb2282dbf",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "messageType": "InvoiceIssued",
+          "subjectType": "Invoice",
+          "subjectId": "00e0e583-00b0-4dce-875a-1307c2fe3369",
+          "payloadJson": "{\u0022lines\u0022: [{\u0022amount\u0022: 12500.00, \u0022lineType\u0022: \u0022Charge\u0022, \u0022quantity\u0022: 1, \u0022lineTotal\u0022: 12500.00, \u0022unitPrice\u0022: 12500.00, \u0022description\u0022: \u0022Connected acceptance subscription\u0022, \u0022chargeCodeId\u0022: \u0022157e967b-6fe1-4a4d-b6ef-6d9fd6b69eb4\u0022, \u0022currencyCode\u0022: \u0022PKR\u0022}], \u0022client\u0022: {\u0022name\u0022: \u0022Acceptance 1E1476AA\u0022, \u0022email\u0022: null, \u0022phone\u0022: null, \u0022contactName\u0022: null}, \u0022dueDate\u0022: \u00222026-07-24\u0022, \u0022clientId\u0022: \u0022b581e053-7460-4f0d-9ac8-e11029e5ea6b\u0022, \u0022invoiceId\u0022: \u002200e0e583-00b0-4dce-875a-1307c2fe3369\u0022, \u0022issueDate\u0022: \u00222026-07-17\u0022, \u0022balanceDue\u0022: 12500.00, \u0022contractId\u0022: \u00227d2464b0-8432-4353-bbca-bb1782e827ea\u0022, \u0022postingDate\u0022: \u00222026-07-17\u0022, \u0022totalAmount\u0022: 12500.00, \u0022currencyCode\u0022: \u0022PKR\u0022, \u0022eventVersion\u0022: \u00222\u0022, \u0022invoiceNumber\u0022: \u0022ACC-INV-1E1476AA\u0022, \u0022invoiceStatus\u0022: \u0022Issued\u0022, \u0022journalEntryId\u0022: \u0022ac0b151c-277f-4d3c-adf1-e7b77c63807c\u0022, \u0022journalEntryStatus\u0022: \u0022Posted\u0022, \u0022accountsReceivableAccountId\u0022: \u002295ad9fb9-9988-45a8-bb3e-f3e02ae70754\u0022}",
+          "status": "Sent",
+          "attemptCount": 1,
+          "occurredAtUtc": "2026-07-17T02:21:50.934368+00:00",
+          "lastAttemptedAtUtc": "2026-07-17T02:21:53.995558+00:00",
+          "nextAttemptAtUtc": null,
+          "sentAtUtc": "2026-07-17T02:21:53.995558+00:00",
+          "failedAtUtc": null,
+          "failureReason": null
+        }
+      ],
+      "pageSize": 100,
+      "hasMore": false,
+      "nextCursor": null,
+      "summary": {
+        "totalCount": 4,
+        "pendingCount": 0,
+        "failedCount": 0,
+        "sentCount": 4,
+        "readyForPublishingCount": 0,
+        "totalAttemptCount": 4
+      }
+    },
+    "duplicateReplay": {
+      "sourceOutboxMessageId": "c0aa6321-7af8-49c2-96e9-f0dc43f93f24",
+      "sourceMessageType": "EntitlementSnapshotIssued",
+      "receiptId": "dc578651-6b95-409b-9550-d0602da8c793",
+      "cloudReference": "cc-c0aa63217af849c296e9f0dc43f93f24",
+      "status": "Duplicate",
+      "signatureKeyId": "local-dev",
+      "payloadSha256": "f7d23a682ab766bbf0787242e21eeeb6e2f5c91ac0349f20bb2fd1d9ac32f89f",
+      "replayedAtUtc": "2026-07-17T02:21:54.0874384+00:00"
+    }
+  },
+  "runtime": {
+    "bootstrapPackage": {
+      "formatVersion": "safarsuite-local-server-bootstrap-v1",
+      "bootstrapPackageId": "7e7abbe4-1406-43bc-9b1c-e4e139be35aa",
+      "setupTokenId": "6d1ff2fb-f5c7-47d5-a19b-436c11566bf9",
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+      "deploymentMode": "OnlineBootstrap",
+      "localServerVersion": "acceptance-1.0.0",
+      "setupTokenExpiresAtUtc": "2026-07-18T02:21:56.1765233+00:00",
+      "generatedAtUtc": "2026-07-17T02:21:56.2290274+00:00",
+      "bundleFileName": "safarsuite-bootstrap-b581e05374604f0d9ac8e11029e5ea6b-acceptance-ca-20260717022147-1b0d6cc671e1476aa-7e7abbe4140643bc9b1ce4e139be35aa.json",
+      "bundleContentType": "application/vnd.safarsuite.local-server-bootstrap\u002Bjson",
+      "bundleSha256": "21ab0ea14692fa70a6f256e04ea2cad3d1d9c4cec5b03d193fc9242e690c5160",
+      "signatureAlgorithm": "HMAC-SHA256",
+      "signatureKeyId": "local-entitlement-dev",
+      "signaturePayloadSha256": "e791320c11c9f3661c1c02e0722a599c7694dfc7a810ba5dd1b9b424254bda77",
+      "deploymentProfile": {
+        "bootstrapMode": "OnlineBootstrap",
+        "clientDeploymentMode": "CloudSyncMultiBranch",
+        "siteId": "acceptance-hq",
+        "siteRole": "Hq",
+        "parentSiteId": null,
+        "branchCode": "HQ",
+        "syncTopologyId": "acceptance-topology-1e1476aa"
+      }
+    },
+    "bootstrapImport": {
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+      "bootstrapRegistrationStatus": "Registered",
+      "deploymentProfile": {
+        "bootstrapMode": "OnlineBootstrap",
+        "clientDeploymentMode": "CloudSyncMultiBranch",
+        "siteId": "acceptance-hq",
+        "siteRole": "Hq",
+        "parentSiteId": null,
+        "branchCode": "HQ",
+        "syncTopologyId": "acceptance-topology-1e1476aa"
+      },
+      "cloudRegistrationStatus": "Active",
+      "registeredAtUtc": "2026-07-17T02:21:58.4316323+00:00",
+      "signatureKeyId": "local-entitlement-dev",
+      "payloadSha256": "e791320c11c9f3661c1c02e0722a599c7694dfc7a810ba5dd1b9b424254bda77"
+    },
+    "entitlementPull": {
+      "pulledAtUtc": "2026-07-17T02:21:58.508028+00:00",
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+      "entitlementVersion": 1,
+      "paidUntil": "2027-07-16",
+      "offlineValidUntil": "2027-07-30"
+    },
+    "enabledModuleAccess": {
+      "formatVersion": "safarsuite-local-module-gateway-v1",
+      "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+      "moduleCode": "PAYROLL",
+      "isAllowed": true,
+      "accessState": "Active",
+      "reason": "Entitlement is active.",
+      "entitlementVersion": 1,
+      "paidUntil": "2027-07-16",
+      "warningStartsAt": "2027-07-09",
+      "graceUntil": "2027-07-23",
+      "offlineValidUntil": "2027-07-30",
+      "checkedAtUtc": "2026-07-17T02:22:00.6855255+00:00"
+    },
+    "disabledModuleAccess": {
+      "formatVersion": "safarsuite-local-module-gateway-v1",
+      "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+      "moduleCode": "TOUR",
+      "isAllowed": false,
+      "accessState": "ModuleDisabled",
+      "reason": "Requested module is not enabled in the cached entitlement.",
+      "entitlementVersion": 1,
+      "paidUntil": "2027-07-16",
+      "warningStartsAt": "2027-07-09",
+      "graceUntil": "2027-07-23",
+      "offlineValidUntil": "2027-07-30",
+      "checkedAtUtc": "2026-07-17T02:22:00.6953978+00:00"
+    },
+    "limits": {
+      "formatVersion": "safarsuite-local-limit-gateway-v1",
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+      "entitlementVersion": 1,
+      "isEntitlementUsable": true,
+      "accessState": "Active",
+      "allowedDevices": 12,
+      "allowedBranches": 4,
+      "allowedNamedUsers": 80,
+      "allowedConcurrentUsers": 25,
+      "featureLimits": [
+        {
+          "moduleCode": "PAYROLL",
+          "featureCode": "MONTHLY_PAYSLIPS",
+          "limitValue": 500,
+          "unit": "COUNT"
+        }
+      ],
+      "checkedAtUtc": "2026-07-17T02:22:00.6983252+00:00"
+    },
+    "heartbeatSubmission": {
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+      "heartbeatStatus": "Received",
+      "licenseStatus": "Active",
+      "entitlementVersion": 1,
+      "receivedAtUtc": "2026-07-17T02:22:02.7542921+00:00",
+      "entitlementState": {
+        "entitlementVersion": 1,
+        "effectiveFromUtc": "0001-01-01T00:00:00+00:00",
+        "status": null,
+        "paidUntil": "2027-07-16",
+        "warningStartsAt": "2027-07-09",
+        "graceUntil": "2027-07-23",
+        "offlineValidUntil": "2027-07-30",
+        "allowedDevices": null,
+        "allowedBranches": null,
+        "allowedNamedUsers": null,
+        "allowedConcurrentUsers": null,
+        "modules": null,
+        "featureLimits": null
+      }
+    },
+    "finalInstallationStatus": {
+      "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+      "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+      "installationStatus": "Active",
+      "deploymentProfile": {
+        "bootstrapMode": "OnlineBootstrap",
+        "clientDeploymentMode": "CloudSyncMultiBranch",
+        "siteId": "acceptance-hq",
+        "siteRole": "Hq",
+        "parentSiteId": null,
+        "branchCode": "HQ",
+        "syncTopologyId": "acceptance-topology-1e1476aa"
+      },
+      "registeredAtUtc": "2026-07-17T02:21:58.431632+00:00",
+      "lastBundleIssuedAtUtc": "2026-07-17T02:22:00.555356+00:00",
+      "latestEntitlementVersion": 1,
+      "latestHeartbeat": {
+        "heartbeatId": "794db3a4-205c-41c8-a4b2-159b58f529c3",
+        "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+        "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+        "heartbeatStatus": "Received",
+        "receivedAtUtc": "2026-07-17T02:22:02.754292+00:00",
+        "reportedAtUtc": "2026-07-17T02:22:00.711194+00:00",
+        "licenseStatus": "Active",
+        "entitlementVersion": 1,
+        "paidUntil": "2027-07-16",
+        "warningStartsAt": "2027-07-09",
+        "graceUntil": "2027-07-23",
+        "offlineValidUntil": "2027-07-30",
+        "localServerVersion": "acceptance-1.0.0",
+        "detail": "Manual local-server heartbeat.",
+        "deploymentProfile": {
+          "bootstrapMode": "OnlineBootstrap",
+          "clientDeploymentMode": "CloudSyncMultiBranch",
+          "siteId": "acceptance-hq",
+          "siteRole": "Hq",
+          "parentSiteId": null,
+          "branchCode": "HQ",
+          "syncTopologyId": "acceptance-topology-1e1476aa"
+        },
+        "pairingStatus": {
+          "pairingMode": "ManagerApproval",
+          "totalDeviceCount": 0,
+          "pendingDeviceCount": 0,
+          "approvedDeviceCount": 0,
+          "suspendedDeviceCount": 0,
+          "revokedDeviceCount": 0,
+          "firstManagerDeviceApproved": false,
+          "firstManagerDeviceApprovedAtUtc": null,
+          "lastDeviceUpdatedAtUtc": null
+        },
+        "entitlementState": {
+          "entitlementVersion": 1,
+          "effectiveFromUtc": "2026-07-17T02:21:51.3219768+00:00",
+          "status": "Active",
+          "paidUntil": "2027-07-16",
+          "warningStartsAt": "2027-07-09",
+          "graceUntil": "2027-07-23",
+          "offlineValidUntil": "2027-07-30",
+          "allowedDevices": 12,
+          "allowedBranches": 4,
+          "allowedNamedUsers": 80,
+          "allowedConcurrentUsers": 25,
+          "modules": [
+            {
+              "moduleCode": "CONTROL_DESK",
+              "isEnabled": true
+            },
+            {
+              "moduleCode": "PAYROLL",
+              "isEnabled": true
+            },
+            {
+              "moduleCode": "TOUR",
+              "isEnabled": false
+            }
+          ],
+          "featureLimits": [
+            {
+              "moduleCode": "PAYROLL",
+              "featureCode": "MONTHLY_PAYSLIPS",
+              "limitValue": 500,
+              "unit": "COUNT"
+            }
+          ]
+        }
+      },
+      "latestEntitlement": {
+        "bundleIssueId": "c5cdb013-ec1c-49da-830a-f44072dedbb5",
+        "entitlementVersion": 1,
+        "entitlementSnapshotId": "e2fe9e14-fcff-4e75-bc05-fde809330c66",
+        "clientAccessRevisionId": "034b7084-02ce-422f-b658-8c81daf0b29c",
+        "contractRevisionNumber": 1,
+        "productCatalogRevisionId": "9c1da88b-c763-4bb0-8dda-2d95fe63ec8f",
+        "productCatalogRevisionNumber": 1,
+        "issuedAtUtc": "2026-07-17T02:22:00.555356+00:00",
+        "paidUntil": "2027-07-16",
+        "warningStartsAt": "2027-07-09",
+        "graceUntil": "2027-07-23",
+        "offlineValidUntil": "2027-07-30",
+        "keyId": "local-entitlement-dev",
+        "payloadSha256": "f6c014751acfb09c6e4147e17ea89b4f6efb1202986b282ef3fe4ada4fc33653",
+        "allowedNamedUsers": 80,
+        "allowedConcurrentUsers": 25,
+        "featureLimitCount": 1,
+        "effectiveFromUtc": "2026-07-17T02:21:51.3219768+00:00"
+      },
+      "entitlementSync": {
+        "desiredVersion": 1,
+        "signedVersion": 1,
+        "observedVersion": 1,
+        "state": "InSync",
+        "detail": "SafarSuite Server is enforcing desired entitlement version 1."
+      },
+      "commandStatus": {
+        "pendingCommandCount": 0,
+        "latestCommandVersion": 0,
+        "latestCommandId": null,
+        "latestCommandType": null,
+        "latestCommandStatus": null,
+        "latestCommandQueuedAtUtc": null,
+        "latestCommandAcknowledgedAtUtc": null,
+        "latestAcknowledgementStatus": null,
+        "latestAcknowledgementDetail": null
+      },
+      "reconciliation": {
+        "evaluatedAtUtc": "2026-07-17T02:22:04.9155898+00:00",
+        "state": "InSync",
+        "detail": "Desired, delivered, and observed values match for entitlement version 1.",
+        "desired": {
+          "entitlementVersion": 1,
+          "effectiveFromUtc": "2026-07-17T02:21:51.3219768+00:00",
+          "status": "Active",
+          "paidUntil": "2027-07-16",
+          "warningStartsAt": null,
+          "graceUntil": "2027-07-23",
+          "offlineValidUntil": "2027-07-30",
+          "allowedDevices": 12,
+          "allowedBranches": 4,
+          "allowedNamedUsers": 80,
+          "allowedConcurrentUsers": 25,
+          "modules": [
+            {
+              "moduleCode": "CONTROL_DESK",
+              "isEnabled": true
+            },
+            {
+              "moduleCode": "PAYROLL",
+              "isEnabled": true
+            },
+            {
+              "moduleCode": "TOUR",
+              "isEnabled": false
+            }
+          ],
+          "featureLimits": [
+            {
+              "moduleCode": "PAYROLL",
+              "featureCode": "MONTHLY_PAYSLIPS",
+              "limitValue": 500,
+              "unit": "COUNT"
+            }
+          ]
+        },
+        "delivered": {
+          "entitlementVersion": 1,
+          "effectiveFromUtc": "2026-07-17T02:21:51.3219768+00:00",
+          "status": "Active",
+          "paidUntil": "2027-07-16",
+          "warningStartsAt": "2027-07-09",
+          "graceUntil": "2027-07-23",
+          "offlineValidUntil": "2027-07-30",
+          "allowedDevices": 12,
+          "allowedBranches": 4,
+          "allowedNamedUsers": 80,
+          "allowedConcurrentUsers": 25,
+          "modules": [
+            {
+              "moduleCode": "CONTROL_DESK",
+              "isEnabled": true
+            },
+            {
+              "moduleCode": "PAYROLL",
+              "isEnabled": true
+            },
+            {
+              "moduleCode": "TOUR",
+              "isEnabled": false
+            }
+          ],
+          "featureLimits": [
+            {
+              "moduleCode": "PAYROLL",
+              "featureCode": "MONTHLY_PAYSLIPS",
+              "limitValue": 500,
+              "unit": "COUNT"
+            }
+          ]
+        },
+        "observed": {
+          "entitlementVersion": 1,
+          "effectiveFromUtc": "2026-07-17T02:21:51.3219768+00:00",
+          "status": "Active",
+          "paidUntil": "2027-07-16",
+          "warningStartsAt": "2027-07-09",
+          "graceUntil": "2027-07-23",
+          "offlineValidUntil": "2027-07-30",
+          "allowedDevices": 12,
+          "allowedBranches": 4,
+          "allowedNamedUsers": 80,
+          "allowedConcurrentUsers": 25,
+          "modules": [
+            {
+              "moduleCode": "CONTROL_DESK",
+              "isEnabled": true
+            },
+            {
+              "moduleCode": "PAYROLL",
+              "isEnabled": true
+            },
+            {
+              "moduleCode": "TOUR",
+              "isEnabled": false
+            }
+          ],
+          "featureLimits": [
+            {
+              "moduleCode": "PAYROLL",
+              "featureCode": "MONTHLY_PAYSLIPS",
+              "limitValue": 500,
+              "unit": "COUNT"
+            }
+          ]
+        },
+        "differences": []
+      }
+    },
+    "installationAudit": {
+      "events": [
+        {
+          "auditEventId": "ed2d3b9c-0ffd-483a-b6e0-42e071b53099",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "invitationId": null,
+          "userId": null,
+          "subjectEmail": "",
+          "eventType": "LocalServerRegistrationAccepted",
+          "actor": "LocalServer",
+          "detail": "Local server installation \u0027acceptance-ca-20260717022147-1b0d6cc671e1476aa\u0027 registered with version \u0027acceptance-1.0.0\u0027.",
+          "occurredAtUtc": "2026-07-17T02:21:58.4316323+00:00"
+        },
+        {
+          "auditEventId": "1f28cbbb-a042-4d11-9331-898dfe93f75d",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "invitationId": null,
+          "userId": null,
+          "subjectEmail": "",
+          "eventType": "BootstrapPackageGenerated",
+          "actor": "connected-acceptance",
+          "detail": "Bootstrap package \u00277e7abbe4-1406-43bc-9b1c-e4e139be35aa\u0027 generated for installation \u0027acceptance-ca-20260717022147-1b0d6cc671e1476aa\u0027 using setup token \u00276d1ff2fb-f5c7-47d5-a19b-436c11566bf9\u0027, local-server version \u0027acceptance-1.0.0\u0027, and SafarSuite app version \u0027acceptance-app-1.0.0\u0027.",
+          "occurredAtUtc": "2026-07-17T02:21:56.2290274+00:00"
+        },
+        {
+          "auditEventId": "e70b2165-4ead-4a5e-b533-6b4dc29c51ba",
+          "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+          "invitationId": null,
+          "userId": null,
+          "subjectEmail": "",
+          "eventType": "SetupTokenCreated",
+          "actor": "connected-acceptance",
+          "detail": "Setup token \u00276d1ff2fb-f5c7-47d5-a19b-436c11566bf9\u0027 created for installation \u0027acceptance-ca-20260717022147-1b0d6cc671e1476aa\u0027 in \u0027OnlineBootstrap\u0027 mode. Expires at 2026-07-18T02:21:56.1765233\u002B00:00.",
+          "occurredAtUtc": "2026-07-17T02:21:56.1765233+00:00"
+        }
+      ]
+    },
+    "localImportAudit": [
+      {
+        "auditRecordId": "03129ac4-27fa-4f6f-8d4d-565af1bec539",
+        "installationId": "acceptance-ca-20260717022147-1b0d6cc671e1476aa",
+        "clientId": "b581e053-7460-4f0d-9ac8-e11029e5ea6b",
+        "importSource": "ControlCloudPull",
+        "resultStatus": "Accepted",
+        "entitlementVersion": 1,
+        "bundleIssueId": "c5cdb013-ec1c-49da-830a-f44072dedbb5",
+        "failureCode": null,
+        "detail": null,
+        "payloadSha256": "f6c014751acfb09c6e4147e17ea89b4f6efb1202986b282ef3fe4ada4fc33653",
+        "signatureKeyId": "local-entitlement-dev",
+        "occurredAtUtc": "2026-07-17T02:22:00.6327465+00:00"
+      }
+    ]
+  }
+}
