@@ -2,6 +2,8 @@
 
 Place real staging secret files in this directory on the server only.
 
+Generate symmetric values from at least 32 cryptographically random bytes and generate the app-activation pair as ECDSA P-256. Keep every independent purpose on different key material.
+
 Expected files:
 
 - `control-desk-publisher-hmac`
@@ -12,6 +14,10 @@ Expected files:
 - `provider-access-session-hmac`
 - `provider-access-totp-hmac`
 
+The Control Cloud container runs as a non-root user. Install the directory and files so the deployment account can manage them and the container user can read them, while no unrelated host user can. Verify readability from inside the container without printing file contents. A root-owned `0600` file is not sufficient if the container UID cannot read it.
+
+Retain a fingerprint-only inventory containing file names, key IDs, byte lengths, and SHA-256 fingerprints. Never put secret values in the inventory or deployment logs.
+
 Keep matching inline values in `.env` for the Control Desk settings that do not support `*File` yet:
 
 - `CONTROL_DESK_PUBLISHER_SIGNING_SECRET`
@@ -19,6 +25,8 @@ Keep matching inline values in `.env` for the Control Desk settings that do not 
 - `PROVIDER_ACCESS_SHARED_SECRET`
 - `CLIENT_PORTAL_SESSION_SIGNING_SECRET`
 - `CLIENT_PORTAL_MFA_PROTECTION_SECRET`
+
+The staging preflight verifies that `CONTROL_DESK_PUBLISHER_SIGNING_SECRET` exactly matches `control-desk-publisher-hmac`, that `PROVIDER_ACCESS_SHARED_SECRET` exactly matches `provider-access-shared-secret`, and that the independent portal/provider secrets are not reused.
 
 ## Required Client Portal environment
 

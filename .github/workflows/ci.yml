@@ -49,6 +49,8 @@ jobs:
         run: dotnet run --project tools/SafarSuite.LocalServer.EntitlementSmoke --configuration Release --no-build --no-restore
 
       - name: Validate Control Desk migrations
+        env:
+          SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK: "true"
         run: >-
           dotnet tool run dotnet-ef migrations has-pending-model-changes
           --project src/SafarSuite.ControlDesk.Infrastructure
@@ -58,6 +60,8 @@ jobs:
           --no-build
 
       - name: Validate Control Cloud migrations
+        env:
+          SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK: "true"
         run: >-
           dotnet tool run dotnet-ef migrations has-pending-model-changes
           --project src/SafarSuite.ControlCloud.Infrastructure/SafarSuite.ControlCloud.Infrastructure.csproj
@@ -101,8 +105,31 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Prepare placeholder staging configuration
-        run: cp deploy/staging/.env.example deploy/staging/.env
-
       - name: Validate staging Compose configuration
-        run: docker compose -f deploy/staging/docker-compose.yml config --quiet
+        run: >-
+          docker compose
+          --env-file deploy/staging/.env.example
+          -f deploy/staging/docker-compose.yml
+          config --quiet
+
+      - name: Verify staging Compose security boundaries
+        run: |
+          docker compose \
+            --env-file deploy/staging/.env.example \
+            -f deploy/staging/docker-compose.yml \
+            config --format json |
+          jq -e '
+            (.services.caddy.environment | keys == ["CONTROL_CLOUD_HOST", "CONTROL_DESK_HOST"]) and
+            ((.services["control-cloud-api"].environment | has("CONTROL_DESK_DB_PASSWORD")) | not) and
+            ((.services["control-cloud-api"].environment | has("CONTROL_DESK_SESSION_SIGNING_SECRET")) | not) and
+            ((.services["control-desk-api"].environment | has("CONTROL_CLOUD_DB_PASSWORD")) | not) and
+            ((.services["control-desk-api"].environment | has("CLIENT_PORTAL_SESSION_SIGNING_SECRET")) | not) and
+            ((.services["control-cloud-api"].ports // []) | length == 0) and
+            ((.services["control-desk-api"].ports // []) | length == 0) and
+            ((.services["control-cloud-db"].ports | length) == 1) and
+            (.services["control-cloud-db"].ports[0].host_ip == "127.0.0.1") and
+            (.services["control-cloud-db"].ports[0].target == 5432) and
+            ((.services["control-desk-db"].ports | length) == 1) and
+            (.services["control-desk-db"].ports[0].host_ip == "127.0.0.1") and
+            (.services["control-desk-db"].ports[0].target == 5432)
+          '

@@ -10,8 +10,7 @@ public sealed class ControlCloudDbContextFactory : IDesignTimeDbContextFactory<C
 
     public ControlCloudDbContext CreateDbContext(string[] args)
     {
-        var connectionString = Environment.GetEnvironmentVariable("SAFARSUITE_CONTROL_CLOUD_CONNECTION_STRING")
-            ?? DefaultDevelopmentConnectionString;
+        var connectionString = ResolveConnectionString();
 
         var options = new DbContextOptionsBuilder<ControlCloudDbContext>()
             .UseNpgsql(
@@ -20,5 +19,27 @@ public sealed class ControlCloudDbContextFactory : IDesignTimeDbContextFactory<C
             .Options;
 
         return new ControlCloudDbContext(options);
+    }
+
+    private static string ResolveConnectionString()
+    {
+        var configured = Environment.GetEnvironmentVariable(
+            "SAFARSUITE_CONTROL_CLOUD_CONNECTION_STRING");
+
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured.Trim();
+        }
+
+        var allowDevelopmentFallback = Environment.GetEnvironmentVariable(
+            "SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK");
+
+        if (string.Equals(allowDevelopmentFallback, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return DefaultDevelopmentConnectionString;
+        }
+
+        throw new InvalidOperationException(
+            "SAFARSUITE_CONTROL_CLOUD_CONNECTION_STRING is required for EF operations. Set SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK=true only for deliberate local development tooling.");
     }
 }

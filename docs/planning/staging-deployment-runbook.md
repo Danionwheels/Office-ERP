@@ -109,6 +109,13 @@ Create staging values for these settings before starting the services.
 
 If the host supports mounted secrets, prefer `*File` settings where available.
 
+Before startup, run the redacted repository preflight and the quiet Compose validation. Do not render the resolved Compose configuration into logs because it contains secret-bearing environment values.
+
+```powershell
+dotnet run --project tools/SafarSuite.StagingPreflight --configuration Release -- --staging-directory deploy/staging
+docker compose -f deploy/staging/docker-compose.yml config --quiet
+```
+
 ### Control Desk
 
 | Setting | Staging value |
@@ -132,6 +139,8 @@ When provider bearer-token handoff is fully operational for the office flow, pre
 
 ## Phase 2: Database Migration
 
+The staging Compose bundle binds PostgreSQL to loopback only: Control Cloud on `127.0.0.1:55432` and Control Desk on `127.0.0.1:55433` by default. Run migrations on the staging host, adjust the ports if `.env` overrides them, and set each `SAFARSUITE_*_CONNECTION_STRING` explicitly. The design-time factories otherwise fail closed. `SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK=true` is a local-tooling escape hatch and must never be enabled on staging.
+
 Apply the Control Cloud migrations to the staging Control Cloud database:
 
 ```powershell
@@ -146,6 +155,12 @@ dotnet tool run dotnet-ef database update --project src/SafarSuite.ControlDesk.I
 ```
 
 Run migrations with the staging connection strings in the environment of the command.
+
+Before applying either migration set, record `current_database()` and `current_user`. After applying, retain the migration-ledger count and latest migration ID. Expected at this checkpoint:
+
+- Control Cloud: 23 rows through `20260713221145_AddClientPortalPaymentBoundary` in `cloud.__ef_migrations_history`.
+- Control Desk: 32 rows through `20260713220254_AddPortalPaymentBoundary` in `control.__ef_migrations_history`.
+- Control Desk: `pg_trgm` is present in `pg_extension`.
 
 ## Phase 3: Service Smoke
 

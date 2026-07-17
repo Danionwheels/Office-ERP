@@ -4,8 +4,9 @@ services:
   caddy:
     image: caddy:2.8-alpine
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      CONTROL_CLOUD_HOST: ${CONTROL_CLOUD_HOST:?CONTROL_CLOUD_HOST is required}
+      CONTROL_DESK_HOST: ${CONTROL_DESK_HOST:?CONTROL_DESK_HOST is required}
     ports:
       - "80:80"
       - "443:443"
@@ -22,35 +23,33 @@ services:
       context: ../..
       dockerfile: src/SafarSuite.ControlCloud.Api/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       ASPNETCORE_ENVIRONMENT: Staging
       ASPNETCORE_URLS: http://0.0.0.0:8080
       Persistence__Provider: Postgres
-      ConnectionStrings__ControlCloud: Host=control-cloud-db;Port=5432;Database=${CONTROL_CLOUD_DB_NAME};Username=${CONTROL_CLOUD_DB_USER};Password=${CONTROL_CLOUD_DB_PASSWORD}
-      ControlCloud__BootstrapPackages__CloudBaseUrl: https://${CONTROL_CLOUD_HOST}
-      ControlCloud__Receiver__SigningKeys__0__KeyId: ${CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID}
+      ConnectionStrings__ControlCloud: Host=control-cloud-db;Port=5432;Database=${CONTROL_CLOUD_DB_NAME:?CONTROL_CLOUD_DB_NAME is required};Username=${CONTROL_CLOUD_DB_USER:?CONTROL_CLOUD_DB_USER is required};Password=${CONTROL_CLOUD_DB_PASSWORD:?CONTROL_CLOUD_DB_PASSWORD is required}
+      ControlCloud__BootstrapPackages__CloudBaseUrl: https://${CONTROL_CLOUD_HOST:?CONTROL_CLOUD_HOST is required}
+      ControlCloud__Receiver__SigningKeys__0__KeyId: ${CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID:?CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID is required}
       ControlCloud__Receiver__SigningKeys__0__SecretFile: /run/secrets/safarsuite/control-desk-publisher-hmac
-      ControlCloud__EntitlementSigning__ActiveKeyId: ${CONTROL_CLOUD_ENTITLEMENT_SIGNING_KEY_ID}
-      ControlCloud__EntitlementSigning__SigningKeys__0__KeyId: ${CONTROL_CLOUD_ENTITLEMENT_SIGNING_KEY_ID}
+      ControlCloud__EntitlementSigning__ActiveKeyId: ${CONTROL_CLOUD_ENTITLEMENT_SIGNING_KEY_ID:?CONTROL_CLOUD_ENTITLEMENT_SIGNING_KEY_ID is required}
+      ControlCloud__EntitlementSigning__SigningKeys__0__KeyId: ${CONTROL_CLOUD_ENTITLEMENT_SIGNING_KEY_ID:?CONTROL_CLOUD_ENTITLEMENT_SIGNING_KEY_ID is required}
       ControlCloud__EntitlementSigning__SigningKeys__0__SecretFile: /run/secrets/safarsuite/control-cloud-entitlement-hmac
-      ControlCloud__AppActivationSigning__ActiveKeyId: ${CONTROL_CLOUD_APP_ACTIVATION_SIGNING_KEY_ID}
+      ControlCloud__AppActivationSigning__ActiveKeyId: ${CONTROL_CLOUD_APP_ACTIVATION_SIGNING_KEY_ID:?CONTROL_CLOUD_APP_ACTIVATION_SIGNING_KEY_ID is required}
       ControlCloud__AppActivationSigning__PublicKeyPemFile: /run/secrets/safarsuite/app-activation-public.pem
       ControlCloud__AppActivationSigning__PrivateKeyPemFile: /run/secrets/safarsuite/app-activation-private.pem
       ClientPortal__ProviderAccess__SharedSecretFile: /run/secrets/safarsuite/provider-access-shared-secret
       ClientPortal__ProviderAccess__SessionSigningSecretFile: /run/secrets/safarsuite/provider-access-session-hmac
       ClientPortal__ProviderAccess__TotpProtectionSecretFile: /run/secrets/safarsuite/provider-access-totp-hmac
-      ClientPortal__Access__SessionSigningSecret: ${CLIENT_PORTAL_SESSION_SIGNING_SECRET}
-      ClientPortal__Access__MfaProtectionSecret: ${CLIENT_PORTAL_MFA_PROTECTION_SECRET}
-      ClientPortal__Access__PublicPortalUrl: ${CLIENT_PORTAL_PUBLIC_URL}
-      CLIENT_PORTAL_INVITATION_DELIVERY_PROVIDER: ${CLIENT_PORTAL_INVITATION_DELIVERY_PROVIDER:-Smtp}
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
-      FROM_ADDRESS: ${FROM_ADDRESS}
-      AllowedHosts: ${CONTROL_CLOUD_HOST}
+      ClientPortal__Access__SessionSigningSecret: ${CLIENT_PORTAL_SESSION_SIGNING_SECRET:?CLIENT_PORTAL_SESSION_SIGNING_SECRET is required}
+      ClientPortal__Access__MfaProtectionSecret: ${CLIENT_PORTAL_MFA_PROTECTION_SECRET:?CLIENT_PORTAL_MFA_PROTECTION_SECRET is required}
+      ClientPortal__Access__PublicPortalUrl: ${CLIENT_PORTAL_PUBLIC_URL:?CLIENT_PORTAL_PUBLIC_URL is required}
+      CLIENT_PORTAL_INVITATION_DELIVERY_PROVIDER: ${CLIENT_PORTAL_INVITATION_DELIVERY_PROVIDER:?CLIENT_PORTAL_INVITATION_DELIVERY_PROVIDER is required}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required}
+      SMTP_PORT: ${SMTP_PORT:?SMTP_PORT is required}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      FROM_ADDRESS: ${FROM_ADDRESS:?FROM_ADDRESS is required}
+      AllowedHosts: ${CONTROL_CLOUD_HOST:?CONTROL_CLOUD_HOST is required}
     volumes:
       - ./secrets:/run/secrets/safarsuite:ro
       - control-cloud-app-data:/app/App_Data
@@ -63,31 +62,29 @@ services:
       context: ../..
       dockerfile: src/SafarSuite.ControlDesk.Api/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       ASPNETCORE_ENVIRONMENT: Staging
       ASPNETCORE_URLS: http://0.0.0.0:8080
       Persistence__Provider: Postgres
-      ConnectionStrings__ControlDesk: Host=control-desk-db;Port=5432;Database=${CONTROL_DESK_DB_NAME};Username=${CONTROL_DESK_DB_USER};Password=${CONTROL_DESK_DB_PASSWORD}
-      ControlDesk__OperatorAccess__SessionSigningSecret: ${CONTROL_DESK_SESSION_SIGNING_SECRET}
-      ControlDesk__OperatorAccess__Users__0__UserId: ${CONTROL_DESK_OPERATOR_USER_ID}
-      ControlDesk__OperatorAccess__Users__0__Email: ${CONTROL_DESK_OPERATOR_EMAIL}
-      ControlDesk__OperatorAccess__Users__0__FullName: ${CONTROL_DESK_OPERATOR_FULL_NAME}
-      ControlDesk__OperatorAccess__Users__0__PasswordHash: ${CONTROL_DESK_OPERATOR_PASSWORD_HASH}
+      ConnectionStrings__ControlDesk: Host=control-desk-db;Port=5432;Database=${CONTROL_DESK_DB_NAME:?CONTROL_DESK_DB_NAME is required};Username=${CONTROL_DESK_DB_USER:?CONTROL_DESK_DB_USER is required};Password=${CONTROL_DESK_DB_PASSWORD:?CONTROL_DESK_DB_PASSWORD is required}
+      ControlDesk__OperatorAccess__SessionSigningSecret: ${CONTROL_DESK_SESSION_SIGNING_SECRET:?CONTROL_DESK_SESSION_SIGNING_SECRET is required}
+      ControlDesk__OperatorAccess__Users__0__UserId: ${CONTROL_DESK_OPERATOR_USER_ID:?CONTROL_DESK_OPERATOR_USER_ID is required}
+      ControlDesk__OperatorAccess__Users__0__Email: ${CONTROL_DESK_OPERATOR_EMAIL:?CONTROL_DESK_OPERATOR_EMAIL is required}
+      ControlDesk__OperatorAccess__Users__0__FullName: ${CONTROL_DESK_OPERATOR_FULL_NAME:?CONTROL_DESK_OPERATOR_FULL_NAME is required}
+      ControlDesk__OperatorAccess__Users__0__PasswordHash: ${CONTROL_DESK_OPERATOR_PASSWORD_HASH:?CONTROL_DESK_OPERATOR_PASSWORD_HASH is required}
       ControlDesk__OperatorAccess__Users__0__Status: Active
-      ControlDesk__OperatorAccess__Users__0__Roles__0: ${CONTROL_DESK_OPERATOR_ROLE}
-      ControlDesk__OperatorAccess__Users__0__Scopes__0: ${CONTROL_DESK_OPERATOR_SCOPE}
+      ControlDesk__OperatorAccess__Users__0__Roles__0: ${CONTROL_DESK_OPERATOR_ROLE:?CONTROL_DESK_OPERATOR_ROLE is required}
+      ControlDesk__OperatorAccess__Users__0__Scopes__0: ${CONTROL_DESK_OPERATOR_SCOPE:?CONTROL_DESK_OPERATOR_SCOPE is required}
       ControlCloud__Publisher__Mode: Http
       ControlCloud__Publisher__Environment: Staging
-      ControlCloud__Publisher__SigningKeyId: ${CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID}
-      ControlCloud__Publisher__SigningSecret: ${CONTROL_DESK_PUBLISHER_SIGNING_SECRET}
-      ControlCloud__Publisher__EndpointUrl: https://${CONTROL_CLOUD_HOST}/api/v1/control-desk/messages
-      ControlCloud__Status__BaseUrl: https://${CONTROL_CLOUD_HOST}
-      ControlCloud__Status__ProviderAccessSecret: ${PROVIDER_ACCESS_SHARED_SECRET}
-      ControlCloud__PortalInvitations__BaseUrl: https://${CONTROL_CLOUD_HOST}
-      ControlCloud__PortalInvitations__ProviderAccessSecret: ${PROVIDER_ACCESS_SHARED_SECRET}
-      AllowedHosts: ${CONTROL_DESK_HOST}
+      ControlCloud__Publisher__SigningKeyId: ${CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID:?CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID is required}
+      ControlCloud__Publisher__SigningSecret: ${CONTROL_DESK_PUBLISHER_SIGNING_SECRET:?CONTROL_DESK_PUBLISHER_SIGNING_SECRET is required}
+      ControlCloud__Publisher__EndpointUrl: https://${CONTROL_CLOUD_HOST:?CONTROL_CLOUD_HOST is required}/api/v1/control-desk/messages
+      ControlCloud__Status__BaseUrl: https://${CONTROL_CLOUD_HOST:?CONTROL_CLOUD_HOST is required}
+      ControlCloud__Status__ProviderAccessSecret: ${PROVIDER_ACCESS_SHARED_SECRET:?PROVIDER_ACCESS_SHARED_SECRET is required}
+      ControlCloud__PortalInvitations__BaseUrl: https://${CONTROL_CLOUD_HOST:?CONTROL_CLOUD_HOST is required}
+      ControlCloud__PortalInvitations__ProviderAccessSecret: ${PROVIDER_ACCESS_SHARED_SECRET:?PROVIDER_ACCESS_SHARED_SECRET is required}
+      AllowedHosts: ${CONTROL_DESK_HOST:?CONTROL_DESK_HOST is required}
     depends_on:
       control-desk-db:
         condition: service_healthy
@@ -105,10 +102,12 @@ services:
   control-cloud-db:
     image: postgres:17-alpine
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CONTROL_CLOUD_DB_HOST_PORT:?CONTROL_CLOUD_DB_HOST_PORT is required}:5432"
     environment:
-      POSTGRES_DB: ${CONTROL_CLOUD_DB_NAME}
-      POSTGRES_USER: ${CONTROL_CLOUD_DB_USER}
-      POSTGRES_PASSWORD: ${CONTROL_CLOUD_DB_PASSWORD}
+      POSTGRES_DB: ${CONTROL_CLOUD_DB_NAME:?CONTROL_CLOUD_DB_NAME is required}
+      POSTGRES_USER: ${CONTROL_CLOUD_DB_USER:?CONTROL_CLOUD_DB_USER is required}
+      POSTGRES_PASSWORD: ${CONTROL_CLOUD_DB_PASSWORD:?CONTROL_CLOUD_DB_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${CONTROL_CLOUD_DB_USER} -d ${CONTROL_CLOUD_DB_NAME}"]
       interval: 10s
@@ -120,10 +119,12 @@ services:
   control-desk-db:
     image: postgres:17-alpine
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CONTROL_DESK_DB_HOST_PORT:?CONTROL_DESK_DB_HOST_PORT is required}:5432"
     environment:
-      POSTGRES_DB: ${CONTROL_DESK_DB_NAME}
-      POSTGRES_USER: ${CONTROL_DESK_DB_USER}
-      POSTGRES_PASSWORD: ${CONTROL_DESK_DB_PASSWORD}
+      POSTGRES_DB: ${CONTROL_DESK_DB_NAME:?CONTROL_DESK_DB_NAME is required}
+      POSTGRES_USER: ${CONTROL_DESK_DB_USER:?CONTROL_DESK_DB_USER is required}
+      POSTGRES_PASSWORD: ${CONTROL_DESK_DB_PASSWORD:?CONTROL_DESK_DB_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${CONTROL_DESK_DB_USER} -d ${CONTROL_DESK_DB_NAME}"]
       interval: 10s

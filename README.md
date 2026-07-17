@@ -77,7 +77,9 @@ Development uses PostgreSQL through Docker Compose. It represents the authoritat
 ```powershell
 dotnet tool restore
 docker compose up -d safarsuite-control-desk-postgres
+$env:SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK = "true"
 dotnet tool run dotnet-ef database update --project src/SafarSuite.ControlDesk.Infrastructure --startup-project src/SafarSuite.ControlDesk.Api --context ControlDeskDbContext
+Remove-Item Env:SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK
 dotnet run --project src/SafarSuite.ControlDesk.Api
 ```
 

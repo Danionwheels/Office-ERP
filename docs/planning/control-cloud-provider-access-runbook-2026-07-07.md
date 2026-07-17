@@ -121,6 +121,7 @@ Apply the PostgreSQL schema:
 
 ```powershell
 dotnet tool restore
+$env:SAFARSUITE_CONTROL_CLOUD_CONNECTION_STRING = "<explicit PostgreSQL connection string>"
 dotnet tool run dotnet-ef database update --project src\SafarSuite.ControlCloud.Infrastructure\SafarSuite.ControlCloud.Infrastructure.csproj --startup-project src\SafarSuite.ControlCloud.Infrastructure\SafarSuite.ControlCloud.Infrastructure.csproj --context ControlCloudDbContext
 ```
 

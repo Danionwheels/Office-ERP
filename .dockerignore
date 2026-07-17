@@ -2,6 +2,9 @@
 .github/
 .vs/
 .codex-run/
+**/.env
+**/.env.*
+deploy/staging/secrets/
 artifacts/*
 !artifacts/localserver-api-publish/
 !artifacts/localserver-api-publish/**

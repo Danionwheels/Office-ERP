@@ -79,8 +79,10 @@ docker compose -f docker-compose.runtime.yml config
 ```powershell
 dotnet tool restore
 docker compose up -d safarsuite-control-desk-postgres
+$env:SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK = "true"
 dotnet tool run dotnet-ef database update --project src/SafarSuite.ControlDesk.Infrastructure --startup-project src/SafarSuite.ControlDesk.Api --context ControlDeskDbContext
 dotnet tool run dotnet-ef database update --project src/SafarSuite.ControlCloud.Infrastructure/SafarSuite.ControlCloud.Infrastructure.csproj --startup-project src/SafarSuite.ControlCloud.Infrastructure/SafarSuite.ControlCloud.Infrastructure.csproj --context ControlCloudDbContext
+Remove-Item Env:SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK
 ```
 
 Both APIs use the same local PostgreSQL server in development, with Control Cloud data isolated under its own cloud persistence slice.
