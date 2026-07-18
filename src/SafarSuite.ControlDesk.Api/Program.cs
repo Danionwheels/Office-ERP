@@ -20,11 +20,28 @@ builder.Services.AddControlDeskServices(builder.Configuration);
 
 var app = builder.Build();
 
+ControlDeskHostConfigurationValidator.Validate(app.Configuration, app.Environment);
+
+var packagedUiIndexPath = Path.Combine(
+    app.Environment.ContentRootPath,
+    "wwwroot",
+    "index.html");
+var hasPackagedUi = File.Exists(packagedUiIndexPath);
+
+if (hasPackagedUi)
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/", () => Results.Redirect("/health"))
-    .AllowAnonymous();
+if (!hasPackagedUi)
+{
+    app.MapGet("/", () => Results.Redirect("/health"))
+        .AllowAnonymous();
+}
 
 app.MapGet("/health", () =>
 {
@@ -48,6 +65,18 @@ app.MapPaymentsEndpoints();
 app.MapPaymentReportEndpoints();
 app.MapControlCloudEndpoints();
 app.MapEntitlementEndpoints();
+
+if (hasPackagedUi)
+{
+    app.MapMethods(
+            "/api/{**unmatchedApiPath}",
+            ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+            () => Results.NotFound())
+        .AllowAnonymous();
+
+    app.MapFallbackToFile("index.html")
+        .AllowAnonymous();
+}
 
 app.Run();
 

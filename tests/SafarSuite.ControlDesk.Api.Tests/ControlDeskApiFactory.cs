@@ -23,6 +23,7 @@ public sealed class ControlDeskApiFactory : WebApplicationFactory<Program>
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Persistence:Provider"] = "InMemory",
+                ["Persistence:AllowInMemoryForTests"] = "true",
                 ["ControlDesk:OperatorAccess:SessionMinutes"] = "5",
                 ["ControlDesk:OperatorAccess:SessionSigningSecret"] = "integration-test-session-signing-secret-at-least-32-bytes",
                 ["ControlDesk:OperatorAccess:Users:0:UserId"] = "test-admin",

@@ -277,13 +277,37 @@ Requirements baseline
 
 `CLOUD-P1-01` is a separate cloud-lane correction and must not delay or redefine the office critical path.
 
+## Implementation Checkpoint — `OFFICE-P0-01` Local Proof
+
+Local implementation passed on 2026-07-18:
+
+- the API serves the built React UI at `/` only when a packaged `wwwroot/index.html` is present;
+- UI and API share `http://127.0.0.1:5188`, while unmatched `/api` requests remain JSON/API `404` boundaries rather than falling into the SPA;
+- Production configuration selects PostgreSQL and a fixed loopback Kestrel endpoint;
+- host validation rejects Production `InMemory`, missing PostgreSQL connections, the checked-in development password, and placeholder connection markers;
+- a repeatable PowerShell builder emits a self-contained `win-x64` package plus a redacted source/size manifest;
+- a package smoke rejects prohibited Production configurations, launches the actual packaged executable, loads the UI, proves anonymous `401`, performs operator login plus bearer-authenticated business API access, proves unknown API `404`, audits loopback listeners, and writes redacted evidence;
+- CI now contains a Windows package job that builds, smokes, and uploads the pilot artifact.
+
+Local evidence:
+
+- self-contained payload: `128,122,969` bytes;
+- measured health startup: `1,293 ms`;
+- package checks: Production `InMemory` rejected, development PostgreSQL connection rejected, UI `200`, anonymous business API `401`, authenticated business API `200`, unknown API `404`, listener `127.0.0.1` only;
+- solution tests: `84/84` passed (`17` domain, `30` cloud identity, `22` staging preflight, `15` Control Desk API);
+- UI production build passed; the existing approximately `988 KB` minified JavaScript bundle warning remains a later optimization;
+- accounting smoke, LocalServer entitlement/security smoke, Control Desk migration parity, PowerShell syntax, and `git diff --check` passed;
+- independent review found two configuration/evidence gaps; both were fixed and the re-review reported no residual blocker.
+
+`OFFICE-P0-01` remains open until the new `office-windows-package-gate` passes from the exact clean pushed commit. The ignored local package is engineering evidence, not an office installer.
+
 ## Status Tracker
 
 | Work package | Status | Completion evidence |
 | --- | --- | --- |
 | Requirements baseline | Complete | Commit `0d38151`; canonical contract and active-doc alignment. |
 | Repository packaging audit | Complete | API/UI/PostgreSQL/staging audit summarized in this plan. |
-| `OFFICE-P0-01` Local Combined Host | Next | Pending. |
+| `OFFICE-P0-01` Local Combined Host | Local proof passed; remote CI pending | Self-contained package, startup/HTTP/auth/listener evidence, and Windows CI job implemented. |
 | `OFFICE-P0-02` Readiness/Automatic Outbox | Pending | Pending. |
 | `OFFICE-P0-03` Native PostgreSQL Lifecycle | Pending | Pending. |
 | `OFFICE-P0-04` Operator/Secret Custody | Pending | Pending. |
@@ -305,4 +329,4 @@ Until `OFFICE-P0-08` passes:
 - do not configure DNS, HTTPS, SMTP, or Brevo as part of the office package;
 - do not close a work package without executable or physical evidence.
 
-The immediate coding task is `OFFICE-P0-01`: produce and test one loopback, same-origin, self-contained Windows artifact.
+The immediate release action is to push the clean implementation commit and confirm `office-windows-package-gate`. After that gate is green, mark `OFFICE-P0-01` complete and begin `OFFICE-P0-02`.

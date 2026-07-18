@@ -133,3 +133,44 @@ jobs:
             (.services["control-desk-db"].ports[0].host_ip == "127.0.0.1") and
             (.services["control-desk-db"].ports[0].target == 5432)
           '
+
+  office-windows-package-gate:
+    name: office-windows-package-gate
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.301
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/control-desk-ui/package-lock.json
+
+      - name: Build self-contained office package
+        shell: pwsh
+        run: >-
+          ./deploy/office-windows/Build-OfficePackage.ps1
+          -OutputDirectory "$env:RUNNER_TEMP\safarsuite-control-desk-office"
+
+      - name: Smoke same-origin loopback package
+        shell: pwsh
+        run: >-
+          ./deploy/office-windows/Test-OfficePackage.ps1
+          -PackageDirectory "$env:RUNNER_TEMP\safarsuite-control-desk-office"
+
+      - name: Upload office pilot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: safarsuite-control-desk-office-win-x64
+          path: ${{ runner.temp }}\safarsuite-control-desk-office
+          if-no-files-found: error
+          retention-days: 7
