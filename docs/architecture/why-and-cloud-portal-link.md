@@ -2,7 +2,7 @@
 
 Date: 2026-06-30
 
-Direction update: 2026-07-11. The canonical product and scale decisions now live in `docs/architecture/product-charter-2026-07-11.md`; this note remains the original problem statement.
+Direction update: 2026-07-18. Canonical product and scale decisions live in `docs/architecture/product-charter-2026-07-11.md`; canonical physical topology and deployment acceptance live in `docs/architecture/final-system-requirements-and-deployment-contract.md`; this note remains the original problem statement.
 
 ## Purpose
 
@@ -44,10 +44,10 @@ Backend
   business rules, billing, contracts, entitlements, sync to cloud
 
 Database
-  central PostgreSQL for shared office data
+  local PostgreSQL on the same dedicated office PC
 ```
 
-Because this is for one provider organization, it does not need a multi-tenant provider SaaS design in V1. It must still support concurrent office staff through the shared Office Control API and centrally managed database.
+Because this is for one provider organization, it does not need a multi-tenant provider SaaS design in V1. Authorized operators use the designated office PC according to role and audit policy. Concurrent multi-PC office hosting is deferred unless the canonical deployment contract is explicitly revised.
 
 ## System Boundary
 

@@ -4,6 +4,12 @@ This folder is the first VPS-style staging bundle for SafarSuite Control Cloud, 
 
 It is meant for a disposable staging server with Docker Compose, two DNS names, and HTTPS through Caddy.
 
+## Scope Warning
+
+This bundle is classified as a **Disposable Integration Lab** by `docs/architecture/final-system-requirements-and-deployment-contract.md`.
+
+It is not the final SafarSuite Control Desk deployment topology. Control Desk V1 must run entirely on one dedicated office PC with its local API and local PostgreSQL; it does not require Linux, a public domain, Caddy, router forwarding, or SMTP. The Linux services in this bundle may be used only with demo data for connected integration proof until the bundle is split or profiled into a cloud-only default.
+
 ## Current Target
 
 Current LAN server:

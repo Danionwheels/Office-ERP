@@ -4,6 +4,8 @@ Date added: 2026-07-05
 
 Use this as the canonical blueprint for how SafarSuite Control Desk, SafarSuite Control Cloud, the SafarSuite local server, and the SafarSuite Windows app communicate during setup, normal LAN operation, renewal, support, and future module expansion.
 
+Physical placement and deployment acceptance are governed by `docs/architecture/final-system-requirements-and-deployment-contract.md`. This blueprint describes client-runtime deployment and does not authorize Linux-hosted Control Desk production.
+
 This note does not replace the lower-level endpoint maps. It is the decision spine that keeps deployment, communication, local rights, module access, and future sync from becoming tangled.
 
 ## North Star

@@ -6,9 +6,9 @@ It is not the SafarSuite client product. It is the internal desktop system we us
 
 ## Current Direction
 
-The canonical product direction is `docs/architecture/product-charter-2026-07-11.md`.
+The canonical product direction is `docs/architecture/product-charter-2026-07-11.md`. The canonical physical topology and deployment acceptance rules are in `docs/architecture/final-system-requirements-and-deployment-contract.md`.
 
-SafarSuite Control Desk is the desktop operating experience for a connected provider-control system. The durable source of truth is the shared Office Control API and central PostgreSQL database, not one employee workstation. Approved state moves through SafarSuite Control Cloud to SafarSuite Server, which enforces signed entitlements and returns observed state.
+SafarSuite Control Desk is the desktop operating experience for a connected provider-control system. For V1, one dedicated office PC hosts the desktop UI, local Office Control API process, and authoritative local PostgreSQL database; no separate office server or Linux Control Desk host is required. Approved state moves outbound through SafarSuite Control Cloud to SafarSuite Server, which enforces signed entitlements and returns observed state.
 
 Active priorities are tracked in `docs/planning/active-roadmap-2026-07-11.md`. Existing implementation history remains in `docs/planning/project-tracker.md` but does not set current priority.
 
@@ -24,7 +24,7 @@ Canonical project names:
 
 ```text
 SafarSuite Office Control System
-  Control Desk desktop UI + Office Control API + central PostgreSQL
+  one dedicated office PC: Control Desk desktop UI + local Office Control API + local PostgreSQL
   source of truth for client contracts, pricing, billing, and commercial controls
 
 SafarSuite Control Cloud + SafarSuite Client Portal
@@ -40,6 +40,7 @@ SafarSuite Client Systems
 ## Initial Docs
 
 - `docs/architecture/product-charter-2026-07-11.md`
+- `docs/architecture/final-system-requirements-and-deployment-contract.md`
 - `docs/architecture/control-model-gap-map-2026-07-11.md`
 - `docs/planning/active-roadmap-2026-07-11.md`
 - `docs/planning/existing-work-disposition-2026-07-11.md`
@@ -72,7 +73,7 @@ Use `E:/travel tour/survey` only as legacy research evidence. Preserve a behavio
 
 ## Development Database
 
-Development uses PostgreSQL through Docker Compose. It represents the authoritative Office Control database during local development; the production design must use a centrally managed database that is not bound to one Control Desk workstation.
+Development uses PostgreSQL through Docker Compose. It represents the authoritative Office Control database during local development. V1 production keeps PostgreSQL on the same dedicated office PC as Control Desk, binds it locally, manages its lifecycle through the installer/service boundary, and protects it with automated backup plus clean replacement-PC restore evidence.
 
 ```powershell
 dotnet tool restore

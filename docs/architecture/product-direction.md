@@ -4,7 +4,7 @@ Date added: 2026-07-02
 
 Direction reset: 2026-07-11
 
-Canonical authority now lives in `docs/architecture/product-charter-2026-07-11.md`. This document remains a detailed subsystem boundary reference. Where the two differ, the charter wins.
+Canonical product authority now lives in `docs/architecture/product-charter-2026-07-11.md`. Canonical physical topology and deployment acceptance live in `docs/architecture/final-system-requirements-and-deployment-contract.md`. This document remains a detailed subsystem boundary reference. Where it differs, the applicable canonical document wins.
 
 This is the detailed subsystem alignment note for SafarSuite Control Desk, SafarSuite Control Cloud, SafarSuite Client Portal, and the SafarSuite client product.
 
@@ -12,7 +12,7 @@ Use this document when deciding where a feature belongs, which system owns a dec
 
 ## North Star
 
-Build a provider-controlled commercial, accounting, licensing, entitlement, deployment, and support system for SafarSuite, operated through the Control Desk desktop experience and backed by a central Office Control API/database.
+Build a provider-controlled commercial, accounting, licensing, entitlement, deployment, and support system for SafarSuite, operated through the Control Desk desktop experience and backed by the local Office Control API/database on one dedicated office PC.
 
 ```text
 SafarSuite Control Desk
@@ -49,7 +49,7 @@ create client
 
 ## Control Desk Goal
 
-SafarSuite Control Desk is our internal desktop app for office use. The browser-hosted React UI is a development surface; the final product should be packaged as a desktop app. The desktop is the primary operator surface, while the central Office Control API and PostgreSQL database hold durable multi-operator truth.
+SafarSuite Control Desk is our internal desktop app for office use. The browser-hosted React UI is a development surface; the final product must be packaged for one dedicated office PC. The same PC hosts the local Office Control API and authoritative PostgreSQL database. Durability comes from managed services, backup, and replacement-PC restore evidence; Linux/cloud hosting is not a Control Desk requirement.
 
 Control Desk must help the provider:
 

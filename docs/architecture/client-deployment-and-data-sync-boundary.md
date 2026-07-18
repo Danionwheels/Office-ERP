@@ -4,6 +4,8 @@ Date added: 2026-07-02
 
 This note defines how SafarSuite deployment modes, local-server setup, branch/site identity, and future business-data sync should stay separated.
 
+Physical placement and deployment acceptance are governed by `docs/architecture/final-system-requirements-and-deployment-contract.md`. The `local server` in this note is the client-premises SafarSuite runtime, not a separate provider-office Control Desk server.
+
 The goal is to keep the current billing/license/control chain solid while leaving clean room for offline local, branch-to-HQ sync, cloud-sync multi-branch, and hosted SaaS deployments.
 
 ## Canonical Vocabulary

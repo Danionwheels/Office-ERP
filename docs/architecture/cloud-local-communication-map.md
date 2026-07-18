@@ -4,6 +4,8 @@ Date added: 2026-07-02
 
 Use this as the canonical alignment note for SafarSuite Control Desk, SafarSuite Control Cloud, SafarSuite Client Portal, and deployed SafarSuite local servers.
 
+Physical placement and deployment acceptance are governed by `docs/architecture/final-system-requirements-and-deployment-contract.md`. This communication map cannot be used to infer a separate or Linux-hosted Control Desk server.
+
 Related runtime boundary note:
 
 ```text

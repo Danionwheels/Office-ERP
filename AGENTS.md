@@ -4,6 +4,15 @@ You are working on SafarSuite Control Desk, an internal desktop app used by a pr
 
 Read this entire file before making any changes. Every rule here is non-negotiable.
 
+## Canonical Deployment Boundary
+
+Read `docs/architecture/final-system-requirements-and-deployment-contract.md` before any packaging, hosting, infrastructure, or deployment work.
+
+- SafarSuite Control Desk V1 runs completely on one dedicated office PC: desktop UI, local Office Control API process, and local PostgreSQL.
+- Linux/cloud infrastructure hosts SafarSuite Control Cloud and the SafarSuite Client Portal, or an explicitly labelled disposable integration lab. It is not the final Control Desk host.
+- Public DNS, HTTPS, reverse proxying, and SMTP are Control Cloud/Portal concerns, not Control Desk runtime prerequisites.
+- A test Compose bundle or deployment proof must never silently redefine the accepted physical topology.
+
 ---
 
 ## Product Names (never invent new ones)

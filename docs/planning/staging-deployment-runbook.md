@@ -6,6 +6,12 @@ Use this runbook for the first non-production deployment of SafarSuite Control C
 
 This is a staging proof, not a customer production launch. Use demo clients only until production auth, secret custody, backup/restore, monitoring, and operational recovery are proven.
 
+## Topology Warning
+
+The final deployment topology is governed by `docs/architecture/final-system-requirements-and-deployment-contract.md`.
+
+The full-stack Linux shape in this runbook is a **Disposable Integration Lab**, not the SafarSuite Control Desk production topology. Control Desk V1 belongs entirely on one dedicated office PC with its local API and local PostgreSQL. Linux/cloud infrastructure is used for Control Cloud/Client Portal staging or client-runtime proof. A hosted `desk-staging` instance may be used only for disposable demo-data integration testing and must never be treated as the office deployment target.
+
 ## Goal
 
 Prove the real deployment loop outside the local developer machine:
@@ -35,8 +41,8 @@ Clean Linux local server
 | --- | --- | --- |
 | Control Cloud API + Client Portal preview | Public HTTPS service | This is the cloud endpoint local servers call outward. |
 | Control Cloud database | PostgreSQL database | Prefer a dedicated staging database such as `safarsuite_control_cloud_staging`. |
-| Control Desk API/UI | Office/staging instance pointed at Control Cloud staging | Can be hosted or run from the office machine for the first pass. |
-| Control Desk database | PostgreSQL database | Prefer a separate database such as `safarsuite_control_desk_staging`. |
+| Control Desk API/UI | Canonically the dedicated office PC; optional hosted copy only in the Disposable Integration Lab | The hosted lab copy is not a production option. |
+| Control Desk database | PostgreSQL on the dedicated office PC; optional isolated lab database | A Linux lab database may contain demo data only and is not office authority. |
 | Clean local server | Disposable Linux VM with Docker Compose | Used to prove customer setup without real customer data. |
 
 The first VPS-style starter bundle lives in:

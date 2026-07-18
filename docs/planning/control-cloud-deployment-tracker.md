@@ -4,6 +4,8 @@ Date started: 2026-07-01
 
 Use this tracker for the SafarSuite Control Cloud, Client Portal, and local SafarSuite deployment/setup work. Its purpose is to keep cloud, portal, licensing, and local Linux deployment decisions aligned.
 
+The physical deployment boundary is governed by `docs/architecture/final-system-requirements-and-deployment-contract.md`: Linux/cloud hosts Control Cloud/Portal or client-runtime tests, while Control Desk V1 remains entirely on one dedicated office PC.
+
 ## Core Decision
 
 There is one production SafarSuite Control Cloud.

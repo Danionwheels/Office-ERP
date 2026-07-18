@@ -26,8 +26,8 @@ Purpose: preserve useful work while resetting product direction. This document a
 | Command Center | Reintroduce only after real operator queues and priorities are demonstrated |
 | Setup workspace | Separate stable product/company definitions from client-specific decisions without creating a catch-all screen |
 | Cloud installation panel | Show business-level setup and desired/delivered/observed status first; move low-level proof detail behind support access |
-| Local Control Desk authentication | Align with the selected central Office Control API and multi-operator topology |
-| Local PostgreSQL assumption | Replace single-workstation authority with a centrally managed office database topology |
+| Local Control Desk authentication | Align with the authenticated one-PC Office Control API and authorized-operator boundary |
+| Local PostgreSQL lifecycle | Package, start, back up, restore, upgrade, and recover PostgreSQL on the dedicated office PC without a separate server |
 | Large frontend modules | Split by accepted workflow and public module boundaries after the target flow is stable |
 
 ## Park Without Deleting

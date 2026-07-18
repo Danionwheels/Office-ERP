@@ -4,13 +4,16 @@ Date accepted: 2026-07-11
 
 Status: Canonical. This document has authority over older planning, UI, legacy-clone, and implementation notes when they conflict.
 
+Deployment authority: `final-system-requirements-and-deployment-contract.md` is canonical for final component placement and deployment acceptance. In particular, SafarSuite Control Desk V1 runs on one dedicated office PC; Linux/cloud infrastructure is not its production host.
+
 ## Product Decision
 
 Build one connected provider-control system for operating SafarSuite at scale:
 
 ```text
-SafarSuite Control Desk desktop application
-  -> Office Control API and central PostgreSQL
+Dedicated office PC
+  -> SafarSuite Control Desk desktop application
+  -> local Office Control API and local PostgreSQL
   -> SafarSuite Control Cloud
   -> SafarSuite Server at each client
   -> observed state returns through Control Cloud to Control Desk
@@ -45,10 +48,10 @@ The provider office needs one durable system that can answer:
 
 - SafarSuite Control Desk desktop UI
 - Office Control API/application layer
-- central PostgreSQL database
+- PostgreSQL on the dedicated office PC
 - provider accounting, commercial, control, and audit rules
 
-The desktop application is the primary operating experience. The central Office Control API and PostgreSQL database hold the durable shared truth; the truth must not depend on one employee workstation.
+The desktop application is the primary operating experience. For V1, one dedicated office PC hosts the local Office Control API and authoritative PostgreSQL database; no separate office server is required. Durability comes from controlled service lifecycle, automated backup, an off-PC second copy, and clean-machine restore evidence rather than moving the office authority to Linux or the public cloud.
 
 ## Ownership Boundaries
 
@@ -126,7 +129,7 @@ It does not ingest every client's operational SafarSuite transactions. That data
 
 Scale rules from the beginning:
 
-- central PostgreSQL is the authoritative office database
+- PostgreSQL on the dedicated office PC is the authoritative office database
 - all large registers use server-side filtering, sorting, and pagination
 - client, contract, installation, status, and effective-date keys are indexed deliberately
 - entitlement, delivery, acknowledgement, and audit histories are append-only
@@ -187,7 +190,7 @@ V1 is accepted when an authorized office operator can complete the primary opera
 - offline-safe behavior within policy
 - acknowledgement and observed state returned to Control Desk
 - complete audit from office decision to server application
-- safe concurrent use by more than one office operator
+- safe authenticated use by authorized operators on the dedicated office PC; concurrent multi-PC hosting requires a later approved topology
 - backup and restore of authoritative office data
 
 ## Explicit Non-Goals For V1

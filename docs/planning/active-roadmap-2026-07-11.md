@@ -6,6 +6,8 @@ Status: Active. This is the short execution roadmap. `project-tracker.md` remain
 
 Canonical direction: `docs/architecture/product-charter-2026-07-11.md`
 
+Canonical deployment contract: `docs/architecture/final-system-requirements-and-deployment-contract.md`
+
 ## Current Objective
 
 Establish a scale-ready Office Control System and prove one connected desired-state-to-observed-state flow across Control Desk, Control Cloud, and SafarSuite Server.
@@ -18,7 +20,7 @@ Establish a scale-ready Office Control System and prove one connected desired-st
 - [x] Retire legacy parity as a product objective.
 - [x] Define desired state, delivery state, and observed state.
 - [x] Audit the existing schema and APIs against the charter. See `docs/architecture/control-model-gap-map-2026-07-11.md`.
-- [ ] Decide the deployable Office Control API topology for V1 while keeping the desktop app as the primary UI.
+- [x] Decide the deployable Office Control API topology for V1: one dedicated office PC hosts the desktop UI, local API process, and local PostgreSQL; no separate office server or Linux Control Desk host is required. See the canonical deployment contract.
 - [ ] Define backup, restore, concurrency, and operator-session acceptance criteria for the authoritative office database.
 
 ## Next: Canonical Control Model
@@ -215,7 +217,7 @@ Do not begin a later gate until the previous gate has an executable acceptance t
 - Whether device count, named users, concurrent users, or a combination drives each product limit.
 - Commercial handling of branches and additional installations.
 - Initial stable product/module catalog.
-- Office Control API deployment location for the first real office environment.
+- One-PC installer, local service lifecycle, local PostgreSQL lifecycle, update, rollback, and recovery mechanism for the first real office environment.
 - Retention policy for heartbeat, diagnostics, commands, and audit history.
 
 These decisions should not be hidden inside UI or infrastructure implementation.
