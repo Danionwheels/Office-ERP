@@ -6,21 +6,51 @@ using SafarSuite.ControlDesk.Api.Modules.Clients;
 using SafarSuite.ControlDesk.Api.Modules.CommandCenter;
 using SafarSuite.ControlDesk.Api.Modules.Contracts;
 using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
+using SafarSuite.ControlDesk.Api.Modules.Diagnostics;
 using SafarSuite.ControlDesk.Api.Modules.Entitlements;
+using SafarSuite.ControlDesk.Api.Modules.Health;
 using SafarSuite.ControlDesk.Api.Modules.Payments;
-using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Health;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
+builder.AddControlDeskRetainedFileLogging();
 
 builder.Services.AddControlDeskServices(builder.Configuration);
 
 var app = builder.Build();
 
-ControlDeskHostConfigurationValidator.Validate(app.Configuration, app.Environment);
+var lifecycleLogger = app.Services
+    .GetRequiredService<ILoggerFactory>()
+    .CreateLogger("SafarSuite.ControlDesk.Api.Lifecycle");
+
+try
+{
+    ControlDeskHostConfigurationValidator.Validate(app.Configuration, app.Environment);
+}
+catch (Exception exception)
+{
+    lifecycleLogger.LogCritical(
+        "Control Desk host configuration validation failed. ExceptionType={ExceptionType} EventCode={EventCode}",
+        exception.GetType().FullName,
+        "OfficeHostConfigurationRejected");
+    throw;
+}
+
+app.Lifetime.ApplicationStarted.Register(() =>
+    lifecycleLogger.LogInformation(
+        "Control Desk host started. EventCode={EventCode}",
+        "OfficeHostStarted"));
+app.Lifetime.ApplicationStopping.Register(() =>
+    lifecycleLogger.LogInformation(
+        "Control Desk host stopping. EventCode={EventCode}",
+        "OfficeHostStopping"));
+app.Lifetime.ApplicationStopped.Register(() =>
+    lifecycleLogger.LogInformation(
+        "Control Desk host stopped. EventCode={EventCode}",
+        "OfficeHostStopped"));
 
 var packagedUiIndexPath = Path.Combine(
     app.Environment.ContentRootPath,
@@ -43,15 +73,7 @@ if (!hasPackagedUi)
         .AllowAnonymous();
 }
 
-app.MapGet("/health", () =>
-{
-    var response = new HealthResponse(
-        Service: "SafarSuite Control Desk API",
-        Status: "Healthy",
-        CheckedAtUtc: DateTimeOffset.UtcNow);
-
-    return Results.Ok(response);
-}).AllowAnonymous();
+app.MapControlDeskHealthEndpoints();
 
 app.MapAuthEndpoints();
 app.MapClientEndpoints();
@@ -64,6 +86,7 @@ app.MapBillingReportEndpoints();
 app.MapPaymentsEndpoints();
 app.MapPaymentReportEndpoints();
 app.MapControlCloudEndpoints();
+app.MapDiagnosticsEndpoints();
 app.MapEntitlementEndpoints();
 
 if (hasPackagedUi)

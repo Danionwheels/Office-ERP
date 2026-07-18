@@ -5,6 +5,8 @@ namespace SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 
 public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
 {
+    public const int MaximumFailureReasonLength = 2_000;
+
     private CloudOutboxMessage()
     {
         MessageType = string.Empty;
@@ -123,23 +125,29 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
         Status = CloudOutboxMessageStatus.Failed;
         FailedAtUtc = failedAtUtc;
         NextAttemptAtUtc = nextAttemptAtUtc;
-        FailureReason = reason.Trim();
+        var cleanReason = reason.Trim();
+        FailureReason = cleanReason.Length <= MaximumFailureReasonLength
+            ? cleanReason
+            : cleanReason[..MaximumFailureReasonLength];
     }
 
     public bool IsReadyForPublishing(DateTimeOffset readyAtUtc, int maximumAttemptCount)
     {
-        if (maximumAttemptCount < 1)
+        if (maximumAttemptCount < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(maximumAttemptCount));
         }
 
+        var hasAttemptsRemaining = maximumAttemptCount == 0
+            || AttemptCount < maximumAttemptCount;
+
         if (Status == CloudOutboxMessageStatus.Pending)
         {
-            return AttemptCount < maximumAttemptCount;
+            return hasAttemptsRemaining;
         }
 
         return Status == CloudOutboxMessageStatus.Failed
-            && AttemptCount < maximumAttemptCount
+            && hasAttemptsRemaining
             && NextAttemptAtUtc.HasValue
             && NextAttemptAtUtc.Value <= readyAtUtc;
     }

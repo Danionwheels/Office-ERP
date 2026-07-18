@@ -16,7 +16,11 @@ public sealed class ControlCloudPublisherOptions
 
     public string? EndpointUrl { get; set; }
 
+    public bool RequireHttps { get; set; }
+
     public int MaximumAttemptCount { get; set; } = 5;
 
     public int RetryDelaySeconds { get; set; } = 60;
+
+    public int RequestTimeoutSeconds { get; set; } = 20;
 }

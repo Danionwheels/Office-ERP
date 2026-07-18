@@ -2663,7 +2663,8 @@ internal sealed class AccountingSmokeRunner
         var publisher = new HttpControlCloudOutboxPublisher(
             httpClient,
             new ControlCloudEnvelopeBuilder(publisherOptions, _harness.Clock),
-            publisherOptions);
+            publisherOptions,
+            new SmokePublisherAvailability());
         var pendingMessages = (await _harness.CloudOutboxMessages.ListPageAsync(
             CloudOutboxMessageStatus.Pending,
             messageType: null,
@@ -2809,4 +2810,10 @@ internal sealed class AccountingSmokeRunner
         Guid IncomeSummaryAccountId,
         Guid RoundingAdjustmentAccountId,
         IReadOnlyCollection<Guid> ReconciledLedgerAccountIds);
+
+    private sealed class SmokePublisherAvailability : ICloudOutboxPublisherAvailability
+    {
+        public CloudOutboxPublisherAvailabilitySnapshot GetSnapshot() =>
+            new(true, true, "SmokeReady");
+    }
 }

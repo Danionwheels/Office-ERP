@@ -11,6 +11,8 @@ public sealed class PublishPendingCloudOutboxMessagesHandler
 
     private readonly ICloudOutboxMessageRepository _messages;
     private readonly ICloudOutboxPublisher _publisher;
+    private readonly ICloudOutboxPublisherAvailability _publisherAvailability;
+    private readonly ICloudOutboxPublicationLeaseProvider _publicationLeaseProvider;
     private readonly ICloudOutboxPublishPolicy _publishPolicy;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IClock _clock;
@@ -18,12 +20,16 @@ public sealed class PublishPendingCloudOutboxMessagesHandler
     public PublishPendingCloudOutboxMessagesHandler(
         ICloudOutboxMessageRepository messages,
         ICloudOutboxPublisher publisher,
+        ICloudOutboxPublisherAvailability publisherAvailability,
+        ICloudOutboxPublicationLeaseProvider publicationLeaseProvider,
         ICloudOutboxPublishPolicy publishPolicy,
         IUnitOfWork unitOfWork,
         IClock clock)
     {
         _messages = messages;
         _publisher = publisher;
+        _publisherAvailability = publisherAvailability;
+        _publicationLeaseProvider = publicationLeaseProvider;
         _publishPolicy = publishPolicy;
         _unitOfWork = unitOfWork;
         _clock = clock;
@@ -40,8 +46,29 @@ public sealed class PublishPendingCloudOutboxMessagesHandler
                 $"Batch size must be between 1 and {MaximumBatchSize}."));
         }
 
+        if (!_publisherAvailability.GetSnapshot().CanPublish)
+        {
+            return Result<PublishPendingCloudOutboxMessagesResult>.Failure(
+                ApplicationError.ServiceUnavailable(
+                    "Control Cloud publisher is not securely configured.",
+                    "ControlCloudPublisher"));
+        }
+
         try
         {
+            await using var publicationLease =
+                await _publicationLeaseProvider.TryAcquireAsync(cancellationToken);
+
+            if (publicationLease is null)
+            {
+                return Result<PublishPendingCloudOutboxMessagesResult>.Success(
+                    new PublishPendingCloudOutboxMessagesResult(
+                        command.BatchSize,
+                        0,
+                        0,
+                        []));
+            }
+
             var messages = await _messages.ListReadyForPublishingAsync(
                 command.BatchSize,
                 _clock.UtcNow,
@@ -92,7 +119,10 @@ public sealed class PublishPendingCloudOutboxMessagesHandler
         CloudOutboxPublishResult publishResult,
         DateTimeOffset failedAtUtc)
     {
-        if (!publishResult.ShouldRetry || message.AttemptCount + 1 >= _publishPolicy.MaximumAttemptCount)
+        var maximumAttemptCount = _publishPolicy.MaximumAttemptCount;
+
+        if (!publishResult.ShouldRetry
+            || (maximumAttemptCount > 0 && message.AttemptCount + 1 >= maximumAttemptCount))
         {
             return null;
         }

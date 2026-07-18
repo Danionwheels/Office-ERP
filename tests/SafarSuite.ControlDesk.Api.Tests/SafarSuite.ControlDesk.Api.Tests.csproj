@@ -12,7 +12,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SafarSuite.ControlDesk.Api\SafarSuite.ControlDesk.Api.csproj" />
+    <ProjectReference Include="..\..\src\SafarSuite.ControlDesk.Application\SafarSuite.ControlDesk.Application.csproj" />
     <ProjectReference Include="..\..\src\SafarSuite.ControlDesk.Contracts\SafarSuite.ControlDesk.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\SafarSuite.ControlDesk.Domain\SafarSuite.ControlDesk.Domain.csproj" />
+    <ProjectReference Include="..\..\src\SafarSuite.ControlDesk.Infrastructure\SafarSuite.ControlDesk.Infrastructure.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

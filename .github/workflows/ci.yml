@@ -22,6 +22,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    services:
+      control-desk-db:
+        image: postgres:17
+        env:
+          POSTGRES_DB: safarsuite_control_desk
+          POSTGRES_USER: safarsuite
+          POSTGRES_PASSWORD: ci-control-desk-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U safarsuite -d safarsuite_control_desk"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -44,6 +59,263 @@ jobs:
 
       - name: Run accounting smoke
         run: dotnet run --project tools/SafarSuite.ControlDesk.AccountingSmoke --configuration Release --no-build --no-restore
+
+      - name: Run PostgreSQL accounting and exact-migration readiness smoke
+        run: >-
+          dotnet run
+          --project tools/SafarSuite.ControlDesk.AccountingSmoke
+          --configuration Release
+          --no-build
+          --no-restore
+          --
+          --provider postgres
+          --connection-string "Host=localhost;Port=5432;Database=safarsuite_control_desk;Username=safarsuite;Password=ci-control-desk-password"
+
+      - name: Prove database outage and readiness recovery
+        shell: bash
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Persistence__Provider: Postgres
+          ConnectionStrings__ControlDesk: Host=localhost;Port=5432;Database=safarsuite_control_desk;Username=safarsuite;Password=ci-control-desk-password
+          ControlCloud__OutboxWorker__Enabled: "false"
+        run: |
+          set -euo pipefail
+          api_log="$RUNNER_TEMP/control-desk-operational-readiness.log"
+          db_container="${{ job.services['control-desk-db'].id }}"
+
+          dotnet src/SafarSuite.ControlDesk.Api/bin/Release/net10.0/SafarSuite.ControlDesk.Api.dll \
+            --urls http://127.0.0.1:5188 \
+            >"$api_log" 2>&1 &
+          api_pid=$!
+
+          cleanup() {
+            docker start "$db_container" >/dev/null 2>&1 || true
+            kill -TERM "$api_pid" >/dev/null 2>&1 || true
+            wait "$api_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5188/ready >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl --fail --silent http://127.0.0.1:5188/health >/dev/null
+          curl --fail --silent http://127.0.0.1:5188/ready >/dev/null
+
+          docker stop "$db_container" >/dev/null
+          curl --fail --silent http://127.0.0.1:5188/health >/dev/null
+          readiness_code="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:5188/ready)"
+          test "$readiness_code" = "503"
+
+          docker start "$db_container" >/dev/null
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5188/ready >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:5188/ready >/dev/null
+
+          kill -TERM "$api_pid"
+          wait "$api_pid"
+          trap - EXIT
+
+          grep -q "OfficeHostStarted" "$api_log"
+          grep -q "OfficeReadinessUnavailable" "$api_log"
+          grep -q "OfficeReadinessRestored" "$api_log"
+          grep -q "OfficeHostStopping" "$api_log"
+          grep -q "OfficeHostStopped" "$api_log"
+
+      - name: Prove durable outbox recovery after abrupt host loss
+        shell: bash
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Persistence__Provider: Postgres
+          ConnectionStrings__ControlDesk: Host=localhost;Port=5432;Database=safarsuite_control_desk;Username=safarsuite;Password=ci-control-desk-password
+          ControlDesk__Logging__File__Enabled: "false"
+          ControlCloud__OutboxWorker__Enabled: "true"
+          ControlCloud__OutboxWorker__BatchSize: "1"
+          ControlCloud__OutboxWorker__PollIntervalSeconds: "1"
+          ControlCloud__Publisher__Mode: Http
+          ControlCloud__Publisher__SourceSystem: SafarSuite.ControlDesk
+          ControlCloud__Publisher__Environment: CI
+          ControlCloud__Publisher__SigningKeyId: ci-outbox-key
+          ControlCloud__Publisher__SigningSecret: ci-outbox-signing-secret-at-least-32-characters
+          ControlCloud__Publisher__EndpointUrl: https://localhost:5443/api/v1/control-desk/messages
+          ControlCloud__Publisher__RequireHttps: "true"
+          ControlCloud__Publisher__MaximumAttemptCount: "0"
+          ControlCloud__Publisher__RetryDelaySeconds: "1"
+          ControlCloud__Publisher__RequestTimeoutSeconds: "5"
+        run: |
+          set -euo pipefail
+          db_container="${{ job.services['control-desk-db'].id }}"
+          message_id="5750a5b1-b3c9-4d72-87e6-b1d3a7c135e1"
+          cloud_ready="$RUNNER_TEMP/control-cloud-ready"
+          accepted_keys="$RUNNER_TEMP/control-cloud-accepted-keys"
+          certificate="$RUNNER_TEMP/control-cloud-ci.crt"
+          private_key="$RUNNER_TEMP/control-cloud-ci.key"
+          first_log="$RUNNER_TEMP/control-desk-outbox-before-crash.log"
+          recovery_log="$RUNNER_TEMP/control-desk-outbox-recovery.log"
+          overlap_log="$RUNNER_TEMP/control-desk-outbox-overlap.log"
+          api_pid=""
+          recovery_pid=""
+          overlap_pid=""
+          stub_pid=""
+
+          cleanup() {
+            for pid in "$api_pid" "$recovery_pid" "$overlap_pid" "$stub_pid"; do
+              if test -n "$pid"; then
+                kill -TERM "$pid" >/dev/null 2>&1 || true
+                wait "$pid" >/dev/null 2>&1 || true
+              fi
+            done
+          }
+          trap cleanup EXIT
+
+          docker exec "$db_container" psql \
+            --username safarsuite \
+            --dbname safarsuite_control_desk \
+            --set ON_ERROR_STOP=1 \
+            --command "
+              DELETE FROM control.cloud_outbox_messages;
+              INSERT INTO control.cloud_outbox_messages (
+                cloud_outbox_message_id,
+                client_id,
+                message_type,
+                subject_type,
+                subject_id,
+                payload_json,
+                status,
+                attempt_count,
+                occurred_at_utc)
+              VALUES (
+                '$message_id',
+                NULL,
+                'OfficeOperationsProof',
+                'OfficeHost',
+                'abrupt-recovery',
+                '{\"proof\":\"abrupt-recovery\"}'::jsonb,
+                'Pending',
+                0,
+                now());"
+
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$private_key" \
+            -out "$certificate" \
+            -days 1 \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost" \
+            -addext "basicConstraints=critical,CA:TRUE"
+
+          python3 - "$cloud_ready" "$accepted_keys" "$certificate" "$private_key" <<'PY' &
+          import json
+          import pathlib
+          import ssl
+          import sys
+          import time
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+
+          ready_path = pathlib.Path(sys.argv[1])
+          accepted_path = pathlib.Path(sys.argv[2])
+
+          class Handler(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  self.send_response(200)
+                  self.end_headers()
+
+              def do_POST(self):
+                  length = int(self.headers.get("Content-Length", "0"))
+                  payload = json.loads(self.rfile.read(length) or b"{}")
+                  if not ready_path.exists():
+                      self.send_response(503)
+                      self.end_headers()
+                      return
+
+                  time.sleep(1)
+                  with accepted_path.open("a", encoding="utf-8") as output:
+                      output.write(str(payload.get("idempotencyKey", "missing")) + "\n")
+                  self.send_response(200)
+                  self.send_header("X-SafarSuite-Cloud-Message-Id", "ci-abrupt-recovery")
+                  self.end_headers()
+
+              def log_message(self, format, *args):
+                  return
+
+          server = HTTPServer(("127.0.0.1", 5443), Handler)
+          context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          context.load_cert_chain(sys.argv[3], sys.argv[4])
+          server.socket = context.wrap_socket(server.socket, server_side=True)
+          server.serve_forever()
+          PY
+          stub_pid=$!
+
+          for attempt in {1..30}; do
+            if curl --fail --silent --cacert "$certificate" https://localhost:5443/health >/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          curl --fail --silent --cacert "$certificate" https://localhost:5443/health >/dev/null
+
+          export SSL_CERT_FILE="$certificate"
+          dotnet src/SafarSuite.ControlDesk.Api/bin/Release/net10.0/SafarSuite.ControlDesk.Api.dll \
+            --urls http://127.0.0.1:5190 \
+            >"$first_log" 2>&1 &
+          api_pid=$!
+
+          state=""
+          for attempt in {1..80}; do
+            state="$(docker exec "$db_container" psql --username safarsuite --dbname safarsuite_control_desk --tuples-only --no-align --command "SELECT status || ':' || attempt_count FROM control.cloud_outbox_messages WHERE cloud_outbox_message_id = '$message_id';")"
+            if [[ "$state" == Failed:* ]]; then
+              break
+            fi
+            sleep 0.25
+          done
+          [[ "$state" == Failed:* ]]
+
+          for attempt in {1..40}; do
+            if grep -q "OfficeOutboxBatchCompleted" "$first_log"; then
+              break
+            fi
+            sleep 0.1
+          done
+          grep -q "OfficeOutboxBatchCompleted" "$first_log"
+
+          kill -KILL "$api_pid"
+          wait "$api_pid" >/dev/null 2>&1 || true
+          api_pid=""
+          touch "$cloud_ready"
+
+          dotnet src/SafarSuite.ControlDesk.Api/bin/Release/net10.0/SafarSuite.ControlDesk.Api.dll \
+            --urls http://127.0.0.1:5190 \
+            >"$recovery_log" 2>&1 &
+          recovery_pid=$!
+          dotnet src/SafarSuite.ControlDesk.Api/bin/Release/net10.0/SafarSuite.ControlDesk.Api.dll \
+            --urls http://127.0.0.1:5191 \
+            >"$overlap_log" 2>&1 &
+          overlap_pid=$!
+
+          for attempt in {1..120}; do
+            state="$(docker exec "$db_container" psql --username safarsuite --dbname safarsuite_control_desk --tuples-only --no-align --command "SELECT status || ':' || attempt_count FROM control.cloud_outbox_messages WHERE cloud_outbox_message_id = '$message_id';")"
+            if [[ "$state" == Sent:* ]]; then
+              break
+            fi
+            sleep 0.25
+          done
+          [[ "$state" == Sent:* ]]
+
+          kill -TERM "$recovery_pid" "$overlap_pid"
+          wait "$recovery_pid"
+          wait "$overlap_pid"
+          recovery_pid=""
+          overlap_pid=""
+
+          test "$(wc -l < "$accepted_keys")" -eq 1
+          test "$(sort -u "$accepted_keys" | wc -l)" -eq 1
+          grep -q "OfficeOutboxBatchCompleted" "$recovery_log" "$overlap_log"
 
       - name: Run entitlement and security smoke
         run: dotnet run --project tools/SafarSuite.LocalServer.EntitlementSmoke --configuration Release --no-build --no-restore

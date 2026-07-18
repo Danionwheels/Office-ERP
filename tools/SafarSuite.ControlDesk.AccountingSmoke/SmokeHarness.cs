@@ -544,6 +544,14 @@ internal sealed class SmokeHarness : IAsyncDisposable
         var dbContext = new ControlDeskDbContext(options);
 
         await dbContext.Database.MigrateAsync(cancellationToken);
+        var readiness = await new EfOfficeDatabaseReadinessProbe(dbContext)
+            .CheckAsync(cancellationToken);
+
+        if (!readiness.IsReady)
+        {
+            throw new SmokeFailureException(
+                $"Postgres migrations did not reach exact readiness ({readiness.Code}).");
+        }
 
         return new SmokeHarness(
             new EfClientRepository(dbContext),

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
+using SafarSuite.ControlDesk.Api.Modules.Health;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
@@ -116,6 +118,9 @@ using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAcces
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.RevokeCloudAppActivationIssue;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorScopes;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorStatus;
+using SafarSuite.ControlDesk.Application.Modules.Diagnostics.GetOfficeDiagnosticsSummary;
+using SafarSuite.ControlDesk.Application.Modules.Diagnostics.GetOfficeReadiness;
+using SafarSuite.ControlDesk.Application.Modules.Diagnostics.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.GetLatestEntitlementSnapshot;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoiceDefaults;
@@ -161,6 +166,12 @@ public static class ControlDeskServiceRegistration
             configuration.GetSection(ControlCloudPublisherOptions.SectionName));
         services.Configure<ControlCloudStatusOptions>(
             configuration.GetSection(ControlCloudStatusOptions.SectionName));
+        services.AddOptions<ControlCloudOutboxWorkerOptions>()
+            .Bind(configuration.GetSection(ControlCloudOutboxWorkerOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<
+            IValidateOptions<ControlCloudOutboxWorkerOptions>,
+            ControlCloudOutboxWorkerOptionsValidator>();
         services.Configure<ControlCloudPortalInvitationOptions>(
             configuration.GetSection(ControlCloudPortalInvitationOptions.SectionName));
         services.Configure<ProductModuleCatalogOptions>(
@@ -170,6 +181,15 @@ public static class ControlDeskServiceRegistration
         services.AddHttpContextAccessor();
         services.AddSingleton<ControlCloudEnvelopeBuilder>();
         services.AddSingleton<ICloudOutboxPublishPolicy, ConfiguredCloudOutboxPublishPolicy>();
+        services.AddSingleton<
+            ICloudOutboxPublisherAvailability,
+            ConfiguredCloudOutboxPublisherAvailability>();
+        services.AddSingleton<CloudOutboxAutomationState>();
+        services.AddSingleton<ICloudOutboxAutomationState>(provider =>
+            provider.GetRequiredService<CloudOutboxAutomationState>());
+        services.AddSingleton<ControlCloudOutboxPublishCoordinator>();
+        services.AddHostedService<ControlCloudOutboxPublisherWorker>();
+        services.AddSingleton<OfficeReadinessTransitionRecorder>();
         services.AddSingleton<ConfiguredProductModuleCatalog>();
         services.AddScoped<IProductModuleCatalog, PersistedProductModuleCatalog>();
         services.AddScoped<
@@ -177,6 +197,8 @@ public static class ControlDeskServiceRegistration
             HttpContextControlCloudProviderAccessCredentialSource>();
         AddControlCloudPublisher(services, configuration);
         services.AddHttpClient<IControlCloudInstallationStatusClient, HttpControlCloudInstallationStatusClient>();
+        services.AddHttpClient<IControlCloudReachabilityProbe, HttpControlCloudReachabilityProbe>(client =>
+            client.Timeout = TimeSpan.FromSeconds(4));
         services.AddHttpClient<IControlCloudInstallationProvisioningClient, HttpControlCloudInstallationProvisioningClient>();
         services.AddHttpClient<IControlCloudInstallationDiagnosticsClient, HttpControlCloudInstallationDiagnosticsClient>();
         services.AddHttpClient<IControlCloudInstallationCommandClient, HttpControlCloudInstallationCommandClient>();
@@ -306,6 +328,8 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<RevokeCloudAppActivationIssueHandler>();
         services.AddScoped<QueueCloudInstallationSupportCommandHandler>();
         services.AddScoped<PublishPendingCloudOutboxMessagesHandler>();
+        services.AddScoped<GetOfficeReadinessHandler>();
+        services.AddScoped<GetOfficeDiagnosticsSummaryHandler>();
         services.AddScoped<IssueEntitlementSnapshotFromPaidInvoiceValidator>();
         services.AddScoped<IssueEntitlementSnapshotFromPaidInvoiceHandler>();
         services.AddScoped<IssueEntitlementSnapshotFromPaidInvoiceDefaultsHandler>();
@@ -371,7 +395,15 @@ public static class ControlDeskServiceRegistration
 
         if (mode.Equals("Http", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddHttpClient<ICloudOutboxPublisher, HttpControlCloudOutboxPublisher>();
+            services.AddHttpClient<ICloudOutboxPublisher, HttpControlCloudOutboxPublisher>()
+                .ConfigureHttpClient((provider, client) =>
+                {
+                    var options = provider
+                        .GetRequiredService<IOptions<ControlCloudPublisherOptions>>()
+                        .Value;
+                    client.Timeout = TimeSpan.FromSeconds(
+                        Math.Clamp(options.RequestTimeoutSeconds, 5, 120));
+                });
 
             return;
         }
@@ -425,6 +457,10 @@ public static class ControlDeskServiceRegistration
             services.AddScoped<IBillingReportReader, EfBillingReportReader>();
             services.AddScoped<ICreditNoteRepository, EfCreditNoteRepository>();
             services.AddScoped<ICloudOutboxMessageRepository, EfCloudOutboxMessageRepository>();
+            services.AddScoped<
+                ICloudOutboxPublicationLeaseProvider,
+                EfCloudOutboxPublicationLeaseProvider>();
+            services.AddScoped<IOfficeDatabaseReadinessProbe, EfOfficeDatabaseReadinessProbe>();
             services.AddScoped<IPaymentRepository, EfPaymentRepository>();
             services.AddScoped<IPortalPaymentClaimRepository, EfPortalPaymentClaimRepository>();
             services.AddScoped<IProviderBankDetailsRepository, EfProviderBankDetailsRepository>();
@@ -478,6 +514,10 @@ public static class ControlDeskServiceRegistration
         services.AddSingleton<IBillingReportReader, InMemoryBillingReportReader>();
         services.AddSingleton<ICreditNoteRepository, InMemoryCreditNoteRepository>();
         services.AddSingleton<ICloudOutboxMessageRepository, InMemoryCloudOutboxMessageRepository>();
+        services.AddSingleton<
+            ICloudOutboxPublicationLeaseProvider,
+            InMemoryCloudOutboxPublicationLeaseProvider>();
+        services.AddSingleton<IOfficeDatabaseReadinessProbe, InMemoryOfficeDatabaseReadinessProbe>();
         services.AddSingleton<InMemoryPaymentRepository>();
         services.AddSingleton<IPaymentRepository>(provider =>
             provider.GetRequiredService<InMemoryPaymentRepository>());

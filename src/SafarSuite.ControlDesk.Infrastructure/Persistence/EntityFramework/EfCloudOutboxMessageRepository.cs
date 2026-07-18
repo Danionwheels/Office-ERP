@@ -74,6 +74,8 @@ public sealed class EfCloudOutboxMessageRepository : ICloudOutboxMessageReposito
         int maximumAttemptCount,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidMaximumAttemptCount(maximumAttemptCount);
+
         var messages = ApplyFilters(
             _dbContext.CloudOutboxMessages.AsNoTracking(),
             status,
@@ -92,9 +94,11 @@ public sealed class EfCloudOutboxMessageRepository : ICloudOutboxMessageReposito
                     message.Status == CloudOutboxMessageStatus.Sent ? 1L : 0L),
                 ReadyForPublishingCount = group.Sum(message =>
                     ((message.Status == CloudOutboxMessageStatus.Pending
-                        && message.AttemptCount < maximumAttemptCount)
+                        && (maximumAttemptCount == 0
+                            || message.AttemptCount < maximumAttemptCount))
                      || (message.Status == CloudOutboxMessageStatus.Failed
-                         && message.AttemptCount < maximumAttemptCount
+                         && (maximumAttemptCount == 0
+                             || message.AttemptCount < maximumAttemptCount)
                          && message.NextAttemptAtUtc != null
                          && message.NextAttemptAtUtc <= readyAtUtc))
                         ? 1L
@@ -120,18 +124,28 @@ public sealed class EfCloudOutboxMessageRepository : ICloudOutboxMessageReposito
         int maximumAttemptCount,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidMaximumAttemptCount(maximumAttemptCount);
+
         return await _dbContext.CloudOutboxMessages
             .Where(message =>
                 message.Status == CloudOutboxMessageStatus.Pending
                 || (message.Status == CloudOutboxMessageStatus.Failed
-                    && message.AttemptCount < maximumAttemptCount
                     && message.NextAttemptAtUtc != null
                     && message.NextAttemptAtUtc <= readyAtUtc))
-            .Where(message => message.AttemptCount < maximumAttemptCount)
+            .Where(message => maximumAttemptCount == 0
+                || message.AttemptCount < maximumAttemptCount)
             .OrderBy(message => message.OccurredAtUtc)
             .ThenBy(message => message.Id)
             .Take(batchSize)
             .ToArrayAsync(cancellationToken);
+    }
+
+    private static void EnsureValidMaximumAttemptCount(int maximumAttemptCount)
+    {
+        if (maximumAttemptCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumAttemptCount));
+        }
     }
 
     private static IQueryable<CloudOutboxMessage> ApplyFilters(

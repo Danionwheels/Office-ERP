@@ -63,6 +63,8 @@ public sealed class InMemoryCloudOutboxMessageRepository : ICloudOutboxMessageRe
         int maximumAttemptCount,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidMaximumAttemptCount(maximumAttemptCount);
+
         var messages = ApplyFilters(_messagesById.Values, status, messageType, clientId).ToArray();
         var summary = new CloudOutboxMessageRegisterSummary(
             messages.LongLength,
@@ -81,6 +83,8 @@ public sealed class InMemoryCloudOutboxMessageRepository : ICloudOutboxMessageRe
         int maximumAttemptCount,
         CancellationToken cancellationToken = default)
     {
+        EnsureValidMaximumAttemptCount(maximumAttemptCount);
+
         var messages = _messagesById.Values
             .Where(message => message.IsReadyForPublishing(readyAtUtc, maximumAttemptCount))
             .OrderBy(message => message.OccurredAtUtc)
@@ -89,6 +93,14 @@ public sealed class InMemoryCloudOutboxMessageRepository : ICloudOutboxMessageRe
             .ToArray();
 
         return Task.FromResult<IReadOnlyCollection<CloudOutboxMessage>>(messages);
+    }
+
+    private static void EnsureValidMaximumAttemptCount(int maximumAttemptCount)
+    {
+        if (maximumAttemptCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumAttemptCount));
+        }
     }
 
     private static IEnumerable<CloudOutboxMessage> ApplyFilters(

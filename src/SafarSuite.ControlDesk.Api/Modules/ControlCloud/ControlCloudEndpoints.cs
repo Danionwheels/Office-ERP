@@ -613,11 +613,11 @@ public static class ControlCloudEndpoints
 
     private static async Task<IResult> PublishOutboxMessagesAsync(
         int? batchSize,
-        PublishPendingCloudOutboxMessagesHandler handler,
+        ControlCloudOutboxPublishCoordinator coordinator,
         CancellationToken cancellationToken)
     {
-        var result = await handler.HandleAsync(
-            new PublishPendingCloudOutboxMessagesCommand(batchSize ?? 20),
+        var result = await coordinator.PublishAsync(
+            batchSize ?? 20,
             cancellationToken);
 
         if (result.IsFailure)

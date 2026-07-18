@@ -11,6 +11,7 @@ $executablePath = Join-Path $packagePath "SafarSuite.ControlDesk.Api.exe"
 $indexPath = Join-Path $packagePath "wwwroot\index.html"
 $manifestPath = Join-Path $packagePath "office-package-manifest.json"
 $productionSettingsPath = Join-Path $packagePath "appsettings.Production.json"
+$logDirectory = Join-Path $packagePath "smoke-logs-$([Guid]::NewGuid().ToString('N'))"
 
 foreach ($requiredPath in @($executablePath, $indexPath, $manifestPath, $productionSettingsPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -90,11 +91,13 @@ function Assert-PackagedStartupRejected {
     $startInfo.RedirectStandardError = $true
     $rejectedProcess = [System.Diagnostics.Process]::new()
     $rejectedProcess.StartInfo = $startInfo
+    $rejectedProcessStarted = $false
 
     try {
         if (-not $rejectedProcess.Start()) {
             throw "The production configuration-guard process did not start."
         }
+        $rejectedProcessStarted = $true
 
         if (-not $rejectedProcess.WaitForExit(10000)) {
             $rejectedProcess.Kill()
@@ -107,7 +110,7 @@ function Assert-PackagedStartupRejected {
         }
     }
     finally {
-        if (-not $rejectedProcess.HasExited) {
+        if ($rejectedProcessStarted -and -not $rejectedProcess.HasExited) {
             $rejectedProcess.Kill()
             $rejectedProcess.WaitForExit(10000) | Out-Null
         }
@@ -155,6 +158,7 @@ function New-SmokePasswordHash {
 }
 
 $productionSettings = Get-Content -Raw -LiteralPath $productionSettingsPath | ConvertFrom-Json
+$manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
 if ($productionSettings.Persistence.Provider -ne "Postgres") {
     throw "Production package configuration must select PostgreSQL."
 }
@@ -167,6 +171,7 @@ Assert-PackagedStartupRejected `
     -EnvironmentOverrides ([ordered]@{
         ASPNETCORE_ENVIRONMENT = "Production"
         Persistence__Provider = "InMemory"
+        ControlDesk__Logging__File__Enabled = "false"
     }) `
     -ExpectedOutputPattern "requires PostgreSQL"
 
@@ -175,6 +180,7 @@ Assert-PackagedStartupRejected `
         ASPNETCORE_ENVIRONMENT = "Production"
         Persistence__Provider = "Postgres"
         ConnectionStrings__ControlDesk = "Host=localhost;Port=54329;Database=safarsuite_control_desk;Username=safarsuite;Password=safarsuite_dev_password"
+        ControlDesk__Logging__File__Enabled = "false"
     }) `
     -ExpectedOutputPattern "must not use development"
 
@@ -192,6 +198,10 @@ $environmentOverrides = [ordered]@{
     ASPNETCORE_ENVIRONMENT = "Development"
     ASPNETCORE_URLS = "http://127.0.0.1:5188"
     Persistence__Provider = "InMemory"
+    ControlDesk__Logging__File__Enabled = "true"
+    ControlDesk__Logging__File__DirectoryPath = $logDirectory
+    ControlDesk__Logging__File__RetainedFileCountLimit = "4"
+    ControlDesk__Logging__File__RetainedDays = "2"
     ControlDesk__OperatorAccess__SessionSigningSecret = "office-package-smoke-session-signing-secret-20260718"
     ControlDesk__OperatorAccess__Users__0__UserId = "office-package-smoke"
     ControlDesk__OperatorAccess__Users__0__Email = $smokeOperatorEmail
@@ -205,6 +215,9 @@ $previousEnvironment = Set-CurrentProcessEnvironment -Overrides $environmentOver
 
 $process = [System.Diagnostics.Process]::new()
 $process.StartInfo = $startInfo
+$restartProcess = $null
+$processStarted = $false
+$restartProcessStarted = $false
 
 try {
     $startedAtUtc = [DateTimeOffset]::UtcNow
@@ -212,6 +225,7 @@ try {
     if (-not $process.Start()) {
         throw "The packaged Control Desk API did not start."
     }
+    $processStarted = $true
 
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds(30)
     $health = $null
@@ -236,6 +250,11 @@ try {
 
     $healthyAtUtc = [DateTimeOffset]::UtcNow
     $startupMilliseconds = [long]($healthyAtUtc - $startedAtUtc).TotalMilliseconds
+    $readiness = Invoke-RestMethod -Uri "http://127.0.0.1:5188/ready" -TimeoutSec 5
+
+    if ($readiness.status -ne "Ready" -or $readiness.database.status -ne "Ready") {
+        throw "The packaged Control Desk API did not separate ready persistence from process liveness."
+    }
 
     $rootResponse = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:5188/" -TimeoutSec 5
     if ($rootResponse.StatusCode -ne 200 -or $rootResponse.Content -notmatch '<div id="root"></div>') {
@@ -271,6 +290,22 @@ try {
         throw "The packaged authenticated business API call did not return HTTP 200."
     }
 
+    $diagnosticsResponse = Invoke-WebRequest `
+        -UseBasicParsing `
+        -Uri "http://127.0.0.1:5188/api/v1/diagnostics/summary" `
+        -Headers @{ Authorization = "$($session.tokenType) $($session.accessToken)" } `
+        -TimeoutSec 10
+
+    if ($diagnosticsResponse.StatusCode -ne 200) {
+        throw "The packaged authorized diagnostics summary did not return HTTP 200."
+    }
+
+    $diagnostics = $diagnosticsResponse.Content | ConvertFrom-Json
+    if ($manifest.sourceRevision -ne "unknown" `
+        -and $diagnostics.service.version -notmatch [Regex]::Escape($manifest.sourceRevision)) {
+        throw "The diagnostics build version did not include the package source revision."
+    }
+
     $listeners = @(Get-NetTCPConnection -State Listen -OwningProcess $process.Id -ErrorAction Stop)
     if ($listeners.Count -eq 0) {
         throw "No listener was found for the packaged Control Desk process."
@@ -285,10 +320,90 @@ try {
         throw "The packaged Control Desk process opened non-loopback listeners: $addresses"
     }
 
-    $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+    $process.Kill()
+    if (-not $process.WaitForExit(10000)) {
+        throw "The packaged Control Desk API did not exit after abrupt termination."
+    }
+    Start-Sleep -Milliseconds 250
+
+    $restartProcess = [System.Diagnostics.Process]::new()
+    $restartProcess.StartInfo = $startInfo
+    if (-not $restartProcess.Start()) {
+        throw "The packaged Control Desk API did not restart after abrupt termination."
+    }
+    $restartProcessStarted = $true
+
+    $restartDeadline = [DateTimeOffset]::UtcNow.AddSeconds(30)
+    $recoveredHealth = $null
+
+    while ([DateTimeOffset]::UtcNow -lt $restartDeadline) {
+        if ($restartProcess.HasExited) {
+            throw "The restarted packaged Control Desk API exited with code $($restartProcess.ExitCode)."
+        }
+
+        try {
+            $recoveredHealth = Invoke-RestMethod -Uri "http://127.0.0.1:5188/health" -TimeoutSec 2
+            break
+        }
+        catch {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+
+    if ($null -eq $recoveredHealth -or $recoveredHealth.status -ne "Healthy") {
+        throw "The packaged Control Desk API did not recover after abrupt termination."
+    }
+
+    $recoveredReadiness = Invoke-RestMethod -Uri "http://127.0.0.1:5188/ready" -TimeoutSec 5
+    if ($recoveredReadiness.status -ne "Ready") {
+        throw "The restarted packaged Control Desk API did not return to Ready."
+    }
+
+    $restartProcess.Kill()
+    if (-not $restartProcess.WaitForExit(10000)) {
+        throw "The restarted packaged Control Desk API did not exit after the recovery proof."
+    }
+    Start-Sleep -Milliseconds 250
+
+    $logFiles = @(Get-ChildItem -LiteralPath $logDirectory -Filter "control-desk-*.jsonl" -File)
+    if ($logFiles.Count -eq 0) {
+        throw "The packaged Control Desk process did not retain a rolling file log."
+    }
+
+    $retainedLog = ($logFiles | ForEach-Object {
+        Get-Content -Raw -LiteralPath $_.FullName
+    }) -join [Environment]::NewLine
+
+    if ($retainedLog -notmatch "OfficeHostStarted") {
+        throw "The retained log did not preserve startup evidence before abrupt termination."
+    }
+
+    if ($retainedLog -notmatch "OfficeReadinessConfirmed") {
+        throw "The retained log did not preserve the successful readiness check."
+    }
+
+    if ([Regex]::Matches($retainedLog, "OfficeHostStarted").Count -lt 2) {
+        throw "The retained log did not prove a successful restart after abrupt termination."
+    }
+
+    foreach ($secretValue in @(
+        $smokeOperatorPassword,
+        $smokeOperatorPasswordHash,
+        $environmentOverrides.ControlDesk__OperatorAccess__SessionSigningSecret,
+        $session.accessToken
+    )) {
+        if ($retainedLog.IndexOf($secretValue, [StringComparison]::Ordinal) -ge 0) {
+            throw "A protected value was written to the retained log."
+        }
+
+        if ($diagnosticsResponse.Content.IndexOf($secretValue, [StringComparison]::Ordinal) -ge 0) {
+            throw "A protected value was exposed by the diagnostics summary."
+        }
+    }
+
     $evidence = [ordered]@{
         product = "SafarSuite Control Desk"
-        proof = "office-windows-pilot-smoke-v1"
+        proof = "office-windows-pilot-smoke-v3"
         checkedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
         sourceRevision = $manifest.sourceRevision
         sourceTreeState = $manifest.sourceTreeState
@@ -296,6 +411,13 @@ try {
         productionDevelopmentConnectionRejected = $true
         startupMilliseconds = $startupMilliseconds
         healthStatus = $health.status
+        readinessStatus = $readiness.status
+        diagnosticsStatusCode = 200
+        diagnosticsVersion = $diagnostics.service.version
+        retainedLogFileCount = $logFiles.Count
+        abruptStopEvidenceRetained = $true
+        abruptStopRestartRecovered = $true
+        diagnosticsAndLogsSecretScanPassed = $true
         uiRootStatusCode = 200
         anonymousBusinessApiStatusCode = 401
         authenticatedBusinessApiStatusCode = 200
@@ -312,6 +434,11 @@ try {
     Write-Host "Production in-memory persistence: rejected"
     Write-Host "Production development connection: rejected"
     Write-Host "Health: $($health.status)"
+    Write-Host "Readiness: $($readiness.status)"
+    Write-Host "Authorized diagnostics: HTTP 200"
+    Write-Host "Retained rolling logs: startup evidence survived abrupt stop"
+    Write-Host "Abrupt-stop restart: recovered to Ready"
+    Write-Host "Diagnostics/log secret scan: passed"
     Write-Host "UI: same-origin root returned HTTP 200"
     Write-Host "Anonymous business API: HTTP 401"
     Write-Host "Authenticated business API: HTTP 200"
@@ -320,7 +447,16 @@ try {
     Write-Host "Startup milliseconds: $startupMilliseconds"
 }
 finally {
-    if (-not $process.HasExited) {
+    if ($null -ne $restartProcess) {
+        if ($restartProcessStarted -and -not $restartProcess.HasExited) {
+            $restartProcess.Kill()
+            $restartProcess.WaitForExit(10000) | Out-Null
+        }
+
+        $restartProcess.Dispose()
+    }
+
+    if ($processStarted -and -not $process.HasExited) {
         $process.Kill()
         $process.WaitForExit(10000) | Out-Null
     }

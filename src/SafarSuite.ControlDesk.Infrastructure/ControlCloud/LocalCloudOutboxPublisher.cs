@@ -29,15 +29,16 @@ public sealed class LocalCloudOutboxPublisher : ICloudOutboxPublisher
                 envelope.IdempotencyKey,
                 envelope.Signature.Value));
         }
-        catch (JsonException exception)
+        catch (JsonException)
         {
             return Task.FromResult(CloudOutboxPublishResult.Failure(
-                $"Local publisher could not parse payload JSON: {exception.Message}"));
+                "Local publisher could not parse payload JSON.",
+                shouldRetry: false));
         }
-        catch (InvalidOperationException exception)
+        catch (InvalidOperationException)
         {
             return Task.FromResult(CloudOutboxPublishResult.Failure(
-                $"Local publisher is not configured: {exception.Message}",
+                "Local publisher is not configured.",
                 shouldRetry: false));
         }
     }

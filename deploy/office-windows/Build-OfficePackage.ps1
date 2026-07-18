@@ -51,6 +51,24 @@ else {
     New-Item -ItemType Directory -Path $outputPath | Out-Null
 }
 
+$sourceRevision = "unknown"
+$sourceTreeState = "unknown"
+try {
+    $sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        $sourceRevision = "unknown"
+    }
+
+    $sourceStatus = @(& git -C $repoRoot status --porcelain)
+    if ($LASTEXITCODE -eq 0) {
+        $sourceTreeState = if ($sourceStatus.Count -eq 0) { "clean" } else { "dirty" }
+    }
+}
+catch {
+    $sourceRevision = "unknown"
+    $sourceTreeState = "unknown"
+}
+
 Invoke-NativeCommand `
     -FilePath "npm" `
     -Arguments @("ci") `
@@ -72,31 +90,15 @@ Invoke-NativeCommand `
         "--output", $outputPath,
         "-p:PublishSingleFile=false",
         "-p:DebugType=None",
-        "-p:DebugSymbols=false"
+        "-p:DebugSymbols=false",
+        "-p:InformationalVersion=1.0.0+$sourceRevision",
+        "-p:IncludeSourceRevisionInInformationalVersion=false"
     ) `
     -WorkingDirectory $repoRoot
 
 $webRoot = Join-Path $outputPath "wwwroot"
 New-Item -ItemType Directory -Force -Path $webRoot | Out-Null
 Get-ChildItem -LiteralPath $frontendDist -Force | Copy-Item -Destination $webRoot -Recurse -Force
-
-$sourceRevision = "unknown"
-$sourceTreeState = "unknown"
-try {
-    $sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0) {
-        $sourceRevision = "unknown"
-    }
-
-    $sourceStatus = @(& git -C $repoRoot status --porcelain)
-    if ($LASTEXITCODE -eq 0) {
-        $sourceTreeState = if ($sourceStatus.Count -eq 0) { "clean" } else { "dirty" }
-    }
-}
-catch {
-    $sourceRevision = "unknown"
-    $sourceTreeState = "unknown"
-}
 
 $packageBytes = (Get-ChildItem -LiteralPath $outputPath -Recurse -File |
     Measure-Object -Property Length -Sum).Sum

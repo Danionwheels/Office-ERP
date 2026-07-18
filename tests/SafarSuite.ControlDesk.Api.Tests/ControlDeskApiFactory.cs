@@ -11,6 +11,7 @@ public sealed class ControlDeskApiFactory : WebApplicationFactory<Program>
 {
     public const string AdminEmail = "admin@example.test";
     public const string ReportReaderEmail = "reports@example.test";
+    public const string DiagnosticsReaderEmail = "diagnostics@example.test";
     public const string Password = "Test-password-123!";
 
     public MutableTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 7, 17, 0, 0, 0, TimeSpan.Zero));
@@ -39,7 +40,14 @@ public sealed class ControlDeskApiFactory : WebApplicationFactory<Program>
                 ["ControlDesk:OperatorAccess:Users:1:PasswordHash"] = HashPassword(Password),
                 ["ControlDesk:OperatorAccess:Users:1:Status"] = "Active",
                 ["ControlDesk:OperatorAccess:Users:1:Roles:0"] = "Auditor",
-                ["ControlDesk:OperatorAccess:Users:1:Scopes:0"] = "reports:read"
+                ["ControlDesk:OperatorAccess:Users:1:Scopes:0"] = "reports:read",
+                ["ControlDesk:OperatorAccess:Users:2:UserId"] = "test-diagnostics-reader",
+                ["ControlDesk:OperatorAccess:Users:2:Email"] = DiagnosticsReaderEmail,
+                ["ControlDesk:OperatorAccess:Users:2:FullName"] = "Test Diagnostics Reader",
+                ["ControlDesk:OperatorAccess:Users:2:PasswordHash"] = HashPassword(Password),
+                ["ControlDesk:OperatorAccess:Users:2:Status"] = "Active",
+                ["ControlDesk:OperatorAccess:Users:2:Roles:0"] = "SupportOperator",
+                ["ControlDesk:OperatorAccess:Users:2:Scopes:0"] = "diagnostics:read"
             });
         });
         builder.ConfigureServices(services =>

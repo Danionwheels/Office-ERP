@@ -74,7 +74,7 @@ internal sealed class CloudOutboxMessageConfiguration : IEntityTypeConfiguration
 
         builder.Property(message => message.FailureReason)
             .HasColumnName("failure_reason")
-            .HasMaxLength(2000);
+            .HasMaxLength(CloudOutboxMessage.MaximumFailureReasonLength);
 
         builder.HasIndex(message => new { message.Status, message.MessageType, message.OccurredAtUtc, message.Id })
             .IsDescending(false, false, true, true)

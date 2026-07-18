@@ -40,6 +40,7 @@ public static class ControlDeskAuthServiceCollectionExtensions
             AddScopePolicy(options, ControlDeskPolicies.PaymentsManage, ControlDeskScopes.PaymentsManage);
             AddScopePolicy(options, ControlDeskPolicies.EntitlementsManage, ControlDeskScopes.EntitlementsManage);
             AddScopePolicy(options, ControlDeskPolicies.ControlCloudManage, ControlDeskScopes.ControlCloudManage);
+            AddScopePolicy(options, ControlDeskPolicies.DiagnosticsRead, ControlDeskScopes.DiagnosticsRead);
             AddScopePolicy(options, ControlDeskPolicies.ReportsRead, ControlDeskScopes.ReportsRead);
         });
 

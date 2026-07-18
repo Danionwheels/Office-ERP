@@ -14,25 +14,32 @@ public sealed class HttpControlCloudOutboxPublisher : ICloudOutboxPublisher
     private readonly HttpClient _httpClient;
     private readonly ControlCloudEnvelopeBuilder _envelopeBuilder;
     private readonly IOptions<ControlCloudPublisherOptions> _options;
+    private readonly ICloudOutboxPublisherAvailability _availability;
 
     public HttpControlCloudOutboxPublisher(
         HttpClient httpClient,
         ControlCloudEnvelopeBuilder envelopeBuilder,
-        IOptions<ControlCloudPublisherOptions> options)
+        IOptions<ControlCloudPublisherOptions> options,
+        ICloudOutboxPublisherAvailability availability)
     {
         _httpClient = httpClient;
         _envelopeBuilder = envelopeBuilder;
         _options = options;
+        _availability = availability;
     }
 
     public async Task<CloudOutboxPublishResult> PublishAsync(
         CloudOutboxMessage message,
         CancellationToken cancellationToken = default)
     {
-        if (!Uri.TryCreate(_options.Value.EndpointUrl, UriKind.Absolute, out var endpointUri))
+        if (!_availability.GetSnapshot().CanPublishAutomatically
+            || !ControlCloudPublisherEndpointPolicy.TryResolveEndpoint(
+                _options.Value,
+                _options.Value.RequireHttps,
+                out var endpointUri))
         {
             return CloudOutboxPublishResult.Failure(
-                "Control Cloud publisher endpoint is not configured.",
+                "Control Cloud publisher endpoint is not securely configured.",
                 shouldRetry: false);
         }
 
@@ -52,36 +59,29 @@ public sealed class HttpControlCloudOutboxPublisher : ICloudOutboxPublisher
                     envelope.Signature.Value);
             }
 
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            var detail = string.IsNullOrWhiteSpace(body)
-                ? response.ReasonPhrase
-                : body;
-
             return CloudOutboxPublishResult.Failure(
-                $"Control Cloud returned {(int)response.StatusCode} {response.StatusCode}: {detail}",
+                $"Control Cloud returned HTTP {(int)response.StatusCode} ({response.StatusCode}).",
                 IsRetryable(response.StatusCode));
         }
-        catch (JsonException exception)
+        catch (JsonException)
         {
             return CloudOutboxPublishResult.Failure(
-                $"Control Cloud payload could not be prepared: {exception.Message}",
+                "Control Cloud payload could not be prepared.",
                 shouldRetry: false);
         }
-        catch (InvalidOperationException exception)
+        catch (InvalidOperationException)
         {
             return CloudOutboxPublishResult.Failure(
-                $"Control Cloud publisher is not configured: {exception.Message}",
+                "Control Cloud publisher is not configured.",
                 shouldRetry: false);
         }
-        catch (HttpRequestException exception)
+        catch (HttpRequestException)
         {
-            return CloudOutboxPublishResult.Failure(
-                $"Control Cloud request failed: {exception.Message}");
+            return CloudOutboxPublishResult.Failure("Control Cloud request failed.");
         }
-        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return CloudOutboxPublishResult.Failure(
-                $"Control Cloud request timed out: {exception.Message}");
+            return CloudOutboxPublishResult.Failure("Control Cloud request timed out.");
         }
     }
 
@@ -89,8 +89,10 @@ public sealed class HttpControlCloudOutboxPublisher : ICloudOutboxPublisher
     {
         var numericStatusCode = (int)statusCode;
 
-        return statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
-            || numericStatusCode >= 500;
+        return statusCode is not (HttpStatusCode.BadRequest
+            or HttpStatusCode.RequestEntityTooLarge
+            or HttpStatusCode.UnprocessableEntity)
+            && numericStatusCode >= 100;
     }
 
     private static string ResolveCloudReference(HttpResponseMessage response, string fallback)

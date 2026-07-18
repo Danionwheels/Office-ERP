@@ -106,7 +106,7 @@ Deliverables:
 - separate liveness from readiness;
 - readiness verifies PostgreSQL connectivity and exact migration compatibility without leaking connection details;
 - add retained rolling logs suitable for an unattended Windows service;
-- add an idempotent background outbox publisher with bounded retries, cancellation, and safe cloud-outage behavior;
+- add an idempotent background outbox publisher with bounded batch size, retry cadence, and request timeouts, cancellation, and safe cloud-outage behavior; transient retries do not expire merely because an outage lasts longer than a fixed attempt count;
 - expose an authorized diagnostics summary for service, database, outbox, and cloud reachability.
 
 Gate evidence:
