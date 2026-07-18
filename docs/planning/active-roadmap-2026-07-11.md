@@ -18,7 +18,7 @@ Execution contract: `docs/planning/one-pc-control-desk-deployment-plan-2026-07-1
 
 - [x] Lock the canonical one-PC requirements and physical topology.
 - [x] Audit the current API, UI, PostgreSQL, desktop, CI, and staging assets against the office gate.
-- [ ] `OFFICE-P0-01`: produce one loopback, same-origin, self-contained Windows artifact. Local package proof is green; clean GitHub Windows gate remains before completion.
+- [x] `OFFICE-P0-01`: produce one loopback, same-origin, self-contained Windows artifact. Local proof and clean GitHub Windows package gate passed on 2026-07-18.
 - [ ] `OFFICE-P0-02`: add database readiness, retained diagnostics, and automatic outbox recovery.
 - [ ] `OFFICE-P0-03`: implement native Windows PostgreSQL installation, migration, repair, and reboot lifecycle.
 - [ ] `OFFICE-P0-04`: package first-operator provisioning, secret custody, and recovery.

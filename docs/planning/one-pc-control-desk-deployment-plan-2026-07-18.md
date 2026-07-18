@@ -299,7 +299,7 @@ Local evidence:
 - accounting smoke, LocalServer entitlement/security smoke, Control Desk migration parity, PowerShell syntax, and `git diff --check` passed;
 - independent review found two configuration/evidence gaps; both were fixed and the re-review reported no residual blocker.
 
-`OFFICE-P0-01` remains open until the new `office-windows-package-gate` passes from the exact clean pushed commit. The ignored local package is engineering evidence, not an office installer.
+Clean remote evidence passed for implementation commit `f5a7f878` in [GitHub Actions run 29654273448](https://github.com/Danionwheels/Office-ERP/actions/runs/29654273448): backend, UI, deployment, and `office-windows-package-gate` all passed; the Windows job completed in `1m41s` and uploaded the pilot artifact. The ignored local package and CI artifact remain engineering evidence, not an office installer.
 
 ## Status Tracker
 
@@ -307,8 +307,8 @@ Local evidence:
 | --- | --- | --- |
 | Requirements baseline | Complete | Commit `0d38151`; canonical contract and active-doc alignment. |
 | Repository packaging audit | Complete | API/UI/PostgreSQL/staging audit summarized in this plan. |
-| `OFFICE-P0-01` Local Combined Host | Local proof passed; remote CI pending | Self-contained package, startup/HTTP/auth/listener evidence, and Windows CI job implemented. |
-| `OFFICE-P0-02` Readiness/Automatic Outbox | Pending | Pending. |
+| `OFFICE-P0-01` Local Combined Host | Complete | Local package proof plus clean GitHub Windows package gate passed for `f5a7f878`. |
+| `OFFICE-P0-02` Readiness/Automatic Outbox | Next | Pending. |
 | `OFFICE-P0-03` Native PostgreSQL Lifecycle | Pending | Pending. |
 | `OFFICE-P0-04` Operator/Secret Custody | Pending | Pending. |
 | `OFFICE-P0-05` Windows Service/Entry | Pending | Pending. |
@@ -329,4 +329,4 @@ Until `OFFICE-P0-08` passes:
 - do not configure DNS, HTTPS, SMTP, or Brevo as part of the office package;
 - do not close a work package without executable or physical evidence.
 
-The immediate release action is to push the clean implementation commit and confirm `office-windows-package-gate`. After that gate is green, mark `OFFICE-P0-01` complete and begin `OFFICE-P0-02`.
+The immediate coding task is `OFFICE-P0-02`: add database/migration readiness, retained service diagnostics, and automatic outbox recovery without weakening the proven loopback package boundary.
