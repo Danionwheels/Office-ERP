@@ -301,6 +301,19 @@ Local evidence:
 
 Clean remote evidence passed for implementation commit `f5a7f878` in [GitHub Actions run 29654273448](https://github.com/Danionwheels/Office-ERP/actions/runs/29654273448): backend, UI, deployment, and `office-windows-package-gate` all passed; the Windows job completed in `1m41s` and uploaded the pilot artifact. The ignored local package and CI artifact remain engineering evidence, not an office installer.
 
+## Implementation Checkpoint — `OFFICE-P0-02` Operational Proof
+
+Implementation completed on 2026-07-18 in commit `ec6d6eb5`; commit `412862df` corrected the CI compiled-host content root so the Linux operational drills execute against the built API configuration:
+
+- anonymous liveness remains available at `/health` and `/health/live`, while `/ready` and `/health/ready` fail closed on database unavailability, unknown migration state, or exact known/applied migration mismatch;
+- authorized `/api/v1/diagnostics/summary` reports sanitized version, database, outbox, worker, and cloud-reachability state through the dedicated `diagnostics:read` policy without returning credentials, connection strings, payloads, signatures, or raw failures;
+- retained JSONL logging records stable host, readiness-transition, and outbox event codes with bounded file size and retention;
+- the automatic outbox worker validates publisher availability before dequeue, retries transient cloud/authentication failures, preserves durable rows across outages, and resumes after reconnection;
+- in-process serialization plus a PostgreSQL advisory publication lease prevents overlapping office hosts from racing the same outbox rows, while stable idempotency keys make accepted-message replay safe after an abrupt local save failure;
+- the local release verification passed with `113/113` xUnit tests, a zero-warning/zero-error solution build, UI production build, accounting and entitlement/security smokes, both migration parity checks, PowerShell/JSON parsing, and `git diff --check`.
+
+Clean remote evidence passed in [GitHub Actions run 29658333033](https://github.com/Danionwheels/Office-ERP/actions/runs/29658333033): all four required release gates passed. The backend gate proved PostgreSQL outage/readiness recovery and HTTPS outbox recovery after an abrupt host loss with two overlapping recovery hosts. The Windows gate produced a `128,451,648`-byte self-contained package, reached Ready again after abrupt-stop restart, retained and secret-scanned diagnostics/logs, listened only on loopback, and started in `1,510 ms`. The uploaded seven-day engineering artifact is `55,941,388` bytes with SHA-256 `c25ed45fd79a6b1c0438741c94ac53e5322add71170b1be7c0ad77cbf32e1db1`. It is still proof material, not the final installer.
+
 ## Status Tracker
 
 | Work package | Status | Completion evidence |
@@ -308,8 +321,8 @@ Clean remote evidence passed for implementation commit `f5a7f878` in [GitHub Act
 | Requirements baseline | Complete | Commit `0d38151`; canonical contract and active-doc alignment. |
 | Repository packaging audit | Complete | API/UI/PostgreSQL/staging audit summarized in this plan. |
 | `OFFICE-P0-01` Local Combined Host | Complete | Local package proof plus clean GitHub Windows package gate passed for `f5a7f878`. |
-| `OFFICE-P0-02` Readiness/Automatic Outbox | Next | Pending. |
-| `OFFICE-P0-03` Native PostgreSQL Lifecycle | Pending | Pending. |
+| `OFFICE-P0-02` Readiness/Automatic Outbox | Complete | Commits `ec6d6eb5` and `412862df`; local verification plus all four gates in GitHub run `29658333033`. |
+| `OFFICE-P0-03` Native PostgreSQL Lifecycle | Next | Pending. |
 | `OFFICE-P0-04` Operator/Secret Custody | Pending | Pending. |
 | `OFFICE-P0-05` Windows Service/Entry | Pending | Pending. |
 | `OFFICE-P0-06` Backup/Restore | Pending | Pending. |
@@ -329,4 +342,4 @@ Until `OFFICE-P0-08` passes:
 - do not configure DNS, HTTPS, SMTP, or Brevo as part of the office package;
 - do not close a work package without executable or physical evidence.
 
-The immediate coding task is `OFFICE-P0-02`: add database/migration readiness, retained service diagnostics, and automatic outbox recovery without weakening the proven loopback package boundary.
+The immediate coding task is `OFFICE-P0-03`: implement the native Windows PostgreSQL install, exact migration, service/reboot, repair, and uninstall lifecycle without Docker and without weakening the proven loopback package boundary.
