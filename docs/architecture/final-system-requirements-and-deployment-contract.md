@@ -276,6 +276,8 @@ These decisions remain open, but none may violate the accepted topology above:
 5. Use the Linux machine for Control Cloud/Portal staging or client-runtime proof only.
 6. Resume cloud DNS, HTTPS, and Brevo work only inside the cloud deployment lane.
 
+Execution plan: [SafarSuite Control Desk One-PC Deployment Plan](../planning/one-pc-control-desk-deployment-plan-2026-07-18.md).
+
 ## Drift-Control Checklist
 
 Every proposed feature, infrastructure change, deployment task, and pull request must answer:
@@ -300,5 +302,6 @@ If an answer is unclear, stop implementation and update this contract before pro
 - [SafarSuite Runtime Integration Boundary](safarsuite-runtime-integration-boundary.md)
 - [Connected Acceptance Chain Proof](../planning/connected-acceptance-chain-proof-2026-07-17.md)
 - [Staging Deployment Runbook](../planning/staging-deployment-runbook.md)
+- [SafarSuite Control Desk One-PC Deployment Plan](../planning/one-pc-control-desk-deployment-plan-2026-07-18.md)
 
 Supporting documents may add detail and evidence. They may not silently contradict this contract.

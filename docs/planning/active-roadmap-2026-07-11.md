@@ -10,7 +10,24 @@ Canonical deployment contract: `docs/architecture/final-system-requirements-and-
 
 ## Current Objective
 
-Establish a scale-ready Office Control System and prove one connected desired-state-to-observed-state flow across Control Desk, Control Cloud, and SafarSuite Server.
+Package and prove the scale-ready Office Control System on one dedicated Windows office PC while preserving the completed desired-state-to-observed-state chain across Control Desk, Control Cloud, and SafarSuite Server.
+
+## Now: One-PC Control Desk Deployment Proof
+
+Execution contract: `docs/planning/one-pc-control-desk-deployment-plan-2026-07-18.md`
+
+- [x] Lock the canonical one-PC requirements and physical topology.
+- [x] Audit the current API, UI, PostgreSQL, desktop, CI, and staging assets against the office gate.
+- [ ] `OFFICE-P0-01`: produce one loopback, same-origin, self-contained Windows artifact.
+- [ ] `OFFICE-P0-02`: add database readiness, retained diagnostics, and automatic outbox recovery.
+- [ ] `OFFICE-P0-03`: implement native Windows PostgreSQL installation, migration, repair, and reboot lifecycle.
+- [ ] `OFFICE-P0-04`: package first-operator provisioning, secret custody, and recovery.
+- [ ] `OFFICE-P0-05`: install the API service and normal operator desktop/Start-menu entry.
+- [ ] `OFFICE-P0-06`: implement scheduled backup and prove clean replacement-PC restore.
+- [ ] `OFFICE-P0-07`: implement signed update, failed-update recovery, and rollback.
+- [ ] `OFFICE-P0-08`: pass the complete physical clean-PC acceptance run with retained evidence.
+- [ ] `CLOUD-P1-01`: make cloud-only staging the default and isolate full-stack colocation as a Disposable Integration Lab.
+- [ ] Add the Tauri shell only after the installed service/recovery boundary passes.
 
 ## Now: Direction And Architecture Reset
 
@@ -209,7 +226,7 @@ Do not begin a later gate until the previous gate has an executable acceptance t
 | Cloud delivery | Outbox delivery is accepted idempotently and produces a signed version |
 | Server enforcement | SafarSuite Server applies or rejects the exact version deterministically |
 | Closed loop | Control Desk shows desired, delivered, and observed versions distinctly |
-| Operational readiness | Multi-operator use, backup/restore, secrets, and failure recovery pass |
+| Operational readiness | Authorized-operator use on the designated office PC, backup/restore, secrets, and failure recovery pass |
 
 ## Product Decisions Still Needed
 
