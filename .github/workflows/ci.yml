@@ -81,9 +81,12 @@ jobs:
         run: |
           set -euo pipefail
           api_log="$RUNNER_TEMP/control-desk-operational-readiness.log"
+          api_content_root="$GITHUB_WORKSPACE/src/SafarSuite.ControlDesk.Api/bin/Release/net10.0"
+          api_dll="$api_content_root/SafarSuite.ControlDesk.Api.dll"
           db_container="${{ job.services['control-desk-db'].id }}"
 
-          dotnet src/SafarSuite.ControlDesk.Api/bin/Release/net10.0/SafarSuite.ControlDesk.Api.dll \
+          dotnet "$api_dll" \
+            --contentRoot "$api_content_root" \
             --urls http://127.0.0.1:5188 \
             >"$api_log" 2>&1 &
           api_pid=$!
@@ -102,8 +105,11 @@ jobs:
             sleep 1
           done
 
-          curl --fail --silent http://127.0.0.1:5188/health >/dev/null
-          curl --fail --silent http://127.0.0.1:5188/ready >/dev/null
+          if ! curl --fail --silent http://127.0.0.1:5188/health >/dev/null \
+            || ! curl --fail --silent http://127.0.0.1:5188/ready >/dev/null; then
+            cat "$api_log"
+            exit 1
+          fi
 
           docker stop "$db_container" >/dev/null
           curl --fail --silent http://127.0.0.1:5188/health >/dev/null
@@ -160,6 +166,8 @@ jobs:
           first_log="$RUNNER_TEMP/control-desk-outbox-before-crash.log"
           recovery_log="$RUNNER_TEMP/control-desk-outbox-recovery.log"
           overlap_log="$RUNNER_TEMP/control-desk-outbox-overlap.log"
+          api_content_root="$GITHUB_WORKSPACE/src/SafarSuite.ControlDesk.Api/bin/Release/net10.0"
+          api_dll="$api_content_root/SafarSuite.ControlDesk.Api.dll"
           api_pid=""
           recovery_pid=""
           overlap_pid=""
@@ -261,7 +269,8 @@ jobs:
           curl --fail --silent --cacert "$certificate" https://localhost:5443/health >/dev/null
 
           export SSL_CERT_FILE="$certificate"
-          dotnet src/SafarSuite.ControlDesk.Api/bin/Release/net10.0/SafarSuite.ControlDesk.Api.dll \
+          dotnet "$api_dll" \
+            --contentRoot "$api_content_root" \
             --urls http://127.0.0.1:5190 \
             >"$first_log" 2>&1 &
           api_pid=$!
@@ -289,11 +298,13 @@ jobs:
           api_pid=""
           touch "$cloud_ready"
 
-          dotnet src/SafarSuite.ControlDesk.Api/bin/Release/net10.0/SafarSuite.ControlDesk.Api.dll \
+          dotnet "$api_dll" \
+            --contentRoot "$api_content_root" \
             --urls http://127.0.0.1:5190 \
             >"$recovery_log" 2>&1 &
           recovery_pid=$!
-          dotnet src/SafarSuite.ControlDesk.Api/bin/Release/net10.0/SafarSuite.ControlDesk.Api.dll \
+          dotnet "$api_dll" \
+            --contentRoot "$api_content_root" \
             --urls http://127.0.0.1:5191 \
             >"$overlap_log" 2>&1 &
           overlap_pid=$!
