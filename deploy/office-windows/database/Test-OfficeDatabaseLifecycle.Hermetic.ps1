@@ -166,6 +166,24 @@ $serviceRecoveryProof = & $lifecycleModule {
 }
 Assert-OfficeTest -Condition ($serviceRecoveryProof.Valid -and -not $serviceRecoveryProof.Invalid) -Message 'Exact Windows service recovery-action parsing failed.'
 
+$serviceConfigArguments = & $lifecycleModule {
+    $context = [pscustomobject]@{
+        Distribution = [pscustomobject]@{
+            serviceName = 'SafarSuiteControlDeskPostgreSQL'
+            serviceAccount = 'NT SERVICE\SafarSuiteControlDeskPostgreSQL'
+            serviceDisplayName = 'SafarSuite Control Desk PostgreSQL 17'
+        }
+    }
+    return @(Get-OfficePostgresServiceConfigArguments -Context $context -Mode Pending)
+}
+Assert-OfficeTest `
+    -Condition (($serviceConfigArguments -join '|') -eq
+        'config|SafarSuiteControlDeskPostgreSQL|start=|demand|obj=|NT SERVICE\SafarSuiteControlDeskPostgreSQL|depend=|/|DisplayName=|SafarSuite Control Desk PostgreSQL 17') `
+    -Message 'The PostgreSQL virtual-account service configuration arguments changed unexpectedly.'
+Assert-OfficeTest `
+    -Condition (-not ($serviceConfigArguments -contains 'password=')) `
+    -Message 'Virtual service account configuration supplied a password instead of the required null password pointer.'
+
 $initializationAclRights = & $lifecycleModule {
     $runtime = Get-OfficeInitializationAclRights -Profile Runtime
     $data = Get-OfficeInitializationAclRights -Profile Data

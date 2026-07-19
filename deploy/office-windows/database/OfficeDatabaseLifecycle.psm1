@@ -1215,6 +1215,22 @@ function Test-OfficePostgresServiceConfiguration {
         [int]$registry.FailureActionsOnNonCrashFailures -eq 1
 }
 
+function Get-OfficePostgresServiceConfigArguments {
+    param(
+        [Parameter(Mandatory = $true)]$Context,
+        [ValidateSet('Pending', 'Activated')][string]$Mode
+    )
+
+    $startMode = if ($Mode -eq 'Activated') { 'auto' } else { 'demand' }
+    return @(
+        'config', [string]$Context.Distribution.serviceName,
+        'start=', $startMode,
+        'obj=', [string]$Context.Distribution.serviceAccount,
+        'depend=', '/',
+        'DisplayName=', [string]$Context.Distribution.serviceDisplayName
+    )
+}
+
 function Set-OfficePostgresServiceConfiguration {
     param(
         [Parameter(Mandatory = $true)]$Context,
@@ -1222,7 +1238,6 @@ function Set-OfficePostgresServiceConfiguration {
     )
 
     $serviceName = [string]$Context.Distribution.serviceName
-    $startMode = if ($Mode -eq 'Activated') { 'auto' } else { 'demand' }
     Invoke-OfficeNativeCommand `
         -FilePath "$env:SystemRoot\System32\sc.exe" `
         -Arguments @('sidtype', $serviceName, 'unrestricted') | Out-Null
@@ -1234,14 +1249,7 @@ function Set-OfficePostgresServiceConfiguration {
         -Arguments @('failureflag', $serviceName, '1') | Out-Null
     Invoke-OfficeNativeCommand `
         -FilePath "$env:SystemRoot\System32\sc.exe" `
-        -Arguments @(
-            'config', $serviceName,
-            'start=', $startMode,
-            'obj=', [string]$Context.Distribution.serviceAccount,
-            'password=', '',
-            'depend=', '/',
-            'DisplayName=', [string]$Context.Distribution.serviceDisplayName
-        ) | Out-Null
+        -Arguments (Get-OfficePostgresServiceConfigArguments -Context $Context -Mode $Mode) | Out-Null
 
     $expectedStartMode = if ($Mode -eq 'Activated') { 'Auto' } else { 'Manual' }
     if (-not (Test-OfficePostgresServiceConfiguration -Context $Context -ExpectedStartMode $expectedStartMode)) {
