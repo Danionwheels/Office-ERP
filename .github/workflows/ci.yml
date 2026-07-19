@@ -553,6 +553,17 @@ jobs:
           -PackageDirectory "$env:OFFICE_PACKAGE_TEST_PATH"
           -EvidenceDirectory "$env:RUNNER_TEMP\safarsuite-office-package-evidence"
 
+      - name: Classify raw PostgreSQL runtime dependencies
+        id: postgres_runtime_dependency_probe
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficePostgresRuntimeDependencies.ps1
+          -PackageDirectory "$env:OFFICE_PACKAGE_TEST_PATH"
+          -OfficePackageArchivePath "$env:OFFICE_PACKAGE_ARCHIVE"
+          -OfficePackageArchiveSha256 "$env:OFFICE_PACKAGE_SHA256"
+          -ProbeRoot "$env:RUNNER_TEMP\safarsuite-office-db-loader-probe"
+          -EvidencePath "$env:RUNNER_TEMP\safarsuite-office-db-evidence\runtime-dependency-diagnostic.json"
+
       - name: Prepare disposable native database proof
         shell: pwsh
         run: |
@@ -583,12 +594,12 @@ jobs:
           }
 
       - name: Upload native database lifecycle evidence
-        if: always()
+        if: always() && steps.postgres_runtime_dependency_probe.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: safarsuite-control-desk-office-database-evidence
           path: ${{ runner.temp }}\safarsuite-office-db-evidence
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
 
       - name: Upload office package smoke evidence
