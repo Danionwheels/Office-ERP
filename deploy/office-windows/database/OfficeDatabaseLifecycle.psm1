@@ -1370,6 +1370,7 @@ function Test-OfficeInheritedAcl {
             else {
                 [Security.AccessControl.FileSystemRights]::Modify
             }
+            $serviceRights = Get-OfficeNormalizedAllowAclRights -Rights $serviceRights
             $expected += [pscustomobject]@{ Sid = $ServiceSid; Rights = $serviceRights }
         }
         $actual = @($security.Access)
