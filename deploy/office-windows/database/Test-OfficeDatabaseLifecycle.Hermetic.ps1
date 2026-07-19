@@ -136,7 +136,8 @@ $nativeFailureMessage = & $lifecycleModule {
     try {
         Invoke-OfficeNativeCommand `
             -FilePath $Executable `
-            -Arguments @('-NoProfile', '-Command', '$null = ''SAFARSUITE_SECRET_ARGUMENT_MARKER''; [Environment]::Exit(-1073741515)') | Out-Null
+            -Arguments @('-NoProfile', '-Command', '$null = ''SAFARSUITE_SECRET_ARGUMENT_MARKER''; $null = [Console]::In.ReadToEnd(); [Environment]::Exit(-1073741515)') `
+            -StandardInput 'SAFARSUITE_SECRET_STDIN_MARKER' | Out-Null
         throw 'The controlled native failure unexpectedly succeeded.'
     }
     catch {
@@ -144,7 +145,8 @@ $nativeFailureMessage = & $lifecycleModule {
     }
 } $windowsPowerShell
 Assert-OfficeTest `
-    -Condition ($nativeFailureMessage -ceq "A required database lifecycle process failed with exit code -1073741515. Executable 'powershell.exe'; hexadecimal exit code 0xC0000135.") `
+    -Condition ($nativeFailureMessage -ceq "A required database lifecycle process failed with exit code -1073741515. Executable 'powershell.exe'; hexadecimal exit code 0xC0000135." -and
+        $nativeFailureMessage -notmatch 'SAFARSUITE_SECRET_(ARGUMENT|STDIN)_MARKER') `
     -Message 'Native process failure evidence did not retain only the executable identity and signed/hexadecimal exit code.'
 $serviceRecoveryProof = & $lifecycleModule {
     $bytes = New-Object byte[] 44
