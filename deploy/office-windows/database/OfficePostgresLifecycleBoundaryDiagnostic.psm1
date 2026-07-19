@@ -80,6 +80,25 @@ $script:InitdbOutputStages = @(
     'Completed'
 )
 $script:InitdbProcessBoundaries = @('NotRequired', 'TopLevelInitdb', 'SpawnedBackend', 'Inconclusive', 'DiagnosticFailed')
+$script:InitdbActivationProfiles = @('HelpOnly', 'MissingDataValidation', 'MinimalTrust', 'ExactScram')
+$script:InitdbActivationClassifications = @('NormalSuccess', 'NormalFailure', 'DirectLoaderException', 'InvocationFailed')
+$script:InitdbActivationOutcomes = @(
+    'NotRequired',
+    'PreActivationBoundary',
+    'GeneralClusterActivationBoundary',
+    'AuthenticationBoundary',
+    'Inconclusive',
+    'DiagnosticFailed'
+)
+$script:InitdbActivationStages = @(
+    'NotRun',
+    'RunHelpOnly',
+    'RunMissingDataValidation',
+    'RunMinimalTrust',
+    'RunExactScram',
+    'Classify',
+    'Completed'
+)
 
 function ConvertTo-BoundaryExitCodeHex {
     param([Parameter(Mandatory = $true)][int]$ExitCode)
@@ -522,6 +541,147 @@ function Get-BoundaryInitdbProcessBoundary {
     return [pscustomobject]@{ Outcome = 'Inconclusive'; LastStage = [string]$trial.lastStage }
 }
 
+function Get-BoundaryInitdbActivationClassification {
+    param(
+        [Parameter(Mandatory = $true)][bool]$Completed,
+        [AllowNull()][Nullable[int]]$ExitCode
+    )
+
+    if (-not $Completed -or $null -eq $ExitCode) { return 'InvocationFailed' }
+    if ([int]$ExitCode -eq 0) { return 'NormalSuccess' }
+    if ((ConvertTo-BoundaryExitCodeHex -ExitCode ([int]$ExitCode)) -ceq '0xC0000135') {
+        return 'DirectLoaderException'
+    }
+    return 'NormalFailure'
+}
+
+function Get-BoundaryInitdbActivationOutcome {
+    param([Parameter(Mandatory = $true)][object[]]$Trials)
+
+    if ($Trials.Count -ne 4 -or @($Trials | Where-Object { -not [bool]$_.completed }).Count -gt 0) {
+        return 'Inconclusive'
+    }
+    $byProfile = @{}
+    foreach ($profile in $script:InitdbActivationProfiles) {
+        $matches = @($Trials | Where-Object { $_.profile -eq $profile })
+        if ($matches.Count -ne 1) { return 'Inconclusive' }
+        $byProfile[$profile] = $matches[0]
+    }
+    if ([string]$byProfile['HelpOnly'].classification -eq 'DirectLoaderException' -or
+        [string]$byProfile['MissingDataValidation'].classification -eq 'DirectLoaderException') {
+        return 'PreActivationBoundary'
+    }
+    if ([string]$byProfile['HelpOnly'].classification -ne 'NormalSuccess' -or
+        [string]$byProfile['MissingDataValidation'].classification -ne 'NormalFailure') {
+        return 'Inconclusive'
+    }
+    if ([string]$byProfile['MinimalTrust'].classification -eq 'DirectLoaderException') {
+        return 'GeneralClusterActivationBoundary'
+    }
+    if ([string]$byProfile['ExactScram'].classification -eq 'DirectLoaderException' -and
+        [string]$byProfile['MinimalTrust'].classification -in @('NormalSuccess', 'NormalFailure')) {
+        return 'AuthenticationBoundary'
+    }
+    return 'Inconclusive'
+}
+
+function Invoke-BoundaryInitdbActivationTrial {
+    param(
+        [Parameter(Mandatory = $true)][Management.Automation.PSModuleInfo]$LifecycleModule,
+        [Parameter(Mandatory = $true)]$PackageManifest,
+        [Parameter(Mandatory = $true)]$Paths,
+        [Parameter(Mandatory = $true)][string]$TestRoot,
+        [Parameter(Mandatory = $true)][ValidateSet('HelpOnly', 'MissingDataValidation', 'MinimalTrust', 'ExactScram')][string]$Profile,
+        [Parameter(Mandatory = $true)][int]$Sequence
+    )
+
+    $testPath = [IO.Path]::GetFullPath($TestRoot).TrimEnd('\')
+    $trialPath = [IO.Path]::GetFullPath((Join-Path $testPath "activation-$([Guid]::NewGuid().ToString('N'))"))
+    if (-not $trialPath.StartsWith($testPath + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        (Test-Path -LiteralPath $trialPath)) {
+        throw 'The initdb activation trial root is unsafe or already exists.'
+    }
+    [void](New-Item -ItemType Directory -Path $trialPath)
+    $dataPath = Join-Path $trialPath 'data'
+    $bootstrapPath = Join-Path $trialPath 'bootstrap.txt'
+    $trialPassword = $null
+    try {
+        $arguments = @()
+        $overrides = @{}
+        if ($Profile -eq 'MissingDataValidation') {
+            $overrides['PGDATA'] = ''
+        }
+        elseif ($Profile -in @('MinimalTrust', 'ExactScram')) {
+            & $LifecycleModule {
+                param($DataPath)
+                [void](New-Item -ItemType Directory -Path $DataPath)
+                Set-OfficeRestrictedAcl -Path $DataPath -Profile Data
+            } $dataPath
+            $arguments = @(
+                '-D', $dataPath,
+                '-U', [string]$PackageManifest.postgresql.adminRole,
+                '--encoding=UTF8', '--locale=C'
+            )
+            if ($Profile -eq 'MinimalTrust') {
+                $arguments += @('--auth-host=trust', '--auth-local=trust')
+            }
+            else {
+                $trialPassword = & $LifecycleModule { New-OfficeDatabasePassword }
+                & $LifecycleModule {
+                    param($BootstrapPath, $Password)
+                    Set-OfficeUtf8NoBomContent -Path $BootstrapPath -Value $Password
+                    Set-OfficeRestrictedAcl -Path $BootstrapPath -Profile Secrets
+                } $bootstrapPath $trialPassword
+                $arguments += @(
+                    '--auth-host=scram-sha-256', '--auth-local=scram-sha-256',
+                    "--pwfile=$bootstrapPath"
+                )
+            }
+        }
+        else {
+            $arguments = @('--help')
+        }
+
+        try {
+            $exitCode = & $LifecycleModule {
+                param($ExecutablePath, $Arguments, $Overrides, $RuntimeBin)
+                $result = Invoke-OfficeNativeCommand `
+                    -FilePath $ExecutablePath `
+                    -Arguments $Arguments `
+                    -Environment $Overrides `
+                    -WorkingDirectory $RuntimeBin `
+                    -TimeoutSeconds 180 `
+                    -AllowFailure
+                return [int]$result.ExitCode
+            } (Join-Path ([string]$Paths.RuntimeRoot) 'bin\initdb.exe') $arguments $overrides (Join-Path ([string]$Paths.RuntimeRoot) 'bin')
+            return [ordered]@{
+                sequence = $Sequence
+                profile = $Profile
+                completed = $true
+                exitCode = [int]$exitCode
+                exitCodeHex = ConvertTo-BoundaryExitCodeHex -ExitCode ([int]$exitCode)
+                classification = Get-BoundaryInitdbActivationClassification -Completed $true -ExitCode ([int]$exitCode)
+            }
+        }
+        catch {
+            return [ordered]@{
+                sequence = $Sequence
+                profile = $Profile
+                completed = $false
+                exitCode = $null
+                exitCodeHex = $null
+                classification = 'InvocationFailed'
+            }
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $bootstrapPath -PathType Leaf) {
+            Remove-Item -LiteralPath $bootstrapPath -Force
+        }
+        $trialPassword = $null
+    }
+}
+
 function Get-BoundaryApprovedRuntimeSearchValue {
     param(
         [Parameter(Mandatory = $true)]$PackageManifest,
@@ -873,6 +1033,9 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
         $fullInitdbTrials = @()
         $fullInitdbDecision = [pscustomobject]@{ Outcome = 'NotRequired'; IssueCodes = @() }
         $initdbProcessDecision = [pscustomobject]@{ Outcome = 'NotRequired'; LastStage = 'NotObserved' }
+        $initdbActivationStage = 'NotRun'
+        $initdbActivationTrials = @()
+        $initdbActivationOutcome = 'NotRequired'
         if ([string]$decision.Outcome -eq 'FullInitdbInvocationBoundary') {
             $trialList = [Collections.Generic.List[object]]::new()
             try {
@@ -922,6 +1085,35 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
                 $initdbProcessDecision = [pscustomobject]@{ Outcome = 'DiagnosticFailed'; LastStage = 'NotObserved' }
             }
         }
+        if ([string]$initdbProcessDecision.Outcome -eq 'TopLevelInitdb') {
+            $activationList = [Collections.Generic.List[object]]::new()
+            try {
+                $initdbActivationStage = 'RunHelpOnly'
+                [void]$activationList.Add((Invoke-BoundaryInitdbActivationTrial `
+                    -LifecycleModule $LifecycleModule -PackageManifest $PackageManifest -Paths $Paths `
+                    -TestRoot $testPath -Profile HelpOnly -Sequence 1))
+                $initdbActivationStage = 'RunMissingDataValidation'
+                [void]$activationList.Add((Invoke-BoundaryInitdbActivationTrial `
+                    -LifecycleModule $LifecycleModule -PackageManifest $PackageManifest -Paths $Paths `
+                    -TestRoot $testPath -Profile MissingDataValidation -Sequence 2))
+                $initdbActivationStage = 'RunMinimalTrust'
+                [void]$activationList.Add((Invoke-BoundaryInitdbActivationTrial `
+                    -LifecycleModule $LifecycleModule -PackageManifest $PackageManifest -Paths $Paths `
+                    -TestRoot $testPath -Profile MinimalTrust -Sequence 3))
+                $initdbActivationStage = 'RunExactScram'
+                [void]$activationList.Add((Invoke-BoundaryInitdbActivationTrial `
+                    -LifecycleModule $LifecycleModule -PackageManifest $PackageManifest -Paths $Paths `
+                    -TestRoot $testPath -Profile ExactScram -Sequence 4))
+                $initdbActivationStage = 'Classify'
+                $initdbActivationTrials = @($activationList)
+                $initdbActivationOutcome = Get-BoundaryInitdbActivationOutcome -Trials $initdbActivationTrials
+                $initdbActivationStage = 'Completed'
+            }
+            catch {
+                $initdbActivationTrials = @()
+                $initdbActivationOutcome = 'DiagnosticFailed'
+            }
+        }
         $evidence = Copy-BoundaryDictionary -Value $baseEvidence
         $evidence['visualCppTransitions'] = @($transitions)
         $evidence['probes'] = @($probes)
@@ -933,11 +1125,15 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
         $evidence['fullInitdbOutcome'] = [string]$fullInitdbDecision.Outcome
         $evidence['initdbProcessBoundary'] = [string]$initdbProcessDecision.Outcome
         $evidence['initdbLastStage'] = [string]$initdbProcessDecision.LastStage
+        $evidence['initdbActivationStage'] = $initdbActivationStage
+        $evidence['initdbActivationTrials'] = @($initdbActivationTrials)
+        $evidence['initdbActivationOutcome'] = $initdbActivationOutcome
         Write-BoundaryEvidence -EvidencePath $evidenceFilePath -Evidence $evidence
         return [pscustomobject]@{
             Outcome = [string]$decision.Outcome
             FullInitdbOutcome = [string]$fullInitdbDecision.Outcome
             InitdbProcessBoundary = [string]$initdbProcessDecision.Outcome
+            InitdbActivationOutcome = $initdbActivationOutcome
             EvidenceWritten = $true
         }
     }
@@ -953,11 +1149,15 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
         $fallback['fullInitdbOutcome'] = 'NotRequired'
         $fallback['initdbProcessBoundary'] = 'NotRequired'
         $fallback['initdbLastStage'] = 'NotObserved'
+        $fallback['initdbActivationStage'] = 'NotRun'
+        $fallback['initdbActivationTrials'] = @()
+        $fallback['initdbActivationOutcome'] = 'NotRequired'
         Write-BoundaryEvidence -EvidencePath $evidenceFilePath -Evidence $fallback
         return [pscustomobject]@{
             Outcome = 'DiagnosticFailed'
             FullInitdbOutcome = 'NotRequired'
             InitdbProcessBoundary = 'NotRequired'
+            InitdbActivationOutcome = 'NotRequired'
             EvidenceWritten = $true
         }
     }
@@ -1016,7 +1216,8 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
             'schemaVersion', 'proof', 'recordedAtUtc', 'sourceRevision', 'invocationNonce', 'runner', 'package',
             'lifecycleFailure', 'visualCppTransitions', 'probes', 'issueCodes', 'outcome',
             'fullInitdbDiagnosticStage', 'fullInitdbTrials', 'fullInitdbIssueCodes', 'fullInitdbOutcome',
-            'initdbProcessBoundary', 'initdbLastStage'))) {
+            'initdbProcessBoundary', 'initdbLastStage', 'initdbActivationStage',
+            'initdbActivationTrials', 'initdbActivationOutcome'))) {
             throw 'InvalidTopLevelSchema'
         }
         if ([int]$evidence.schemaVersion -ne 1 -or [string]$evidence.proof -cne $script:BoundaryProofName -or
@@ -1026,7 +1227,9 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
             [string]$evidence.fullInitdbDiagnosticStage -notin $script:FullInitdbStages -or
             [string]$evidence.fullInitdbOutcome -notin $script:FullInitdbOutcomes -or
             [string]$evidence.initdbProcessBoundary -notin $script:InitdbProcessBoundaries -or
-            [string]$evidence.initdbLastStage -notin $script:InitdbOutputStages) {
+            [string]$evidence.initdbLastStage -notin $script:InitdbOutputStages -or
+            [string]$evidence.initdbActivationStage -notin $script:InitdbActivationStages -or
+            [string]$evidence.initdbActivationOutcome -notin $script:InitdbActivationOutcomes) {
             throw 'InvalidIdentityFields'
         }
         $recordedAt = [DateTimeOffset]::MinValue
@@ -1133,7 +1336,10 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
                 @($evidence.fullInitdbIssueCodes).Count -ne 0 -or
                 [string]$evidence.fullInitdbOutcome -cne 'NotRequired' -or
                 [string]$evidence.initdbProcessBoundary -cne 'NotRequired' -or
-                [string]$evidence.initdbLastStage -cne 'NotObserved') {
+                [string]$evidence.initdbLastStage -cne 'NotObserved' -or
+                [string]$evidence.initdbActivationStage -cne 'NotRun' -or
+                @($evidence.initdbActivationTrials).Count -ne 0 -or
+                [string]$evidence.initdbActivationOutcome -cne 'NotRequired') {
                 throw 'InvalidDiagnosticFailure'
             }
         }
@@ -1259,6 +1465,62 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
             if ([string]$evidence.initdbProcessBoundary -cne [string]$processRecomputed.Outcome -or
                 [string]$evidence.initdbLastStage -cne [string]$processRecomputed.LastStage) {
                 throw 'InitdbProcessDecisionMismatch'
+            }
+        }
+
+        $activationTrials = @($evidence.initdbActivationTrials)
+        foreach ($activationTrial in $activationTrials) {
+            if (-not (Test-BoundaryExactProperties -Value $activationTrial -Expected @(
+                'sequence', 'profile', 'completed', 'exitCode', 'exitCodeHex', 'classification')) -or
+                [int]$activationTrial.sequence -lt 1 -or
+                [string]$activationTrial.profile -notin $script:InitdbActivationProfiles -or
+                [string]$activationTrial.classification -notin $script:InitdbActivationClassifications) {
+                throw 'InvalidInitdbActivationTrial'
+            }
+            if ([bool]$activationTrial.completed) {
+                $activationExit = [int]$activationTrial.exitCode
+                if ([string]$activationTrial.exitCodeHex -cne (ConvertTo-BoundaryExitCodeHex -ExitCode $activationExit) -or
+                    [string]$activationTrial.classification -cne
+                        (Get-BoundaryInitdbActivationClassification -Completed $true -ExitCode $activationExit)) {
+                    throw 'InvalidInitdbActivationExitCode'
+                }
+            }
+            elseif ($null -ne $activationTrial.exitCode -or $null -ne $activationTrial.exitCodeHex -or
+                [string]$activationTrial.classification -cne 'InvocationFailed') {
+                throw 'InvalidIncompleteInitdbActivationTrial'
+            }
+        }
+        if ([string]$evidence.initdbProcessBoundary -cne 'TopLevelInitdb') {
+            if ([string]$evidence.initdbActivationStage -cne 'NotRun' -or $activationTrials.Count -ne 0 -or
+                [string]$evidence.initdbActivationOutcome -cne 'NotRequired') {
+                throw 'UnexpectedInitdbActivationDiagnostic'
+            }
+        }
+        elseif ([string]$evidence.initdbActivationOutcome -eq 'DiagnosticFailed') {
+            if ([string]$evidence.initdbActivationStage -in @('NotRun', 'Completed') -or
+                $activationTrials.Count -ne 0) {
+                throw 'InvalidInitdbActivationDiagnosticFailure'
+            }
+        }
+        else {
+            if ([string]$evidence.initdbActivationStage -cne 'Completed' -or $activationTrials.Count -ne 4) {
+                throw 'IncompleteInitdbActivationMatrix'
+            }
+            $expectedActivationSequence = 1
+            foreach ($activationTrial in @($activationTrials | Sort-Object sequence)) {
+                if ([int]$activationTrial.sequence -ne $expectedActivationSequence) {
+                    throw 'InvalidInitdbActivationSequence'
+                }
+                $expectedActivationSequence++
+            }
+            foreach ($profile in $script:InitdbActivationProfiles) {
+                if (@($activationTrials | Where-Object { $_.profile -eq $profile }).Count -ne 1) {
+                    throw 'InvalidInitdbActivationMatrix'
+                }
+            }
+            $activationRecomputed = Get-BoundaryInitdbActivationOutcome -Trials $activationTrials
+            if ([string]$evidence.initdbActivationOutcome -cne [string]$activationRecomputed) {
+                throw 'InitdbActivationDecisionMismatch'
             }
         }
         return [pscustomobject]@{ IsValid = $true; IssueCodes = @() }

@@ -136,6 +136,45 @@ function Get-BoundaryInitdbProcessTestDecision {
     } $Trials
 }
 
+function New-BoundaryInitdbActivationTrial {
+    param(
+        [Parameter(Mandatory = $true)][int]$Sequence,
+        [Parameter(Mandatory = $true)][string]$Profile,
+        [Parameter(Mandatory = $true)][int]$ExitCode,
+        [bool]$Completed = $true
+    )
+
+    $classification = if (-not $Completed) {
+        'InvocationFailed'
+    }
+    elseif ($ExitCode -eq 0) {
+        'NormalSuccess'
+    }
+    elseif ($ExitCode -eq -1073741515) {
+        'DirectLoaderException'
+    }
+    else {
+        'NormalFailure'
+    }
+    return [pscustomobject][ordered]@{
+        sequence = $Sequence
+        profile = $Profile
+        completed = $Completed
+        exitCode = if ($Completed) { $ExitCode } else { $null }
+        exitCodeHex = if (-not $Completed) { $null } elseif ($ExitCode -eq 0) { '0x00000000' } elseif ($ExitCode -eq -1073741515) { '0xC0000135' } else { '0x00000001' }
+        classification = $classification
+    }
+}
+
+function Get-BoundaryInitdbActivationTestDecision {
+    param([object[]]$Trials)
+
+    return & $boundaryModule {
+        param($TrialValues)
+        Get-BoundaryInitdbActivationOutcome -Trials $TrialValues
+    } $Trials
+}
+
 $emptyProbeSet = @(& $boundaryModule {
     param($Module)
 
@@ -400,6 +439,31 @@ Assert-BoundaryTest `
 $processDecision = Get-BoundaryInitdbProcessTestDecision -Trials $unexpectedFullInitdbTrials
 Assert-BoundaryTest -Condition ($processDecision.Outcome -eq 'Inconclusive') -Message 'An unrecognized process failure was not inconclusive.'
 
+$generalActivationTrials = @(
+    New-BoundaryInitdbActivationTrial -Sequence 1 -Profile HelpOnly -ExitCode 0
+    New-BoundaryInitdbActivationTrial -Sequence 2 -Profile MissingDataValidation -ExitCode 1
+    New-BoundaryInitdbActivationTrial -Sequence 3 -Profile MinimalTrust -ExitCode -1073741515
+    New-BoundaryInitdbActivationTrial -Sequence 4 -Profile ExactScram -ExitCode -1073741515
+)
+$activationDecision = Get-BoundaryInitdbActivationTestDecision -Trials $generalActivationTrials
+Assert-BoundaryTest -Condition ($activationDecision -eq 'GeneralClusterActivationBoundary') -Message 'The general cluster-activation boundary was not classified.'
+$authenticationActivationTrials = @(
+    New-BoundaryInitdbActivationTrial -Sequence 1 -Profile HelpOnly -ExitCode 0
+    New-BoundaryInitdbActivationTrial -Sequence 2 -Profile MissingDataValidation -ExitCode 1
+    New-BoundaryInitdbActivationTrial -Sequence 3 -Profile MinimalTrust -ExitCode 0
+    New-BoundaryInitdbActivationTrial -Sequence 4 -Profile ExactScram -ExitCode -1073741515
+)
+$activationDecision = Get-BoundaryInitdbActivationTestDecision -Trials $authenticationActivationTrials
+Assert-BoundaryTest -Condition ($activationDecision -eq 'AuthenticationBoundary') -Message 'The authentication activation boundary was not classified.'
+$preActivationTrials = @($generalActivationTrials)
+$preActivationTrials[0] = New-BoundaryInitdbActivationTrial -Sequence 1 -Profile HelpOnly -ExitCode -1073741515
+$activationDecision = Get-BoundaryInitdbActivationTestDecision -Trials $preActivationTrials
+Assert-BoundaryTest -Condition ($activationDecision -eq 'PreActivationBoundary') -Message 'The pre-activation boundary was not classified.'
+$incompleteActivationTrials = @($generalActivationTrials)
+$incompleteActivationTrials[0] = New-BoundaryInitdbActivationTrial -Sequence 1 -Profile HelpOnly -ExitCode 0 -Completed $false
+$activationDecision = Get-BoundaryInitdbActivationTestDecision -Trials $incompleteActivationTrials
+Assert-BoundaryTest -Condition ($activationDecision -eq 'Inconclusive') -Message 'An incomplete activation ladder was not inconclusive.'
+
 $priorRunnerTemp = $env:RUNNER_TEMP
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) "safarsuite-boundary-hermetic-$([Guid]::NewGuid().ToString('N'))"
 $markerPath = Join-Path $testRoot '.safarsuite-boundary-hermetic-marker'
@@ -465,13 +529,21 @@ try {
             }
             return & $BoundaryModule {
                 param($Module, $PackageManifest, $Paths, $Root)
-                Invoke-BoundaryFullInitdbTrial `
+                $fullTrial = Invoke-BoundaryFullInitdbTrial `
                     -LifecycleModule $Module `
                     -PackageManifest $PackageManifest `
                     -Paths $Paths `
                     -TestRoot $Root `
                     -Mode InheritedCwd `
                     -Sequence 1
+                $activationTrial = Invoke-BoundaryInitdbActivationTrial `
+                    -LifecycleModule $Module `
+                    -PackageManifest $PackageManifest `
+                    -Paths $Paths `
+                    -TestRoot $Root `
+                    -Profile ExactScram `
+                    -Sequence 4
+                return [pscustomobject]@{ Full = $fullTrial; Activation = $activationTrial }
             } $moduleInfo $Manifest ([pscustomobject]@{ RuntimeRoot = $RuntimeRoot }) $TrialRoot
         }
         finally {
@@ -482,9 +554,14 @@ try {
         }
     } $boundaryModule $approvedRuntimeManifest $approvedRuntimeRoot $testRoot
     Assert-BoundaryTest `
-        -Condition ($capturedTrial.completed -and $capturedTrial.exitCodeHex -eq '0xC0000135' -and
-            $capturedTrial.lastStage -eq 'Bootstrap' -and -not $capturedTrial.childFailureObserved) `
+        -Condition ($capturedTrial.Full.completed -and $capturedTrial.Full.exitCodeHex -eq '0xC0000135' -and
+            $capturedTrial.Full.lastStage -eq 'Bootstrap' -and -not $capturedTrial.Full.childFailureObserved) `
         -Message 'The real full-initdb trial did not reduce native output to the finite classification.'
+    Assert-BoundaryTest `
+        -Condition ($capturedTrial.Activation.completed -and
+            $capturedTrial.Activation.profile -eq 'ExactScram' -and
+            $capturedTrial.Activation.classification -eq 'DirectLoaderException') `
+        -Message 'The real activation trial did not retain the finite loader classification.'
     Assert-BoundaryTest `
         -Condition (($capturedTrial | ConvertTo-Json -Compress) -notmatch '(?i)creating configuration|running bootstrap|ephemeral-test-value') `
         -Message 'The real full-initdb trial retained raw output or bootstrap material.'
@@ -538,6 +615,9 @@ try {
         fullInitdbOutcome = 'ApprovedRuntimeRootsHypothesisDisproved'
         initdbProcessBoundary = 'TopLevelInitdb'
         initdbLastStage = 'Bootstrap'
+        initdbActivationStage = 'Completed'
+        initdbActivationTrials = @($generalActivationTrials)
+        initdbActivationOutcome = 'GeneralClusterActivationBoundary'
     }
     & $boundaryModule {
         param($Path, $Evidence)
@@ -646,6 +726,12 @@ try {
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Evidence with an unbound child exception was accepted.'
 
+    $falseActivationDecisionEvidence = Copy-BoundaryTestDictionary -Value $validEvidence
+    $falseActivationDecisionEvidence.initdbActivationOutcome = 'AuthenticationBoundary'
+    [IO.File]::WriteAllText($evidencePath, ($falseActivationDecisionEvidence | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
+    Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Evidence with a false activation decision was accepted.'
+
     $duplicateFullMatrixEvidence = Copy-BoundaryTestDictionary -Value $validEvidence
     $duplicateFullMatrix = @($failedFullInitdbTrials)
     $duplicateFullMatrix[2] = New-BoundaryFullInitdbTrial -Sequence 3 -Mode RuntimeBinCwd
@@ -698,6 +784,14 @@ try {
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Inconsistent prerequisite evidence was accepted.'
 
+    $activationDiagnosticFailure = Copy-BoundaryTestDictionary -Value $validEvidence
+    $activationDiagnosticFailure.initdbActivationStage = 'RunMinimalTrust'
+    $activationDiagnosticFailure.initdbActivationTrials = @()
+    $activationDiagnosticFailure.initdbActivationOutcome = 'DiagnosticFailed'
+    [IO.File]::WriteAllText($evidencePath, ($activationDiagnosticFailure | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
+    Assert-BoundaryTest -Condition $validation.IsValid -Message 'A safe activation diagnostic-failure record was rejected.'
+
     $fullDiagnosticFailure = Copy-BoundaryTestDictionary -Value $validEvidence
     $fullDiagnosticFailure.fullInitdbDiagnosticStage = 'RunApprovedRuntimeRoots'
     $fullDiagnosticFailure.fullInitdbTrials = @()
@@ -705,6 +799,9 @@ try {
     $fullDiagnosticFailure.fullInitdbOutcome = 'DiagnosticFailed'
     $fullDiagnosticFailure.initdbProcessBoundary = 'DiagnosticFailed'
     $fullDiagnosticFailure.initdbLastStage = 'NotObserved'
+    $fullDiagnosticFailure.initdbActivationStage = 'NotRun'
+    $fullDiagnosticFailure.initdbActivationTrials = @()
+    $fullDiagnosticFailure.initdbActivationOutcome = 'NotRequired'
     [IO.File]::WriteAllText($evidencePath, ($fullDiagnosticFailure | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition $validation.IsValid -Message 'A safe full-initdb diagnostic-failure record was rejected.'
@@ -720,6 +817,9 @@ try {
     $diagnosticFailure.fullInitdbOutcome = 'NotRequired'
     $diagnosticFailure.initdbProcessBoundary = 'NotRequired'
     $diagnosticFailure.initdbLastStage = 'NotObserved'
+    $diagnosticFailure.initdbActivationStage = 'NotRun'
+    $diagnosticFailure.initdbActivationTrials = @()
+    $diagnosticFailure.initdbActivationOutcome = 'NotRequired'
     [IO.File]::WriteAllText($evidencePath, ($diagnosticFailure | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition $validation.IsValid -Message 'A safe diagnostic-failure record was rejected.'
@@ -765,5 +865,6 @@ Write-Host 'VC++ transition classifications: covered'
 Write-Host 'Fresh, ACL, working-directory, and installed boundaries: covered'
 Write-Host 'Full initdb working-directory and approved-runtime-roots comparison: covered'
 Write-Host 'In-memory initdb stage and process-boundary classification: covered'
+Write-Host 'Finite initdb activation ladder and decision recomputation: covered'
 Write-Host 'Evidence schema and forbidden-material rejection: covered'
 Write-Host 'Native failure, cleanup, validation, and upload ordering: covered'
