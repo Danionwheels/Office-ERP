@@ -203,7 +203,7 @@ function Get-ProbeImageDependencies {
         if ($null -eq $mode -or [string]::IsNullOrWhiteSpace($trimmed)) {
             continue
         }
-        if ($trimmed -notmatch '^[A-Za-z0-9][A-Za-z0-9._+-]*\.(?i:dll|drv)$' -or
+        if ($trimmed -notmatch '^[A-Za-z0-9][A-Za-z0-9._+-]*\.(?i:dll|drv|exe)$' -or
             [IO.Path]::GetFileName($trimmed) -cne $trimmed -or
             $trimmed.IndexOfAny(@([char]'\', [char]'/', [char]':')) -ge 0) {
             $rejectedEntryCount++
