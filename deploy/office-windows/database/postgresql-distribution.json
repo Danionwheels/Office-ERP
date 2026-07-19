@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "product": "PostgreSQL",
+  "distribution": "EnterpriseDB Windows x86-64 binary archive",
+  "majorVersion": 17,
+  "version": "17.10",
+  "archiveFileName": "postgresql-17.10-1-windows-x64-binaries.zip",
+  "downloadUri": "https://get.enterprisedb.com/postgresql/postgresql-17.10-1-windows-x64-binaries.zip",
+  "sha256": "F9AAFCA58E7026A1EF2CAEEE711ACF761671E57904D430ADC85F468374F5A821",
+  "sourceArchiveRoot": "pgsql/",
+  "runtimeArchiveFileName": "postgresql-17.10-win-x64-runtime.zip",
+  "runtimeIncludeRoots": [
+    "bin/",
+    "lib/",
+    "share/"
+  ],
+  "runtimeIncludeFiles": [
+    "server_license.txt",
+    "commandlinetools_3rd_party_licenses.txt"
+  ],
+  "requiredRuntimeFiles": [
+    "bin/initdb.exe",
+    "bin/pg_controldata.exe",
+    "bin/pg_ctl.exe",
+    "bin/pg_isready.exe",
+    "bin/postgres.exe",
+    "bin/psql.exe",
+    "lib/pg_trgm.dll",
+    "share/extension/pg_trgm.control",
+    "share/extension/pg_trgm--1.3.sql",
+    "share/extension/pg_trgm--1.3--1.4.sql",
+    "share/extension/pg_trgm--1.4--1.5.sql",
+    "share/extension/pg_trgm--1.5--1.6.sql",
+    "server_license.txt",
+    "commandlinetools_3rd_party_licenses.txt"
+  ],
+  "visualCppRuntime": {
+    "product": "Microsoft Visual C++ v14 Redistributable x64",
+    "minimumVersion": "14.51.36247.0",
+    "archiveFileName": "vc_redist.x64.exe",
+    "downloadUri": "https://aka.ms/vc14/vc_redist.x64.exe",
+    "sha256": "843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C"
+  },
+  "serviceName": "SafarSuiteControlDeskPostgreSQL",
+  "serviceDisplayName": "SafarSuite Control Desk PostgreSQL 17",
+  "serviceAccount": "NT SERVICE\\SafarSuiteControlDeskPostgreSQL",
+  "databaseName": "safarsuite_control_desk",
+  "adminRole": "safarsuite_control_desk_admin",
+  "migratorRole": "safarsuite_control_desk_migrator",
+  "applicationRole": "safarsuite_control_desk_app",
+  "port": 54329
+}

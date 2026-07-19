@@ -10,13 +10,27 @@ using SafarSuite.ControlDesk.Api.Modules.Diagnostics;
 using SafarSuite.ControlDesk.Api.Modules.Entitlements;
 using SafarSuite.ControlDesk.Api.Modules.Health;
 using SafarSuite.ControlDesk.Api.Modules.Payments;
+using Microsoft.Extensions.Hosting.WindowsServices;
 
-var builder = WebApplication.CreateBuilder(args);
+var webApplicationOptions = WindowsServiceHelpers.IsWindowsService()
+    ? new WebApplicationOptions
+    {
+        Args = args,
+        ContentRootPath = AppContext.BaseDirectory
+    }
+    : new WebApplicationOptions
+    {
+        Args = args
+    };
+
+var builder = WebApplication.CreateBuilder(webApplicationOptions);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 builder.AddControlDeskRetainedFileLogging();
+builder.Services.AddWindowsService(options =>
+    options.ServiceName = "SafarSuiteControlDeskApi");
 
 builder.Services.AddControlDeskServices(builder.Configuration);
 

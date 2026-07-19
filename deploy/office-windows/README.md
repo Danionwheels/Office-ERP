@@ -1,13 +1,16 @@
 # SafarSuite Control Desk Windows Office Package
 
-This folder implements `OFFICE-P0-01` and carries the Windows package proof for `OFFICE-P0-02` from the [one-PC deployment plan](../../docs/planning/one-pc-control-desk-deployment-plan-2026-07-18.md).
+This folder implements `OFFICE-P0-01` through the engineering portion of `OFFICE-P0-03` from the [one-PC deployment plan](../../docs/planning/one-pc-control-desk-deployment-plan-2026-07-18.md).
 
-The current output is an engineering pilot package, not an office installer. It proves that the React UI and self-contained .NET API can run together from one folder on Windows, on one loopback origin, without Node.js or the .NET SDK at runtime.
+The current output is an engineering package, not yet the operator-facing office installer. It contains the React UI, self-contained .NET API, hash-pinned PostgreSQL 17.10 runtime, Microsoft-signed VC++ prerequisite, self-contained EF migration bundle, and native database lifecycle tools. Runtime operation needs neither Node.js, the .NET SDK, Docker, Linux, DNS, HTTPS, nor SMTP.
 
-Build into a new or empty output directory:
+Acquire the two vendor files named and hash-pinned in `database/postgresql-distribution.json`, then build into a new or empty output directory:
 
 ```powershell
-./deploy/office-windows/Build-OfficePackage.ps1 -OutputDirectory ./.codex-run/office-windows/package
+./deploy/office-windows/Build-OfficePackage.ps1 `
+  -OutputDirectory ./.codex-run/office-windows/package `
+  -PostgresDistributionArchivePath C:/verified-vendor-cache/postgresql-17.10-1-windows-x64-binaries.zip `
+  -VisualCppRedistributablePath C:/verified-vendor-cache/vc_redist.x64.exe
 ```
 
 Smoke the package:
@@ -16,7 +19,19 @@ Smoke the package:
 ./deploy/office-windows/Test-OfficePackage.ps1 -PackageDirectory ./.codex-run/office-windows/package
 ```
 
-The smoke deliberately runs with Development in-memory persistence. Production configuration fails closed unless PostgreSQL is selected and provisioned. Native PostgreSQL installation, Windows service registration, operator bootstrap, backup/restore, update/rollback, and the operator-facing installer belong to later work packages and must pass before real office data is used.
+The package smoke deliberately runs the API with Development in-memory persistence so it remains non-elevated and independent of the native database proof. The separate lifecycle gates test package integrity, state-machine behavior under Windows PowerShell 5.1, and a real PostgreSQL Windows service on a disposable GitHub runner. The hosted runner proves automatic start configuration, not a physical reboot.
+
+On an elevated disposable/reference Windows PC, the packaged database entry points are:
+
+```powershell
+./database/Install-OfficeDatabase.ps1
+./database/Repair-OfficeDatabase.ps1
+./database/Uninstall-OfficeDatabase.ps1
+```
+
+Default uninstall removes the owned PostgreSQL service and versioned runtime but preserves office data, generated database credentials, cluster identity, and lifecycle state for reinstall. There is deliberately no ordinary purge switch. See [the database lifecycle contract](database/README.md).
+
+Production remains blocked on `OFFICE-P0-04` through `OFFICE-P0-08`: first-operator secret custody, the real API Windows service/operator entry, backup and replacement-PC restore, signed update/rollback, and physical clean-PC acceptance.
 
 The packaged host now separates process liveness (`/health` or `/health/live`) from durable readiness (`/ready` or `/health/ready`). Readiness is successful only when PostgreSQL is reachable and its applied migration history exactly matches the packaged application. The authorized `GET /api/v1/diagnostics/summary` surface reports sanitized service, database, outbox, automation, and Control Cloud states without returning connection details, payloads, signatures, or failure text.
 

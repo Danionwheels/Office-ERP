@@ -314,6 +314,24 @@ Implementation completed on 2026-07-18 in commit `ec6d6eb5`; commit `412862df` c
 
 Clean remote evidence passed in [GitHub Actions run 29658333033](https://github.com/Danionwheels/Office-ERP/actions/runs/29658333033): all four required release gates passed. The backend gate proved PostgreSQL outage/readiness recovery and HTTPS outbox recovery after an abrupt host loss with two overlapping recovery hosts. The Windows gate produced a `128,451,648`-byte self-contained package, reached Ready again after abrupt-stop restart, retained and secret-scanned diagnostics/logs, listened only on loopback, and started in `1,510 ms`. The uploaded seven-day engineering artifact is `55,941,388` bytes with SHA-256 `c25ed45fd79a6b1c0438741c94ac53e5322add71170b1be7c0ad77cbf32e1db1`. It is still proof material, not the final installer.
 
+## Implementation Checkpoint — `OFFICE-P0-03` Native PostgreSQL Lifecycle
+
+Engineering implementation is in its verification pass on 2026-07-19. The PowerShell 5.1 hermetic gate is green; a clean package rebuild, disposable native Windows run, clean remote Actions run, and physical reboot evidence remain open:
+
+- the package pins the official PostgreSQL 17.10 Windows archive by SHA-256, trims it to the native runtime plus required notices and `pg_trgm` payload, and includes the pinned Microsoft-signed VC++ x64 prerequisite required by `postgres.exe`;
+- a self-contained `win-x64` EF bundle is bound to an ordered manifest of all 32 migrations ending at `20260713220254_AddPortalPaymentBoundary`;
+- install uses a passwordless virtual Windows service account, product-owned paths, restricted ACLs, loopback-only configuration, SCRAM HBA rules, independently generated admin/migrator/application credentials, and separate least-privilege roles;
+- preflight accepts only an empty history or exact ordered prefix; a named local mutex plus the EF bundle database lock serialize migration, and activation occurs only after exact history and `pg_trgm` postflight;
+- repair distinguishes missing prerequisite, service, stopped service, corrupt managed configuration, unavailable database, and an advanceable migration prefix while refusing foreign clusters/services, unsafe paths, port collisions, missing credentials, unsupported versions, and divergent history;
+- ordinary uninstall removes only the verified service/runtime and preserves cluster data, credentials, state, and reinstall identity;
+- the API executable is Windows-Service-aware, and the package declares/configures the exact API dependency when the real API service exists; API service creation remains in `OFFICE-P0-05` because Production operator secret custody belongs to `OFFICE-P0-04`;
+- the Windows PowerShell 5.1 hermetic proof covers install ordering, rerun idempotency, interrupted-install recovery, expanded repair classifications, native-process output draining, migration failure activation blocking, data-preserving uninstall, service-recovery parsing, and runtime archive integrity/filtering;
+- the extended Windows gate is configured to re-verify both vendor inputs, seal one immutable package archive, exercise a real disposable PostgreSQL Windows service, fault-inject five interruption points, mutation-test service/ACL/cluster/database security, run real migration mismatch/failure/divergence drills, prove lifecycle serialization, and verify uninstall/reinstall data retention. This gate is not evidence until its clean remote run passes.
+
+The earlier generated runtime/bundle hashes predate the lifecycle hardening and are intentionally retired. Record replacement package/archive hashes only after the clean rebuild and native proof pass. The pinned official PostgreSQL and Microsoft source hashes remain the supply-chain boundary until signed-update work in `OFFICE-P0-07`.
+
+Do not mark the gate complete from hosted CI. A hosted runner can prove `Automatic` service configuration and stop/start recovery but cannot reboot and resume the same machine. The persistent clean reference PC must still prove a newer boot plus both real services, readiness, exact schema, and loopback listeners after restart.
+
 ## Status Tracker
 
 | Work package | Status | Completion evidence |
@@ -322,7 +340,7 @@ Clean remote evidence passed in [GitHub Actions run 29658333033](https://github.
 | Repository packaging audit | Complete | API/UI/PostgreSQL/staging audit summarized in this plan. |
 | `OFFICE-P0-01` Local Combined Host | Complete | Local package proof plus clean GitHub Windows package gate passed for `f5a7f878`. |
 | `OFFICE-P0-02` Readiness/Automatic Outbox | Complete | Commits `ec6d6eb5` and `412862df`; local verification plus all four gates in GitHub run `29658333033`. |
-| `OFFICE-P0-03` Native PostgreSQL Lifecycle | Next | Pending. |
+| `OFFICE-P0-03` Native PostgreSQL Lifecycle | In progress | Hermetic proof passes; clean package/native/remote gates and persistent reference-PC reboot proof remain pending. |
 | `OFFICE-P0-04` Operator/Secret Custody | Pending | Pending. |
 | `OFFICE-P0-05` Windows Service/Entry | Pending | Pending. |
 | `OFFICE-P0-06` Backup/Restore | Pending | Pending. |
@@ -342,4 +360,4 @@ Until `OFFICE-P0-08` passes:
 - do not configure DNS, HTTPS, SMTP, or Brevo as part of the office package;
 - do not close a work package without executable or physical evidence.
 
-The immediate coding task is `OFFICE-P0-03`: implement the native Windows PostgreSQL install, exact migration, service/reboot, repair, and uninstall lifecycle without Docker and without weakening the proven loopback package boundary.
+The immediate task is to pass the clean remote `OFFICE-P0-03` native-service gate, then retain the work package as in progress until `OFFICE-P0-04/05` enable the two-real-service reboot rehearsal on the persistent clean Windows reference PC.

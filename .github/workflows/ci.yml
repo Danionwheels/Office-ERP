@@ -420,7 +420,7 @@ jobs:
   office-windows-package-gate:
     name: office-windows-package-gate
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
@@ -438,22 +438,185 @@ jobs:
           cache: npm
           cache-dependency-path: apps/control-desk-ui/package-lock.json
 
+      - name: Cache pinned office database distributions
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\safarsuite-office-vendor-cache
+          key: office-db-vendor-${{ hashFiles('deploy/office-windows/database/postgresql-distribution.json') }}
+
+      - name: Acquire and verify pinned office database distributions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $distribution = Get-Content -Raw ./deploy/office-windows/database/postgresql-distribution.json | ConvertFrom-Json
+          $cacheRoot = Join-Path $env:RUNNER_TEMP 'safarsuite-office-vendor-cache'
+          New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+
+          $postgresArchive = Join-Path $cacheRoot $distribution.archiveFileName
+          if ((Test-Path -LiteralPath $postgresArchive) -and
+              (Get-FileHash -Algorithm SHA256 -LiteralPath $postgresArchive).Hash -ne $distribution.sha256) {
+            Remove-Item -LiteralPath $postgresArchive -Force
+          }
+          if (-not (Test-Path -LiteralPath $postgresArchive)) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri $distribution.downloadUri -OutFile $postgresArchive
+                break
+              }
+              catch {
+                Remove-Item -LiteralPath $postgresArchive -Force -ErrorAction SilentlyContinue
+                if ($attempt -eq 3) { throw }
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $postgresArchive).Hash -ne $distribution.sha256) {
+            throw 'The PostgreSQL source archive does not match the reviewed SHA-256.'
+          }
+
+          $visualCppRuntime = Join-Path $cacheRoot $distribution.visualCppRuntime.archiveFileName
+          if ((Test-Path -LiteralPath $visualCppRuntime) -and
+              (Get-FileHash -Algorithm SHA256 -LiteralPath $visualCppRuntime).Hash -ne $distribution.visualCppRuntime.sha256) {
+            Remove-Item -LiteralPath $visualCppRuntime -Force
+          }
+          if (-not (Test-Path -LiteralPath $visualCppRuntime)) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri $distribution.visualCppRuntime.downloadUri -OutFile $visualCppRuntime
+                break
+              }
+              catch {
+                Remove-Item -LiteralPath $visualCppRuntime -Force -ErrorAction SilentlyContinue
+                if ($attempt -eq 3) { throw }
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $visualCppRuntime).Hash -ne $distribution.visualCppRuntime.sha256) {
+            throw 'The Microsoft Visual C++ runtime does not match the reviewed SHA-256.'
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $visualCppRuntime
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
+            throw 'The Microsoft Visual C++ runtime signature is invalid.'
+          }
+
+          "OFFICE_POSTGRES_ARCHIVE=$postgresArchive" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_VCPP_RUNTIME=$visualCppRuntime" | Add-Content -LiteralPath $env:GITHUB_ENV
+
+      - name: Prove database lifecycle state machine and runtime filtering
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficeDatabaseLifecycle.Hermetic.ps1
+
       - name: Build self-contained office package
         shell: pwsh
         run: >-
           ./deploy/office-windows/Build-OfficePackage.ps1
           -OutputDirectory "$env:RUNNER_TEMP\safarsuite-control-desk-office"
+          -PostgresDistributionArchivePath "$env:OFFICE_POSTGRES_ARCHIVE"
+          -VisualCppRedistributablePath "$env:OFFICE_VCPP_RUNTIME"
+          -ExpectedSourceRevision "$env:GITHUB_SHA"
+          -RequireCleanSource
+
+      - name: Seal immutable office package and extract the tested copy
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $builtPackage = Join-Path $env:RUNNER_TEMP 'safarsuite-control-desk-office'
+          $sealedRoot = Join-Path $env:RUNNER_TEMP 'safarsuite-office-package-sealed'
+          $archivePath = Join-Path $sealedRoot 'safarsuite-control-desk-office-win-x64.zip'
+          $checksumPath = "$archivePath.sha256"
+          $testedPackage = Join-Path $env:RUNNER_TEMP 'safarsuite-control-desk-office-tested'
+          New-Item -ItemType Directory -Path $sealedRoot | Out-Null
+          [IO.Compression.ZipFile]::CreateFromDirectory(
+            $builtPackage,
+            $archivePath,
+            [IO.Compression.CompressionLevel]::Optimal,
+            $false)
+          $archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToUpperInvariant()
+          [IO.File]::WriteAllText($checksumPath, "$archiveHash  $([IO.Path]::GetFileName($archivePath))`n", [Text.UTF8Encoding]::new($false))
+          [IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $testedPackage)
+          $manifest = Get-Content -Raw -LiteralPath (Join-Path $testedPackage 'office-package-manifest.json') | ConvertFrom-Json
+          if ($manifest.sourceRevision -cne $env:GITHUB_SHA -or $manifest.sourceTreeState -ne 'clean') {
+            throw 'The sealed package is not bound to the clean GitHub revision.'
+          }
+          "OFFICE_PACKAGE_TEST_PATH=$testedPackage" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_PACKAGE_ARCHIVE=$archivePath" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_PACKAGE_CHECKSUM=$checksumPath" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_PACKAGE_SHA256=$archiveHash" | Add-Content -LiteralPath $env:GITHUB_ENV
 
       - name: Smoke same-origin loopback package
         shell: pwsh
         run: >-
           ./deploy/office-windows/Test-OfficePackage.ps1
-          -PackageDirectory "$env:RUNNER_TEMP\safarsuite-control-desk-office"
+          -PackageDirectory "$env:OFFICE_PACKAGE_TEST_PATH"
+          -EvidenceDirectory "$env:RUNNER_TEMP\safarsuite-office-package-evidence"
+
+      - name: Prepare disposable native database proof
+        shell: pwsh
+        run: |
+          $testRoot = Join-Path $env:RUNNER_TEMP "safarsuite-office-db-$([Guid]::NewGuid().ToString('N'))"
+          $evidencePath = Join-Path $env:RUNNER_TEMP 'safarsuite-office-db-evidence\native-lifecycle.json'
+          "OFFICE_DB_TEST_ROOT=$testRoot" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_DB_EVIDENCE=$evidencePath" | Add-Content -LiteralPath $env:GITHUB_ENV
+
+      - name: Prove native PostgreSQL Windows service lifecycle
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficeDatabaseLifecycle.NativeCi.ps1
+          -PackageDirectory "$env:OFFICE_PACKAGE_TEST_PATH"
+          -TestRoot "$env:OFFICE_DB_TEST_ROOT"
+          -EvidencePath "$env:OFFICE_DB_EVIDENCE"
+          -OfficePackageArchiveSha256 "$env:OFFICE_PACKAGE_SHA256"
+
+      - name: Clean disposable native database proof
+        if: always()
+        shell: powershell
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:OFFICE_DB_TEST_ROOT)) {
+            Write-Host 'Native database proof was not prepared; no cleanup is required.'
+          }
+          else {
+            ./deploy/office-windows/database/Clear-OfficeDatabaseLifecycle.NativeCi.ps1 `
+              -TestRoot "$env:OFFICE_DB_TEST_ROOT"
+          }
+
+      - name: Upload native database lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safarsuite-control-desk-office-database-evidence
+          path: ${{ runner.temp }}\safarsuite-office-db-evidence
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload office package smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safarsuite-control-desk-office-package-evidence
+          path: ${{ runner.temp }}\safarsuite-office-package-evidence
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Verify sealed office package is unchanged
+        shell: pwsh
+        run: |
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $env:OFFICE_PACKAGE_ARCHIVE).Hash.ToUpperInvariant()
+          if ($actual -cne $env:OFFICE_PACKAGE_SHA256) {
+            throw 'The sealed office package changed after it was created.'
+          }
+          $expectedChecksum = "$actual  $([IO.Path]::GetFileName($env:OFFICE_PACKAGE_ARCHIVE))"
+          $actualChecksum = [IO.File]::ReadAllText($env:OFFICE_PACKAGE_CHECKSUM).Trim()
+          if ($actualChecksum -cne $expectedChecksum) {
+            throw 'The uploaded office package checksum file does not describe the tested archive.'
+          }
 
       - name: Upload office pilot artifact
         uses: actions/upload-artifact@v4
         with:
           name: safarsuite-control-desk-office-win-x64
-          path: ${{ runner.temp }}\safarsuite-control-desk-office
+          path: ${{ runner.temp }}\safarsuite-office-package-sealed
           if-no-files-found: error
           retention-days: 7

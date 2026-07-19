@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$PackageDirectory
+    [string]$PackageDirectory,
+
+    [string]$EvidenceDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,9 +13,29 @@ $executablePath = Join-Path $packagePath "SafarSuite.ControlDesk.Api.exe"
 $indexPath = Join-Path $packagePath "wwwroot\index.html"
 $manifestPath = Join-Path $packagePath "office-package-manifest.json"
 $productionSettingsPath = Join-Path $packagePath "appsettings.Production.json"
-$logDirectory = Join-Path $packagePath "smoke-logs-$([Guid]::NewGuid().ToString('N'))"
+$databaseDirectory = Join-Path $packagePath "database"
+$databaseManifestPath = Join-Path $databaseDirectory "database-package-manifest.json"
+$databaseLifecycleModulePath = Join-Path $databaseDirectory "OfficeDatabaseLifecycle.psm1"
+$evidenceRoot = if ([string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
+    Join-Path ([IO.Path]::GetTempPath()) "safarsuite-office-package-evidence-$([Guid]::NewGuid().ToString('N'))"
+}
+else {
+    [IO.Path]::GetFullPath($EvidenceDirectory)
+}
+New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+$logDirectory = Join-Path $evidenceRoot "smoke-logs-$([Guid]::NewGuid().ToString('N'))"
 
-foreach ($requiredPath in @($executablePath, $indexPath, $manifestPath, $productionSettingsPath)) {
+foreach ($requiredPath in @(
+    $executablePath,
+    $indexPath,
+    $manifestPath,
+    $productionSettingsPath,
+    $databaseManifestPath,
+    $databaseLifecycleModulePath,
+    (Join-Path $databaseDirectory "Install-OfficeDatabase.ps1"),
+    (Join-Path $databaseDirectory "Repair-OfficeDatabase.ps1"),
+    (Join-Path $databaseDirectory "Uninstall-OfficeDatabase.ps1")
+)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Required package file is missing: $requiredPath"
     }
@@ -92,19 +114,26 @@ function Assert-PackagedStartupRejected {
     $rejectedProcess = [System.Diagnostics.Process]::new()
     $rejectedProcess.StartInfo = $startInfo
     $rejectedProcessStarted = $false
+    $stdoutTask = $null
+    $stderrTask = $null
 
     try {
         if (-not $rejectedProcess.Start()) {
             throw "The production configuration-guard process did not start."
         }
         $rejectedProcessStarted = $true
+        $stdoutTask = $rejectedProcess.StandardOutput.ReadToEndAsync()
+        $stderrTask = $rejectedProcess.StandardError.ReadToEndAsync()
 
         if (-not $rejectedProcess.WaitForExit(10000)) {
             $rejectedProcess.Kill()
+            $rejectedProcess.WaitForExit(10000) | Out-Null
+            $null = $stdoutTask.Result
+            $null = $stderrTask.Result
             throw "The production package accepted a prohibited configuration and remained running."
         }
 
-        $output = $rejectedProcess.StandardOutput.ReadToEnd() + $rejectedProcess.StandardError.ReadToEnd()
+        $output = $stdoutTask.Result + $stderrTask.Result
         if ($rejectedProcess.ExitCode -eq 0 -or $output -notmatch $ExpectedOutputPattern) {
             throw "The production package did not fail closed with expected evidence '$ExpectedOutputPattern'."
         }
@@ -159,6 +188,33 @@ function New-SmokePasswordHash {
 
 $productionSettings = Get-Content -Raw -LiteralPath $productionSettingsPath | ConvertFrom-Json
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+Import-Module $databaseLifecycleModulePath -Force
+$databaseManifest = Test-OfficeDatabasePackage -PackageDirectory $packagePath
+if ($manifest.packageFormat -ne "office-windows-native-postgresql-v2") {
+    throw "The office package does not use the native PostgreSQL package format."
+}
+
+$databaseManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $databaseManifestPath).Hash.ToUpperInvariant()
+if ($databaseManifestHash -ne ([string]$manifest.services.database.manifestSha256).ToUpperInvariant()) {
+    throw "The top-level package manifest does not bind the database manifest."
+}
+
+if ($databaseManifest.migrations.count -ne 32 -or
+    $databaseManifest.migrations.target -ne "20260713220254_AddPortalPaymentBoundary" -or
+    @($databaseManifest.migrations.requiredExtensions) -notcontains "pg_trgm") {
+    throw "The package does not contain the reviewed Control Desk migration target."
+}
+
+if (@($manifest.services.api.dependsOn).Count -ne 1 -or
+    $manifest.services.api.dependsOn[0] -ne $manifest.services.database.name) {
+    throw "The office package does not declare the exact API-to-PostgreSQL service dependency."
+}
+
+$visualCppRuntimePath = Join-Path $databaseDirectory ([string]$databaseManifest.postgresql.visualCppRuntime.archiveFileName)
+$visualCppSignature = Get-AuthenticodeSignature -LiteralPath $visualCppRuntimePath
+if ($visualCppSignature.Status -ne "Valid" -or $visualCppSignature.SignerCertificate.Subject -notmatch "Microsoft Corporation") {
+    throw "The packaged Microsoft Visual C++ runtime signature is invalid."
+}
 if ($productionSettings.Persistence.Provider -ne "Postgres") {
     throw "Production package configuration must select PostgreSQL."
 }
@@ -427,7 +483,7 @@ try {
     }
 
     $evidence | ConvertTo-Json | Set-Content `
-        -LiteralPath (Join-Path $packagePath "office-package-smoke-evidence.json") `
+        -LiteralPath (Join-Path $evidenceRoot "office-package-smoke-evidence.json") `
         -Encoding utf8
 
     Write-Host "Office package smoke passed."

@@ -20,7 +20,7 @@ Execution contract: `docs/planning/one-pc-control-desk-deployment-plan-2026-07-1
 - [x] Audit the current API, UI, PostgreSQL, desktop, CI, and staging assets against the office gate.
 - [x] `OFFICE-P0-01`: produce one loopback, same-origin, self-contained Windows artifact. Local proof and clean GitHub Windows package gate passed on 2026-07-18.
 - [x] `OFFICE-P0-02`: add database readiness, retained diagnostics, and automatic outbox recovery. Local verification passed with `113/113` tests; all four release gates, the PostgreSQL outage/recovery drill, durable outbox crash/replay proof, and Windows package restart smoke passed in GitHub run `29658333033` on 2026-07-18.
-- [ ] `OFFICE-P0-03`: implement native Windows PostgreSQL installation, migration, repair, and reboot lifecycle.
+- [ ] `OFFICE-P0-03`: native PostgreSQL 17.10 packaging, resumable install/migrate/repair/uninstall tooling, service-aware API hosting, and the hermetic proof are implemented locally; clean package/native/remote gates and the persistent reference-PC reboot proof remain required.
 - [ ] `OFFICE-P0-04`: package first-operator provisioning, secret custody, and recovery.
 - [ ] `OFFICE-P0-05`: install the API service and normal operator desktop/Start-menu entry.
 - [ ] `OFFICE-P0-06`: implement scheduled backup and prove clean replacement-PC restore.
