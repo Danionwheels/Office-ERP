@@ -1040,7 +1040,9 @@ function Write-OfficePgPassFile {
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
     $escapedPassword = $Password.Replace('\', '\\').Replace(':', '\:')
-    Set-OfficeAtomicUtf8NoBomContent -Path $Path -Value "127.0.0.1:$Port`:$Database`:$Role`:$escapedPassword"
+    # libpq password files are line-oriented inputs. Retain an explicit Windows
+    # line terminator instead of relying on EOF to terminate the only record.
+    Set-OfficeAtomicUtf8NoBomContent -Path $Path -Value "127.0.0.1:$Port`:$Database`:$Role`:$escapedPassword`r`n"
     Set-OfficeRestrictedAcl -Path $Path -Profile Secrets
 }
 
@@ -1054,7 +1056,11 @@ function Read-OfficePgPassPassword {
     if ($parts.Count -ne 5 -or [string]::IsNullOrWhiteSpace($parts[4])) {
         return $null
     }
-    return $parts[4].Replace('\:', ':').Replace('\\', '\')
+    $passwordField = $parts[4].TrimEnd([char[]]"`r`n")
+    if ([string]::IsNullOrWhiteSpace($passwordField)) {
+        return $null
+    }
+    return $passwordField.Replace('\:', ':').Replace('\\', '\')
 }
 
 function Get-OfficePsqlFailureClassification {
@@ -2393,7 +2399,8 @@ function New-OfficeNativeDatabaseAdapter {
                 -Path $stagingDataDirectory `
                 -InitializationUserSid $initializationUserSid `
                 -Profile Data
-            Set-OfficeUtf8NoBomContent -Path $bootstrapPasswordPath -Value $adminPassword
+            # initdb --pwfile reads a single line and strips its line ending.
+            Set-OfficeUtf8NoBomContent -Path $bootstrapPasswordPath -Value "$adminPassword`r`n"
             Set-OfficeRestrictedAcl `
                 -Path $bootstrapPasswordPath `
                 -InitializationUserSid $initializationUserSid `
@@ -2405,9 +2412,8 @@ function New-OfficeNativeDatabaseAdapter {
                     '-D', $stagingDataDirectory,
                     '-U', [string]$ctx.Distribution.adminRole,
                     '--auth-host=scram-sha-256', '--auth-local=scram-sha-256',
-                    '--encoding=UTF8', '--locale=C', '--pwprompt'
+                    '--encoding=UTF8', '--locale=C', "--pwfile=$bootstrapPasswordPath"
                 ) `
-                -StandardInput "$adminPassword`n$adminPassword`n" `
                 -TimeoutSeconds 180 | Out-Null
             Invoke-OfficeDatabaseTestFault -Context $ctx -Point 'AfterClusterInitialize'
         }

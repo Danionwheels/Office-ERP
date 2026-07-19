@@ -331,6 +331,28 @@ $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("safarsuite-office-db-hermetic
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 Set-Content -LiteralPath (Join-Path $testRoot '.safarsuite-hermetic-marker') -Value 'owned-test-root'
 try {
+    $pgPassPath = Join-Path $testRoot 'line-terminated.pgpass'
+    $pgPassPassword = 'hermetic-password'
+    & $lifecycleModule {
+        param($Path, $Password)
+        $escapedPassword = $Password.Replace('\', '\\').Replace(':', '\:')
+        Set-OfficeAtomicUtf8NoBomContent `
+            -Path $Path `
+            -Value "127.0.0.1:54329`:*`:safarsuite_control_desk_admin`:$escapedPassword`r`n"
+    } $pgPassPath $pgPassPassword
+    $pgPassBytes = [IO.File]::ReadAllBytes($pgPassPath)
+    $pgPassRoundTrip = & $lifecycleModule {
+        param($Path)
+        Read-OfficePgPassPassword -Path $Path
+    } $pgPassPath
+    Assert-OfficeTest -Condition ($pgPassRoundTrip -ceq $pgPassPassword) -Message 'Line-terminated PostgreSQL password file did not round-trip its password.'
+    Assert-OfficeTest `
+        -Condition ($pgPassBytes.Length -ge 2 -and $pgPassBytes[$pgPassBytes.Length - 2] -eq 0x0D -and $pgPassBytes[$pgPassBytes.Length - 1] -eq 0x0A) `
+        -Message 'PostgreSQL password file did not retain its explicit CRLF record terminator.'
+    Assert-OfficeTest `
+        -Condition ($pgPassBytes.Length -lt 3 -or -not ($pgPassBytes[0] -eq 0xEF -and $pgPassBytes[1] -eq 0xBB -and $pgPassBytes[2] -eq 0xBF)) `
+        -Message 'PostgreSQL password file emitted a UTF-8 BOM.'
+
     $atomicJsonPath = Join-Path $testRoot 'atomic-replace.json'
     & $lifecycleModule {
         param($Path)
