@@ -129,7 +129,11 @@ function Set-OfficeAtomicUtf8NoBomContent {
     try {
         Set-OfficeUtf8NoBomContent -Path $temporaryPath -Value $Value
         if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
-            [IO.File]::Replace($temporaryPath, $fullPath, $null, $true)
+            [IO.File]::Replace(
+                $temporaryPath,
+                $fullPath,
+                [System.Management.Automation.Language.NullString]::Value,
+                $true)
         }
         else {
             [IO.File]::Move($temporaryPath, $fullPath)

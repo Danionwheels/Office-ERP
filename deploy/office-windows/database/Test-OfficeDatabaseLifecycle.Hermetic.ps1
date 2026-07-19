@@ -237,6 +237,23 @@ $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("safarsuite-office-db-hermetic
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 Set-Content -LiteralPath (Join-Path $testRoot '.safarsuite-hermetic-marker') -Value 'owned-test-root'
 try {
+    $atomicJsonPath = Join-Path $testRoot 'atomic-replace.json'
+    & $lifecycleModule {
+        param($Path)
+        Set-OfficeAtomicJsonFile -Path $Path -Value ([ordered]@{ phase = 'Promoting' })
+        Set-OfficeAtomicJsonFile -Path $Path -Value ([ordered]@{ phase = 'Installed' })
+    } $atomicJsonPath
+    $atomicJsonBytes = [IO.File]::ReadAllBytes($atomicJsonPath)
+    $atomicJson = Get-Content -Raw -LiteralPath $atomicJsonPath | ConvertFrom-Json
+    Assert-OfficeTest -Condition ($atomicJson.phase -eq 'Installed') -Message 'Atomic JSON replacement did not retain the second value.'
+    Assert-OfficeTest `
+        -Condition ($atomicJsonBytes.Length -lt 3 -or
+            -not ($atomicJsonBytes[0] -eq 0xEF -and $atomicJsonBytes[1] -eq 0xBB -and $atomicJsonBytes[2] -eq 0xBF)) `
+        -Message 'Atomic JSON replacement emitted a UTF-8 BOM.'
+    Assert-OfficeTest `
+        -Condition (@(Get-ChildItem -LiteralPath $testRoot -Filter '.safarsuite-write-*.tmp' -File).Count -eq 0) `
+        -Message 'Atomic JSON replacement left a temporary file behind.'
+
     $baseEntries = @{
         'pgsql/bin/initdb.exe' = 'initdb'
         'pgsql/bin/pg_controldata.exe' = 'pg_controldata'
