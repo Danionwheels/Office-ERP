@@ -66,6 +66,20 @@ $script:FullInitdbStages = @(
     'Classify',
     'Completed'
 )
+$script:InitdbOutputStages = @(
+    'NotObserved',
+    'DirectoryPreparation',
+    'RuntimeSelection',
+    'CapacitySizing',
+    'BufferSizing',
+    'TimeZoneSelection',
+    'Configuration',
+    'Bootstrap',
+    'PostBootstrap',
+    'Sync',
+    'Completed'
+)
+$script:InitdbProcessBoundaries = @('NotRequired', 'TopLevelInitdb', 'SpawnedBackend', 'Inconclusive', 'DiagnosticFailed')
 
 function ConvertTo-BoundaryExitCodeHex {
     param([Parameter(Mandatory = $true)][int]$ExitCode)
@@ -437,6 +451,77 @@ function Get-OfficePostgresFullInitdbBoundaryOutcome {
     }
 }
 
+function Get-BoundaryInitdbOutputClassification {
+    param(
+        [AllowNull()][string]$StandardOutput,
+        [AllowNull()][string]$StandardError,
+        [Parameter(Mandatory = $true)][int]$ExitCode
+    )
+
+    $combined = "{0}`n{1}" -f [string]$StandardOutput, [string]$StandardError
+    $lastStage = 'NotObserved'
+    $lastIndex = -1
+    $markers = [ordered]@{
+        DirectoryPreparation = @('creating directory', 'creating subdirectories')
+        RuntimeSelection = @('selecting dynamic shared memory implementation')
+        CapacitySizing = @('selecting default max_connections')
+        BufferSizing = @('selecting default shared_buffers')
+        TimeZoneSelection = @('selecting default time zone')
+        Configuration = @('creating configuration files')
+        Bootstrap = @('running bootstrap script')
+        PostBootstrap = @('performing post-bootstrap initialization')
+        Sync = @('syncing data to disk')
+    }
+    foreach ($stage in $markers.Keys) {
+        foreach ($marker in $markers[$stage]) {
+            $index = $combined.LastIndexOf($marker, [StringComparison]::OrdinalIgnoreCase)
+            if ($index -gt $lastIndex) {
+                $lastIndex = $index
+                $lastStage = [string]$stage
+            }
+        }
+    }
+    if ($ExitCode -eq 0) {
+        $lastStage = 'Completed'
+    }
+
+    $childFailureObserved = $false
+    $childFailureExitCodeHex = $null
+    $childMatch = [regex]::Match(
+        $combined,
+        'child process was terminated by exception 0x(?<code>[0-9A-Fa-f]{8})',
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($childMatch.Success) {
+        $childFailureObserved = $true
+        $childFailureExitCodeHex = "0x$($childMatch.Groups['code'].Value.ToUpperInvariant())"
+    }
+    $combined = $null
+    return [pscustomobject][ordered]@{
+        lastStage = $lastStage
+        childFailureObserved = $childFailureObserved
+        childFailureExitCodeHex = $childFailureExitCodeHex
+    }
+}
+
+function Get-BoundaryInitdbProcessBoundary {
+    param([Parameter(Mandatory = $true)][object[]]$Trials)
+
+    $baseline = @($Trials | Where-Object { $_.mode -eq 'InheritedCwd' })
+    if ($baseline.Count -ne 1 -or -not [bool]$baseline[0].completed -or [bool]$baseline[0].succeeded) {
+        return [pscustomobject]@{ Outcome = 'Inconclusive'; LastStage = 'NotObserved' }
+    }
+    $trial = $baseline[0]
+    if ([bool]$trial.childFailureObserved) {
+        return [pscustomobject]@{ Outcome = 'SpawnedBackend'; LastStage = [string]$trial.lastStage }
+    }
+    # initdb reports a child NTSTATUS in its own output and exits normally with failure;
+    # this NTSTATUS as initdb's direct process exit therefore belongs to initdb itself.
+    if ([string]$trial.exitCodeHex -ceq '0xC0000135') {
+        return [pscustomobject]@{ Outcome = 'TopLevelInitdb'; LastStage = [string]$trial.lastStage }
+    }
+    return [pscustomobject]@{ Outcome = 'Inconclusive'; LastStage = [string]$trial.lastStage }
+}
+
 function Get-BoundaryApprovedRuntimeSearchValue {
     param(
         [Parameter(Mandatory = $true)]$PackageManifest,
@@ -522,7 +607,7 @@ function Invoke-BoundaryFullInitdbTrial {
             $overrides['PATH'] = $ApprovedRuntimeSearchValue
         }
         try {
-            $exitCode = & $LifecycleModule {
+            $nativeResult = & $LifecycleModule {
                 param($ExecutablePath, $Arguments, $Overrides, $RuntimeBin, $UseRuntimeBin)
                 $parameters = @{
                     FilePath = $ExecutablePath
@@ -535,8 +620,18 @@ function Invoke-BoundaryFullInitdbTrial {
                     $parameters['WorkingDirectory'] = $RuntimeBin
                 }
                 $result = Invoke-OfficeNativeCommand @parameters
-                return [int]$result.ExitCode
+                return [pscustomobject]@{
+                    ExitCode = [int]$result.ExitCode
+                    StandardOutput = [string]$result.StandardOutput
+                    StandardError = [string]$result.StandardError
+                }
             } $initdbPath $arguments $overrides $runtimeBin ($Mode -ne 'InheritedCwd')
+            $exitCode = [int]$nativeResult.ExitCode
+            $outputClassification = Get-BoundaryInitdbOutputClassification `
+                -StandardOutput ([string]$nativeResult.StandardOutput) `
+                -StandardError ([string]$nativeResult.StandardError) `
+                -ExitCode $exitCode
+            $nativeResult = $null
             return [ordered]@{
                 sequence = $Sequence
                 mode = $Mode
@@ -545,6 +640,9 @@ function Invoke-BoundaryFullInitdbTrial {
                 exitCodeHex = ConvertTo-BoundaryExitCodeHex -ExitCode ([int]$exitCode)
                 succeeded = [int]$exitCode -eq 0
                 issueCode = $null
+                lastStage = [string]$outputClassification.lastStage
+                childFailureObserved = [bool]$outputClassification.childFailureObserved
+                childFailureExitCodeHex = $outputClassification.childFailureExitCodeHex
             }
         }
         catch {
@@ -556,6 +654,9 @@ function Invoke-BoundaryFullInitdbTrial {
                 exitCodeHex = $null
                 succeeded = $false
                 issueCode = 'InvocationFailed'
+                lastStage = 'NotObserved'
+                childFailureObserved = $false
+                childFailureExitCodeHex = $null
             }
         }
     }
@@ -771,6 +872,7 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
         $fullInitdbStage = 'NotRun'
         $fullInitdbTrials = @()
         $fullInitdbDecision = [pscustomobject]@{ Outcome = 'NotRequired'; IssueCodes = @() }
+        $initdbProcessDecision = [pscustomobject]@{ Outcome = 'NotRequired'; LastStage = 'NotObserved' }
         if ([string]$decision.Outcome -eq 'FullInitdbInvocationBoundary') {
             $trialList = [Collections.Generic.List[object]]::new()
             try {
@@ -807,6 +909,7 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
                 $fullInitdbStage = 'Classify'
                 $fullInitdbTrials = @($trialList)
                 $fullInitdbDecision = Get-OfficePostgresFullInitdbBoundaryOutcome -Trials $fullInitdbTrials
+                $initdbProcessDecision = Get-BoundaryInitdbProcessBoundary -Trials $fullInitdbTrials
                 $fullInitdbStage = 'Completed'
             }
             catch {
@@ -816,6 +919,7 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
                     Outcome = 'DiagnosticFailed'
                     IssueCodes = @('FullInitdbDiagnosticInternalFailure')
                 }
+                $initdbProcessDecision = [pscustomobject]@{ Outcome = 'DiagnosticFailed'; LastStage = 'NotObserved' }
             }
         }
         $evidence = Copy-BoundaryDictionary -Value $baseEvidence
@@ -827,10 +931,13 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
         $evidence['fullInitdbTrials'] = @($fullInitdbTrials)
         $evidence['fullInitdbIssueCodes'] = @($fullInitdbDecision.IssueCodes)
         $evidence['fullInitdbOutcome'] = [string]$fullInitdbDecision.Outcome
+        $evidence['initdbProcessBoundary'] = [string]$initdbProcessDecision.Outcome
+        $evidence['initdbLastStage'] = [string]$initdbProcessDecision.LastStage
         Write-BoundaryEvidence -EvidencePath $evidenceFilePath -Evidence $evidence
         return [pscustomobject]@{
             Outcome = [string]$decision.Outcome
             FullInitdbOutcome = [string]$fullInitdbDecision.Outcome
+            InitdbProcessBoundary = [string]$initdbProcessDecision.Outcome
             EvidenceWritten = $true
         }
     }
@@ -844,10 +951,13 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
         $fallback['fullInitdbTrials'] = @()
         $fallback['fullInitdbIssueCodes'] = @()
         $fallback['fullInitdbOutcome'] = 'NotRequired'
+        $fallback['initdbProcessBoundary'] = 'NotRequired'
+        $fallback['initdbLastStage'] = 'NotObserved'
         Write-BoundaryEvidence -EvidencePath $evidenceFilePath -Evidence $fallback
         return [pscustomobject]@{
             Outcome = 'DiagnosticFailed'
             FullInitdbOutcome = 'NotRequired'
+            InitdbProcessBoundary = 'NotRequired'
             EvidenceWritten = $true
         }
     }
@@ -905,7 +1015,8 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
         if (-not (Test-BoundaryExactProperties -Value $evidence -Expected @(
             'schemaVersion', 'proof', 'recordedAtUtc', 'sourceRevision', 'invocationNonce', 'runner', 'package',
             'lifecycleFailure', 'visualCppTransitions', 'probes', 'issueCodes', 'outcome',
-            'fullInitdbDiagnosticStage', 'fullInitdbTrials', 'fullInitdbIssueCodes', 'fullInitdbOutcome'))) {
+            'fullInitdbDiagnosticStage', 'fullInitdbTrials', 'fullInitdbIssueCodes', 'fullInitdbOutcome',
+            'initdbProcessBoundary', 'initdbLastStage'))) {
             throw 'InvalidTopLevelSchema'
         }
         if ([int]$evidence.schemaVersion -ne 1 -or [string]$evidence.proof -cne $script:BoundaryProofName -or
@@ -913,7 +1024,9 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
             [string]$evidence.invocationNonce -cne $ExpectedInvocationNonce -or
             [string]$evidence.outcome -notin $script:BoundaryOutcomes -or
             [string]$evidence.fullInitdbDiagnosticStage -notin $script:FullInitdbStages -or
-            [string]$evidence.fullInitdbOutcome -notin $script:FullInitdbOutcomes) {
+            [string]$evidence.fullInitdbOutcome -notin $script:FullInitdbOutcomes -or
+            [string]$evidence.initdbProcessBoundary -notin $script:InitdbProcessBoundaries -or
+            [string]$evidence.initdbLastStage -notin $script:InitdbOutputStages) {
             throw 'InvalidIdentityFields'
         }
         $recordedAt = [DateTimeOffset]::MinValue
@@ -1018,7 +1131,9 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
                 [string]$evidence.fullInitdbDiagnosticStage -cne 'NotRun' -or
                 @($evidence.fullInitdbTrials).Count -ne 0 -or
                 @($evidence.fullInitdbIssueCodes).Count -ne 0 -or
-                [string]$evidence.fullInitdbOutcome -cne 'NotRequired') {
+                [string]$evidence.fullInitdbOutcome -cne 'NotRequired' -or
+                [string]$evidence.initdbProcessBoundary -cne 'NotRequired' -or
+                [string]$evidence.initdbLastStage -cne 'NotObserved') {
                 throw 'InvalidDiagnosticFailure'
             }
         }
@@ -1067,8 +1182,10 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
         $fullTrials = @($evidence.fullInitdbTrials)
         foreach ($trial in $fullTrials) {
             if (-not (Test-BoundaryExactProperties -Value $trial -Expected @(
-                'sequence', 'mode', 'completed', 'exitCode', 'exitCodeHex', 'succeeded', 'issueCode')) -or
-                [int]$trial.sequence -lt 1 -or [string]$trial.mode -notin $script:FullInitdbModes) {
+                'sequence', 'mode', 'completed', 'exitCode', 'exitCodeHex', 'succeeded', 'issueCode',
+                'lastStage', 'childFailureObserved', 'childFailureExitCodeHex')) -or
+                [int]$trial.sequence -lt 1 -or [string]$trial.mode -notin $script:FullInitdbModes -or
+                [string]$trial.lastStage -notin $script:InitdbOutputStages) {
                 throw 'InvalidFullInitdbTrial'
             }
             if ([bool]$trial.completed) {
@@ -1077,9 +1194,22 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
                     [bool]$trial.succeeded -ne ($trialExit -eq 0) -or $null -ne $trial.issueCode) {
                     throw 'InvalidFullInitdbTrialExitCode'
                 }
+                if ([bool]$trial.childFailureObserved) {
+                    if ([string]$trial.childFailureExitCodeHex -notmatch '^0x[A-F0-9]{8}$' -or $trialExit -eq 0) {
+                        throw 'InvalidFullInitdbChildFailure'
+                    }
+                }
+                elseif ($null -ne $trial.childFailureExitCodeHex) {
+                    throw 'UnexpectedFullInitdbChildFailureCode'
+                }
+                if ($trialExit -eq 0 -and [string]$trial.lastStage -cne 'Completed') {
+                    throw 'InvalidSuccessfulFullInitdbStage'
+                }
             }
             elseif ($null -ne $trial.exitCode -or $null -ne $trial.exitCodeHex -or
-                [bool]$trial.succeeded -or [string]$trial.issueCode -cne 'InvocationFailed') {
+                [bool]$trial.succeeded -or [string]$trial.issueCode -cne 'InvocationFailed' -or
+                [string]$trial.lastStage -cne 'NotObserved' -or [bool]$trial.childFailureObserved -or
+                $null -ne $trial.childFailureExitCodeHex) {
                 throw 'InvalidIncompleteFullInitdbTrial'
             }
         }
@@ -1089,14 +1219,18 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
         }
         if ([string]$evidence.outcome -cne 'FullInitdbInvocationBoundary') {
             if ([string]$evidence.fullInitdbDiagnosticStage -cne 'NotRun' -or $fullTrials.Count -ne 0 -or
-                $fullIssueCodes.Count -ne 0 -or [string]$evidence.fullInitdbOutcome -cne 'NotRequired') {
+                $fullIssueCodes.Count -ne 0 -or [string]$evidence.fullInitdbOutcome -cne 'NotRequired' -or
+                [string]$evidence.initdbProcessBoundary -cne 'NotRequired' -or
+                [string]$evidence.initdbLastStage -cne 'NotObserved') {
                 throw 'UnexpectedFullInitdbDiagnostic'
             }
         }
         elseif ([string]$evidence.fullInitdbOutcome -eq 'DiagnosticFailed') {
             if ([string]$evidence.fullInitdbDiagnosticStage -in @('NotRun', 'Completed') -or
                 $fullTrials.Count -ne 0 -or
-                ($fullIssueCodes -join '|') -cne 'FullInitdbDiagnosticInternalFailure') {
+                ($fullIssueCodes -join '|') -cne 'FullInitdbDiagnosticInternalFailure' -or
+                [string]$evidence.initdbProcessBoundary -cne 'DiagnosticFailed' -or
+                [string]$evidence.initdbLastStage -cne 'NotObserved') {
                 throw 'InvalidFullInitdbDiagnosticFailure'
             }
         }
@@ -1120,6 +1254,11 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
             if ([string]$evidence.fullInitdbOutcome -cne [string]$fullRecomputed.Outcome -or
                 ($fullIssueCodes -join '|') -cne (@($fullRecomputed.IssueCodes) -join '|')) {
                 throw 'FullInitdbDecisionMismatch'
+            }
+            $processRecomputed = Get-BoundaryInitdbProcessBoundary -Trials $fullTrials
+            if ([string]$evidence.initdbProcessBoundary -cne [string]$processRecomputed.Outcome -or
+                [string]$evidence.initdbLastStage -cne [string]$processRecomputed.LastStage) {
+                throw 'InitdbProcessDecisionMismatch'
             }
         }
         return [pscustomobject]@{ IsValid = $true; IssueCodes = @() }

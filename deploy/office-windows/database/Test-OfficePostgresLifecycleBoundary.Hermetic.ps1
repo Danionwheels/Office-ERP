@@ -99,7 +99,9 @@ function New-BoundaryFullInitdbTrial {
         [Parameter(Mandatory = $true)][string]$Mode,
         [bool]$Succeeded = $false,
         [bool]$Completed = $true,
-        [int]$FailureExitCode = -1073741515
+        [int]$FailureExitCode = -1073741515,
+        [bool]$ChildFailureObserved = $false,
+        [string]$LastStage = 'Bootstrap'
     )
 
     return [pscustomobject][ordered]@{
@@ -110,6 +112,9 @@ function New-BoundaryFullInitdbTrial {
         exitCodeHex = if (-not $Completed) { $null } elseif ($Succeeded) { '0x00000000' } elseif ($FailureExitCode -eq -1073741515) { '0xC0000135' } else { '0x00000001' }
         succeeded = $Succeeded
         issueCode = if ($Completed) { $null } else { 'InvocationFailed' }
+        lastStage = if (-not $Completed) { 'NotObserved' } elseif ($Succeeded) { 'Completed' } else { $LastStage }
+        childFailureObserved = if ($Completed -and -not $Succeeded) { $ChildFailureObserved } else { $false }
+        childFailureExitCodeHex = if ($Completed -and -not $Succeeded -and $ChildFailureObserved) { '0xC0000135' } else { $null }
     }
 }
 
@@ -119,6 +124,15 @@ function Get-BoundaryFullInitdbTestDecision {
     return & $boundaryModule {
         param($TrialValues)
         Get-OfficePostgresFullInitdbBoundaryOutcome -Trials $TrialValues
+    } $Trials
+}
+
+function Get-BoundaryInitdbProcessTestDecision {
+    param([object[]]$Trials)
+
+    return & $boundaryModule {
+        param($TrialValues)
+        Get-BoundaryInitdbProcessBoundary -Trials $TrialValues
     } $Trials
 }
 
@@ -343,6 +357,49 @@ $unexpectedFullInitdbTrials[0] = New-BoundaryFullInitdbTrial -Sequence 1 -Mode I
 $fullDecision = Get-BoundaryFullInitdbTestDecision -Trials $unexpectedFullInitdbTrials
 Assert-BoundaryTest -Condition ($fullDecision.Outcome -eq 'Inconclusive') -Message 'An unexpected full-initdb exit was not inconclusive.'
 
+$outputClassification = & $boundaryModule {
+    Get-BoundaryInitdbOutputClassification `
+        -StandardOutput "creating configuration files ... ok`nrunning bootstrap script ..." `
+        -StandardError 'child process was terminated by exception 0xc0000135' `
+        -ExitCode 1
+}
+Assert-BoundaryTest `
+    -Condition ($outputClassification.lastStage -eq 'Bootstrap' -and
+        $outputClassification.childFailureObserved -and
+        $outputClassification.childFailureExitCodeHex -eq '0xC0000135') `
+    -Message 'The in-memory classifier did not retain the allowlisted spawned-backend signature.'
+$classificationJson = $outputClassification | ConvertTo-Json -Compress
+Assert-BoundaryTest `
+    -Condition ($classificationJson -notmatch '(?i)creating configuration|running bootstrap|child process') `
+    -Message 'The in-memory classifier retained raw native output.'
+$outputClassification = & $boundaryModule {
+    Get-BoundaryInitdbOutputClassification `
+        -StandardOutput 'performing post-bootstrap initialization ...' `
+        -StandardError $null `
+        -ExitCode -1073741515
+}
+Assert-BoundaryTest `
+    -Condition ($outputClassification.lastStage -eq 'PostBootstrap' -and
+        -not $outputClassification.childFailureObserved -and
+        $null -eq $outputClassification.childFailureExitCodeHex) `
+    -Message 'The in-memory classifier invented a spawned-backend failure.'
+
+$processDecision = Get-BoundaryInitdbProcessTestDecision -Trials $failedFullInitdbTrials
+Assert-BoundaryTest `
+    -Condition ($processDecision.Outcome -eq 'TopLevelInitdb' -and $processDecision.LastStage -eq 'Bootstrap') `
+    -Message 'The direct initdb exception boundary was not classified.'
+$spawnedBackendTrials = @(
+    New-BoundaryFullInitdbTrial -Sequence 1 -Mode InheritedCwd -FailureExitCode 1 -ChildFailureObserved $true -LastStage Bootstrap
+    New-BoundaryFullInitdbTrial -Sequence 2 -Mode RuntimeBinCwd
+    New-BoundaryFullInitdbTrial -Sequence 3 -Mode ApprovedRuntimeRoots
+)
+$processDecision = Get-BoundaryInitdbProcessTestDecision -Trials $spawnedBackendTrials
+Assert-BoundaryTest `
+    -Condition ($processDecision.Outcome -eq 'SpawnedBackend' -and $processDecision.LastStage -eq 'Bootstrap') `
+    -Message 'The spawned-backend exception boundary was not classified.'
+$processDecision = Get-BoundaryInitdbProcessTestDecision -Trials $unexpectedFullInitdbTrials
+Assert-BoundaryTest -Condition ($processDecision.Outcome -eq 'Inconclusive') -Message 'An unrecognized process failure was not inconclusive.'
+
 $priorRunnerTemp = $env:RUNNER_TEMP
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) "safarsuite-boundary-hermetic-$([Guid]::NewGuid().ToString('N'))"
 $markerPath = Join-Path $testRoot '.safarsuite-boundary-hermetic-marker'
@@ -356,6 +413,7 @@ try {
     New-Item -ItemType Directory -Path $approvedRuntimeLib | Out-Null
     $approvedRuntimeManifest = [pscustomobject]@{
         postgresql = [pscustomobject]@{
+            adminRole = 'safarsuite_admin'
             runtimeFileSha256 = [pscustomobject]@{
                 'bin/initdb.exe' = ('A' * 64 -join '')
                 'lib/libpq.dll' = ('B' * 64 -join '')
@@ -372,6 +430,64 @@ try {
             $approvedRuntimeSearchRoots[0] -ceq [IO.Path]::GetFullPath($approvedRuntimeBin) -and
             $approvedRuntimeSearchRoots[1] -ceq [IO.Path]::GetFullPath($approvedRuntimeLib)) `
         -Message 'The approved runtime search value did not retain the finite validated roots.'
+    $capturedTrial = & $lifecycleModule {
+        param($BoundaryModule, $Manifest, $RuntimeRoot, $TrialRoot)
+
+        $originalPassword = ${function:New-OfficeDatabasePassword}
+        $originalAcl = ${function:Set-OfficeRestrictedAcl}
+        $originalContent = ${function:Set-OfficeUtf8NoBomContent}
+        $originalNative = ${function:Invoke-OfficeNativeCommand}
+        $moduleInfo = $ExecutionContext.SessionState.Module
+        try {
+            function New-OfficeDatabasePassword { return 'ephemeral-test-value' }
+            function Set-OfficeRestrictedAcl {
+                param([string]$Path, [string]$ServiceSid, [string]$Profile)
+            }
+            function Set-OfficeUtf8NoBomContent {
+                param([string]$Path, [string]$Value)
+                [IO.File]::WriteAllText($Path, $Value, [Text.UTF8Encoding]::new($false))
+            }
+            function Invoke-OfficeNativeCommand {
+                param(
+                    [string]$FilePath,
+                    [string[]]$Arguments,
+                    [hashtable]$Environment,
+                    [string]$StandardInput,
+                    [string]$WorkingDirectory,
+                    [int]$TimeoutSeconds,
+                    [switch]$AllowFailure
+                )
+                return [pscustomobject]@{
+                    ExitCode = -1073741515
+                    StandardOutput = "creating configuration files ... ok`nrunning bootstrap script ..."
+                    StandardError = $null
+                }
+            }
+            return & $BoundaryModule {
+                param($Module, $PackageManifest, $Paths, $Root)
+                Invoke-BoundaryFullInitdbTrial `
+                    -LifecycleModule $Module `
+                    -PackageManifest $PackageManifest `
+                    -Paths $Paths `
+                    -TestRoot $Root `
+                    -Mode InheritedCwd `
+                    -Sequence 1
+            } $moduleInfo $Manifest ([pscustomobject]@{ RuntimeRoot = $RuntimeRoot }) $TrialRoot
+        }
+        finally {
+            Set-Item -Path Function:\New-OfficeDatabasePassword -Value $originalPassword
+            Set-Item -Path Function:\Set-OfficeRestrictedAcl -Value $originalAcl
+            Set-Item -Path Function:\Set-OfficeUtf8NoBomContent -Value $originalContent
+            Set-Item -Path Function:\Invoke-OfficeNativeCommand -Value $originalNative
+        }
+    } $boundaryModule $approvedRuntimeManifest $approvedRuntimeRoot $testRoot
+    Assert-BoundaryTest `
+        -Condition ($capturedTrial.completed -and $capturedTrial.exitCodeHex -eq '0xC0000135' -and
+            $capturedTrial.lastStage -eq 'Bootstrap' -and -not $capturedTrial.childFailureObserved) `
+        -Message 'The real full-initdb trial did not reduce native output to the finite classification.'
+    Assert-BoundaryTest `
+        -Condition (($capturedTrial | ConvertTo-Json -Compress) -notmatch '(?i)creating configuration|running bootstrap|ephemeral-test-value') `
+        -Message 'The real full-initdb trial retained raw output or bootstrap material.'
     $env:RUNNER_TEMP = $testRoot
     $evidencePath = Join-Path $testRoot 'runtime-stage-boundary.json'
     $expectedSourceRevision = ('a' * 40 -join '')
@@ -420,6 +536,8 @@ try {
         fullInitdbTrials = @($failedFullInitdbTrials)
         fullInitdbIssueCodes = @('ApprovedRuntimeRootsDidNotChangeResult')
         fullInitdbOutcome = 'ApprovedRuntimeRootsHypothesisDisproved'
+        initdbProcessBoundary = 'TopLevelInitdb'
+        initdbLastStage = 'Bootstrap'
     }
     & $boundaryModule {
         param($Path, $Evidence)
@@ -508,6 +626,26 @@ try {
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Evidence with a false full-initdb decision was accepted.'
 
+    $falseProcessDecisionEvidence = Copy-BoundaryTestDictionary -Value $validEvidence
+    $falseProcessDecisionEvidence.initdbProcessBoundary = 'SpawnedBackend'
+    [IO.File]::WriteAllText($evidencePath, ($falseProcessDecisionEvidence | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
+    Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Evidence with a false initdb process decision was accepted.'
+
+    $forgedChildEvidence = Copy-BoundaryTestDictionary -Value $validEvidence
+    $forgedChildTrials = @($failedFullInitdbTrials)
+    $forgedChildTrials[0] = New-BoundaryFullInitdbTrial `
+        -Sequence 1 `
+        -Mode InheritedCwd `
+        -ChildFailureObserved $true `
+        -LastStage Bootstrap
+    $forgedChildTrials[0].childFailureExitCodeHex = $null
+    $forgedChildEvidence.fullInitdbTrials = @($forgedChildTrials)
+    $forgedChildEvidence.initdbProcessBoundary = 'SpawnedBackend'
+    [IO.File]::WriteAllText($evidencePath, ($forgedChildEvidence | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
+    Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Evidence with an unbound child exception was accepted.'
+
     $duplicateFullMatrixEvidence = Copy-BoundaryTestDictionary -Value $validEvidence
     $duplicateFullMatrix = @($failedFullInitdbTrials)
     $duplicateFullMatrix[2] = New-BoundaryFullInitdbTrial -Sequence 3 -Mode RuntimeBinCwd
@@ -565,6 +703,8 @@ try {
     $fullDiagnosticFailure.fullInitdbTrials = @()
     $fullDiagnosticFailure.fullInitdbIssueCodes = @('FullInitdbDiagnosticInternalFailure')
     $fullDiagnosticFailure.fullInitdbOutcome = 'DiagnosticFailed'
+    $fullDiagnosticFailure.initdbProcessBoundary = 'DiagnosticFailed'
+    $fullDiagnosticFailure.initdbLastStage = 'NotObserved'
     [IO.File]::WriteAllText($evidencePath, ($fullDiagnosticFailure | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition $validation.IsValid -Message 'A safe full-initdb diagnostic-failure record was rejected.'
@@ -578,6 +718,8 @@ try {
     $diagnosticFailure.fullInitdbTrials = @()
     $diagnosticFailure.fullInitdbIssueCodes = @()
     $diagnosticFailure.fullInitdbOutcome = 'NotRequired'
+    $diagnosticFailure.initdbProcessBoundary = 'NotRequired'
+    $diagnosticFailure.initdbLastStage = 'NotObserved'
     [IO.File]::WriteAllText($evidencePath, ($diagnosticFailure | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition $validation.IsValid -Message 'A safe diagnostic-failure record was rejected.'
@@ -622,5 +764,6 @@ Write-Host 'Office PostgreSQL lifecycle boundary diagnostics hermetic proof pass
 Write-Host 'VC++ transition classifications: covered'
 Write-Host 'Fresh, ACL, working-directory, and installed boundaries: covered'
 Write-Host 'Full initdb working-directory and approved-runtime-roots comparison: covered'
+Write-Host 'In-memory initdb stage and process-boundary classification: covered'
 Write-Host 'Evidence schema and forbidden-material rejection: covered'
 Write-Host 'Native failure, cleanup, validation, and upload ordering: covered'
