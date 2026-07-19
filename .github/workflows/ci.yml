@@ -419,7 +419,7 @@ jobs:
 
   office-windows-package-gate:
     name: office-windows-package-gate
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 60
 
     steps:
