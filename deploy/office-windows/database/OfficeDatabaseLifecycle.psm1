@@ -644,10 +644,21 @@ function Invoke-OfficeNativeCommand {
     }
 }
 
+function Get-OfficeInitializationAclRights {
+    param([Parameter(Mandatory = $true)][ValidateSet('Secrets', 'Data', 'Runtime')][string]$Profile)
+
+    switch ($Profile) {
+        'Runtime' { return [Security.AccessControl.FileSystemRights]::ReadAndExecute }
+        'Data' { return [Security.AccessControl.FileSystemRights]::Modify }
+        'Secrets' { return [Security.AccessControl.FileSystemRights]::Read }
+    }
+}
+
 function Set-OfficeRestrictedAcl {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [string]$ServiceSid,
+        [string]$InitializationUserSid,
         [ValidateSet('Secrets', 'Data', 'Runtime')][string]$Profile
     )
 
@@ -711,6 +722,26 @@ function Set-OfficeRestrictedAcl {
             PropagationFlags = $propagationFlags
         })
     }
+    if (-not [string]::IsNullOrWhiteSpace($InitializationUserSid)) {
+        if ($InitializationUserSid -in @($systemSid.Value, $administratorsSid.Value)) {
+            throw "The temporary PostgreSQL initialization ACL must identify an individual Windows user."
+        }
+        $initializationIdentity = [Security.Principal.SecurityIdentifier]::new($InitializationUserSid)
+        $initializationRights = Get-OfficeInitializationAclRights -Profile $Profile
+        $initializationRule = [Security.AccessControl.FileSystemAccessRule]::new(
+            $initializationIdentity,
+            $initializationRights,
+            $inheritanceFlags,
+            $propagationFlags,
+            [Security.AccessControl.AccessControlType]::Allow)
+        [void]$security.AddAccessRule($initializationRule)
+        [void]$expectedRules.Add([pscustomobject]@{
+            Sid = $initializationIdentity.Value
+            Rights = $initializationRights
+            InheritanceFlags = $inheritanceFlags
+            PropagationFlags = $propagationFlags
+        })
+    }
     Set-Acl -LiteralPath $Path -AclObject $security
 
     $verified = Get-Acl -LiteralPath $Path
@@ -735,6 +766,42 @@ function Set-OfficeRestrictedAcl {
         })
         if ($matches.Count -ne 1) {
             throw "A managed database path retained incorrect Windows ACL rights."
+        }
+    }
+}
+
+function Get-OfficeCurrentWindowsUserSid {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+        throw "Windows identity is required for PostgreSQL cluster initialization."
+    }
+
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    if ($null -eq $identity.User -or [string]::IsNullOrWhiteSpace($identity.User.Value)) {
+        throw "The invoking Windows user SID could not be resolved for PostgreSQL cluster initialization."
+    }
+    return $identity.User.Value
+}
+
+function Reset-OfficeInitializationAclBridge {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [string]$ServiceSid,
+        [ValidateSet('Data', 'Runtime')][string]$Profile,
+        [string[]]$ProtectedFiles = @()
+    )
+
+    if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+        return
+    }
+
+    Set-OfficeRestrictedAcl -Path $Root -ServiceSid $ServiceSid -Profile $Profile
+    $protectedFileSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($filePath in $ProtectedFiles) {
+        [void]$protectedFileSet.Add([IO.Path]::GetFullPath($filePath))
+    }
+    foreach ($descendantPath in @(Get-OfficeManagedTreeEntriesNoReparse -Root $Root)) {
+        if (-not $protectedFileSet.Contains([IO.Path]::GetFullPath($descendantPath))) {
+            Set-OfficeInheritedAcl -Path $descendantPath
         }
     }
 }
@@ -2272,9 +2339,27 @@ function New-OfficeNativeDatabaseAdapter {
         New-Item -ItemType Directory -Path $stagingDataDirectory | Out-Null
         Set-OfficeRestrictedAcl -Path $stagingDataDirectory -Profile Data
 
+        $initializationUserSid = Get-OfficeCurrentWindowsUserSid
+        $serviceSid = Get-OfficeManagedPostgresServiceSid -Context $ctx
+        $runtimeReceiptPath = Join-Path $ctx.Paths.RuntimeRoot '.safarsuite-runtime-receipt.json'
         try {
+            # PostgreSQL's Windows initdb re-executes itself with Administrators and Power Users
+            # removed from its token. Grant only that restricted child identity the paths it needs,
+            # then remove the bridge unconditionally below.
+            Set-OfficeRestrictedAcl `
+                -Path $ctx.Paths.RuntimeRoot `
+                -ServiceSid $serviceSid `
+                -InitializationUserSid $initializationUserSid `
+                -Profile Runtime
+            Set-OfficeRestrictedAcl `
+                -Path $stagingDataDirectory `
+                -InitializationUserSid $initializationUserSid `
+                -Profile Data
             Set-OfficeUtf8NoBomContent -Path $bootstrapPasswordPath -Value $adminPassword
-            Set-OfficeRestrictedAcl -Path $bootstrapPasswordPath -Profile Secrets
+            Set-OfficeRestrictedAcl `
+                -Path $bootstrapPasswordPath `
+                -InitializationUserSid $initializationUserSid `
+                -Profile Secrets
             $initdb = Join-Path $ctx.Paths.RuntimeRoot 'bin\initdb.exe'
             Invoke-OfficeNativeCommand `
                 -FilePath $initdb `
@@ -2288,8 +2373,25 @@ function New-OfficeNativeDatabaseAdapter {
             Invoke-OfficeDatabaseTestFault -Context $ctx -Point 'AfterClusterInitialize'
         }
         finally {
-            if (Test-Path -LiteralPath $bootstrapPasswordPath) {
-                Remove-Item -LiteralPath $bootstrapPasswordPath -Force
+            try {
+                if (Test-Path -LiteralPath $bootstrapPasswordPath) {
+                    Remove-Item -LiteralPath $bootstrapPasswordPath -Force
+                }
+            }
+            finally {
+                try {
+                    Reset-OfficeInitializationAclBridge `
+                        -Root $stagingDataDirectory `
+                        -ServiceSid $serviceSid `
+                        -Profile Data
+                }
+                finally {
+                    Reset-OfficeInitializationAclBridge `
+                        -Root $ctx.Paths.RuntimeRoot `
+                        -ServiceSid $serviceSid `
+                        -Profile Runtime `
+                        -ProtectedFiles @($runtimeReceiptPath)
+                }
             }
         }
 

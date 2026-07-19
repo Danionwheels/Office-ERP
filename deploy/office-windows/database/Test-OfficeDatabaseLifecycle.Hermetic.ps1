@@ -166,6 +166,23 @@ $serviceRecoveryProof = & $lifecycleModule {
 }
 Assert-OfficeTest -Condition ($serviceRecoveryProof.Valid -and -not $serviceRecoveryProof.Invalid) -Message 'Exact Windows service recovery-action parsing failed.'
 
+$initializationAclRights = & $lifecycleModule {
+    return [pscustomobject]@{
+        Runtime = [int](Get-OfficeInitializationAclRights -Profile Runtime)
+        Data = [int](Get-OfficeInitializationAclRights -Profile Data)
+        Secrets = [int](Get-OfficeInitializationAclRights -Profile Secrets)
+    }
+}
+Assert-OfficeTest `
+    -Condition ($initializationAclRights.Runtime -eq [int][Security.AccessControl.FileSystemRights]::ReadAndExecute) `
+    -Message 'The temporary initdb runtime bridge grants more or less than read/execute.'
+Assert-OfficeTest `
+    -Condition ($initializationAclRights.Data -eq [int][Security.AccessControl.FileSystemRights]::Modify) `
+    -Message 'The temporary initdb staging-data bridge grants more or less than modify.'
+Assert-OfficeTest `
+    -Condition ($initializationAclRights.Secrets -eq [int][Security.AccessControl.FileSystemRights]::Read) `
+    -Message 'The temporary initdb bootstrap bridge grants more or less than read.'
+
 $expectedMigrations = 1..32 | ForEach-Object { 'migration-{0:d2}' -f $_ }
 Assert-OfficeTest `
     -Condition ((Compare-OfficeMigrationLedger -Expected $expectedMigrations -Applied @()) -eq 'Prefix') `
