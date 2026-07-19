@@ -167,10 +167,16 @@ $serviceRecoveryProof = & $lifecycleModule {
 Assert-OfficeTest -Condition ($serviceRecoveryProof.Valid -and -not $serviceRecoveryProof.Invalid) -Message 'Exact Windows service recovery-action parsing failed.'
 
 $initializationAclRights = & $lifecycleModule {
+    $runtime = Get-OfficeInitializationAclRights -Profile Runtime
+    $data = Get-OfficeInitializationAclRights -Profile Data
+    $secrets = Get-OfficeInitializationAclRights -Profile Secrets
     return [pscustomobject]@{
-        Runtime = [int](Get-OfficeInitializationAclRights -Profile Runtime)
-        Data = [int](Get-OfficeInitializationAclRights -Profile Data)
-        Secrets = [int](Get-OfficeInitializationAclRights -Profile Secrets)
+        Runtime = [int]$runtime
+        Data = [int]$data
+        Secrets = [int]$secrets
+        NormalizedRuntime = [int](Get-OfficeNormalizedAllowAclRights -Rights $runtime)
+        NormalizedData = [int](Get-OfficeNormalizedAllowAclRights -Rights $data)
+        NormalizedSecrets = [int](Get-OfficeNormalizedAllowAclRights -Rights $secrets)
     }
 }
 Assert-OfficeTest `
@@ -182,6 +188,12 @@ Assert-OfficeTest `
 Assert-OfficeTest `
     -Condition ($initializationAclRights.Secrets -eq [int][Security.AccessControl.FileSystemRights]::Read) `
     -Message 'The temporary initdb bootstrap bridge grants more or less than read.'
+$synchronize = [int][Security.AccessControl.FileSystemRights]::Synchronize
+Assert-OfficeTest `
+    -Condition ($initializationAclRights.NormalizedRuntime -eq ($initializationAclRights.Runtime -bor $synchronize) -and
+        $initializationAclRights.NormalizedData -eq ($initializationAclRights.Data -bor $synchronize) -and
+        $initializationAclRights.NormalizedSecrets -eq ($initializationAclRights.Secrets -bor $synchronize)) `
+    -Message 'Windows allow-rule Synchronize normalization is not represented in exact ACL verification.'
 
 $expectedMigrations = 1..32 | ForEach-Object { 'migration-{0:d2}' -f $_ }
 Assert-OfficeTest `

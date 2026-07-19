@@ -654,6 +654,13 @@ function Get-OfficeInitializationAclRights {
     }
 }
 
+function Get-OfficeNormalizedAllowAclRights {
+    param([Parameter(Mandatory = $true)][Security.AccessControl.FileSystemRights]$Rights)
+
+    # FileSystemAccessRule adds Synchronize to allow rules when they are persisted.
+    return $Rights -bor [Security.AccessControl.FileSystemRights]::Synchronize
+}
+
 function Set-OfficeRestrictedAcl {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -717,7 +724,7 @@ function Set-OfficeRestrictedAcl {
         [void]$security.AddAccessRule($serviceRule)
         [void]$expectedRules.Add([pscustomobject]@{
             Sid = $serviceIdentity.Value
-            Rights = $serviceRights
+            Rights = Get-OfficeNormalizedAllowAclRights -Rights $serviceRights
             InheritanceFlags = $inheritanceFlags
             PropagationFlags = $propagationFlags
         })
@@ -737,7 +744,7 @@ function Set-OfficeRestrictedAcl {
         [void]$security.AddAccessRule($initializationRule)
         [void]$expectedRules.Add([pscustomobject]@{
             Sid = $initializationIdentity.Value
-            Rights = $initializationRights
+            Rights = Get-OfficeNormalizedAllowAclRights -Rights $initializationRights
             InheritanceFlags = $inheritanceFlags
             PropagationFlags = $propagationFlags
         })
@@ -838,6 +845,7 @@ function Test-OfficeRestrictedAcl {
             else {
                 [Security.AccessControl.FileSystemRights]::Modify
             }
+            $rights = Get-OfficeNormalizedAllowAclRights -Rights $rights
             $expected += [pscustomobject]@{ Sid = $ServiceSid; Rights = $rights }
         }
         $actual = @($acl.Access)
