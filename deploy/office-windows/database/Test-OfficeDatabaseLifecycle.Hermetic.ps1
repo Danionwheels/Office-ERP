@@ -183,6 +183,23 @@ Assert-OfficeTest `
 Assert-OfficeTest `
     -Condition (-not ($serviceConfigArguments -contains 'password=')) `
     -Message 'Virtual service account configuration supplied a password instead of the required null password pointer.'
+$serviceDependencyShapes = & $lifecycleModule {
+    $missing = @(Get-OfficeServiceDependenciesFromRegistry -Registry ([pscustomobject]@{}))
+    $empty = @(Get-OfficeServiceDependenciesFromRegistry -Registry ([pscustomobject]@{ DependOnService = '' }))
+    $scalar = @(Get-OfficeServiceDependenciesFromRegistry -Registry ([pscustomobject]@{ DependOnService = 'RpcSs' }))
+    return [pscustomobject]@{
+        MissingCount = $missing.Count
+        EmptyCount = $empty.Count
+        ScalarCount = $scalar.Count
+        ScalarValue = if ($scalar.Count -eq 1) { [string]$scalar[0] } else { '' }
+    }
+}
+Assert-OfficeTest `
+    -Condition ($serviceDependencyShapes.MissingCount -eq 0 -and $serviceDependencyShapes.EmptyCount -eq 0) `
+    -Message 'Missing or empty service dependencies did not remain an empty array under strict mode.'
+Assert-OfficeTest `
+    -Condition ($serviceDependencyShapes.ScalarCount -eq 1 -and $serviceDependencyShapes.ScalarValue -eq 'RpcSs') `
+    -Message 'A scalar service dependency did not remain a one-item array under strict mode.'
 
 $initializationAclRights = & $lifecycleModule {
     $runtime = Get-OfficeInitializationAclRights -Profile Runtime

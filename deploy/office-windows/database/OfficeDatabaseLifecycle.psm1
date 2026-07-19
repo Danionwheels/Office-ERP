@@ -1186,6 +1186,15 @@ function Test-OfficeServiceFailureActions {
     return $true
 }
 
+function Get-OfficeServiceDependenciesFromRegistry {
+    param($Registry)
+
+    if ($null -eq $Registry -or $null -eq $Registry.PSObject.Properties['DependOnService']) {
+        return
+    }
+    return @($Registry.DependOnService | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+}
+
 function Test-OfficePostgresServiceConfiguration {
     param(
         [Parameter(Mandatory = $true)]$Context,
@@ -1201,12 +1210,7 @@ function Test-OfficePostgresServiceConfiguration {
     }
     $serviceRegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$($Context.Distribution.serviceName)"
     $registry = Get-ItemProperty -LiteralPath $serviceRegistryPath -ErrorAction SilentlyContinue
-    $dependencies = if ($null -ne $registry -and $null -ne $registry.PSObject.Properties['DependOnService']) {
-        @($registry.DependOnService | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-    }
-    else {
-        @()
-    }
+    $dependencies = @(Get-OfficeServiceDependenciesFromRegistry -Registry $registry)
     return $null -ne $registry -and
         $dependencies.Count -eq 0 -and
         [int]$registry.ServiceSidType -eq 1 -and
