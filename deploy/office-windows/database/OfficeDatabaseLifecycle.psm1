@@ -2579,20 +2579,35 @@ REVOKE ALL ON DATABASE $databaseName FROM PUBLIC;
 REVOKE ALL ON DATABASE $databaseName FROM $applicationRole;
 GRANT CONNECT ON DATABASE $databaseName TO $adminRole, $migratorRole, $applicationRole;
 "@
-        Invoke-OfficePsql -Context $ctx -Role $adminRole -Database 'postgres' -Passfile $ctx.Paths.AdminPassfilePath -Sql $roleSql | Out-Null
+        try {
+            Invoke-OfficePsql -Context $ctx -Role $adminRole -Database 'postgres' -Passfile $ctx.Paths.AdminPassfilePath -Sql $roleSql | Out-Null
+        }
+        catch {
+            throw "Database provisioning failed at the finite 'AdminBootstrap' phase. $($_.Exception.Message)"
+        }
         $databaseSql = @"
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO $applicationRole;
 ALTER DEFAULT PRIVILEGES FOR ROLE $migratorRole IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $applicationRole;
 ALTER DEFAULT PRIVILEGES FOR ROLE $migratorRole IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO $applicationRole;
 "@
-        Invoke-OfficePsql -Context $ctx -Role $migratorRole -Database $databaseName -Passfile $ctx.Paths.MigratorPassfilePath -Sql $databaseSql | Out-Null
-        Invoke-OfficePsql `
-            -Context $ctx `
-            -Role $adminRole `
-            -Database $databaseName `
-            -Passfile $ctx.Paths.AdminPassfilePath `
-            -Sql "REASSIGN OWNED BY $applicationRole TO $migratorRole;" | Out-Null
+        try {
+            Invoke-OfficePsql -Context $ctx -Role $migratorRole -Database $databaseName -Passfile $ctx.Paths.MigratorPassfilePath -Sql $databaseSql | Out-Null
+        }
+        catch {
+            throw "Database provisioning failed at the finite 'MigratorDefaults' phase. $($_.Exception.Message)"
+        }
+        try {
+            Invoke-OfficePsql `
+                -Context $ctx `
+                -Role $adminRole `
+                -Database $databaseName `
+                -Passfile $ctx.Paths.AdminPassfilePath `
+                -Sql "REASSIGN OWNED BY $applicationRole TO $migratorRole;" | Out-Null
+        }
+        catch {
+            throw "Database provisioning failed at the finite 'OwnershipConvergence' phase. $($_.Exception.Message)"
+        }
     }
 
     $migrate = {
