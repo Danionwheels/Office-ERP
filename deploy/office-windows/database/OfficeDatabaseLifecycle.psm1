@@ -2405,20 +2405,10 @@ function New-OfficeNativeDatabaseAdapter {
                     '-D', $stagingDataDirectory,
                     '-U', [string]$ctx.Distribution.adminRole,
                     '--auth-host=scram-sha-256', '--auth-local=scram-sha-256',
-                    '--encoding=UTF8', '--locale=C', "--pwfile=$bootstrapPasswordPath"
+                    '--encoding=UTF8', '--locale=C', '--pwprompt'
                 ) `
+                -StandardInput "$adminPassword`n$adminPassword`n" `
                 -TimeoutSeconds 180 | Out-Null
-            $adminPasswordLiteral = ConvertTo-OfficeSqlLiteral -Value $adminPassword
-            Invoke-OfficeNativeCommand `
-                -FilePath (Join-Path $ctx.Paths.RuntimeRoot 'bin\postgres.exe') `
-                -Arguments @(
-                    '--single',
-                    '-D', $stagingDataDirectory,
-                    '-c', 'password_encryption=scram-sha-256',
-                    'postgres'
-                ) `
-                -StandardInput "ALTER ROLE $($ctx.Distribution.adminRole) WITH PASSWORD $adminPasswordLiteral;`n" `
-                -TimeoutSeconds 120 | Out-Null
             Invoke-OfficeDatabaseTestFault -Context $ctx -Point 'AfterClusterInitialize'
         }
         finally {
