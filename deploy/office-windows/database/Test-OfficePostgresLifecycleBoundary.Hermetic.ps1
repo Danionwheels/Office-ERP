@@ -93,6 +93,30 @@ function Get-BoundaryTestDecision {
     } $Transitions $Probes
 }
 
+$emptyProbeSet = @(& $boundaryModule {
+    param($Module)
+
+    $probes = [Collections.Generic.List[object]]::new()
+    Add-BoundaryProbeSet `
+        -Probes $probes `
+        -LifecycleModule $Module `
+        -RuntimeRoot 'boundary-empty-list-runtime' `
+        -Phase FreshBeforeAcl `
+        -RuntimeClass FreshExtracted `
+        -AclClass InheritedRunnerAcl `
+        -PostgresVersion '17.10'
+    return @($probes)
+} $lifecycleModule)
+Assert-BoundaryTest `
+    -Condition ($emptyProbeSet.Count -eq 4) `
+    -Message 'The real probe-set builder did not accept and populate an empty typed list.'
+Assert-BoundaryTest `
+    -Condition ((@($emptyProbeSet | ForEach-Object { [int]$_.sequence }) -join '|') -ceq '1|2|3|4') `
+    -Message 'The real probe-set builder did not retain the exact probe sequence.'
+Assert-BoundaryTest `
+    -Condition (@($emptyProbeSet | Where-Object { $_.completed -or $_.issueCode -cne 'ProbeInvocationFailed' }).Count -eq 0) `
+    -Message 'The missing-runtime regression produced unsafe or unexpected probe evidence.'
+
 $transitionCases = @(
     [pscustomobject]@{ Name = 'AlreadySatisfied'; Before = '14.60.0.0'; ExitCode = $null; After = '14.60.0.0'; Throws = $false },
     [pscustomobject]@{ Name = 'InstalledNoReboot'; Before = $null; ExitCode = 0; After = '14.60.0.0'; Throws = $false },
