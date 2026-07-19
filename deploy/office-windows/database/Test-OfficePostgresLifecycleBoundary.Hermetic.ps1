@@ -93,6 +93,35 @@ function Get-BoundaryTestDecision {
     } $Transitions $Probes
 }
 
+function New-BoundaryFullInitdbTrial {
+    param(
+        [Parameter(Mandatory = $true)][int]$Sequence,
+        [Parameter(Mandatory = $true)][string]$Mode,
+        [bool]$Succeeded = $false,
+        [bool]$Completed = $true,
+        [int]$FailureExitCode = -1073741515
+    )
+
+    return [pscustomobject][ordered]@{
+        sequence = $Sequence
+        mode = $Mode
+        completed = $Completed
+        exitCode = if (-not $Completed) { $null } elseif ($Succeeded) { 0 } else { $FailureExitCode }
+        exitCodeHex = if (-not $Completed) { $null } elseif ($Succeeded) { '0x00000000' } elseif ($FailureExitCode -eq -1073741515) { '0xC0000135' } else { '0x00000001' }
+        succeeded = $Succeeded
+        issueCode = if ($Completed) { $null } else { 'InvocationFailed' }
+    }
+}
+
+function Get-BoundaryFullInitdbTestDecision {
+    param([object[]]$Trials)
+
+    return & $boundaryModule {
+        param($TrialValues)
+        Get-OfficePostgresFullInitdbBoundaryOutcome -Trials $TrialValues
+    } $Trials
+}
+
 $emptyProbeSet = @(& $boundaryModule {
     param($Module)
 
@@ -280,12 +309,69 @@ Assert-BoundaryTest `
     -Condition ($decision.Outcome -eq 'Inconclusive') `
     -Message 'An unexpected probe exit was misclassified as the loader boundary.'
 
+$failedFullInitdbTrials = @(
+    New-BoundaryFullInitdbTrial -Sequence 1 -Mode InheritedCwd
+    New-BoundaryFullInitdbTrial -Sequence 2 -Mode RuntimeBinCwd
+    New-BoundaryFullInitdbTrial -Sequence 3 -Mode ApprovedRuntimeRoots
+)
+$fullDecision = Get-BoundaryFullInitdbTestDecision -Trials @(
+    New-BoundaryFullInitdbTrial -Sequence 1 -Mode InheritedCwd -Succeeded $true
+    New-BoundaryFullInitdbTrial -Sequence 2 -Mode RuntimeBinCwd
+    New-BoundaryFullInitdbTrial -Sequence 3 -Mode ApprovedRuntimeRoots
+)
+Assert-BoundaryTest -Condition ($fullDecision.Outcome -eq 'BaselineDidNotReproduce') -Message 'A successful baseline full-initdb trial was misclassified.'
+$fullDecision = Get-BoundaryFullInitdbTestDecision -Trials @(
+    New-BoundaryFullInitdbTrial -Sequence 1 -Mode InheritedCwd
+    New-BoundaryFullInitdbTrial -Sequence 2 -Mode RuntimeBinCwd -Succeeded $true
+    New-BoundaryFullInitdbTrial -Sequence 3 -Mode ApprovedRuntimeRoots
+)
+Assert-BoundaryTest -Condition ($fullDecision.Outcome -eq 'WorkingDirectoryBoundary') -Message 'The full-initdb working-directory boundary was not classified.'
+$fullDecision = Get-BoundaryFullInitdbTestDecision -Trials @(
+    New-BoundaryFullInitdbTrial -Sequence 1 -Mode InheritedCwd
+    New-BoundaryFullInitdbTrial -Sequence 2 -Mode RuntimeBinCwd
+    New-BoundaryFullInitdbTrial -Sequence 3 -Mode ApprovedRuntimeRoots -Succeeded $true
+)
+Assert-BoundaryTest -Condition ($fullDecision.Outcome -eq 'ApprovedRuntimeRootsBoundary') -Message 'The approved-runtime-roots boundary was not classified.'
+$fullDecision = Get-BoundaryFullInitdbTestDecision -Trials $failedFullInitdbTrials
+Assert-BoundaryTest -Condition ($fullDecision.Outcome -eq 'ApprovedRuntimeRootsHypothesisDisproved') -Message 'The failed approved-runtime-roots hypothesis was not classified.'
+$incompleteFullInitdbTrials = @($failedFullInitdbTrials)
+$incompleteFullInitdbTrials[0] = New-BoundaryFullInitdbTrial -Sequence 1 -Mode InheritedCwd -Completed $false
+$fullDecision = Get-BoundaryFullInitdbTestDecision -Trials $incompleteFullInitdbTrials
+Assert-BoundaryTest -Condition ($fullDecision.Outcome -eq 'Inconclusive') -Message 'An incomplete full-initdb trial was not inconclusive.'
+$unexpectedFullInitdbTrials = @($failedFullInitdbTrials)
+$unexpectedFullInitdbTrials[0] = New-BoundaryFullInitdbTrial -Sequence 1 -Mode InheritedCwd -FailureExitCode 1
+$fullDecision = Get-BoundaryFullInitdbTestDecision -Trials $unexpectedFullInitdbTrials
+Assert-BoundaryTest -Condition ($fullDecision.Outcome -eq 'Inconclusive') -Message 'An unexpected full-initdb exit was not inconclusive.'
+
 $priorRunnerTemp = $env:RUNNER_TEMP
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) "safarsuite-boundary-hermetic-$([Guid]::NewGuid().ToString('N'))"
 $markerPath = Join-Path $testRoot '.safarsuite-boundary-hermetic-marker'
 try {
     New-Item -ItemType Directory -Path $testRoot | Out-Null
     Set-Content -LiteralPath $markerPath -Value 'owned-boundary-hermetic-root'
+    $approvedRuntimeRoot = Join-Path $testRoot 'approved-runtime'
+    $approvedRuntimeBin = Join-Path $approvedRuntimeRoot 'bin'
+    $approvedRuntimeLib = Join-Path $approvedRuntimeRoot 'lib'
+    New-Item -ItemType Directory -Path $approvedRuntimeBin | Out-Null
+    New-Item -ItemType Directory -Path $approvedRuntimeLib | Out-Null
+    $approvedRuntimeManifest = [pscustomobject]@{
+        postgresql = [pscustomobject]@{
+            runtimeFileSha256 = [pscustomobject]@{
+                'bin/initdb.exe' = ('A' * 64 -join '')
+                'lib/libpq.dll' = ('B' * 64 -join '')
+            }
+        }
+    }
+    $approvedRuntimeSearchValue = & $boundaryModule {
+        param($Manifest, $RuntimeRoot)
+        Get-BoundaryApprovedRuntimeSearchValue -PackageManifest $Manifest -RuntimeRoot $RuntimeRoot
+    } $approvedRuntimeManifest $approvedRuntimeRoot
+    $approvedRuntimeSearchRoots = @($approvedRuntimeSearchValue -split ';')
+    Assert-BoundaryTest `
+        -Condition ($approvedRuntimeSearchRoots.Count -eq 4 -and
+            $approvedRuntimeSearchRoots[0] -ceq [IO.Path]::GetFullPath($approvedRuntimeBin) -and
+            $approvedRuntimeSearchRoots[1] -ceq [IO.Path]::GetFullPath($approvedRuntimeLib)) `
+        -Message 'The approved runtime search value did not retain the finite validated roots.'
     $env:RUNNER_TEMP = $testRoot
     $evidencePath = Join-Path $testRoot 'runtime-stage-boundary.json'
     $expectedSourceRevision = ('a' * 40 -join '')
@@ -330,6 +416,10 @@ try {
         probes = @($readyMatrix)
         issueCodes = @('VersionProbesPassButLifecycleFails')
         outcome = 'FullInitdbInvocationBoundary'
+        fullInitdbDiagnosticStage = 'Completed'
+        fullInitdbTrials = @($failedFullInitdbTrials)
+        fullInitdbIssueCodes = @('ApprovedRuntimeRootsDidNotChangeResult')
+        fullInitdbOutcome = 'ApprovedRuntimeRootsHypothesisDisproved'
     }
     & $boundaryModule {
         param($Path, $Evidence)
@@ -411,6 +501,36 @@ try {
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Evidence with a duplicate matrix combination was accepted.'
 
+    $falseFullDecisionEvidence = Copy-BoundaryTestDictionary -Value $validEvidence
+    $falseFullDecisionEvidence.fullInitdbOutcome = 'ApprovedRuntimeRootsBoundary'
+    $falseFullDecisionEvidence.fullInitdbIssueCodes = @('ApprovedRuntimeRootsChangedResult')
+    [IO.File]::WriteAllText($evidencePath, ($falseFullDecisionEvidence | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
+    Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Evidence with a false full-initdb decision was accepted.'
+
+    $duplicateFullMatrixEvidence = Copy-BoundaryTestDictionary -Value $validEvidence
+    $duplicateFullMatrix = @($failedFullInitdbTrials)
+    $duplicateFullMatrix[2] = New-BoundaryFullInitdbTrial -Sequence 3 -Mode RuntimeBinCwd
+    $duplicateFullMatrixEvidence.fullInitdbTrials = @($duplicateFullMatrix)
+    [IO.File]::WriteAllText($evidencePath, ($duplicateFullMatrixEvidence | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
+    Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Evidence with a duplicate full-initdb matrix combination was accepted.'
+
+    $unsafeFullEvidence = Copy-BoundaryTestDictionary -Value $validEvidence
+    $unsafeFullEvidence.fullInitdbTrials = @([ordered]@{
+        sequence = 1
+        mode = 'InheritedCwd'
+        completed = $false
+        exitCode = $null
+        exitCodeHex = $null
+        succeeded = $false
+        issueCode = 'InvocationFailed'
+        secret = 'forbidden-marker'
+    })
+    [IO.File]::WriteAllText($evidencePath, ($unsafeFullEvidence | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
+    Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Full-initdb evidence with forbidden material was accepted.'
+
     $unsafeEvidence = Copy-BoundaryTestDictionary -Value $validEvidence
     $unsafeEvidence['password'] = 'randomized-sensitive-marker'
     [IO.File]::WriteAllText($evidencePath, ($unsafeEvidence | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
@@ -440,11 +560,24 @@ try {
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition (-not $validation.IsValid) -Message 'Inconsistent prerequisite evidence was accepted.'
 
+    $fullDiagnosticFailure = Copy-BoundaryTestDictionary -Value $validEvidence
+    $fullDiagnosticFailure.fullInitdbDiagnosticStage = 'RunApprovedRuntimeRoots'
+    $fullDiagnosticFailure.fullInitdbTrials = @()
+    $fullDiagnosticFailure.fullInitdbIssueCodes = @('FullInitdbDiagnosticInternalFailure')
+    $fullDiagnosticFailure.fullInitdbOutcome = 'DiagnosticFailed'
+    [IO.File]::WriteAllText($evidencePath, ($fullDiagnosticFailure | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
+    Assert-BoundaryTest -Condition $validation.IsValid -Message 'A safe full-initdb diagnostic-failure record was rejected.'
+
     $diagnosticFailure = Copy-BoundaryTestDictionary -Value $validEvidence
     $diagnosticFailure.visualCppTransitions = @()
     $diagnosticFailure.probes = @()
     $diagnosticFailure.issueCodes = @('DiagnosticInternalFailure')
     $diagnosticFailure.outcome = 'DiagnosticFailed'
+    $diagnosticFailure.fullInitdbDiagnosticStage = 'NotRun'
+    $diagnosticFailure.fullInitdbTrials = @()
+    $diagnosticFailure.fullInitdbIssueCodes = @()
+    $diagnosticFailure.fullInitdbOutcome = 'NotRequired'
     [IO.File]::WriteAllText($evidencePath, ($diagnosticFailure | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
     $validation = Test-OfficePostgresLifecycleBoundaryEvidence @validationArguments -LifecycleOutcome failure
     Assert-BoundaryTest -Condition $validation.IsValid -Message 'A safe diagnostic-failure record was rejected.'
@@ -488,5 +621,6 @@ Assert-BoundaryTest `
 Write-Host 'Office PostgreSQL lifecycle boundary diagnostics hermetic proof passed.'
 Write-Host 'VC++ transition classifications: covered'
 Write-Host 'Fresh, ACL, working-directory, and installed boundaries: covered'
+Write-Host 'Full initdb working-directory and approved-runtime-roots comparison: covered'
 Write-Host 'Evidence schema and forbidden-material rejection: covered'
 Write-Host 'Native failure, cleanup, validation, and upload ordering: covered'

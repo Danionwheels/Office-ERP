@@ -39,6 +39,33 @@ $script:BoundaryIssueCodes = @(
     'BoundaryInconclusive',
     'DiagnosticInternalFailure'
 )
+$script:FullInitdbModes = @('InheritedCwd', 'RuntimeBinCwd', 'ApprovedRuntimeRoots')
+$script:FullInitdbOutcomes = @(
+    'NotRequired',
+    'BaselineDidNotReproduce',
+    'WorkingDirectoryBoundary',
+    'ApprovedRuntimeRootsBoundary',
+    'ApprovedRuntimeRootsHypothesisDisproved',
+    'Inconclusive',
+    'DiagnosticFailed'
+)
+$script:FullInitdbIssueCodes = @(
+    'BaselineDidNotReproduce',
+    'RuntimeBinCwdChangedResult',
+    'ApprovedRuntimeRootsChangedResult',
+    'ApprovedRuntimeRootsDidNotChangeResult',
+    'FullInitdbComparisonInconclusive',
+    'FullInitdbDiagnosticInternalFailure'
+)
+$script:FullInitdbStages = @(
+    'NotRun',
+    'PrepareTrials',
+    'RunInheritedCwd',
+    'RunRuntimeBinCwd',
+    'RunApprovedRuntimeRoots',
+    'Classify',
+    'Completed'
+)
 
 function ConvertTo-BoundaryExitCodeHex {
     param([Parameter(Mandatory = $true)][int]$ExitCode)
@@ -368,6 +395,178 @@ function Get-OfficePostgresLifecycleBoundaryOutcome {
     return [pscustomobject]@{ Outcome = 'Inconclusive'; IssueCodes = @($issueCodes) }
 }
 
+function Test-BoundaryFullInitdbTrialSucceeded {
+    param([Parameter(Mandatory = $true)]$Trial)
+
+    return [bool]$Trial.completed -and [int]$Trial.exitCode -eq 0 -and [bool]$Trial.succeeded
+}
+
+function Get-OfficePostgresFullInitdbBoundaryOutcome {
+    param([Parameter(Mandatory = $true)][object[]]$Trials)
+
+    if ($Trials.Count -ne 3 -or @($Trials | Where-Object { -not [bool]$_.completed }).Count -gt 0) {
+        return [pscustomobject]@{ Outcome = 'Inconclusive'; IssueCodes = @('FullInitdbComparisonInconclusive') }
+    }
+    foreach ($trial in $Trials) {
+        $exitCode = [int]$trial.exitCode
+        if (($exitCode -eq 0 -and -not [bool]$trial.succeeded) -or
+            ($exitCode -ne 0 -and [bool]$trial.succeeded) -or
+            ($exitCode -ne 0 -and [string]$trial.exitCodeHex -cne '0xC0000135')) {
+            return [pscustomobject]@{ Outcome = 'Inconclusive'; IssueCodes = @('FullInitdbComparisonInconclusive') }
+        }
+    }
+
+    $inherited = @($Trials | Where-Object { $_.mode -eq 'InheritedCwd' })
+    $runtimeBin = @($Trials | Where-Object { $_.mode -eq 'RuntimeBinCwd' })
+    $approvedRoots = @($Trials | Where-Object { $_.mode -eq 'ApprovedRuntimeRoots' })
+    if ($inherited.Count -ne 1 -or $runtimeBin.Count -ne 1 -or $approvedRoots.Count -ne 1) {
+        return [pscustomobject]@{ Outcome = 'Inconclusive'; IssueCodes = @('FullInitdbComparisonInconclusive') }
+    }
+    if (Test-BoundaryFullInitdbTrialSucceeded -Trial $inherited[0]) {
+        return [pscustomobject]@{ Outcome = 'BaselineDidNotReproduce'; IssueCodes = @('BaselineDidNotReproduce') }
+    }
+    if (Test-BoundaryFullInitdbTrialSucceeded -Trial $runtimeBin[0]) {
+        return [pscustomobject]@{ Outcome = 'WorkingDirectoryBoundary'; IssueCodes = @('RuntimeBinCwdChangedResult') }
+    }
+    if (Test-BoundaryFullInitdbTrialSucceeded -Trial $approvedRoots[0]) {
+        return [pscustomobject]@{ Outcome = 'ApprovedRuntimeRootsBoundary'; IssueCodes = @('ApprovedRuntimeRootsChangedResult') }
+    }
+    return [pscustomobject]@{
+        Outcome = 'ApprovedRuntimeRootsHypothesisDisproved'
+        IssueCodes = @('ApprovedRuntimeRootsDidNotChangeResult')
+    }
+}
+
+function Get-BoundaryApprovedRuntimeSearchValue {
+    param(
+        [Parameter(Mandatory = $true)]$PackageManifest,
+        [Parameter(Mandatory = $true)][string]$RuntimeRoot
+    )
+
+    $runtimePath = [IO.Path]::GetFullPath($RuntimeRoot).TrimEnd('\')
+    $inventoryProperty = $PackageManifest.postgresql.PSObject.Properties['runtimeFileSha256']
+    if ($null -eq $inventoryProperty -or $null -eq $inventoryProperty.Value) {
+        throw 'The validated PostgreSQL runtime inventory is unavailable.'
+    }
+    $inventoryNames = @($inventoryProperty.Value.PSObject.Properties.Name)
+    $approved = [Collections.Generic.List[string]]::new()
+    foreach ($relativeRoot in @('bin', 'lib')) {
+        if (@($inventoryNames | Where-Object { $_.StartsWith("$relativeRoot/", [StringComparison]::Ordinal) }).Count -lt 1) {
+            throw 'A manifest-approved PostgreSQL runtime root is absent from the inventory.'
+        }
+        $fullRoot = [IO.Path]::GetFullPath((Join-Path $runtimePath $relativeRoot))
+        if (-not $fullRoot.StartsWith($runtimePath + '\', [StringComparison]::OrdinalIgnoreCase) -or
+            -not (Test-Path -LiteralPath $fullRoot -PathType Container)) {
+            throw 'A manifest-approved PostgreSQL runtime root is unsafe or missing.'
+        }
+        [void]$approved.Add($fullRoot)
+    }
+    foreach ($systemRoot in @(
+        [Environment]::SystemDirectory,
+        [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
+    )) {
+        $fullRoot = [IO.Path]::GetFullPath($systemRoot)
+        if (-not (Test-Path -LiteralPath $fullRoot -PathType Container)) {
+            throw 'A required Windows loader root is unavailable.'
+        }
+        [void]$approved.Add($fullRoot)
+    }
+    return ($approved -join ';')
+}
+
+function Invoke-BoundaryFullInitdbTrial {
+    param(
+        [Parameter(Mandatory = $true)][Management.Automation.PSModuleInfo]$LifecycleModule,
+        [Parameter(Mandatory = $true)]$PackageManifest,
+        [Parameter(Mandatory = $true)]$Paths,
+        [Parameter(Mandatory = $true)][string]$TestRoot,
+        [Parameter(Mandatory = $true)][ValidateSet('InheritedCwd', 'RuntimeBinCwd', 'ApprovedRuntimeRoots')][string]$Mode,
+        [Parameter(Mandatory = $true)][int]$Sequence,
+        [string]$ApprovedRuntimeSearchValue
+    )
+
+    $testPath = [IO.Path]::GetFullPath($TestRoot).TrimEnd('\')
+    $trialRoot = Join-Path $testPath "full-initdb-$([Guid]::NewGuid().ToString('N'))"
+    $trialPath = [IO.Path]::GetFullPath($trialRoot)
+    if (-not $trialPath.StartsWith($testPath + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        (Test-Path -LiteralPath $trialPath)) {
+        throw 'The full initialization trial root is unsafe or already exists.'
+    }
+    [void](New-Item -ItemType Directory -Path $trialPath)
+    $dataPath = Join-Path $trialPath 'data'
+    $bootstrapPath = Join-Path $trialPath 'bootstrap.txt'
+    $trialPassword = $null
+    try {
+        $trialPassword = & $LifecycleModule { New-OfficeDatabasePassword }
+        & $LifecycleModule {
+            param($DataPath, $BootstrapPath, $Password)
+            [void](New-Item -ItemType Directory -Path $DataPath)
+            Set-OfficeRestrictedAcl -Path $DataPath -Profile Data
+            Set-OfficeUtf8NoBomContent -Path $BootstrapPath -Value $Password
+            Set-OfficeRestrictedAcl -Path $BootstrapPath -Profile Secrets
+        } $dataPath $bootstrapPath $trialPassword
+
+        $runtimeBin = Join-Path ([string]$Paths.RuntimeRoot) 'bin'
+        $initdbPath = Join-Path $runtimeBin 'initdb.exe'
+        $arguments = @(
+            '-D', $dataPath,
+            '-U', [string]$PackageManifest.postgresql.adminRole,
+            '--auth-host=scram-sha-256', '--auth-local=scram-sha-256',
+            '--encoding=UTF8', '--locale=C', "--pwfile=$bootstrapPath"
+        )
+        $overrides = @{}
+        if ($Mode -eq 'ApprovedRuntimeRoots') {
+            if ([string]::IsNullOrWhiteSpace($ApprovedRuntimeSearchValue)) {
+                throw 'The approved runtime search value is missing.'
+            }
+            $overrides['PATH'] = $ApprovedRuntimeSearchValue
+        }
+        try {
+            $exitCode = & $LifecycleModule {
+                param($ExecutablePath, $Arguments, $Overrides, $RuntimeBin, $UseRuntimeBin)
+                $parameters = @{
+                    FilePath = $ExecutablePath
+                    Arguments = $Arguments
+                    Environment = $Overrides
+                    TimeoutSeconds = 180
+                    AllowFailure = $true
+                }
+                if ($UseRuntimeBin) {
+                    $parameters['WorkingDirectory'] = $RuntimeBin
+                }
+                $result = Invoke-OfficeNativeCommand @parameters
+                return [int]$result.ExitCode
+            } $initdbPath $arguments $overrides $runtimeBin ($Mode -ne 'InheritedCwd')
+            return [ordered]@{
+                sequence = $Sequence
+                mode = $Mode
+                completed = $true
+                exitCode = [int]$exitCode
+                exitCodeHex = ConvertTo-BoundaryExitCodeHex -ExitCode ([int]$exitCode)
+                succeeded = [int]$exitCode -eq 0
+                issueCode = $null
+            }
+        }
+        catch {
+            return [ordered]@{
+                sequence = $Sequence
+                mode = $Mode
+                completed = $false
+                exitCode = $null
+                exitCodeHex = $null
+                succeeded = $false
+                issueCode = 'InvocationFailed'
+            }
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $bootstrapPath -PathType Leaf) {
+            Remove-Item -LiteralPath $bootstrapPath -Force
+        }
+        $trialPassword = $null
+    }
+}
+
 function Set-BoundaryRuntimeAcl {
     param(
         [Parameter(Mandatory = $true)][Management.Automation.PSModuleInfo]$LifecycleModule,
@@ -569,13 +768,71 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
             -PostgresVersion $postgresVersion
 
         $decision = Get-OfficePostgresLifecycleBoundaryOutcome -Transitions $transitions -Probes @($probes)
+        $fullInitdbStage = 'NotRun'
+        $fullInitdbTrials = @()
+        $fullInitdbDecision = [pscustomobject]@{ Outcome = 'NotRequired'; IssueCodes = @() }
+        if ([string]$decision.Outcome -eq 'FullInitdbInvocationBoundary') {
+            $trialList = [Collections.Generic.List[object]]::new()
+            try {
+                $fullInitdbStage = 'PrepareTrials'
+                $fullInitdbStage = 'RunInheritedCwd'
+                [void]$trialList.Add((Invoke-BoundaryFullInitdbTrial `
+                    -LifecycleModule $LifecycleModule `
+                    -PackageManifest $PackageManifest `
+                    -Paths $Paths `
+                    -TestRoot $testPath `
+                    -Mode InheritedCwd `
+                    -Sequence 1))
+                $fullInitdbStage = 'RunRuntimeBinCwd'
+                [void]$trialList.Add((Invoke-BoundaryFullInitdbTrial `
+                    -LifecycleModule $LifecycleModule `
+                    -PackageManifest $PackageManifest `
+                    -Paths $Paths `
+                    -TestRoot $testPath `
+                    -Mode RuntimeBinCwd `
+                    -Sequence 2))
+                $fullInitdbStage = 'RunApprovedRuntimeRoots'
+                $approvedRuntimeSearchValue = Get-BoundaryApprovedRuntimeSearchValue `
+                    -PackageManifest $PackageManifest `
+                    -RuntimeRoot ([string]$Paths.RuntimeRoot)
+                [void]$trialList.Add((Invoke-BoundaryFullInitdbTrial `
+                    -LifecycleModule $LifecycleModule `
+                    -PackageManifest $PackageManifest `
+                    -Paths $Paths `
+                    -TestRoot $testPath `
+                    -Mode ApprovedRuntimeRoots `
+                    -Sequence 3 `
+                    -ApprovedRuntimeSearchValue $approvedRuntimeSearchValue))
+                $approvedRuntimeSearchValue = $null
+                $fullInitdbStage = 'Classify'
+                $fullInitdbTrials = @($trialList)
+                $fullInitdbDecision = Get-OfficePostgresFullInitdbBoundaryOutcome -Trials $fullInitdbTrials
+                $fullInitdbStage = 'Completed'
+            }
+            catch {
+                $approvedRuntimeSearchValue = $null
+                $fullInitdbTrials = @()
+                $fullInitdbDecision = [pscustomobject]@{
+                    Outcome = 'DiagnosticFailed'
+                    IssueCodes = @('FullInitdbDiagnosticInternalFailure')
+                }
+            }
+        }
         $evidence = Copy-BoundaryDictionary -Value $baseEvidence
         $evidence['visualCppTransitions'] = @($transitions)
         $evidence['probes'] = @($probes)
         $evidence['issueCodes'] = @($decision.IssueCodes)
         $evidence['outcome'] = [string]$decision.Outcome
+        $evidence['fullInitdbDiagnosticStage'] = $fullInitdbStage
+        $evidence['fullInitdbTrials'] = @($fullInitdbTrials)
+        $evidence['fullInitdbIssueCodes'] = @($fullInitdbDecision.IssueCodes)
+        $evidence['fullInitdbOutcome'] = [string]$fullInitdbDecision.Outcome
         Write-BoundaryEvidence -EvidencePath $evidenceFilePath -Evidence $evidence
-        return [pscustomobject]@{ Outcome = [string]$decision.Outcome; EvidenceWritten = $true }
+        return [pscustomobject]@{
+            Outcome = [string]$decision.Outcome
+            FullInitdbOutcome = [string]$fullInitdbDecision.Outcome
+            EvidenceWritten = $true
+        }
     }
     catch {
         $fallback = Copy-BoundaryDictionary -Value $baseEvidence
@@ -583,8 +840,16 @@ function Invoke-OfficePostgresLifecycleBoundaryDiagnostic {
         $fallback['probes'] = @()
         $fallback['issueCodes'] = @('DiagnosticInternalFailure')
         $fallback['outcome'] = 'DiagnosticFailed'
+        $fallback['fullInitdbDiagnosticStage'] = 'NotRun'
+        $fallback['fullInitdbTrials'] = @()
+        $fallback['fullInitdbIssueCodes'] = @()
+        $fallback['fullInitdbOutcome'] = 'NotRequired'
         Write-BoundaryEvidence -EvidencePath $evidenceFilePath -Evidence $fallback
-        return [pscustomobject]@{ Outcome = 'DiagnosticFailed'; EvidenceWritten = $true }
+        return [pscustomobject]@{
+            Outcome = 'DiagnosticFailed'
+            FullInitdbOutcome = 'NotRequired'
+            EvidenceWritten = $true
+        }
     }
 }
 
@@ -639,13 +904,16 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
         $evidence = $raw | ConvertFrom-Json
         if (-not (Test-BoundaryExactProperties -Value $evidence -Expected @(
             'schemaVersion', 'proof', 'recordedAtUtc', 'sourceRevision', 'invocationNonce', 'runner', 'package',
-            'lifecycleFailure', 'visualCppTransitions', 'probes', 'issueCodes', 'outcome'))) {
+            'lifecycleFailure', 'visualCppTransitions', 'probes', 'issueCodes', 'outcome',
+            'fullInitdbDiagnosticStage', 'fullInitdbTrials', 'fullInitdbIssueCodes', 'fullInitdbOutcome'))) {
             throw 'InvalidTopLevelSchema'
         }
         if ([int]$evidence.schemaVersion -ne 1 -or [string]$evidence.proof -cne $script:BoundaryProofName -or
             [string]$evidence.sourceRevision -cne $ExpectedSourceRevision -or
             [string]$evidence.invocationNonce -cne $ExpectedInvocationNonce -or
-            [string]$evidence.outcome -notin $script:BoundaryOutcomes) {
+            [string]$evidence.outcome -notin $script:BoundaryOutcomes -or
+            [string]$evidence.fullInitdbDiagnosticStage -notin $script:FullInitdbStages -or
+            [string]$evidence.fullInitdbOutcome -notin $script:FullInitdbOutcomes) {
             throw 'InvalidIdentityFields'
         }
         $recordedAt = [DateTimeOffset]::MinValue
@@ -746,7 +1014,11 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
         }
         if ([string]$evidence.outcome -eq 'DiagnosticFailed') {
             if ($transitions.Count -ne 0 -or $probes.Count -ne 0 -or
-                ($issueCodes -join '|') -cne 'DiagnosticInternalFailure') {
+                ($issueCodes -join '|') -cne 'DiagnosticInternalFailure' -or
+                [string]$evidence.fullInitdbDiagnosticStage -cne 'NotRun' -or
+                @($evidence.fullInitdbTrials).Count -ne 0 -or
+                @($evidence.fullInitdbIssueCodes).Count -ne 0 -or
+                [string]$evidence.fullInitdbOutcome -cne 'NotRequired') {
                 throw 'InvalidDiagnosticFailure'
             }
         }
@@ -789,6 +1061,65 @@ function Test-OfficePostgresLifecycleBoundaryEvidence {
             if ([string]$evidence.outcome -cne [string]$recomputed.Outcome -or
                 (@($issueCodes) -join '|') -cne (@($recomputed.IssueCodes) -join '|')) {
                 throw 'BoundaryDecisionMismatch'
+            }
+        }
+
+        $fullTrials = @($evidence.fullInitdbTrials)
+        foreach ($trial in $fullTrials) {
+            if (-not (Test-BoundaryExactProperties -Value $trial -Expected @(
+                'sequence', 'mode', 'completed', 'exitCode', 'exitCodeHex', 'succeeded', 'issueCode')) -or
+                [int]$trial.sequence -lt 1 -or [string]$trial.mode -notin $script:FullInitdbModes) {
+                throw 'InvalidFullInitdbTrial'
+            }
+            if ([bool]$trial.completed) {
+                $trialExit = [int]$trial.exitCode
+                if ([string]$trial.exitCodeHex -cne (ConvertTo-BoundaryExitCodeHex -ExitCode $trialExit) -or
+                    [bool]$trial.succeeded -ne ($trialExit -eq 0) -or $null -ne $trial.issueCode) {
+                    throw 'InvalidFullInitdbTrialExitCode'
+                }
+            }
+            elseif ($null -ne $trial.exitCode -or $null -ne $trial.exitCodeHex -or
+                [bool]$trial.succeeded -or [string]$trial.issueCode -cne 'InvocationFailed') {
+                throw 'InvalidIncompleteFullInitdbTrial'
+            }
+        }
+        $fullIssueCodes = @($evidence.fullInitdbIssueCodes)
+        if (@($fullIssueCodes | Where-Object { [string]$_ -notin $script:FullInitdbIssueCodes }).Count -gt 0) {
+            throw 'InvalidFullInitdbIssueCode'
+        }
+        if ([string]$evidence.outcome -cne 'FullInitdbInvocationBoundary') {
+            if ([string]$evidence.fullInitdbDiagnosticStage -cne 'NotRun' -or $fullTrials.Count -ne 0 -or
+                $fullIssueCodes.Count -ne 0 -or [string]$evidence.fullInitdbOutcome -cne 'NotRequired') {
+                throw 'UnexpectedFullInitdbDiagnostic'
+            }
+        }
+        elseif ([string]$evidence.fullInitdbOutcome -eq 'DiagnosticFailed') {
+            if ([string]$evidence.fullInitdbDiagnosticStage -in @('NotRun', 'Completed') -or
+                $fullTrials.Count -ne 0 -or
+                ($fullIssueCodes -join '|') -cne 'FullInitdbDiagnosticInternalFailure') {
+                throw 'InvalidFullInitdbDiagnosticFailure'
+            }
+        }
+        else {
+            if ([string]$evidence.fullInitdbDiagnosticStage -cne 'Completed' -or $fullTrials.Count -ne 3) {
+                throw 'IncompleteFullInitdbComparison'
+            }
+            $expectedFullSequence = 1
+            foreach ($trial in @($fullTrials | Sort-Object sequence)) {
+                if ([int]$trial.sequence -ne $expectedFullSequence) {
+                    throw 'InvalidFullInitdbTrialSequence'
+                }
+                $expectedFullSequence++
+            }
+            foreach ($mode in $script:FullInitdbModes) {
+                if (@($fullTrials | Where-Object { $_.mode -eq $mode }).Count -ne 1) {
+                    throw 'InvalidFullInitdbTrialMatrix'
+                }
+            }
+            $fullRecomputed = Get-OfficePostgresFullInitdbBoundaryOutcome -Trials $fullTrials
+            if ([string]$evidence.fullInitdbOutcome -cne [string]$fullRecomputed.Outcome -or
+                ($fullIssueCodes -join '|') -cne (@($fullRecomputed.IssueCodes) -join '|')) {
+                throw 'FullInitdbDecisionMismatch'
             }
         }
         return [pscustomobject]@{ IsValid = $true; IssueCodes = @() }
