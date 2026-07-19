@@ -293,9 +293,12 @@ $actualOuterHash = $null
 $validatedManifestHash = $null
 $actualRuntimeHash = $null
 $actualInitdbHash = $null
+$actualPostgresHash = $null
 $postgresVersion = $null
 $initdbResult = $null
 $versionMatched = $false
+$postgresResult = $null
+$postgresVersionMatched = $false
 $toolAvailable = $false
 $ownedProbeFullPath = $null
 $probeParent = $null
@@ -370,16 +373,28 @@ try {
     [IO.Compression.ZipFile]::ExtractToDirectory($runtimeArchivePath, $runtimeRoot)
     $runtimeBin = Join-Path $runtimeRoot 'bin'
     $initdbPath = Join-Path $runtimeBin 'initdb.exe'
+    $postgresPath = Join-Path $runtimeBin 'postgres.exe'
     if (-not (Test-Path -LiteralPath $initdbPath -PathType Leaf)) {
         throw "The sealed PostgreSQL runtime does not contain initdb.exe."
     }
+    if (-not (Test-Path -LiteralPath $postgresPath -PathType Leaf)) {
+        throw "The sealed PostgreSQL runtime does not contain postgres.exe."
+    }
     $expectedInitdbHashProperty = $validatedManifest.postgresql.requiredRuntimeFileSha256.PSObject.Properties['bin/initdb.exe']
+    $expectedPostgresHashProperty = $validatedManifest.postgresql.requiredRuntimeFileSha256.PSObject.Properties['bin/postgres.exe']
     if ($null -eq $expectedInitdbHashProperty) {
         throw "The database package manifest does not pin initdb.exe."
     }
+    if ($null -eq $expectedPostgresHashProperty) {
+        throw "The database package manifest does not pin postgres.exe."
+    }
     $actualInitdbHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $initdbPath).Hash.ToUpperInvariant()
+    $actualPostgresHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $postgresPath).Hash.ToUpperInvariant()
     if ($actualInitdbHash -cne ([string]$expectedInitdbHashProperty.Value).ToUpperInvariant()) {
         throw "The extracted initdb.exe does not match the sealed package manifest."
+    }
+    if ($actualPostgresHash -cne ([string]$expectedPostgresHashProperty.Value).ToUpperInvariant()) {
+        throw "The extracted postgres.exe does not match the sealed package manifest."
     }
 
     $initdbResult = Invoke-ProbeNativeCommand `
@@ -389,6 +404,13 @@ try {
     $expectedVersionOutput = "initdb (PostgreSQL) $postgresVersion"
     $versionMatched = $initdbResult.ExitCode -eq 0 -and
         $initdbResult.StandardOutput.Trim() -ceq $expectedVersionOutput
+    $postgresResult = Invoke-ProbeNativeCommand `
+        -FilePath $postgresPath `
+        -Arguments @('--version') `
+        -WorkingDirectory $runtimeBin
+    $expectedPostgresVersionOutput = "postgres (PostgreSQL) $postgresVersion"
+    $postgresVersionMatched = $postgresResult.ExitCode -eq 0 -and
+        $postgresResult.StandardOutput.Trim() -ceq $expectedPostgresVersionOutput
 
     $toolPath = Get-ProbeDependencyTool -RequestedPath $DependencyToolPath
     $toolAvailable = $true
@@ -406,6 +428,28 @@ try {
         }
     }
 
+    $runtimeRootPrefix = [IO.Path]::GetFullPath($runtimeRoot).TrimEnd('\') + '\'
+    $rootImagePaths = [Collections.Generic.List[string]]::new()
+    $rootImageNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($requiredRuntimeFile in @($validatedManifest.postgresql.requiredRuntimeFiles | Sort-Object)) {
+        $relativePath = [string]$requiredRuntimeFile
+        if ([IO.Path]::GetExtension($relativePath) -notin @('.exe', '.dll', '.drv')) {
+            continue
+        }
+        $rootImagePath = [IO.Path]::GetFullPath((Join-Path $runtimeRoot $relativePath.Replace('/', '\')))
+        $rootImageName = [IO.Path]::GetFileName($rootImagePath)
+        if (-not $rootImagePath.StartsWith($runtimeRootPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+            -not (Test-Path -LiteralPath $rootImagePath -PathType Leaf) -or
+            -not $rootImageNames.Add($rootImageName)) {
+            throw "The required PostgreSQL dependency roots are unsafe, missing, or ambiguous."
+        }
+        $rootImagePaths.Add($rootImagePath)
+    }
+    if (-not $rootImageNames.Contains('initdb.exe') -or
+        -not $rootImageNames.Contains('postgres.exe')) {
+        throw "The PostgreSQL dependency roots do not cover cluster initialization."
+    }
+
     $knownDlls = Get-ProbeKnownDllNames
     $systemDirectory = [Environment]::SystemDirectory
     $windowsDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
@@ -417,18 +461,24 @@ try {
     })
 
     $queue = [Collections.Generic.Queue[string]]::new()
-    $queue.Enqueue($initdbPath)
+    foreach ($rootImagePath in $rootImagePaths) {
+        $queue.Enqueue($rootImagePath)
+    }
     $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $inspectedLeafNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $edges = [Collections.Generic.List[object]]::new()
     $toolFailures = [Collections.Generic.List[object]]::new()
     $unresolvedCount = 0
     $externalCount = 0
 
     while ($queue.Count -gt 0) {
-        $imagePath = $queue.Dequeue()
+        $imagePath = [IO.Path]::GetFullPath($queue.Dequeue())
         $importer = [IO.Path]::GetFileName($imagePath)
-        if (-not $visited.Add($importer)) {
+        if (-not $visited.Add($imagePath)) {
             continue
+        }
+        if (-not $inspectedLeafNames.Add($importer)) {
+            throw "The PostgreSQL dependency graph contains an ambiguous image leaf name."
         }
         $dependencyResult = Get-ProbeImageDependencies -ToolPath $toolPath -ImagePath $imagePath
         if ($dependencyResult.ExitCode -ne 0) {
@@ -513,6 +563,12 @@ try {
     elseif (-not $versionMatched) {
         $issueCodes.Add('InitdbVersionMismatch')
     }
+    if ($postgresResult.ExitCode -ne 0) {
+        $issueCodes.Add('RawPostgresLoaderFailure')
+    }
+    elseif (-not $postgresVersionMatched) {
+        $issueCodes.Add('PostgresVersionMismatch')
+    }
     if ($toolFailures.Count -gt 0) {
         $issueCodes.Add('DependencyToolFailure')
     }
@@ -539,6 +595,7 @@ try {
             databaseManifestSha256 = $validatedManifestHash
             postgresRuntimeSha256 = $actualRuntimeHash
             initdbSha256 = $actualInitdbHash
+            postgresExecutableSha256 = $actualPostgresHash
             postgresVersion = $postgresVersion
         }
         tool = [ordered]@{
@@ -553,6 +610,14 @@ try {
             exitCodeHex = ConvertTo-ProbeExitCodeHex -ExitCode ([int]$initdbResult.ExitCode)
             versionMatched = [bool]$versionMatched
         }
+        postgres = [ordered]@{
+            executable = 'postgres.exe'
+            completed = $true
+            exitCode = [int]$postgresResult.ExitCode
+            exitCodeHex = ConvertTo-ProbeExitCodeHex -ExitCode ([int]$postgresResult.ExitCode)
+            versionMatched = [bool]$postgresVersionMatched
+        }
+        rootImages = @($rootImageNames | Sort-Object)
         inspectedImageCount = $visited.Count
         edges = @($edges | Sort-Object importer, dependency, delayLoad)
         unresolvedCount = $unresolvedCount
@@ -563,6 +628,7 @@ try {
     Write-ProbeEvidence -Path $EvidencePath -Value $evidence
 
     Write-Host "Raw PostgreSQL probe: executable='initdb.exe'; exit code $($initdbResult.ExitCode); hexadecimal exit code $(ConvertTo-ProbeExitCodeHex -ExitCode ([int]$initdbResult.ExitCode)); version matched=$versionMatched."
+    Write-Host "Raw PostgreSQL probe: executable='postgres.exe'; exit code $($postgresResult.ExitCode); hexadecimal exit code $(ConvertTo-ProbeExitCodeHex -ExitCode ([int]$postgresResult.ExitCode)); version matched=$postgresVersionMatched."
     foreach ($edge in @($edges | Where-Object {
         $_.resolution -in @('PackagedOutsideExecutableDirectory', 'ExternalPathOnly', 'Unresolved')
     } | Sort-Object importer, dependency, delayLoad)) {
@@ -570,7 +636,7 @@ try {
     }
 
     if ($outcome -ne 'Ready') {
-        $safeFailure = "The raw packaged PostgreSQL dependency probe failed. Executable 'initdb.exe'; exit code $($initdbResult.ExitCode); hexadecimal exit code $(ConvertTo-ProbeExitCodeHex -ExitCode ([int]$initdbResult.ExitCode)); unresolved dependencies=$unresolvedCount; external PATH dependencies=$externalCount; dependency-tool failures=$($toolFailures.Count)."
+        $safeFailure = "The raw packaged PostgreSQL dependency probe failed. Executable 'initdb.exe'; exit code $($initdbResult.ExitCode); hexadecimal exit code $(ConvertTo-ProbeExitCodeHex -ExitCode ([int]$initdbResult.ExitCode)); executable 'postgres.exe'; exit code $($postgresResult.ExitCode); hexadecimal exit code $(ConvertTo-ProbeExitCodeHex -ExitCode ([int]$postgresResult.ExitCode)); unresolved dependencies=$unresolvedCount; external PATH dependencies=$externalCount; dependency-tool failures=$($toolFailures.Count)."
     }
 }
 catch {
@@ -588,6 +654,9 @@ catch {
         if ([string]$actualInitdbHash -match '^[A-F0-9]{64}$') {
             $fallbackPackage['initdbSha256'] = $actualInitdbHash
         }
+        if ([string]$actualPostgresHash -match '^[A-F0-9]{64}$') {
+            $fallbackPackage['postgresExecutableSha256'] = $actualPostgresHash
+        }
         if ([string]$postgresVersion -match '^17\.[0-9]+$') {
             $fallbackPackage['postgresVersion'] = $postgresVersion
         }
@@ -600,6 +669,14 @@ catch {
                 $fallbackIssueCodes.Add('InitdbVersionMismatch')
             }
         }
+        if ($null -ne $postgresResult) {
+            if ($postgresResult.ExitCode -ne 0) {
+                $fallbackIssueCodes.Add('RawPostgresLoaderFailure')
+            }
+            elseif (-not $postgresVersionMatched) {
+                $fallbackIssueCodes.Add('PostgresVersionMismatch')
+            }
+        }
         $fallbackIssueCodes.Add('DiagnosticInternalFailure')
         $fallbackInitdb = [ordered]@{
             executable = 'initdb.exe'
@@ -609,6 +686,15 @@ catch {
             $fallbackInitdb['exitCode'] = [int]$initdbResult.ExitCode
             $fallbackInitdb['exitCodeHex'] = ConvertTo-ProbeExitCodeHex -ExitCode ([int]$initdbResult.ExitCode)
             $fallbackInitdb['versionMatched'] = [bool]$versionMatched
+        }
+        $fallbackPostgres = [ordered]@{
+            executable = 'postgres.exe'
+            completed = $null -ne $postgresResult
+        }
+        if ($null -ne $postgresResult) {
+            $fallbackPostgres['exitCode'] = [int]$postgresResult.ExitCode
+            $fallbackPostgres['exitCodeHex'] = ConvertTo-ProbeExitCodeHex -ExitCode ([int]$postgresResult.ExitCode)
+            $fallbackPostgres['versionMatched'] = [bool]$postgresVersionMatched
         }
         $evidence = [ordered]@{
             schemaVersion = 1
@@ -626,6 +712,7 @@ catch {
                 available = [bool]$toolAvailable
             }
             initdb = $fallbackInitdb
+            postgres = $fallbackPostgres
             issueCodes = @($fallbackIssueCodes)
             outcome = 'Failed'
         }
