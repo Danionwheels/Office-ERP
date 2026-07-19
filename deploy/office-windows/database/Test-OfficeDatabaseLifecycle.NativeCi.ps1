@@ -6,7 +6,8 @@ param(
     [Parameter(Mandatory = $true)][string]$PackageDirectory,
     [Parameter(Mandatory = $true)][string]$TestRoot,
     [Parameter(Mandatory = $true)][string]$EvidencePath,
-    [Parameter(Mandatory = $true)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$OfficePackageArchiveSha256
+    [Parameter(Mandatory = $true)][ValidatePattern('^[0-9A-Fa-f]{64}$')][string]$OfficePackageArchiveSha256,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{32}$')][string]$BoundaryInvocationNonce
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,7 +30,8 @@ if (-not $evidenceFilePath.StartsWith($runnerTemp + '\', [StringComparison]::Ord
 
 $packagePath = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $packagedLifecycleModule = Join-Path $packagePath 'database\OfficeDatabaseLifecycle.psm1'
-Import-Module $packagedLifecycleModule -Force
+$lifecycleModule = Import-Module $packagedLifecycleModule -Force -PassThru
+Import-Module (Join-Path $PSScriptRoot 'OfficePostgresLifecycleBoundaryDiagnostic.psm1') -Force
 
 function Assert-NativeProof {
     param([Parameter(Mandatory = $true)][bool]$Condition, [Parameter(Mandatory = $true)][string]$Message)
@@ -283,6 +285,9 @@ $finalEvidence = $null
 $proofFailure = $null
 $migrationFailureEvidence = $null
 $sanitizedMigrationFailureOutput = $null
+$packageManifest = $null
+$paths = $null
+$runtimeBoundaryEvidencePath = Join-Path (Split-Path -Parent $evidenceFilePath) 'runtime-stage-boundary.json'
 
 if (Test-Path -LiteralPath $testPath) {
     throw 'The native lifecycle test root already exists.'
@@ -757,6 +762,22 @@ FROM pg_hba_file_rules;
 }
 catch {
     $proofFailure = $_
+    if ($null -ne $packageManifest -and $null -ne $paths -and (Test-Path -LiteralPath $testPath -PathType Container)) {
+        try {
+            $null = Invoke-OfficePostgresLifecycleBoundaryDiagnostic `
+                -LifecycleModule $lifecycleModule `
+                -PackageManifest $packageManifest `
+                -Paths $paths `
+                -TestRoot $testPath `
+                -EvidencePath $runtimeBoundaryEvidencePath `
+                -OfficePackageArchiveSha256 $OfficePackageArchiveSha256 `
+                -InvocationNonce $BoundaryInvocationNonce `
+                -LifecycleFailure $proofFailure
+        }
+        catch {
+            Write-Warning 'The safe PostgreSQL lifecycle boundary diagnostic could not produce evidence.'
+        }
+    }
 }
 finally {
     $cleanupFailure = $null

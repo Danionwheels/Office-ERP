@@ -508,6 +508,11 @@ jobs:
         run: >-
           ./deploy/office-windows/database/Test-OfficeDatabaseLifecycle.Hermetic.ps1
 
+      - name: Prove PostgreSQL lifecycle boundary diagnostics
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficePostgresLifecycleBoundary.Hermetic.ps1
+
       - name: Build self-contained office package
         shell: pwsh
         run: >-
@@ -569,10 +574,13 @@ jobs:
         run: |
           $testRoot = Join-Path $env:RUNNER_TEMP "safarsuite-office-db-$([Guid]::NewGuid().ToString('N'))"
           $evidencePath = Join-Path $env:RUNNER_TEMP 'safarsuite-office-db-evidence\native-lifecycle.json'
+          $boundaryNonce = [Guid]::NewGuid().ToString('N')
           "OFFICE_DB_TEST_ROOT=$testRoot" | Add-Content -LiteralPath $env:GITHUB_ENV
           "OFFICE_DB_EVIDENCE=$evidencePath" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_DB_BOUNDARY_NONCE=$boundaryNonce" | Add-Content -LiteralPath $env:GITHUB_ENV
 
       - name: Prove native PostgreSQL Windows service lifecycle
+        id: native_database_lifecycle
         shell: powershell
         run: >-
           ./deploy/office-windows/database/Test-OfficeDatabaseLifecycle.NativeCi.ps1
@@ -580,6 +588,7 @@ jobs:
           -TestRoot "$env:OFFICE_DB_TEST_ROOT"
           -EvidencePath "$env:OFFICE_DB_EVIDENCE"
           -OfficePackageArchiveSha256 "$env:OFFICE_PACKAGE_SHA256"
+          -BoundaryInvocationNonce "$env:OFFICE_DB_BOUNDARY_NONCE"
 
       - name: Clean disposable native database proof
         if: always()
@@ -593,8 +602,20 @@ jobs:
               -TestRoot "$env:OFFICE_DB_TEST_ROOT"
           }
 
-      - name: Upload native database lifecycle evidence
+      - name: Validate PostgreSQL lifecycle boundary evidence
+        id: database_boundary_evidence_validation
         if: always() && steps.postgres_runtime_dependency_probe.outcome != 'skipped'
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficePostgresLifecycleBoundaryEvidence.ps1
+          -EvidencePath "$env:RUNNER_TEMP\safarsuite-office-db-evidence\runtime-stage-boundary.json"
+          -LifecycleOutcome "${{ steps.native_database_lifecycle.outcome }}"
+          -ExpectedSourceRevision "$env:GITHUB_SHA"
+          -ExpectedOfficePackageArchiveSha256 "$env:OFFICE_PACKAGE_SHA256"
+          -ExpectedInvocationNonce "$env:OFFICE_DB_BOUNDARY_NONCE"
+
+      - name: Upload native database lifecycle evidence
+        if: always() && steps.postgres_runtime_dependency_probe.outcome != 'skipped' && steps.database_boundary_evidence_validation.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: safarsuite-control-desk-office-database-evidence

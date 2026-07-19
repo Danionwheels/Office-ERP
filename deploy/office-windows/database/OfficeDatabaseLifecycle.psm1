@@ -52,6 +52,7 @@ $script:LifecycleSchemaVersion = 1
 $script:StateFileName = "database-state.json"
 $script:ActivationFileName = "database-activation.json"
 $script:NativeProcessEnvironmentLock = [object]::new()
+$script:VisualCppRuntimeTransitions = [Collections.Generic.List[object]]::new()
 
 function ConvertTo-OfficeForwardSlashPath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -444,10 +445,39 @@ function Test-OfficeVisualCppRuntime {
     return $null -ne $installed -and $installed -ge $minimum
 }
 
+function Get-OfficeVisualCppRuntimeTransitionEvidence {
+    return @($script:VisualCppRuntimeTransitions | ForEach-Object {
+        [pscustomobject]@{
+            minimumVersion = [string]$_.minimumVersion
+            versionBefore = if ($null -eq $_.versionBefore) { $null } else { [string]$_.versionBefore }
+            installerInvoked = [bool]$_.installerInvoked
+            installerExitCode = $_.installerExitCode
+            installerExitCodeHex = if ($null -eq $_.installerExitCodeHex) { $null } else { [string]$_.installerExitCodeHex }
+            rebootRequired = [bool]$_.rebootRequired
+            versionAfter = if ($null -eq $_.versionAfter) { $null } else { [string]$_.versionAfter }
+            minimumSatisfied = [bool]$_.minimumSatisfied
+            classification = [string]$_.classification
+        }
+    })
+}
+
 function Install-OfficeVisualCppRuntime {
     param([Parameter(Mandatory = $true)]$Context)
 
-    if (Test-OfficeVisualCppRuntime -Context $Context) {
+    $minimum = [Version]::Parse([string]$Context.Distribution.visualCppRuntime.minimumVersion)
+    $installedBefore = Get-OfficeInstalledVisualCppRuntimeVersion
+    if ($null -ne $installedBefore -and $installedBefore -ge $minimum) {
+        [void]$script:VisualCppRuntimeTransitions.Add([pscustomobject]@{
+            minimumVersion = $minimum.ToString()
+            versionBefore = $installedBefore.ToString()
+            installerInvoked = $false
+            installerExitCode = $null
+            installerExitCodeHex = $null
+            rebootRequired = $false
+            versionAfter = $installedBefore.ToString()
+            minimumSatisfied = $true
+            classification = 'AlreadySatisfied'
+        })
         return
     }
     $installerPath = Join-Path $Context.Paths.DatabasePackageDirectory ([string]$Context.Distribution.visualCppRuntime.archiveFileName)
@@ -460,10 +490,31 @@ function Install-OfficeVisualCppRuntime {
         -Arguments @('/install', '/quiet', '/norestart') `
         -TimeoutSeconds 300 `
         -AllowFailure
+    $installerExitCode = [int]$result.ExitCode
+    $unsignedInstallerExitCode = [BitConverter]::ToUInt32([BitConverter]::GetBytes($installerExitCode), 0)
+    $installedAfter = Get-OfficeInstalledVisualCppRuntimeVersion
+    $minimumSatisfied = $null -ne $installedAfter -and $installedAfter -ge $minimum
+    $classification = switch ($installerExitCode) {
+        0 { 'InstalledNoReboot' }
+        1638 { 'AnotherVersionInstalled' }
+        3010 { 'InstalledRebootRequired' }
+        default { 'InstallerFailed' }
+    }
+    [void]$script:VisualCppRuntimeTransitions.Add([pscustomobject]@{
+        minimumVersion = $minimum.ToString()
+        versionBefore = if ($null -eq $installedBefore) { $null } else { $installedBefore.ToString() }
+        installerInvoked = $true
+        installerExitCode = $installerExitCode
+        installerExitCodeHex = "0x$($unsignedInstallerExitCode.ToString('X8'))"
+        rebootRequired = $installerExitCode -eq 3010
+        versionAfter = if ($null -eq $installedAfter) { $null } else { $installedAfter.ToString() }
+        minimumSatisfied = $minimumSatisfied
+        classification = $classification
+    })
     if ($result.ExitCode -notin @(0, 1638, 3010)) {
         throw "The Microsoft Visual C++ runtime installation failed with exit code $($result.ExitCode)."
     }
-    if (-not (Test-OfficeVisualCppRuntime -Context $Context)) {
+    if (-not $minimumSatisfied) {
         throw "The required Microsoft Visual C++ runtime is still unavailable after installation."
     }
 }
@@ -515,6 +566,7 @@ function Invoke-OfficeNativeCommand {
         [string[]]$Arguments = @(),
         [hashtable]$Environment = @{},
         [string]$StandardInput,
+        [string]$WorkingDirectory,
         [int]$TimeoutSeconds = 120,
         [switch]$AllowFailure
     )
@@ -526,6 +578,9 @@ function Invoke-OfficeNativeCommand {
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     $startInfo.RedirectStandardInput = $PSBoundParameters.ContainsKey('StandardInput')
+    if ($PSBoundParameters.ContainsKey('WorkingDirectory')) {
+        $startInfo.WorkingDirectory = $WorkingDirectory
+    }
     $startInfo.Arguments = (($Arguments | ForEach-Object {
         ConvertTo-OfficeWindowsCommandLineArgument -Value ([string]$_)
     }) -join ' ')
