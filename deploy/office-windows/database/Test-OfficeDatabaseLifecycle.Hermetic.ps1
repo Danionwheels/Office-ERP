@@ -131,6 +131,21 @@ $verboseNativeProof = & $lifecycleModule {
         -TimeoutSeconds 30
 } $windowsPowerShell
 Assert-OfficeTest -Condition ($verboseNativeProof.StandardOutput -match 'out-12000' -and $verboseNativeProof.StandardError -match 'err-12000') -Message 'Native process output was not drained without deadlock.'
+$nativeFailureMessage = & $lifecycleModule {
+    param($Executable)
+    try {
+        Invoke-OfficeNativeCommand `
+            -FilePath $Executable `
+            -Arguments @('-NoProfile', '-Command', '$null = ''SAFARSUITE_SECRET_ARGUMENT_MARKER''; [Environment]::Exit(-1073741515)') | Out-Null
+        throw 'The controlled native failure unexpectedly succeeded.'
+    }
+    catch {
+        return $_.Exception.Message
+    }
+} $windowsPowerShell
+Assert-OfficeTest `
+    -Condition ($nativeFailureMessage -ceq "A required database lifecycle process failed with exit code -1073741515. Executable 'powershell.exe'; hexadecimal exit code 0xC0000135.") `
+    -Message 'Native process failure evidence did not retain only the executable identity and signed/hexadecimal exit code.'
 $serviceRecoveryProof = & $lifecycleModule {
     $bytes = New-Object byte[] 44
     [Buffer]::BlockCopy([BitConverter]::GetBytes([uint32]86400), 0, $bytes, 0, 4)

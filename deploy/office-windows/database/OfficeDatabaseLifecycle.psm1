@@ -567,7 +567,10 @@ function Invoke-OfficeNativeCommand {
         $stdout = $stdoutTask.Result
         $stderr = $stderrTask.Result
         if ($process.ExitCode -ne 0 -and -not $AllowFailure) {
-            throw "A required database lifecycle process failed with exit code $($process.ExitCode)."
+            $exitCode = [int]$process.ExitCode
+            $unsignedExitCode = [BitConverter]::ToUInt32([BitConverter]::GetBytes($exitCode), 0)
+            $executableName = [IO.Path]::GetFileName($startInfo.FileName)
+            throw "A required database lifecycle process failed with exit code $exitCode. Executable '$executableName'; hexadecimal exit code 0x$($unsignedExitCode.ToString('X8'))."
         }
         return [pscustomobject]@{
             ExitCode = $process.ExitCode
