@@ -1057,6 +1057,16 @@ function Read-OfficePgPassPassword {
     return $parts[4].Replace('\:', ':').Replace('\\', '\')
 }
 
+function Get-OfficePsqlFailureClassification {
+    param([AllowEmptyString()][string]$StandardError)
+
+    if ($StandardError -match '(?i)no password supplied') { return 'PasswordNotSupplied' }
+    if ($StandardError -match '(?i)password authentication failed') { return 'PasswordAuthenticationFailed' }
+    if ($StandardError -match '(?i)no pg_hba\.conf entry') { return 'HbaRejected' }
+    if ($StandardError -match '(?i)connection refused|could not connect to server') { return 'ConnectionUnavailable' }
+    return 'Unclassified'
+}
+
 function Invoke-OfficePsql {
     param(
         [Parameter(Mandatory = $true)]$Context,
@@ -1068,7 +1078,7 @@ function Invoke-OfficePsql {
     )
 
     $psqlPath = Join-Path $Context.Paths.RuntimeRoot "bin\psql.exe"
-    return Invoke-OfficeNativeCommand `
+    $result = Invoke-OfficeNativeCommand `
         -FilePath $psqlPath `
         -Arguments @(
             '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-tA',
@@ -1078,7 +1088,14 @@ function Invoke-OfficePsql {
         -Environment @{ PGPASSFILE = $Passfile } `
         -StandardInput $Sql `
         -TimeoutSeconds 120 `
-        -AllowFailure:$AllowFailure
+        -AllowFailure
+    if ($result.ExitCode -ne 0 -and -not $AllowFailure) {
+        $classification = Get-OfficePsqlFailureClassification -StandardError $result.StandardError
+        $exitCode = [int]$result.ExitCode
+        $unsignedExitCode = [BitConverter]::ToUInt32([BitConverter]::GetBytes($exitCode), 0)
+        throw "A required database psql operation failed with classification '$classification', exit code $exitCode, and hexadecimal exit code 0x$($unsignedExitCode.ToString('X8'))."
+    }
+    return $result
 }
 
 function Get-OfficeService {

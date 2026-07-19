@@ -166,6 +166,19 @@ $serviceRecoveryProof = & $lifecycleModule {
 }
 Assert-OfficeTest -Condition ($serviceRecoveryProof.Valid -and -not $serviceRecoveryProof.Invalid) -Message 'Exact Windows service recovery-action parsing failed.'
 
+$psqlFailureClassifications = & $lifecycleModule {
+    return @(
+        Get-OfficePsqlFailureClassification -StandardError 'connection failed: fe_sendauth: no password supplied'
+        Get-OfficePsqlFailureClassification -StandardError 'password authentication failed for user redacted'
+        Get-OfficePsqlFailureClassification -StandardError 'no pg_hba.conf entry for host redacted'
+        Get-OfficePsqlFailureClassification -StandardError 'could not connect to server'
+        Get-OfficePsqlFailureClassification -StandardError 'unexpected finite-safe test input'
+    )
+}
+Assert-OfficeTest `
+    -Condition (($psqlFailureClassifications -join '|') -eq 'PasswordNotSupplied|PasswordAuthenticationFailed|HbaRejected|ConnectionUnavailable|Unclassified') `
+    -Message 'Secret-safe psql failure classification changed unexpectedly.'
+
 $serviceConfigArguments = & $lifecycleModule {
     $context = [pscustomobject]@{
         Distribution = [pscustomobject]@{
