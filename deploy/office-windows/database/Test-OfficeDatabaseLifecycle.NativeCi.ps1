@@ -85,9 +85,13 @@ function Invoke-PackagedMigrationBundle {
         [switch]$ExpectFailure
     )
     $priorConnection = $env:SAFARSUITE_CONTROL_DESK_CONNECTION_STRING
+    $priorPassword = $env:PGPASSWORD
+    $priorPassfile = $env:PGPASSFILE
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $env:SAFARSUITE_CONTROL_DESK_CONNECTION_STRING = "Host=127.0.0.1;Port=$Port;Database=$Database;Username=$Role;Passfile=$Passfile;SSL Mode=Disable;Application Name=SafarSuite Native CI Migrator"
+        Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+        Remove-Item Env:PGPASSFILE -ErrorAction SilentlyContinue
         $ErrorActionPreference = 'Continue'
         $output = @(& $BundlePath $TargetMigration 2>&1)
         $exitCode = $LASTEXITCODE
@@ -95,6 +99,8 @@ function Invoke-PackagedMigrationBundle {
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
         $env:SAFARSUITE_CONTROL_DESK_CONNECTION_STRING = $priorConnection
+        $env:PGPASSWORD = $priorPassword
+        $env:PGPASSFILE = $priorPassfile
     }
     if ($ExpectFailure) {
         if ($exitCode -eq 0) { throw 'A migration bundle expected to fail succeeded.' }
