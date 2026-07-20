@@ -9,6 +9,7 @@ $checks = [ordered]@{
     recoveryActions = $source.Contains('sc.exe failure')
     receipt = $source.Contains('api-service-receipt.json')
     payloadReceipt = $source.Contains('api-installation-receipt.json')
+    aclConvergence = $source.Contains('icacls.exe') -and $source.Contains('Set-OfficeApiAcl')
 }
 foreach ($check in $checks.GetEnumerator()) { if (-not $check.Value) { throw "API service contract check failed: $($check.Key)" } }
 Write-Host "API service registration hermetic contract: passed ($($checks.Count) checks)"
