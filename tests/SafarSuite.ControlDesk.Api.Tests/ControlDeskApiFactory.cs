@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace SafarSuite.ControlDesk.Api.Tests;
 
-public sealed class ControlDeskApiFactory : WebApplicationFactory<Program>
+public class ControlDeskApiFactory : WebApplicationFactory<Program>
 {
     public const string AdminEmail = "admin@example.test";
     public const string ReportReaderEmail = "reports@example.test";

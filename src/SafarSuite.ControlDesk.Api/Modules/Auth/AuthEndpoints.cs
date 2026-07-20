@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Options;
-using SafarSuite.ControlDesk.Application.Modules.Auth;
+using SafarSuite.ControlDesk.Application.Modules.Auth.AuthenticateLocalOperator;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Auth;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Common;
 
@@ -21,11 +21,12 @@ public static class AuthEndpoints
         return endpoints;
     }
 
-    private static IResult CreateOperatorSession(
+    private static async Task<IResult> CreateOperatorSession(
         CreateLocalOperatorSessionRequest request,
         IOptions<ControlDeskOperatorAccessOptions> optionsAccessor,
-        ILocalOperatorPasswordCodec passwords,
-        IControlDeskSessionTokenService tokens)
+        AuthenticateLocalOperatorHandler authentication,
+        IControlDeskSessionTokenService tokens,
+        CancellationToken cancellationToken)
     {
         var email = request.Email?.Trim() ?? string.Empty;
 
@@ -50,17 +51,16 @@ public static class AuthEndpoints
                 $"Session minutes must be between {MinimumSessionMinutes} and {MaximumSessionMinutes}.");
         }
 
-        var operatorUser = options.Users.FirstOrDefault(user =>
-            string.Equals(user.Email?.Trim(), email, StringComparison.OrdinalIgnoreCase));
+        var authenticationResult = await authentication.HandleAsync(
+            new AuthenticateLocalOperatorCommand(email, request.Password),
+            cancellationToken);
 
-        if (operatorUser is null
-            || !string.Equals(operatorUser.Status, "Active", StringComparison.OrdinalIgnoreCase)
-            || !passwords.Verify(request.Password, operatorUser.PasswordHash))
+        if (!authenticationResult.IsAuthenticated || authenticationResult.Principal is null)
         {
             return SignInError();
         }
 
-        var session = tokens.Issue(operatorUser, sessionMinutes);
+        var session = tokens.Issue(authenticationResult.Principal, sessionMinutes);
 
         var response = new LocalOperatorSessionResponse(
             AccessToken: session.AccessToken,

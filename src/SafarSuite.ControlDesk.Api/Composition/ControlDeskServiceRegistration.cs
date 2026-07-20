@@ -5,6 +5,7 @@ using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Api.Modules.Health;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Auth;
+using SafarSuite.ControlDesk.Application.Modules.Auth.AuthenticateLocalOperator;
 using SafarSuite.ControlDesk.Application.Modules.Auth.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
@@ -214,6 +215,7 @@ public static class ControlDeskServiceRegistration
 
         AddPersistence(services, configuration);
 
+        services.AddScoped<AuthenticateLocalOperatorHandler>();
         services.AddScoped<CreateClientValidator>();
         services.AddScoped<CreateClientHandler>();
         services.AddScoped<ListClientsHandler>();
@@ -488,6 +490,11 @@ public static class ControlDeskServiceRegistration
         }
 
         services.AddSingleton<InMemoryClientRepository>();
+        services.AddSingleton<InMemoryLocalOperatorRepository>(provider => new(
+            ControlDeskDevelopmentOperatorFixtures.Create(
+                provider.GetRequiredService<IOptions<ControlDeskOperatorAccessOptions>>().Value)));
+        services.AddSingleton<ILocalOperatorRepository>(provider =>
+            provider.GetRequiredService<InMemoryLocalOperatorRepository>());
         services.AddSingleton<IClientRepository>(provider =>
             provider.GetRequiredService<InMemoryClientRepository>());
         services.AddSingleton<IClientDirectoryReader>(provider =>
