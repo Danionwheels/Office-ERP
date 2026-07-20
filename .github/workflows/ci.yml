@@ -549,6 +549,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeApiServiceRepair.Hermetic.ps1
 
+      - name: Prove readiness-aware launcher contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeLauncher.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-
