@@ -4,6 +4,7 @@ using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Api.Modules.Health;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
+using SafarSuite.ControlDesk.Application.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
@@ -147,6 +148,7 @@ using SafarSuite.ControlDesk.Infrastructure.ControlCloud;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.InMemory;
 using SafarSuite.ControlDesk.Infrastructure.ProductModules;
+using SafarSuite.ControlDesk.Infrastructure.Security;
 using SafarSuite.ControlDesk.Infrastructure.System;
 
 namespace SafarSuite.ControlDesk.Api.Composition;
@@ -158,6 +160,7 @@ public static class ControlDeskServiceRegistration
         IConfiguration configuration)
     {
         services.AddControlDeskAuthentication(configuration);
+        services.AddSingleton<ILocalOperatorPasswordCodec, Pbkdf2LocalOperatorPasswordCodec>();
         services.Configure<ControlDeskClockOptions>(
             configuration.GetSection(ControlDeskClockOptions.SectionName));
         services.AddSingleton<IClock, SystemClock>();

@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
+using SafarSuite.ControlDesk.Application.Modules.Auth;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Auth;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Common;
 
@@ -24,6 +24,7 @@ public static class AuthEndpoints
     private static IResult CreateOperatorSession(
         CreateLocalOperatorSessionRequest request,
         IOptions<ControlDeskOperatorAccessOptions> optionsAccessor,
+        ILocalOperatorPasswordCodec passwords,
         IControlDeskSessionTokenService tokens)
     {
         var email = request.Email?.Trim() ?? string.Empty;
@@ -54,7 +55,7 @@ public static class AuthEndpoints
 
         if (operatorUser is null
             || !string.Equals(operatorUser.Status, "Active", StringComparison.OrdinalIgnoreCase)
-            || !VerifyPassword(request.Password, operatorUser.PasswordHash))
+            || !passwords.Verify(request.Password, operatorUser.PasswordHash))
         {
             return SignInError();
         }
@@ -91,58 +92,6 @@ public static class AuthEndpoints
                 "Request validation failed.",
                 new[] { new ApiErrorItem("validation", "Local operator email or password is invalid.", "password") }),
             statusCode: StatusCodes.Status400BadRequest);
-    }
-
-    private static bool VerifyPassword(string password, string passwordHash)
-    {
-        var parts = passwordHash.Split('.', 4);
-
-        if (parts.Length != 4 || parts[0] != "pbkdf2-sha256")
-        {
-            return false;
-        }
-
-        if (!int.TryParse(parts[1], out var iterations) || iterations <= 0)
-        {
-            return false;
-        }
-
-        try
-        {
-            var salt = Base64UrlDecode(parts[2]);
-            var expectedHash = Base64UrlDecode(parts[3]);
-            var actualHash = Rfc2898DeriveBytes.Pbkdf2(
-                password,
-                salt,
-                iterations,
-                HashAlgorithmName.SHA256,
-                expectedHash.Length);
-
-            return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
-    }
-
-    private static byte[] Base64UrlDecode(string value)
-    {
-        var incoming = value
-            .Replace('-', '+')
-            .Replace('_', '/');
-        var padding = incoming.Length % 4;
-
-        if (padding > 0)
-        {
-            incoming = incoming.PadRight(incoming.Length + 4 - padding, '=');
-        }
-
-        return Convert.FromBase64String(incoming);
     }
 
 }
