@@ -197,6 +197,21 @@ Assert-OfficeTest `
     -Condition (($psqlFailureClassifications -join '|') -eq 'PasswordNotSupplied|PasswordAuthenticationFailed|HbaRejected|ConnectionUnavailable|Unclassified') `
     -Message 'Secret-safe psql failure classification changed unexpectedly.'
 
+$migrationFailureClassifications = & $lifecycleModule {
+    return @(
+        Get-OfficeMigrationFailureClassification -ProcessOutput 'PostgresException 28P01'
+        Get-OfficeMigrationFailureClassification -ProcessOutput '42501: permission denied'
+        Get-OfficeMigrationFailureClassification -ProcessOutput '3D000: database redacted does not exist'
+        Get-OfficeMigrationFailureClassification -ProcessOutput '42P07: relation already exists'
+        Get-OfficeMigrationFailureClassification -ProcessOutput '08006: connection refused'
+        Get-OfficeMigrationFailureClassification -ProcessOutput 'password file was rejected'
+        Get-OfficeMigrationFailureClassification -ProcessOutput 'finite-safe unknown failure'
+    )
+}
+Assert-OfficeTest `
+    -Condition (($migrationFailureClassifications -join '|') -eq 'PasswordAuthenticationFailed|InsufficientPrivilege|DatabaseUnavailable|RelationConflict|ConnectionUnavailable|PassfileRejected|Unclassified') `
+    -Message 'Secret-safe migration failure classification changed unexpectedly.'
+
 $psqlInvocationProof = & $lifecycleModule {
     $originalNativeCommand = (Get-Command Invoke-OfficeNativeCommand -CommandType Function).ScriptBlock
     try {

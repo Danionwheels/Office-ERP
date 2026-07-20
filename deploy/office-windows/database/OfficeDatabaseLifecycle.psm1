@@ -1073,6 +1073,18 @@ function Get-OfficePsqlFailureClassification {
     return 'Unclassified'
 }
 
+function Get-OfficeMigrationFailureClassification {
+    param([AllowEmptyString()][string]$ProcessOutput)
+
+    if ($ProcessOutput -match '(?i)28P01|password authentication failed') { return 'PasswordAuthenticationFailed' }
+    if ($ProcessOutput -match '(?i)42501|permission denied|insufficient privilege|must be owner') { return 'InsufficientPrivilege' }
+    if ($ProcessOutput -match '(?i)3D000|database\s+.+\s+does not exist') { return 'DatabaseUnavailable' }
+    if ($ProcessOutput -match '(?i)42P07|already exists') { return 'RelationConflict' }
+    if ($ProcessOutput -match '(?i)08001|08006|connection refused|could not connect to server') { return 'ConnectionUnavailable' }
+    if ($ProcessOutput -match '(?i)password file|passfile') { return 'PassfileRejected' }
+    return 'Unclassified'
+}
+
 function Invoke-OfficePsql {
     param(
         [Parameter(Mandatory = $true)]$Context,
@@ -2653,11 +2665,23 @@ ALTER DEFAULT PRIVILEGES FOR ROLE $migratorRole IN SCHEMA public GRANT USAGE, SE
                     throw "Another SafarSuite Control Desk migration is already in progress."
                 }
                 $connectionString = "Host=127.0.0.1;Port=$($ctx.Distribution.port);Database=$($ctx.Distribution.databaseName);Username=$($ctx.Distribution.migratorRole);Passfile=$($ctx.Paths.MigratorPassfilePath);SSL Mode=Disable;Application Name=SafarSuite Control Desk Migrator"
-                Invoke-OfficeNativeCommand `
+                $migrationResult = Invoke-OfficeNativeCommand `
                     -FilePath $ctx.Paths.MigrationBundlePath `
                     -Arguments @([string]$ctx.PackageManifest.migrations.target) `
-                    -Environment @{ SAFARSUITE_CONTROL_DESK_CONNECTION_STRING = $connectionString } `
-                    -TimeoutSeconds 900 | Out-Null
+                    -Environment @{
+                        SAFARSUITE_CONTROL_DESK_CONNECTION_STRING = $connectionString
+                        PGPASSWORD = ''
+                        PGPASSFILE = ''
+                    } `
+                    -TimeoutSeconds 900 `
+                    -AllowFailure
+                if ($migrationResult.ExitCode -ne 0) {
+                    $classification = Get-OfficeMigrationFailureClassification `
+                        -ProcessOutput ($migrationResult.StandardOutput + [Environment]::NewLine + $migrationResult.StandardError)
+                    $exitCode = [int]$migrationResult.ExitCode
+                    $unsignedExitCode = [BitConverter]::ToUInt32([BitConverter]::GetBytes($exitCode), 0)
+                    throw "A required database lifecycle process failed with exit code $exitCode. Executable 'SafarSuite.ControlDesk.Migrations.exe'; hexadecimal exit code 0x$($unsignedExitCode.ToString('X8')); migration classification '$classification'."
+                }
             }
             finally {
                 if ($lockAcquired) {
