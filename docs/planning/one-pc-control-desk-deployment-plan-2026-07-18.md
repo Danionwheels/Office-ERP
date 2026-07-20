@@ -334,6 +334,8 @@ Do not mark the gate complete from hosted CI. A hosted runner can prove `Automat
 
 ## Status Tracker
 
+Ticket-level execution and evidence are tracked in [`one-pc-control-desk-small-task-tracker-2026-07-19.md`](one-pc-control-desk-small-task-tracker-2026-07-19.md). This plan remains the milestone and requirement authority.
+
 | Work package | Status | Completion evidence |
 | --- | --- | --- |
 | Requirements baseline | Complete | Commit `0d38151`; canonical contract and active-doc alignment. |

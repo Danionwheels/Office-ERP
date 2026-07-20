@@ -16,6 +16,8 @@ Package and prove the scale-ready Office Control System on one dedicated Windows
 
 Execution contract: `docs/planning/one-pc-control-desk-deployment-plan-2026-07-18.md`
 
+Small-task tracker: [`one-pc-control-desk-small-task-tracker-2026-07-19.md`](one-pc-control-desk-small-task-tracker-2026-07-19.md)
+
 - [x] Lock the canonical one-PC requirements and physical topology.
 - [x] Audit the current API, UI, PostgreSQL, desktop, CI, and staging assets against the office gate.
 - [x] `OFFICE-P0-01`: produce one loopback, same-origin, self-contained Windows artifact. Local proof and clean GitHub Windows package gate passed on 2026-07-18.
