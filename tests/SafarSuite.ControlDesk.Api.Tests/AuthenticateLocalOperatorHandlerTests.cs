@@ -82,6 +82,16 @@ public sealed class AuthenticateLocalOperatorHandlerTests
     {
         public string? LastNormalizedEmail { get; private set; }
 
+        public Task AddAsync(
+            LocalOperator addedOperator,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<LocalOperator?> GetByIdAsync(
+            LocalOperatorId id,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<LocalOperator?>(localOperator.Id == id ? localOperator : null);
+
         public Task<LocalOperator?> GetByNormalizedEmailAsync(
             string normalizedEmail,
             CancellationToken cancellationToken = default)
@@ -95,6 +105,14 @@ public sealed class AuthenticateLocalOperatorHandlerTests
                     ? localOperator
                     : null);
         }
+
+        public Task<bool> ExistsByNormalizedEmailAsync(
+            string normalizedEmail,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(string.Equals(
+                normalizedEmail,
+                localOperator.NormalizedEmail,
+                StringComparison.Ordinal));
     }
 
     private sealed class StubPasswordCodec(string acceptedPassword) : ILocalOperatorPasswordCodec
