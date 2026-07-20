@@ -885,7 +885,10 @@ function Get-OfficeManagedPostgresServiceSid {
 }
 
 function Set-OfficeDatabasePathPermissions {
-    param([Parameter(Mandatory = $true)]$Context)
+    param(
+        [Parameter(Mandatory = $true)]$Context,
+        [switch]$ConvergeDataDescendants
+    )
 
     $serviceSid = Get-OfficeManagedPostgresServiceSid -Context $Context
     $managedRoots = @(
@@ -923,7 +926,10 @@ function Set-OfficeDatabasePathPermissions {
         # PostgreSQL owns the ACL details of files it creates below PGDATA.
         # Converge and verify the protected PGDATA boundary, but do not
         # recursively rewrite a live (and potentially very large) cluster.
-        if (-not (Test-OfficeShouldManageDescendantAcls -Path $entry.Path -DataDirectory $Context.Paths.DataDirectory)) {
+        if (-not (Test-OfficeShouldManageDescendantAcls `
+            -Path $entry.Path `
+            -DataDirectory $Context.Paths.DataDirectory `
+            -ConvergeDataDescendants $ConvergeDataDescendants.IsPresent)) {
             continue
         }
         $excludedSubtrees = if ([IO.Path]::GetFullPath($entry.Path) -eq [IO.Path]::GetFullPath($Context.Paths.DataRoot) -and
@@ -1037,10 +1043,12 @@ function Test-OfficeDatabasePathPermissions {
 function Test-OfficeShouldManageDescendantAcls {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$DataDirectory
+        [Parameter(Mandatory = $true)][string]$DataDirectory,
+        [bool]$ConvergeDataDescendants = $false
     )
 
-    return [IO.Path]::GetFullPath($Path) -ne [IO.Path]::GetFullPath($DataDirectory)
+    return $ConvergeDataDescendants -or
+        [IO.Path]::GetFullPath($Path) -ne [IO.Path]::GetFullPath($DataDirectory)
 }
 
 function Get-OfficeServiceSid {
@@ -2564,7 +2572,9 @@ function New-OfficeNativeDatabaseAdapter {
                 '-U', [string]$ctx.Distribution.serviceAccount
             ) | Out-Null
         Set-OfficePostgresServiceConfiguration -Context $ctx -Mode Pending
-        Set-OfficeDatabasePathPermissions -Context $ctx
+        # initdb ran before the virtual service existed. Converge the initial
+        # PGDATA tree exactly once so that identity can start the cluster.
+        Set-OfficeDatabasePathPermissions -Context $ctx -ConvergeDataDescendants
     }
 
     $ensureStarted = {

@@ -260,12 +260,13 @@ Assert-OfficeTest `
 $descendantAclBoundary = & $lifecycleModule {
     return @(
         Test-OfficeShouldManageDescendantAcls -Path 'C:\managed\Data' -DataDirectory 'C:\managed\Data'
+        Test-OfficeShouldManageDescendantAcls -Path 'C:\managed\Data' -DataDirectory 'C:\managed\Data' -ConvergeDataDescendants $true
         Test-OfficeShouldManageDescendantAcls -Path 'C:\managed\Runtime' -DataDirectory 'C:\managed\Data'
     )
 }
 Assert-OfficeTest `
-    -Condition (-not $descendantAclBoundary[0] -and $descendantAclBoundary[1]) `
-    -Message 'PGDATA descendants were not excluded from product-managed recursive ACL convergence.'
+    -Condition (-not $descendantAclBoundary[0] -and $descendantAclBoundary[1] -and $descendantAclBoundary[2]) `
+    -Message 'PGDATA descendant ACL convergence was not limited to the one-time service bootstrap.'
 
 $serviceConfigArguments = & $lifecycleModule {
     $context = [pscustomobject]@{
