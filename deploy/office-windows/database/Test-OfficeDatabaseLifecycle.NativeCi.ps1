@@ -106,6 +106,41 @@ function Get-DirectPasswordTransportProbe {
     } $failureText)
 }
 
+function Get-PassfileTransportProbe {
+    param(
+        [Parameter(Mandatory = $true)][string]$PsqlPath,
+        [Parameter(Mandatory = $true)][string]$Passfile,
+        [Parameter(Mandatory = $true)][string]$Role,
+        [Parameter(Mandatory = $true)][string]$Database,
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][System.Management.Automation.PSModuleInfo]$LifecycleModule
+    )
+
+    $previousPassword = $env:PGPASSWORD
+    $previousPassfile = $env:PGPASSFILE
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+        $env:PGPASSFILE = $Passfile
+        $ErrorActionPreference = 'Continue'
+        $output = @('SELECT 1;' | & $PsqlPath -X -q -w -v ON_ERROR_STOP=1 -tA -h 127.0.0.1 -p $Port -U $Role -d $Database 2>&1)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+        $env:PGPASSWORD = $previousPassword
+        $env:PGPASSFILE = $previousPassfile
+    }
+    if ($exitCode -eq 0 -and (($output -join [Environment]::NewLine).Trim() -eq '1')) {
+        return 'Succeeded'
+    }
+    $failureText = ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+    return (& $LifecycleModule {
+        param($StandardError)
+        Get-OfficePsqlFailureClassification -StandardError $StandardError
+    } $failureText)
+}
+
 function Invoke-PackagedMigrationBundle {
     param(
         [Parameter(Mandatory = $true)][string]$BundlePath,
@@ -808,15 +843,41 @@ catch {
                 Read-OfficePgPassPassword -Path $Path
             } $paths.AdminPassfilePath
             if (-not [string]::IsNullOrWhiteSpace($adminPassword)) {
-                $transportProbe = Get-DirectPasswordTransportProbe `
-                    -PsqlPath (Join-Path $paths.RuntimeRoot 'bin\psql.exe') `
-                    -Password $adminPassword `
-                    -Role ([string]$packageManifest.postgresql.adminRole) `
+                $psqlPath = Join-Path $paths.RuntimeRoot 'bin\psql.exe'
+                $adminRole = [string]$packageManifest.postgresql.adminRole
+                $port = [int]$packageManifest.postgresql.port
+                $protectedPassfileProbe = Get-PassfileTransportProbe `
+                    -PsqlPath $psqlPath `
+                    -Passfile $paths.AdminPassfilePath `
+                    -Role $adminRole `
                     -Database 'postgres' `
-                    -Port ([int]$packageManifest.postgresql.port) `
+                    -Port $port `
+                    -LifecycleModule $lifecycleModule
+                $disposablePassfilePath = Join-Path $testPath 'passfile-transport-probe.pgpass'
+                try {
+                    [IO.File]::WriteAllBytes($disposablePassfilePath, [IO.File]::ReadAllBytes($paths.AdminPassfilePath))
+                    $disposablePassfileProbe = Get-PassfileTransportProbe `
+                        -PsqlPath $psqlPath `
+                        -Passfile $disposablePassfilePath `
+                        -Role $adminRole `
+                        -Database 'postgres' `
+                        -Port $port `
+                        -LifecycleModule $lifecycleModule
+                }
+                finally {
+                    if (Test-Path -LiteralPath $disposablePassfilePath) {
+                        Remove-Item -LiteralPath $disposablePassfilePath -Force
+                    }
+                }
+                $transportProbe = Get-DirectPasswordTransportProbe `
+                    -PsqlPath $psqlPath `
+                    -Password $adminPassword `
+                    -Role $adminRole `
+                    -Database 'postgres' `
+                    -Port $port `
                     -LifecycleModule $lifecycleModule
                 $proofFailure = [Management.Automation.RuntimeException]::new(
-                    "$($proofFailure.Exception.Message) Direct in-memory password transport probe: '$transportProbe'.")
+                    "$($proofFailure.Exception.Message) Password transport probes: protected passfile '$protectedPassfileProbe'; disposable passfile '$disposablePassfileProbe'; direct in-memory '$transportProbe'.")
             }
         }
         catch {
