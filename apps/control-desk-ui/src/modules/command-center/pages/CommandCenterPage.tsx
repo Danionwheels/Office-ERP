@@ -2,7 +2,6 @@ import {
   AlertCircle,
   ArrowRight,
   Banknote,
-  BarChart3,
   Building2,
   CheckCircle2,
   Cloud,
@@ -36,11 +35,8 @@ type CommandCenterSectionKey =
   | "setup"
   | "client-360"
   | "commercial"
-  | "accounting"
   | "deployment-cloud"
-  | "access-security"
-  | "reports-audit"
-  | "legacy-desk";
+  | "access-security";
 
 type CommandCenterPageProps = {
   onOpenSection: (section: CommandCenterSectionKey) => void;
@@ -80,23 +76,11 @@ const flowSteps: FlowStep[] = [
     Icon: Banknote
   },
   {
-    key: "accounting",
-    label: "Accounting",
-    summary: "Ledger proof",
-    Icon: ListChecks
-  },
-  {
     key: "deployment-cloud",
     label: "Deployment",
     summary: "Runtime support",
     Icon: Cloud
   },
-  {
-    key: "reports-audit",
-    label: "Audit",
-    summary: "Evidence trail",
-    Icon: BarChart3
-  }
 ];
 
 const emptyQueueSummary: ClientWorkQueueSummary = {

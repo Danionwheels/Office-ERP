@@ -1,16 +1,13 @@
 import {
   AlertCircle,
   Banknote,
-  BarChart3,
   Building2,
   CheckCircle2,
   CircleDot,
   Cloud,
   FileCog,
-  Gauge,
   KeyRound,
   LayoutDashboard,
-  ListChecks,
   LogIn,
   LogOut,
   ShieldCheck,
@@ -27,7 +24,6 @@ import {
   type StoredControlDeskSession
 } from "../shared/api/controlDeskSession";
 import { createLocalOperatorSession } from "../shared/api/localOperatorAuth";
-import { ClientDeskPage } from "../modules/clients/pages/ClientDeskPage";
 import {
   Client360Page,
   type Client360LaunchTarget,
@@ -35,18 +31,14 @@ import {
 } from "../modules/client-360/pages/Client360Page";
 import { CommandCenterPage } from "../modules/command-center/pages/CommandCenterPage";
 import { SetupWorkspacePage } from "../modules/setup/pages/SetupWorkspacePage";
-import { ReportsAuditPage } from "../modules/reports";
 
 type WorkSectionKey =
   | "command-center"
   | "setup"
   | "client-360"
   | "commercial"
-  | "accounting"
   | "deployment-cloud"
-  | "access-security"
-  | "reports-audit"
-  | "legacy-desk";
+  | "access-security";
 
 type WorkSection = {
   key: WorkSectionKey;
@@ -101,14 +93,6 @@ const sectionOrder: WorkSection[] = [
     Icon: Banknote
   },
   {
-    key: "accounting",
-    label: "Voucher Register",
-    shortLabel: "Vouchers",
-    description: "Simple client voucher proof for invoices, receipts, credits, refunds, and adjustments.",
-    status: "4 Proof",
-    Icon: ListChecks
-  },
-  {
     key: "deployment-cloud",
     label: "Cloud & Installation",
     shortLabel: "Cloud",
@@ -132,25 +116,9 @@ const sectionOrder: WorkSection[] = [
     status: "Trust",
     Icon: ShieldCheck
   },
-  {
-    key: "reports-audit",
-    label: "Reports & Audit",
-    shortLabel: "Audit",
-    description: "Client statements, voucher proof, cloud receipts, diagnostics history, and audit evidence.",
-    status: "Evidence",
-    Icon: BarChart3
-  },
-  {
-    key: "legacy-desk",
-    label: "Admin Desk",
-    shortLabel: "Admin",
-    description: "Advanced accounting and fallback tools that should not be part of normal client work.",
-    status: "Advanced",
-    Icon: Gauge
-  }
 ];
 
-const sectionPanels: Record<Exclude<WorkSectionKey, "legacy-desk">, WorkSectionPanel[]> = {
+const sectionPanels: Record<WorkSectionKey, WorkSectionPanel[]> = {
   "command-center": [
     {
       kicker: "Today",
@@ -281,38 +249,6 @@ const sectionPanels: Record<Exclude<WorkSectionKey, "legacy-desk">, WorkSectionP
       ]
     }
   ],
-  accounting: [
-    {
-      kicker: "Register",
-      title: "Client Voucher Proof",
-      items: [
-        "Invoice vouchers",
-        "Receipt vouchers",
-        "Credit note vouchers",
-        "Refund vouchers"
-      ]
-    },
-    {
-      kicker: "Status",
-      title: "Voucher State",
-      items: [
-        "Draft or issued",
-        "Paid or credited",
-        "Cloud pending/sent",
-        "Approval trail"
-      ]
-    },
-    {
-      kicker: "Proof",
-      title: "Accounting Proof On Demand",
-      items: [
-        "Source document lookup",
-        "Expandable posting lines",
-        "Created/approved by",
-        "Audit evidence"
-      ]
-    }
-  ],
   "deployment-cloud": [
     {
       kicker: "Install",
@@ -374,38 +310,6 @@ const sectionPanels: Record<Exclude<WorkSectionKey, "legacy-desk">, WorkSectionP
         "Abuse summary",
         "Quarantine source",
         "Deny/release source"
-      ]
-    }
-  ],
-  "reports-audit": [
-    {
-      kicker: "Client",
-      title: "Statement Evidence",
-      items: [
-        "Invoices",
-        "Payments",
-        "Credits/refunds",
-        "Voucher proof"
-      ]
-    },
-    {
-      kicker: "Cloud",
-      title: "Communication Evidence",
-      items: [
-        "Outbox messages",
-        "Cloud receipts",
-        "Diagnostics history",
-        "Package handoff proof"
-      ]
-    },
-    {
-      kicker: "Admin",
-      title: "Advanced Reports",
-      items: [
-        "Trial balance",
-        "Profit and loss",
-        "Balance sheet",
-        "Ledger activity"
       ]
     }
   ]
@@ -676,18 +580,12 @@ function AuthenticatedShell({
           </div>
         </header>
 
-        {activeSection === "legacy-desk" ? (
-          <div className="overhaul-legacy-frame">
-            <ClientDeskPage />
-          </div>
-        ) : (
-          <WorkSectionPage
-            client360LaunchTarget={client360LaunchTarget}
-            section={section}
-            onOpenClient360={onOpenClient360}
-            onSectionChange={onSectionChange}
-          />
-        )}
+        <WorkSectionPage
+          client360LaunchTarget={client360LaunchTarget}
+          section={section}
+          onOpenClient360={onOpenClient360}
+          onSectionChange={onSectionChange}
+        />
       </section>
     </main>
   );
@@ -705,7 +603,7 @@ function WorkSectionPage({
   onSectionChange: (section: WorkSectionKey) => void;
 }) {
   if (section.key === "setup") {
-    return <SetupWorkspacePage onOpenLegacyDesk={() => onSectionChange("legacy-desk")} />;
+    return <SetupWorkspacePage />;
   }
 
   if (section.key === "command-center") {
@@ -719,10 +617,6 @@ function WorkSectionPage({
 
   if (section.key === "client-360") {
     return <Client360Page launchTarget={client360LaunchTarget} />;
-  }
-
-  if (section.key === "reports-audit") {
-    return <ReportsAuditPage />;
   }
 
   const panels = getSectionPanels(section.key);
@@ -745,7 +639,6 @@ function WorkSectionPage({
 
       <div className="overhaul-flow-strip" aria-label="Workspace flow">
         {sectionOrder
-          .filter((item) => item.key !== "legacy-desk")
           .slice(0, 8)
           .map((item) => (
             <span
@@ -787,10 +680,6 @@ function WorkSectionPage({
 }
 
 function getSectionPanels(key: WorkSectionKey): WorkSectionPanel[] {
-  if (key === "legacy-desk") {
-    return [];
-  }
-
   return sectionPanels[key];
 }
 

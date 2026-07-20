@@ -86,10 +86,6 @@ import {
   type ProductResource
 } from "../../contracts";
 
-type SetupWorkspacePageProps = {
-  onOpenLegacyDesk: () => void;
-};
-
 type SetupSnapshot = {
   clients: ClientLookup[];
   clientSummary: ClientDirectorySummary;
@@ -255,7 +251,7 @@ const setupModelDefinitions: SetupModelDefinition[] = [
   }
 ];
 
-export function SetupWorkspacePage({ onOpenLegacyDesk }: SetupWorkspacePageProps) {
+export function SetupWorkspacePage() {
   const [snapshot, setSnapshot] = useState<SetupSnapshot>(emptySnapshot);
   const [issues, setIssues] = useState<SetupLoadIssue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -696,14 +692,6 @@ export function SetupWorkspacePage({ onOpenLegacyDesk }: SetupWorkspacePageProps
           >
             <RefreshCw size={16} />
             Refresh
-          </button>
-          <button
-            className="icon-button primary"
-            onClick={onOpenLegacyDesk}
-            type="button"
-          >
-            <SlidersHorizontal size={16} />
-            Open current editors
           </button>
         </div>
       </div>
