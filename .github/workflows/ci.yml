@@ -559,6 +559,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeShortcuts.Hermetic.ps1
 
+      - name: Prove uninstall preservation contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeUninstall.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-
