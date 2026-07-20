@@ -544,6 +544,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeApiActivation.Hermetic.ps1
 
+      - name: Prove API service repair contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeApiServiceRepair.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-
