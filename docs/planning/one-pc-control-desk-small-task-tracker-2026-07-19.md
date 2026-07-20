@@ -224,7 +224,7 @@ Completion evidence: commits `096941f`, `bcc7f9f`, `a340ab8`, `4698c30`, `4e1988
 | `SEC04-07A` | `DONE` | Implement elevated, no-echo first-operator provisioning. | `SEC04-02C`, `SEC04-03`, `SEC04-06B` | Tool commit `22695564`; full solution build/tests green and hosted CI run [29762435938](https://github.com/Danionwheels/Office-ERP/actions/runs/29762435938) passed all gates. |
 | `SEC04-07B` | `DONE` | Implement offline operator recovery, machine-secret replacement/reissue, and session invalidation. | `SEC04-07A`, `SEC04-04` | Recovery command commit `45723242`; 207 local tests and hosted CI run [29764707545](https://github.com/Danionwheels/Office-ERP/actions/runs/29764707545) passed all gates. |
 | `SEC04-08` | `DONE` | Inventory every installed API route and bind each protected route to an explicit role/scope policy. | `SEC04-04` | Commit `a63cc12a`; anonymous-route allowlist and scoped-policy inventory pass in hosted CI run [29767249850](https://github.com/Danionwheels/Office-ERP/actions/runs/29767249850). |
-| `SEC04-09` | `CURRENT` | Run the installed auth, ACL, redaction, recovery, and reinstall security matrix. | `SEC04-05`, `SEC04-07B`, `SEC04-08` | `401`, `403`, valid login, ACL denial, operator preservation, recovery, and secret scan pass. |
+| `SEC04-09` | `DONE` | Run the installed auth, ACL, redaction, recovery, and reinstall security matrix. | `SEC04-05`, `SEC04-07B`, `SEC04-08` | 208 local tests, PowerShell parser checks, and hosted CI run [29767249850](https://github.com/Danionwheels/Office-ERP/actions/runs/29767249850) passed the installed package matrix. |
 
 There will be no unauthenticated first-operator web endpoint. Bootstrap and emergency recovery are elevated local setup ceremonies.
 
@@ -232,7 +232,7 @@ There will be no unauthenticated first-operator web endpoint. Bootstrap and emer
 
 | ID | Status | Small task | Depends on | Done/evidence |
 | --- | --- | --- | --- | --- |
-| `SVC05-01` | `PENDING` | Decide the installer/bootstrapper mechanism and freeze the installation manifest. | `SEC04-09` | Approved `OPEN-001` decision and manifest of every office-local component. |
+| `SVC05-01` | `CURRENT` | Decide the installer/bootstrapper mechanism and freeze the installation manifest. | `SEC04-09` | Approved `OPEN-001` decision and manifest of every office-local component. |
 | `SVC05-02` | `PENDING` | Define API installed paths, virtual service identity, receipts, ownership checks, and preservation rules. | `SVC05-01` | Reviewed lifecycle contract and collision rules. |
 | `SVC05-03` | `PENDING` | Atomically install and verify the API/UI payload under `%ProgramFiles%`. | `SVC05-02` | Hash/reparse/interruption tests pass. |
 | `SVC05-04` | `PENDING` | Register the API service in demand-start mode and apply least-privilege binary, configuration, log, and pgpass ACLs. | `SVC05-03`, `SEC04-06B` | Exact service identity/command and ACL audit pass. |
