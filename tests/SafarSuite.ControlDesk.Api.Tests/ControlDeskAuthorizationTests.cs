@@ -44,6 +44,26 @@ public sealed class ControlDeskAuthorizationTests(ControlDeskApiFactory factory)
     }
 
     [Fact]
+    public async Task Only_the_operator_login_route_may_be_anonymous_under_api_v1()
+    {
+        using var client = factory.CreateClient();
+        await client.GetAsync("/health");
+        var endpointDataSource = factory.Services.GetRequiredService<EndpointDataSource>();
+        var anonymousRoutes = endpointDataSource.Endpoints
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/api/v1/", StringComparison.Ordinal) == true)
+            .Where(endpoint => endpoint.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+            .Select(endpoint => endpoint.RoutePattern.RawText!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(route => route, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            ["/api/v1/auth/operator-sessions"],
+            anonymousRoutes);
+    }
+
+    [Fact]
     public async Task Business_endpoint_returns_401_for_anonymous_request()
     {
         using var client = factory.CreateClient();
