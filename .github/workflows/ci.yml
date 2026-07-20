@@ -539,6 +539,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeServiceActivation.Hermetic.ps1
 
+      - name: Prove readiness-gated API activation contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeApiActivation.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-
