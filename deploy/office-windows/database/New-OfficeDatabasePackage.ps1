@@ -158,9 +158,9 @@ if ($jsonStart -lt 0 -or $jsonEnd -le $jsonStart) {
 $parsedMigrationRows = $migrationOutputText.Substring($jsonStart, $jsonEnd - $jsonStart + 1) | ConvertFrom-Json
 $migrationRows = @($parsedMigrationRows)
 $migrationIds = @($migrationRows | ForEach-Object { [string]$_.id })
-$expectedTarget = '20260713220254_AddPortalPaymentBoundary'
-if ($migrationIds.Count -ne 32 -or $migrationIds[-1] -ne $expectedTarget -or @($migrationIds | Select-Object -Unique).Count -ne 32) {
-    throw 'The Control Desk migration ledger is not the reviewed 32-migration OFFICE-P0-03 target.'
+$expectedTarget = '20260720035506_AddLocalOperatorAuthentication'
+if ($migrationIds.Count -ne 33 -or $migrationIds[-1] -ne $expectedTarget -or @($migrationIds | Select-Object -Unique).Count -ne 33) {
+    throw 'The Control Desk migration ledger is not the reviewed 33-migration OFFICE-P0-03 target.'
 }
 
 Set-Content -LiteralPath (Join-Path $databasePackagePath 'appsettings.json') -Encoding utf8 -Value '{}'

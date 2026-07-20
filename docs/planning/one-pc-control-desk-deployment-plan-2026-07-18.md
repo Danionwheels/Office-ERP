@@ -134,7 +134,7 @@ Gate evidence:
 - installation and rerun are idempotent;
 - both services start automatically after reboot;
 - `Get-NetTCPConnection` proves database and API listeners are loopback-only;
-- all 32 current Control Desk migrations and `pg_trgm` are verified;
+- all 33 current Control Desk migrations and `pg_trgm` are verified;
 - a deliberately failed migration does not start the new application version.
 
 ### `OFFICE-P0-04` — Operator Bootstrap And Secret Custody
@@ -319,7 +319,7 @@ Clean remote evidence passed in [GitHub Actions run 29658333033](https://github.
 Engineering implementation is in its verification pass on 2026-07-19. The PowerShell 5.1 hermetic gate is green; a clean package rebuild, disposable native Windows run, clean remote Actions run, and physical reboot evidence remain open:
 
 - the package pins the official PostgreSQL 17.10 Windows archive by SHA-256, trims it to the native runtime plus required notices and `pg_trgm` payload, and includes the pinned Microsoft-signed VC++ x64 prerequisite required by `postgres.exe`;
-- a self-contained `win-x64` EF bundle is bound to an ordered manifest of all 32 migrations ending at `20260713220254_AddPortalPaymentBoundary`;
+- a self-contained `win-x64` EF bundle is bound to an ordered manifest of all 33 migrations ending at `20260720035506_AddLocalOperatorAuthentication`;
 - install uses a passwordless virtual Windows service account, product-owned paths, restricted ACLs, loopback-only configuration, SCRAM HBA rules, independently generated admin/migrator/application credentials, and separate least-privilege roles;
 - preflight accepts only an empty history or exact ordered prefix; a named local mutex plus the EF bundle database lock serialize migration, and activation occurs only after exact history and `pg_trgm` postflight;
 - repair distinguishes missing prerequisite, service, stopped service, corrupt managed configuration, unavailable database, and an advanceable migration prefix while refusing foreign clusters/services, unsafe paths, port collisions, missing credentials, unsupported versions, and divergent history;

@@ -68,8 +68,8 @@ function New-FakeLifecycle {
             param($ctx)
             & $add 'Verify'
             return [pscustomobject]@{
-                MigrationCount = 32
-                MigrationTarget = '20260713220254_AddPortalPaymentBoundary'
+                MigrationCount = 33
+                MigrationTarget = '20260720035506_AddLocalOperatorAuthentication'
                 RequiredExtension = 'pg_trgm'
                 ListenerAddresses = @('127.0.0.1')
             }
@@ -332,7 +332,7 @@ Assert-OfficeTest `
         $initializationAclRights.NormalizedSecrets -eq ($initializationAclRights.Secrets -bor $synchronize)) `
     -Message 'Windows allow-rule Synchronize normalization is not represented in exact ACL verification.'
 
-$expectedMigrations = 1..32 | ForEach-Object { 'migration-{0:d2}' -f $_ }
+$expectedMigrations = 1..33 | ForEach-Object { 'migration-{0:d2}' -f $_ }
 Assert-OfficeTest `
     -Condition ((Compare-OfficeMigrationLedger -Expected $expectedMigrations -Applied @()) -eq 'Prefix') `
     -Message 'An empty database must be an accepted exact prefix.'

@@ -13,7 +13,7 @@ This directory owns the `OFFICE-P0-03` engineering implementation for PostgreSQL
 | Database | `safarsuite_control_desk` |
 | Roles | separate admin, migrator, and least-privilege application logins |
 | Authentication | SCRAM-SHA-256 with an explicit reject-by-default HBA |
-| Migration target | exact ordered 32-migration ledger ending at `20260713220254_AddPortalPaymentBoundary` |
+| Migration target | exact ordered 33-migration ledger ending at `20260720035506_AddLocalOperatorAuthentication` |
 | Required extension | `pg_trgm`, created by the reviewed EF migration |
 
 The package also carries the reviewed Microsoft Visual C++ v14 x64 redistributable because the PostgreSQL binaries import `VCRUNTIME140.dll`. Both vendor inputs are checked against pinned SHA-256 values; the VC++ installer must additionally have a valid Microsoft Authenticode signature.

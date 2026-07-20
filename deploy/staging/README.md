@@ -98,7 +98,7 @@ Control Cloud also gets a persistent `App_Data` volume because a few staging reg
 
    The password prompts do not echo or put the values in shell history. Adjust names, users, and ports to the already-preflighted `.env` values when they differ from the defaults; do not paste passwords directly into command lines.
 
-   Before each update, independently confirm the target database name and user. Afterward, verify the EF migration ledgers contain 23 Control Cloud migrations through `20260713221145_AddClientPortalPaymentBoundary` and 32 Control Desk migrations through `20260713220254_AddPortalPaymentBoundary`; also verify `pg_trgm` exists in the Control Desk database.
+   Before each update, independently confirm the target database name and user. Afterward, verify the EF migration ledgers contain 23 Control Cloud migrations through `20260713221145_AddClientPortalPaymentBoundary` and 33 Control Desk migrations through `20260720035506_AddLocalOperatorAuthentication`; also verify `pg_trgm` exists in the Control Desk database.
 
 7. Start the full staging stack:
 

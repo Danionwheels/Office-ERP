@@ -860,6 +860,6 @@ if ($null -ne $proofFailure) {
 
 Write-Host 'Office database native Windows lifecycle proof passed.'
 Write-Host 'PostgreSQL: 17.10, loopback-only, SCRAM'
-Write-Host 'Migrations: 32 exact; pg_trgm present'
+Write-Host 'Migrations: 33 exact; pg_trgm present'
 Write-Host 'Install/rerun/repair/uninstall/reinstall: passed'
 Write-Host 'Physical reboot proof: pending on the persistent reference PC'

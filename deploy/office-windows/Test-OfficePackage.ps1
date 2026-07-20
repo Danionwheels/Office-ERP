@@ -199,8 +199,8 @@ if ($databaseManifestHash -ne ([string]$manifest.services.database.manifestSha25
     throw "The top-level package manifest does not bind the database manifest."
 }
 
-if ($databaseManifest.migrations.count -ne 32 -or
-    $databaseManifest.migrations.target -ne "20260713220254_AddPortalPaymentBoundary" -or
+if ($databaseManifest.migrations.count -ne 33 -or
+    $databaseManifest.migrations.target -ne "20260720035506_AddLocalOperatorAuthentication" -or
     @($databaseManifest.migrations.requiredExtensions) -notcontains "pg_trgm") {
     throw "The package does not contain the reviewed Control Desk migration target."
 }

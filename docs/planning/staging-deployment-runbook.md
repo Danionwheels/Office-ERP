@@ -165,7 +165,7 @@ Run migrations with the staging connection strings in the environment of the com
 Before applying either migration set, record `current_database()` and `current_user`. After applying, retain the migration-ledger count and latest migration ID. Expected at this checkpoint:
 
 - Control Cloud: 23 rows through `20260713221145_AddClientPortalPaymentBoundary` in `cloud.__ef_migrations_history`.
-- Control Desk: 32 rows through `20260713220254_AddPortalPaymentBoundary` in `control.__ef_migrations_history`.
+- Control Desk: 33 rows through `20260720035506_AddLocalOperatorAuthentication` in `control.__ef_migrations_history`.
 - Control Desk: `pg_trgm` is present in `pg_extension`.
 
 ## Phase 3: Service Smoke
