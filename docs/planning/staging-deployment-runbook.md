@@ -130,7 +130,7 @@ docker compose -f deploy/staging/docker-compose.yml config --quiet
 | `Persistence__Provider` | `Postgres` |
 | `ConnectionStrings__ControlDesk` | PostgreSQL connection string for the Control Desk staging DB |
 | `ControlDesk__OperatorAccess__SessionSigningSecret` | Independent non-placeholder Control Desk bearer-session signing secret with at least 32 characters |
-| `ControlDesk__OperatorAccess__Users__<index>__...` | At least one active non-development operator with a unique id/email, PBKDF2 password hash, and explicit roles/scopes; the built-in `local-control-desk-admin` is rejected outside Development |
+| Control Desk operators | Persisted in PostgreSQL and provisioned through the approved bootstrap path; configuration-based users are rejected in Staging |
 | `ControlCloud__Publisher__Mode` | `Http` |
 | `ControlCloud__Publisher__Environment` | `Staging` |
 | `ControlCloud__Publisher__SigningKeyId` | Must match the Control Cloud receiver key id |

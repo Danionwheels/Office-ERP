@@ -6,9 +6,6 @@ namespace SafarSuite.StagingPreflight;
 public sealed class StagingPreflightValidator
 {
     private const long MaximumSecretFileBytes = 1_048_576;
-    private const string DevelopmentOperatorPasswordHash =
-        "pbkdf2-sha256.120000.AQIDBAUGBwgJCgsMDQ4PEA.bKfX3l_4QOvv59HDi9Wq1UzY3FYjDWr3w5qQgkLufc4";
-
     private static readonly string[] PlaceholderMarkers =
     [
         "replace-with",
@@ -83,7 +80,6 @@ public sealed class StagingPreflightValidator
 
         ValidateEnvironmentContract(parsed.Values, report);
         ValidateNetworkAndMail(parsed.Values, report);
-        ValidateOperatorConfiguration(parsed.Values, report);
 
         var secretValues = ReadSecretFiles(fullDirectory, report);
         ValidateSymmetricMaterial(parsed.Values, secretValues, report);
@@ -202,32 +198,6 @@ public sealed class StagingPreflightValidator
         if (TryGet(environment, "FROM_ADDRESS", out var fromAddress) && !IsMailbox(fromAddress))
         {
             report.Add("FROM_ADDRESS", "FROM_ADDRESS must contain one mailbox address without a display name.");
-        }
-    }
-
-    private static void ValidateOperatorConfiguration(
-        IReadOnlyDictionary<string, string> environment,
-        ValidationReport report)
-    {
-        if (TryGet(environment, "CONTROL_DESK_OPERATOR_USER_ID", out var userId)
-            && string.Equals(userId, "local-control-desk-admin", StringComparison.OrdinalIgnoreCase))
-        {
-            report.Add("OPERATOR_IDENTITY", "The built-in development operator must not be used in staging.");
-        }
-
-        if (TryGet(environment, "CONTROL_DESK_OPERATOR_EMAIL", out var email) && !IsMailbox(email))
-        {
-            report.Add("OPERATOR_EMAIL", "CONTROL_DESK_OPERATOR_EMAIL must contain one mailbox address without a display name.");
-        }
-
-        if (TryGet(environment, "CONTROL_DESK_OPERATOR_PASSWORD_HASH", out var passwordHash)
-            && (!CryptographicMaterialValidator.IsValidOperatorPasswordHash(passwordHash)
-                || string.Equals(
-                    passwordHash,
-                    DevelopmentOperatorPasswordHash,
-                    StringComparison.Ordinal)))
-        {
-            report.Add("OPERATOR_PASSWORD_HASH", "The operator password hash must be canonical PBKDF2-SHA256 with at least 120000 iterations, a 16-byte salt, and a 32-byte hash.");
         }
     }
 

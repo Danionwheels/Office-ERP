@@ -2,7 +2,9 @@ using Microsoft.Extensions.Options;
 
 namespace SafarSuite.ControlDesk.Api.Modules.Auth;
 
-public sealed class ControlDeskOperatorAccessOptionsValidator(IHostEnvironment environment)
+public sealed class ControlDeskOperatorAccessOptionsValidator(
+    IHostEnvironment environment,
+    IConfiguration configuration)
     : IValidateOptions<ControlDeskOperatorAccessOptions>
 {
     private const string DevelopmentOperatorUserId = "local-control-desk-admin";
@@ -36,13 +38,26 @@ public sealed class ControlDeskOperatorAccessOptionsValidator(IHostEnvironment e
             failures.Add("ControlDesk:OperatorAccess:SessionSigningSecret must not use a development placeholder outside Development.");
         }
 
-        var activeUsers = options.Users
+        var configuredUsers = options.Users ?? [];
+        var activeUsers = configuredUsers
             .Where(user => string.Equals(user.Status, "Active", StringComparison.OrdinalIgnoreCase))
             .ToArray();
+        var persistenceProvider = configuration.GetValue<string>("Persistence:Provider") ?? "InMemory";
+        var usesDevelopmentFixtures = persistenceProvider.Equals(
+            "InMemory",
+            StringComparison.OrdinalIgnoreCase);
 
-        if (activeUsers.Length == 0)
+        if (usesDevelopmentFixtures && activeUsers.Length == 0)
         {
-            failures.Add("At least one active Control Desk operator must be configured.");
+            failures.Add("InMemory Control Desk authentication requires at least one active fixture operator.");
+        }
+
+        if (!environment.IsDevelopment()
+            && !environment.IsEnvironment("Testing")
+            && configuredUsers.Count > 0)
+        {
+            failures.Add(
+                "Control Desk operator users must not be supplied through configuration outside Development or Testing.");
         }
 
         if (activeUsers.Any(user => string.IsNullOrWhiteSpace(user.UserId)

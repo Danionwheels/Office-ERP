@@ -59,18 +59,6 @@ public sealed class StagingPreflightValidatorTests : IDisposable
     }
 
     [Fact]
-    public void Validate_RejectsMalformedPbkdf2Hash()
-    {
-        SetEnvironment(
-            "CONTROL_DESK_OPERATOR_PASSWORD_HASH",
-            "pbkdf2-sha256.119999.AQIDBAUGBwgJCgsMDQ4PEA.bKfX3l_4QOvv59HDi9Wq1UzY3FYjDWr3w5qQgkLufc4");
-
-        var report = Validate();
-
-        Assert.Contains(report.Failures, failure => failure.Code == "OPERATOR_PASSWORD_HASH");
-    }
-
-    [Fact]
     public void Validate_RejectsMismatchedEcdsaPair()
     {
         using var unrelatedKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -79,23 +67,6 @@ public sealed class StagingPreflightValidatorTests : IDisposable
         var report = Validate();
 
         Assert.Contains(report.Failures, failure => failure.Code == "APP_ACTIVATION_KEY_PAIR");
-    }
-
-    [Fact]
-    public void OperatorPasswordHasher_ProducesCanonicalVerifiableHash()
-    {
-        const string password = "A-valid-passphrase-2026!";
-
-        var passwordHash = OperatorPasswordHasher.HashPassword(password);
-        var parts = passwordHash.Split('.');
-
-        Assert.Equal(4, parts.Length);
-        Assert.Equal("pbkdf2-sha256", parts[0]);
-        Assert.Equal("120000", parts[1]);
-        Assert.DoesNotContain('=', parts[2]);
-        Assert.DoesNotContain('=', parts[3]);
-        Assert.True(OperatorPasswordHasher.VerifyPassword(password, passwordHash));
-        Assert.False(OperatorPasswordHasher.VerifyPassword("not-the-password", passwordHash));
     }
 
     [Fact]
@@ -216,13 +187,6 @@ public sealed class StagingPreflightValidatorTests : IDisposable
         _environment["CONTROL_DESK_DB_PASSWORD"] = "DeskDbPassword_0123456789abcdefABCDEF";
         _environment["CONTROL_DESK_DB_HOST_PORT"] = "55433";
         _environment["CONTROL_DESK_SESSION_SIGNING_SECRET"] = Secret("desk-session");
-        _environment["CONTROL_DESK_OPERATOR_USER_ID"] = "staging-control-desk-admin";
-        _environment["CONTROL_DESK_OPERATOR_EMAIL"] = "desk-operator@forgeaxis.tech";
-        _environment["CONTROL_DESK_OPERATOR_FULL_NAME"] = "Staging Control Desk Operator";
-        _environment["CONTROL_DESK_OPERATOR_PASSWORD_HASH"] =
-            OperatorPasswordHasher.HashPassword("FixturePassword-2026!");
-        _environment["CONTROL_DESK_OPERATOR_ROLE"] = "Administrator";
-        _environment["CONTROL_DESK_OPERATOR_SCOPE"] = "control-desk:admin";
         _environment["CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID"] = "staging-control-desk-202607";
         _environment["CONTROL_DESK_PUBLISHER_SIGNING_SECRET"] = Secret("publisher");
         _environment["CONTROL_CLOUD_ENTITLEMENT_SIGNING_KEY_ID"] = "staging-entitlement-202607";

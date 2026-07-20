@@ -4,25 +4,6 @@ public static class Program
 {
     public static int Main(string[] args)
     {
-        if (args.Length > 0 && string.Equals(args[0], "hash-operator-password", StringComparison.Ordinal))
-        {
-            if (args.Length != 1)
-            {
-                Console.Error.WriteLine("[FAIL] ARGUMENTS: The password must be entered interactively, never as an argument.");
-                return 2;
-            }
-
-            try
-            {
-                return OperatorPasswordHashCommand.Run();
-            }
-            catch
-            {
-                Console.Error.WriteLine("[FAIL] PASSWORD_INPUT: The operator password hash could not be created safely.");
-                return 1;
-            }
-        }
-
         var commandLine = PreflightCommandLine.Parse(args);
 
         if (commandLine.ShowHelp)
@@ -67,12 +48,10 @@ public static class Program
         Console.WriteLine();
         Console.WriteLine("Usage:");
         Console.WriteLine("  dotnet run --project tools/SafarSuite.StagingPreflight -- [--staging-directory <path>]");
-        Console.WriteLine("  dotnet run --project tools/SafarSuite.StagingPreflight -- hash-operator-password");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --staging-directory <path>  Staging bundle directory (default: deploy/staging).");
         Console.WriteLine("  --staging-dir <path>        Alias for --staging-directory.");
-        Console.WriteLine("  hash-operator-password Interactively create a Control Desk operator password hash.");
         Console.WriteLine("  -h, --help            Show this help text.");
         Console.WriteLine();
         Console.WriteLine("The tool never prints secret values; validation does not generate secrets.");

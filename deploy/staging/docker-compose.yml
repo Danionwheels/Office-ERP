@@ -68,13 +68,6 @@ services:
       Persistence__Provider: Postgres
       ConnectionStrings__ControlDesk: Host=control-desk-db;Port=5432;Database=${CONTROL_DESK_DB_NAME:?CONTROL_DESK_DB_NAME is required};Username=${CONTROL_DESK_DB_USER:?CONTROL_DESK_DB_USER is required};Password=${CONTROL_DESK_DB_PASSWORD:?CONTROL_DESK_DB_PASSWORD is required}
       ControlDesk__OperatorAccess__SessionSigningSecret: ${CONTROL_DESK_SESSION_SIGNING_SECRET:?CONTROL_DESK_SESSION_SIGNING_SECRET is required}
-      ControlDesk__OperatorAccess__Users__0__UserId: ${CONTROL_DESK_OPERATOR_USER_ID:?CONTROL_DESK_OPERATOR_USER_ID is required}
-      ControlDesk__OperatorAccess__Users__0__Email: ${CONTROL_DESK_OPERATOR_EMAIL:?CONTROL_DESK_OPERATOR_EMAIL is required}
-      ControlDesk__OperatorAccess__Users__0__FullName: ${CONTROL_DESK_OPERATOR_FULL_NAME:?CONTROL_DESK_OPERATOR_FULL_NAME is required}
-      ControlDesk__OperatorAccess__Users__0__PasswordHash: ${CONTROL_DESK_OPERATOR_PASSWORD_HASH:?CONTROL_DESK_OPERATOR_PASSWORD_HASH is required}
-      ControlDesk__OperatorAccess__Users__0__Status: Active
-      ControlDesk__OperatorAccess__Users__0__Roles__0: ${CONTROL_DESK_OPERATOR_ROLE:?CONTROL_DESK_OPERATOR_ROLE is required}
-      ControlDesk__OperatorAccess__Users__0__Scopes__0: ${CONTROL_DESK_OPERATOR_SCOPE:?CONTROL_DESK_OPERATOR_SCOPE is required}
       ControlCloud__Publisher__Mode: Http
       ControlCloud__Publisher__Environment: Staging
       ControlCloud__Publisher__SigningKeyId: ${CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID:?CONTROL_DESK_PUBLISHER_SIGNING_KEY_ID is required}

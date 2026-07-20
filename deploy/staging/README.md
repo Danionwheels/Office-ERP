@@ -54,17 +54,11 @@ Control Cloud also gets a persistent `App_Data` volume because a few staging reg
 
    Generate `CONTROL_DESK_SESSION_SIGNING_SECRET` independently with at least 32 characters; never reuse a database, publisher, provider-access, or Client Portal secret.
 
-   Fill the `CONTROL_DESK_OPERATOR_*` values with a non-development operator, including a PBKDF2 password hash and explicit role/scope. The built-in `local-control-desk-admin` identity is rejected outside Development.
-
-   Generate the operator hash through the interactive no-echo command; never put the password in a command argument:
-
-   ```bash
-   dotnet run --project tools/SafarSuite.StagingPreflight --configuration Release -- hash-operator-password
-   ```
+   Control Desk operator identities are persisted in PostgreSQL. Staging rejects configuration-based users; do not expose the disposable Control Desk lab until an operator has been provisioned through the approved bootstrap path.
 
 3. Create the files listed in `secrets/README.md`.
 
-4. Run the redacted staging preflight. It validates values, secret equality and uniqueness, the operator password hash, and the ECDSA key pair without printing secret material.
+4. Run the redacted staging preflight. It validates values, secret equality and uniqueness, and the ECDSA key pair without printing secret material.
 
    ```bash
    dotnet run --project tools/SafarSuite.StagingPreflight --configuration Release -- --staging-directory deploy/staging
