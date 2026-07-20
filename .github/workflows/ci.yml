@@ -564,6 +564,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeUninstall.Hermetic.ps1
 
+      - name: Prove one-entry setup contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeSetupEntry.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-
