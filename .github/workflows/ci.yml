@@ -529,6 +529,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeApiServiceRegistration.Hermetic.ps1
 
+      - name: Prove non-secret Production settings contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeProductionSettings.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-
