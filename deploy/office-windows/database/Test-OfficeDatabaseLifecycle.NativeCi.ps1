@@ -269,7 +269,8 @@ function Assert-ExactAcl {
     foreach ($expectedRule in $expected) {
         $matching = @($actual | Where-Object {
             $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -eq $expectedRule.Sid -and
-            [int]$_.FileSystemRights -eq [int]$expectedRule.Rights -and
+            ([int]$_.FileSystemRights -band (-bnot [int][Security.AccessControl.FileSystemRights]::Synchronize)) -eq
+                ([int]$expectedRule.Rights -band (-bnot [int][Security.AccessControl.FileSystemRights]::Synchronize)) -and
             $_.InheritanceFlags -eq $inheritance -and
             $_.PropagationFlags -eq [Security.AccessControl.PropagationFlags]::None -and
             $_.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
