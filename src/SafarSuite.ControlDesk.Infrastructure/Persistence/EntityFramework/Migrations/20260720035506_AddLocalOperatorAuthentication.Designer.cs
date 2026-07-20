@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
@@ -11,9 +12,11 @@ using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migrations
 {
     [DbContext(typeof(ControlDeskDbContext))]
-    partial class ControlDeskDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260720035506_AddLocalOperatorAuthentication")]
+    partial class AddLocalOperatorAuthentication
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

@@ -57,6 +57,17 @@ jobs:
       - name: Run xUnit tests
         run: dotnet test SafarSuite.ControlDesk.sln --configuration Release --no-build --no-restore
 
+      - name: Prove local operator repository against PostgreSQL
+        env:
+          SAFARSUITE_OPERATOR_REPOSITORY_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=safarsuite_control_desk;Username=safarsuite;Password=ci-control-desk-password
+          SAFARSUITE_REQUIRE_OPERATOR_REPOSITORY_POSTGRES_TEST: "true"
+        run: >-
+          dotnet test tests/SafarSuite.ControlDesk.Api.Tests/SafarSuite.ControlDesk.Api.Tests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --filter FullyQualifiedName~EfLocalOperatorRepositoryPostgresTests
+
       - name: Run accounting smoke
         run: dotnet run --project tools/SafarSuite.ControlDesk.AccountingSmoke --configuration Release --no-build --no-restore
 
