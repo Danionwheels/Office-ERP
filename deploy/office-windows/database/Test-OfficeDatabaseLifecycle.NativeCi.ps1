@@ -115,6 +115,9 @@ function Invoke-PackagedMigrationBundle {
 function Assert-LifecycleFailure {
     param(
         [Parameter(Mandatory = $true)][scriptblock]$Action,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('ForeignCluster', 'MigrationConflict', 'MigrationDivergence', 'UnavailableCredentials')]
+        [string]$Case,
         [Parameter(Mandatory = $true)][string]$Message,
         [Parameter(Mandatory = $true)][string]$ExpectedMessagePattern
     )
@@ -122,9 +125,16 @@ function Assert-LifecycleFailure {
     try { $null = & $Action }
     catch { $failure = $_ }
     Assert-NativeProof -Condition ($null -ne $failure) -Message $Message
+    $failureCategory = switch -Regex ($failure.Exception.Message) {
+        "state '[^']+' requires manual recovery" { 'ManualRecoveryRequired'; break }
+        'A required database lifecycle process failed with exit code [1-9][0-9]*\.' { 'RequiredProcessFailed'; break }
+        'Database migration failed at the finite' { 'FiniteMigrationFailed'; break }
+        'migration bundle failed with exit code [1-9][0-9]*' { 'MigrationBundleFailed'; break }
+        default { 'UnexpectedRuntimeFailure' }
+    }
     Assert-NativeProof `
         -Condition ($failure.Exception.Message -match $ExpectedMessagePattern) `
-        -Message "The lifecycle failed for an unexpected reason: $($failure.Exception.GetType().FullName)."
+        -Message "The '$Case' lifecycle case returned '$failureCategory' instead of its reviewed failure contract."
     return [pscustomobject]@{
         ExceptionType = $failure.Exception.GetType().FullName
         Message = $failure.Exception.Message
@@ -442,6 +452,7 @@ try {
     $identityMismatchState = Get-OfficeDatabaseLifecycleState -PackageDirectory $PackageDirectory -ProgramFilesRoot $programFilesRoot -ProgramDataRoot $programDataRoot
     Assert-NativeProof -Condition ($identityMismatchState -eq 'ForeignCluster') -Message 'A live cluster identity mismatch was not rejected.'
     $null = Assert-LifecycleFailure `
+        -Case ForeignCluster `
         -Message 'Repair mutated a cluster whose live identity differed from its receipt.' `
         -ExpectedMessagePattern "state 'ForeignCluster' requires manual recovery" `
         -Action {
@@ -502,6 +513,7 @@ try {
         -Condition ($bundleFailure.Output -match '(?i)(42P07|portal_payment_claims.*already exists|already exists.*portal_payment_claims)') `
         -Message 'The deliberately failed migration did not report the reviewed relation conflict.'
     $migrationFailureRecord = Assert-LifecycleFailure `
+        -Case MigrationConflict `
         -Message 'The deliberately conflicting lifecycle repair unexpectedly succeeded.' `
         -ExpectedMessagePattern 'A required database lifecycle process failed with exit code [1-9][0-9]*\.' `
         -Action {
@@ -543,6 +555,7 @@ try {
     $null = Invoke-PackagedPsql -PsqlPath $psql -Passfile $paths.MigratorPassfilePath -Role $migratorRole -Database $databaseName -Port $port -Sql 'INSERT INTO control.__ef_migrations_history ("MigrationId", "ProductVersion") VALUES (''99999999999999_DisposableUnknown'', ''10.0.0'');'
     Assert-NativeProof -Condition ((Get-OfficeDatabaseLifecycleState -PackageDirectory $PackageDirectory -ProgramFilesRoot $programFilesRoot -ProgramDataRoot $programDataRoot) -eq 'MigrationDiverged') -Message 'An unknown migration ledger row was not rejected.'
     $null = Assert-LifecycleFailure `
+        -Case MigrationDivergence `
         -Message 'Repair mutated a divergent migration ledger.' `
         -ExpectedMessagePattern "state 'MigrationDiverged' requires manual recovery" `
         -Action {
@@ -563,6 +576,7 @@ try {
     Assert-NativeProof -Condition ((Get-OfficeDatabaseLifecycleState -PackageDirectory $PackageDirectory -ProgramFilesRoot $programFilesRoot -ProgramDataRoot $programDataRoot) -eq 'UnavailableDatabase') -Message 'Unavailable database authentication was not classified.'
     $activationHashBeforeUnavailable = (Get-FileHash -Algorithm SHA256 -LiteralPath $paths.ActivationFilePath).Hash
     $null = Assert-LifecycleFailure `
+        -Case UnavailableCredentials `
         -Message 'Unavailable database repair unexpectedly activated.' `
         -ExpectedMessagePattern 'A required database lifecycle process failed with exit code [1-9][0-9]*\.' `
         -Action {
