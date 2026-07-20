@@ -127,6 +127,7 @@ function Assert-LifecycleFailure {
     Assert-NativeProof -Condition ($null -ne $failure) -Message $Message
     $failureCategory = switch -Regex ($failure.Exception.Message) {
         "state '[^']+' requires manual recovery" { 'ManualRecoveryRequired'; break }
+        "A required database psql operation failed with classification '[^']+'" { 'ClassifiedPsqlFailure'; break }
         'A required database lifecycle process failed with exit code [1-9][0-9]*\.' { 'RequiredProcessFailed'; break }
         'Database migration failed at the finite' { 'FiniteMigrationFailed'; break }
         'migration bundle failed with exit code [1-9][0-9]*' { 'MigrationBundleFailed'; break }
@@ -578,7 +579,7 @@ try {
     $null = Assert-LifecycleFailure `
         -Case UnavailableCredentials `
         -Message 'Unavailable database repair unexpectedly activated.' `
-        -ExpectedMessagePattern 'A required database lifecycle process failed with exit code [1-9][0-9]*\.' `
+        -ExpectedMessagePattern "A required database psql operation failed with classification 'PasswordAuthenticationFailed', exit code [1-9][0-9]*, and hexadecimal exit code 0x[0-9A-F]{8}\." `
         -Action {
         Repair-OfficeDatabaseLifecycle -PackageDirectory $PackageDirectory -ProgramFilesRoot $programFilesRoot -ProgramDataRoot $programDataRoot
     }
