@@ -233,8 +233,8 @@ There will be no unauthenticated first-operator web endpoint. Bootstrap and emer
 | ID | Status | Small task | Depends on | Done/evidence |
 | --- | --- | --- | --- | --- |
 | `SVC05-01` | `DONE` | Decide the installer/bootstrapper mechanism and freeze the installation manifest. | `SEC04-09` | Accepted `OPEN-001` in [office-installation-manifest-v1.md](../architecture/office-installation-manifest-v1.md); one-PC topology and install order are frozen. |
-| `SVC05-02` | `CURRENT` | Define API installed paths, virtual service identity, receipts, ownership checks, and preservation rules. | `SVC05-01` | Reviewed lifecycle contract and collision rules. |
-| `SVC05-03` | `PENDING` | Atomically install and verify the API/UI payload under `%ProgramFiles%`. | `SVC05-02` | Hash/reparse/interruption tests pass. |
+| `SVC05-02` | `DONE` | Define API installed paths, virtual service identity, receipts, ownership checks, and preservation rules. | `SVC05-01` | Accepted [office-api-service-contract-v1.md](../architecture/office-api-service-contract-v1.md); service identity, ACL, collision, and preservation rules are frozen. |
+| `SVC05-03` | `CURRENT` | Atomically install and verify the API/UI payload under `%ProgramFiles%`. | `SVC05-02` | Hash/reparse/interruption tests pass. |
 | `SVC05-04` | `PENDING` | Register the API service in demand-start mode and apply least-privilege binary, configuration, log, and pgpass ACLs. | `SVC05-03`, `SEC04-06B` | Exact service identity/command and ACL audit pass. |
 | `SVC05-05A` | `PENDING` | Generate installed non-secret Production configuration and bind protected values through the machine-secret provider. | `SVC05-04` | No secret appears in JSON, registry, command line, receipt, or log. |
 | `SVC05-05B` | `PENDING` | Configure the PostgreSQL service dependency, delayed automatic start, and bounded recovery actions. | `SVC05-05A` | Exact SCM dependency/start/recovery settings pass. |
