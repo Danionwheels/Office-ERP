@@ -123,6 +123,22 @@ $nativeEnvironmentProof = & $lifecycleModule {
 } $windowsPowerShell
 Assert-OfficeTest -Condition ($nativeEnvironmentProof.StandardOutput.Trim() -eq 'environment-propagated') -Message 'Windows PowerShell native environment propagation failed.'
 Assert-OfficeTest -Condition ([Environment]::GetEnvironmentVariable('SAFARSUITE_HERMETIC_ENV', 'Process') -ne 'environment-propagated') -Message 'Native environment propagation leaked into the lifecycle host.'
+$priorAmbientPassword = [Environment]::GetEnvironmentVariable('PGPASSWORD', 'Process')
+try {
+    [Environment]::SetEnvironmentVariable('PGPASSWORD', 'ambient-password-must-not-reach-child', 'Process')
+    $clearedPasswordProof = & $lifecycleModule {
+        param($Executable)
+        Invoke-OfficeNativeCommand `
+            -FilePath $Executable `
+            -Arguments @('-NoProfile', '-Command', '[Environment]::GetEnvironmentVariable(''PGPASSWORD'', ''Process'')') `
+            -Environment @{ PGPASSWORD = '' }
+    } $windowsPowerShell
+    Assert-OfficeTest -Condition ([string]::IsNullOrEmpty($clearedPasswordProof.StandardOutput.Trim())) -Message 'Native child retained an ambient PostgreSQL password override.'
+    Assert-OfficeTest -Condition ([Environment]::GetEnvironmentVariable('PGPASSWORD', 'Process') -ceq 'ambient-password-must-not-reach-child') -Message 'Native environment clearing did not restore the lifecycle host value.'
+}
+finally {
+    [Environment]::SetEnvironmentVariable('PGPASSWORD', $priorAmbientPassword, 'Process')
+}
 $verboseNativeProof = & $lifecycleModule {
     param($Executable)
     Invoke-OfficeNativeCommand `

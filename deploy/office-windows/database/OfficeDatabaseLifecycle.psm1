@@ -1087,11 +1087,13 @@ function Invoke-OfficePsql {
     $result = Invoke-OfficeNativeCommand `
         -FilePath $psqlPath `
         -Arguments @(
-            '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-tA',
+            '-X', '-q', '-w', '-v', 'ON_ERROR_STOP=1', '-tA',
             '-h', '127.0.0.1', '-p', [string]$Context.Distribution.port,
             '-U', $Role, '-d', $Database
         ) `
-        -Environment @{ PGPASSFILE = $Passfile } `
+        # An ambient PGPASSWORD takes precedence over PGPASSFILE in libpq.
+        # Clear it for the child so only this managed passfile can authenticate.
+        -Environment @{ PGPASSFILE = $Passfile; PGPASSWORD = '' } `
         -StandardInput $Sql `
         -TimeoutSeconds 120 `
         -AllowFailure

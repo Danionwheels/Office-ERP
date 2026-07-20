@@ -48,18 +48,21 @@ function Invoke-PackagedPsql {
         [Parameter(Mandatory = $true)][string]$Sql,
         [switch]$ExpectFailure
     )
+    $previousPassword = $env:PGPASSWORD
     $previousPassfile = $env:PGPASSFILE
     $previousErrorActionPreference = $ErrorActionPreference
     try {
+        Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
         $env:PGPASSFILE = $Passfile
         # Windows PowerShell 5.1 promotes redirected native stderr to ErrorRecord
         # instances. Capture those records and decide from the native exit code.
         $ErrorActionPreference = 'Continue'
-        $output = @($Sql | & $PsqlPath -X -q -v ON_ERROR_STOP=1 -tA -h 127.0.0.1 -p $Port -U $Role -d $Database 2>&1)
+        $output = @($Sql | & $PsqlPath -X -q -w -v ON_ERROR_STOP=1 -tA -h 127.0.0.1 -p $Port -U $Role -d $Database 2>&1)
         $exitCode = $LASTEXITCODE
     }
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
+        $env:PGPASSWORD = $previousPassword
         $env:PGPASSFILE = $previousPassfile
     }
     if ($ExpectFailure) {
@@ -69,76 +72,6 @@ function Invoke-PackagedPsql {
         throw "A packaged PostgreSQL command failed with exit code $exitCode."
     }
     return ($output -join [Environment]::NewLine).Trim()
-}
-
-function Get-DirectPasswordTransportProbe {
-    param(
-        [Parameter(Mandatory = $true)][string]$PsqlPath,
-        [Parameter(Mandatory = $true)][string]$Password,
-        [Parameter(Mandatory = $true)][string]$Role,
-        [Parameter(Mandatory = $true)][string]$Database,
-        [Parameter(Mandatory = $true)][int]$Port,
-        [Parameter(Mandatory = $true)][System.Management.Automation.PSModuleInfo]$LifecycleModule
-    )
-
-    $previousPassword = $env:PGPASSWORD
-    $previousPassfile = $env:PGPASSFILE
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $env:PGPASSWORD = $Password
-        Remove-Item Env:PGPASSFILE -ErrorAction SilentlyContinue
-        $ErrorActionPreference = 'Continue'
-        $output = @('SELECT 1;' | & $PsqlPath -X -q -w -v ON_ERROR_STOP=1 -tA -h 127.0.0.1 -p $Port -U $Role -d $Database 2>&1)
-        $exitCode = $LASTEXITCODE
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-        $env:PGPASSWORD = $previousPassword
-        $env:PGPASSFILE = $previousPassfile
-    }
-    if ($exitCode -eq 0 -and (($output -join [Environment]::NewLine).Trim() -eq '1')) {
-        return 'Succeeded'
-    }
-    $failureText = ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
-    return (& $LifecycleModule {
-        param($StandardError)
-        Get-OfficePsqlFailureClassification -StandardError $StandardError
-    } $failureText)
-}
-
-function Get-PassfileTransportProbe {
-    param(
-        [Parameter(Mandatory = $true)][string]$PsqlPath,
-        [Parameter(Mandatory = $true)][string]$Passfile,
-        [Parameter(Mandatory = $true)][string]$Role,
-        [Parameter(Mandatory = $true)][string]$Database,
-        [Parameter(Mandatory = $true)][int]$Port,
-        [Parameter(Mandatory = $true)][System.Management.Automation.PSModuleInfo]$LifecycleModule
-    )
-
-    $previousPassword = $env:PGPASSWORD
-    $previousPassfile = $env:PGPASSFILE
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
-        $env:PGPASSFILE = $Passfile
-        $ErrorActionPreference = 'Continue'
-        $output = @('SELECT 1;' | & $PsqlPath -X -q -w -v ON_ERROR_STOP=1 -tA -h 127.0.0.1 -p $Port -U $Role -d $Database 2>&1)
-        $exitCode = $LASTEXITCODE
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-        $env:PGPASSWORD = $previousPassword
-        $env:PGPASSFILE = $previousPassfile
-    }
-    if ($exitCode -eq 0 -and (($output -join [Environment]::NewLine).Trim() -eq '1')) {
-        return 'Succeeded'
-    }
-    $failureText = ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
-    return (& $LifecycleModule {
-        param($StandardError)
-        Get-OfficePsqlFailureClassification -StandardError $StandardError
-    } $failureText)
 }
 
 function Invoke-PackagedMigrationBundle {
@@ -832,59 +765,6 @@ FROM pg_hba_file_rules;
 }
 catch {
     $proofFailure = $_
-    if ($proofFailure.Exception.Message -match "finite 'AdminBootstrap' phase" -and
-        $null -ne $packageManifest -and
-        $null -ne $paths -and
-        (Test-Path -LiteralPath $paths.AdminPassfilePath -PathType Leaf) -and
-        (Test-Path -LiteralPath (Join-Path $paths.RuntimeRoot 'bin\psql.exe') -PathType Leaf)) {
-        try {
-            $adminPassword = & $lifecycleModule {
-                param($Path)
-                Read-OfficePgPassPassword -Path $Path
-            } $paths.AdminPassfilePath
-            if (-not [string]::IsNullOrWhiteSpace($adminPassword)) {
-                $psqlPath = Join-Path $paths.RuntimeRoot 'bin\psql.exe'
-                $adminRole = [string]$packageManifest.postgresql.adminRole
-                $port = [int]$packageManifest.postgresql.port
-                $protectedPassfileProbe = Get-PassfileTransportProbe `
-                    -PsqlPath $psqlPath `
-                    -Passfile $paths.AdminPassfilePath `
-                    -Role $adminRole `
-                    -Database 'postgres' `
-                    -Port $port `
-                    -LifecycleModule $lifecycleModule
-                $disposablePassfilePath = Join-Path $testPath 'passfile-transport-probe.pgpass'
-                try {
-                    [IO.File]::WriteAllBytes($disposablePassfilePath, [IO.File]::ReadAllBytes($paths.AdminPassfilePath))
-                    $disposablePassfileProbe = Get-PassfileTransportProbe `
-                        -PsqlPath $psqlPath `
-                        -Passfile $disposablePassfilePath `
-                        -Role $adminRole `
-                        -Database 'postgres' `
-                        -Port $port `
-                        -LifecycleModule $lifecycleModule
-                }
-                finally {
-                    if (Test-Path -LiteralPath $disposablePassfilePath) {
-                        Remove-Item -LiteralPath $disposablePassfilePath -Force
-                    }
-                }
-                $transportProbe = Get-DirectPasswordTransportProbe `
-                    -PsqlPath $psqlPath `
-                    -Password $adminPassword `
-                    -Role $adminRole `
-                    -Database 'postgres' `
-                    -Port $port `
-                    -LifecycleModule $lifecycleModule
-                $proofFailure = [Management.Automation.RuntimeException]::new(
-                    "$($proofFailure.Exception.Message) Password transport probes: protected passfile '$protectedPassfileProbe'; disposable passfile '$disposablePassfileProbe'; direct in-memory '$transportProbe'.")
-            }
-        }
-        catch {
-            $proofFailure = [Management.Automation.RuntimeException]::new(
-                "$($proofFailure.Exception.Message) Direct in-memory password transport probe: 'ProbeFailedSafely'.")
-        }
-    }
     if ($null -ne $packageManifest -and $null -ne $paths -and (Test-Path -LiteralPath $testPath -PathType Container)) {
         try {
             $null = Invoke-OfficePostgresLifecycleBoundaryDiagnostic `
