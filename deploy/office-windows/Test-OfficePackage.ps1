@@ -273,6 +273,7 @@ $environmentOverrides = [ordered]@{
     ASPNETCORE_ENVIRONMENT = "Development"
     ASPNETCORE_URLS = "http://127.0.0.1:5188"
     Persistence__Provider = "InMemory"
+    ControlCloud__OutboxWorker__Enabled = "false"
     ControlDesk__Logging__File__Enabled = "true"
     ControlDesk__Logging__File__DirectoryPath = $logDirectory
     ControlDesk__Logging__File__RetainedFileCountLimit = "4"
