@@ -4,8 +4,8 @@ namespace SafarSuite.ControlDesk.Domain.Modules.Auth;
 
 public sealed class LocalOperator : Entity<LocalOperatorId>
 {
-    private readonly List<string> _roles = [];
-    private readonly List<string> _scopes = [];
+    private readonly List<LocalOperatorRoleGrant> _roleGrants = [];
+    private readonly List<LocalOperatorScopeGrant> _scopeGrants = [];
 
     private LocalOperator()
     {
@@ -33,8 +33,8 @@ public sealed class LocalOperator : Entity<LocalOperatorId>
         SecurityVersion = 1;
         CreatedAtUtc = createdAtUtc;
         UpdatedAtUtc = createdAtUtc;
-        _roles.AddRange(roles);
-        _scopes.AddRange(scopes);
+        _roleGrants.AddRange(roles.Select(LocalOperatorRoleGrant.Create));
+        _scopeGrants.AddRange(scopes.Select(LocalOperatorScopeGrant.Create));
     }
 
     public string Email { get; private set; }
@@ -53,9 +53,11 @@ public sealed class LocalOperator : Entity<LocalOperatorId>
 
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
-    public IReadOnlyCollection<string> Roles => _roles.AsReadOnly();
+    public IReadOnlyCollection<string> Roles =>
+        _roleGrants.Select(grant => grant.Value).ToArray();
 
-    public IReadOnlyCollection<string> Scopes => _scopes.AsReadOnly();
+    public IReadOnlyCollection<string> Scopes =>
+        _scopeGrants.Select(grant => grant.Value).ToArray();
 
     public static LocalOperator Create(
         LocalOperatorId id,
@@ -142,16 +144,16 @@ public sealed class LocalOperator : Entity<LocalOperatorId>
         ValidateAccessCombination(canonicalRoles, canonicalScopes);
         EnsureChangeTime(changedAtUtc);
 
-        if (_roles.SequenceEqual(canonicalRoles, StringComparer.Ordinal)
-            && _scopes.SequenceEqual(canonicalScopes, StringComparer.Ordinal))
+        if (Roles.SequenceEqual(canonicalRoles, StringComparer.Ordinal)
+            && Scopes.SequenceEqual(canonicalScopes, StringComparer.Ordinal))
         {
             return;
         }
 
-        _roles.Clear();
-        _roles.AddRange(canonicalRoles);
-        _scopes.Clear();
-        _scopes.AddRange(canonicalScopes);
+        _roleGrants.Clear();
+        _roleGrants.AddRange(canonicalRoles.Select(LocalOperatorRoleGrant.Create));
+        _scopeGrants.Clear();
+        _scopeGrants.AddRange(canonicalScopes.Select(LocalOperatorScopeGrant.Create));
         RecordProtectedChange(changedAtUtc);
     }
 

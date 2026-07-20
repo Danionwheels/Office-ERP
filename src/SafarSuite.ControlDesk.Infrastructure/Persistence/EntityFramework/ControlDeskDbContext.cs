@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
+using SafarSuite.ControlDesk.Domain.Modules.Auth;
 using SafarSuite.ControlDesk.Domain.Modules.Billing;
 using SafarSuite.ControlDesk.Domain.Modules.Clients;
 using SafarSuite.ControlDesk.Domain.Modules.Contracts;
@@ -7,6 +8,7 @@ using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Domain.Modules.Entitlements;
 using SafarSuite.ControlDesk.Domain.Modules.Payments;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Configurations;
+using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Configurations.Auth;
 
 namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 
@@ -18,6 +20,8 @@ public sealed class ControlDeskDbContext : DbContext
     }
 
     public DbSet<Client> Clients => Set<Client>();
+
+    public DbSet<LocalOperator> LocalOperators => Set<LocalOperator>();
 
     public DbSet<ClientAccountingProfile> ClientAccountingProfiles => Set<ClientAccountingProfile>();
 
@@ -70,6 +74,7 @@ public sealed class ControlDeskDbContext : DbContext
         modelBuilder.HasSequence<long>("entitlement_version_sequence", "control")
             .StartsAt(1);
         modelBuilder.ApplyConfiguration(new ClientConfiguration());
+        modelBuilder.ApplyConfiguration(new LocalOperatorConfiguration());
         modelBuilder.ApplyConfiguration(new ClientAccountingProfileConfiguration());
         modelBuilder.ApplyConfiguration(new ClientDeploymentConfiguration());
         modelBuilder.ApplyConfiguration(new AccountCodeRangeConfiguration());
