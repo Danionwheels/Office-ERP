@@ -59,6 +59,10 @@ public sealed class LocalOperator : Entity<LocalOperatorId>
     public IReadOnlyCollection<string> Scopes =>
         _scopeGrants.Select(grant => grant.Value).ToArray();
 
+    internal IReadOnlyCollection<LocalOperatorRoleGrant> RoleGrants => _roleGrants;
+
+    internal IReadOnlyCollection<LocalOperatorScopeGrant> ScopeGrants => _scopeGrants;
+
     public static LocalOperator Create(
         LocalOperatorId id,
         LocalOperatorEmail email,

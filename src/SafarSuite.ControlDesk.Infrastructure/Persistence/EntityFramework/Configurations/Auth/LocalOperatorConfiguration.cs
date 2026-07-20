@@ -78,7 +78,7 @@ internal sealed class LocalOperatorConfiguration : IEntityTypeConfiguration<Loca
         builder.Ignore(localOperator => localOperator.Roles);
         builder.Ignore(localOperator => localOperator.Scopes);
 
-        builder.OwnsMany<LocalOperatorRoleGrant>("_roleGrants", role =>
+        builder.OwnsMany(localOperator => localOperator.RoleGrants, role =>
         {
             role.ToTable("local_operator_roles", "auth", table =>
                 table.HasCheckConstraint(
@@ -96,10 +96,11 @@ internal sealed class LocalOperatorConfiguration : IEntityTypeConfiguration<Loca
             role.HasKey("operator_id", nameof(LocalOperatorRoleGrant.Value));
         });
 
-        builder.Navigation("_roleGrants")
+        builder.Navigation(localOperator => localOperator.RoleGrants)
+            .HasField("_roleGrants")
             .UsePropertyAccessMode(PropertyAccessMode.Field);
 
-        builder.OwnsMany<LocalOperatorScopeGrant>("_scopeGrants", scope =>
+        builder.OwnsMany(localOperator => localOperator.ScopeGrants, scope =>
         {
             scope.ToTable("local_operator_scopes", "auth", table =>
                 table.HasCheckConstraint(
@@ -117,7 +118,8 @@ internal sealed class LocalOperatorConfiguration : IEntityTypeConfiguration<Loca
             scope.HasKey("operator_id", nameof(LocalOperatorScopeGrant.Value));
         });
 
-        builder.Navigation("_scopeGrants")
+        builder.Navigation(localOperator => localOperator.ScopeGrants)
+            .HasField("_scopeGrants")
             .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

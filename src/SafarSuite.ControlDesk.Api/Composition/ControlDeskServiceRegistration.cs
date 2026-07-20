@@ -5,6 +5,7 @@ using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Api.Modules.Health;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
 using SafarSuite.ControlDesk.Application.Modules.Auth;
+using SafarSuite.ControlDesk.Application.Modules.Auth.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
@@ -437,6 +438,7 @@ public static class ControlDeskServiceRegistration
             });
 
             services.AddScoped<IClientRepository, EfClientRepository>();
+            services.AddScoped<ILocalOperatorRepository, EfLocalOperatorRepository>();
             services.AddScoped<IClientDirectoryReader, EfClientDirectoryReader>();
             services.AddScoped<IClientFinancialReader, EfClientFinancialReader>();
             services.AddScoped<IClientWorkQueueReader, EfClientWorkQueueReader>();
