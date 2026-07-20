@@ -89,13 +89,14 @@ function Assert-ExactMachineSecretAcl {
         [Security.AccessControl.InheritanceFlags]::None
     }
     $expected = @(
-        [pscustomobject]@{ Sid = 'S-1-5-18'; Rights = [Security.AccessControl.FileSystemRights]::FullControl },
-        [pscustomobject]@{ Sid = 'S-1-5-32-544'; Rights = [Security.AccessControl.FileSystemRights]::FullControl }
+        [pscustomobject]@{ Sid = 'S-1-5-18'; Rights = [Security.AccessControl.FileSystemRights]::FullControl; Inheritance = $inheritance },
+        [pscustomobject]@{ Sid = 'S-1-5-32-544'; Rights = [Security.AccessControl.FileSystemRights]::FullControl; Inheritance = $inheritance }
     )
     if ($Installed) {
         $expected += [pscustomobject]@{
             Sid = 'S-1-5-80-2177609957-237951300-3651597395-3114367455-1078186923'
             Rights = $(if ($Directory) { [Security.AccessControl.FileSystemRights]::ReadAndExecute } else { [Security.AccessControl.FileSystemRights]::Read })
+            Inheritance = [Security.AccessControl.InheritanceFlags]::None
         }
     }
     $actual = @($acl.Access)
@@ -104,7 +105,7 @@ function Assert-ExactMachineSecretAcl {
         $matches = @($actual | Where-Object {
             $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -eq $expectedRule.Sid -and
             (Get-NormalizedRights $_.FileSystemRights) -eq (Get-NormalizedRights $expectedRule.Rights) -and
-            $_.InheritanceFlags -eq $inheritance -and
+            $_.InheritanceFlags -eq $expectedRule.Inheritance -and
             $_.PropagationFlags -eq [Security.AccessControl.PropagationFlags]::None -and
             $_.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
             -not $_.IsInherited
