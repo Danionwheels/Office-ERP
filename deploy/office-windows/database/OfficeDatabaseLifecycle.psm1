@@ -920,6 +920,12 @@ function Set-OfficeDatabasePathPermissions {
         if (-not (Test-Path -LiteralPath $entry.Path -PathType Container)) {
             continue
         }
+        # PostgreSQL owns the ACL details of files it creates below PGDATA.
+        # Converge and verify the protected PGDATA boundary, but do not
+        # recursively rewrite a live (and potentially very large) cluster.
+        if (-not (Test-OfficeShouldManageDescendantAcls -Path $entry.Path -DataDirectory $Context.Paths.DataDirectory)) {
+            continue
+        }
         $excludedSubtrees = if ([IO.Path]::GetFullPath($entry.Path) -eq [IO.Path]::GetFullPath($Context.Paths.DataRoot) -and
             (Test-Path -LiteralPath $Context.Paths.DataDirectory -PathType Container)) {
             @($Context.Paths.DataDirectory)
@@ -1000,6 +1006,12 @@ function Test-OfficeDatabasePathPermissions {
     }
     try {
         foreach ($entry in $managedRoots) {
+            # The protected PGDATA root is verified above. PostgreSQL may use
+            # more restrictive ACL details on internal descendants, and a
+            # recursive scan would make routine startup proportional to data size.
+            if (-not (Test-OfficeShouldManageDescendantAcls -Path $entry.Path -DataDirectory $Context.Paths.DataDirectory)) {
+                continue
+            }
             $excludedSubtrees = if ([IO.Path]::GetFullPath($entry.Path) -eq [IO.Path]::GetFullPath($Context.Paths.DataRoot)) {
                 @($Context.Paths.DataDirectory)
             }
@@ -1020,6 +1032,15 @@ function Test-OfficeDatabasePathPermissions {
         return $false
     }
     return $true
+}
+
+function Test-OfficeShouldManageDescendantAcls {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$DataDirectory
+    )
+
+    return [IO.Path]::GetFullPath($Path) -ne [IO.Path]::GetFullPath($DataDirectory)
 }
 
 function Get-OfficeServiceSid {

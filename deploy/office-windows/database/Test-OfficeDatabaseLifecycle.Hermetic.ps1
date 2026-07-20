@@ -257,6 +257,16 @@ Assert-OfficeTest `
         $psqlInvocationProof.StandardInput -ceq 'SELECT 1;') `
     -Message 'Managed psql invocation did not disable prompting and isolate its passfile from ambient passwords.'
 
+$descendantAclBoundary = & $lifecycleModule {
+    return @(
+        Test-OfficeShouldManageDescendantAcls -Path 'C:\managed\Data' -DataDirectory 'C:\managed\Data'
+        Test-OfficeShouldManageDescendantAcls -Path 'C:\managed\Runtime' -DataDirectory 'C:\managed\Data'
+    )
+}
+Assert-OfficeTest `
+    -Condition (-not $descendantAclBoundary[0] -and $descendantAclBoundary[1]) `
+    -Message 'PGDATA descendants were not excluded from product-managed recursive ACL convergence.'
+
 $serviceConfigArguments = & $lifecycleModule {
     $context = [pscustomobject]@{
         Distribution = [pscustomobject]@{
