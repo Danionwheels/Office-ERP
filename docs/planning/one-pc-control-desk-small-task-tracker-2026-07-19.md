@@ -193,8 +193,8 @@ Completion evidence: commits `096941f`, `bcc7f9f`, `a340ab8`, `4698c30`, `4e1988
 
 | ID | Status | Small task | Depends on | Done/evidence |
 | --- | --- | --- | --- | --- |
-| `SEC04-01` | `PENDING` | Freeze the storage contract: operators in Control Desk PostgreSQL; machine secrets in versioned DPAPI-protected files with exact ACLs. | `DB03-04` | Reviewed path/schema and preserve/regenerate/reissue rules. |
-| `SEC04-02A` | `PENDING` | Add the local-operator aggregate, status, role/scope rules, and normalized-email invariant. | `SEC04-01` | Focused domain tests pass. |
+| `SEC04-01` | `DONE` | Freeze the storage contract: operators in Control Desk PostgreSQL; machine secrets in versioned DPAPI-protected files with exact ACLs. | `DB03-04` | [`control-desk-operator-and-machine-secret-storage-contract.md`](../architecture/control-desk-operator-and-machine-secret-storage-contract.md) fixes the schema, ProgramData path, service-SID ACL, bootstrap boundary, and preserve/regenerate/reissue rules. |
+| `SEC04-02A` | `CURRENT` | Add the local-operator aggregate, status, role/scope rules, and normalized-email invariant. | `SEC04-01` | Focused domain tests pass. |
 | `SEC04-02B` | `PENDING` | Add operator create, authenticate, disable, permission-change, and recovery application ports/use cases. | `SEC04-02A` | Focused use-case tests cover success, conflicts, disabled operators, and authorization. |
 | `SEC04-02C` | `PENDING` | Add the operator repository, EF mapping, and unique normalized-email migration. | `SEC04-02B` | Repository tests and migration parity pass. |
 | `SEC04-03` | `PENDING` | Extract the PBKDF2-SHA256 codec from the HTTP endpoint without changing the accepted format. | `SEC04-01` | Golden, tamper, and invalid-format vectors pass. |
