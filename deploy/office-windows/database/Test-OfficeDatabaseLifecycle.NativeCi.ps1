@@ -500,7 +500,7 @@ try {
     Assert-NativeProof -Condition ($mismatchRepair.InitialState -eq 'MigrationMismatch' -and $mismatchRepair.FinalState -eq 'Ready') -Message 'Real migration-prefix repair failed.'
 
     $null = Invoke-PackagedMigrationBundle -BundlePath $migrationBundle -TargetMigration $penultimateMigration -Passfile $paths.MigratorPassfilePath -Role $migratorRole -Database $databaseName -Port $port
-    $null = Invoke-PackagedPsql -PsqlPath $psql -Passfile $paths.MigratorPassfilePath -Role $migratorRole -Database $databaseName -Port $port -Sql 'CREATE TABLE control.portal_payment_claims (fault_marker integer);'
+    $null = Invoke-PackagedPsql -PsqlPath $psql -Passfile $paths.MigratorPassfilePath -Role $migratorRole -Database $databaseName -Port $port -Sql 'CREATE TABLE auth.local_operators (fault_marker integer);'
     $activationHashBeforeFailure = (Get-FileHash -Algorithm SHA256 -LiteralPath $paths.ActivationFilePath).Hash
     $bundleFailure = Invoke-PackagedMigrationBundle `
         -BundlePath $migrationBundle `
@@ -511,7 +511,7 @@ try {
         -Port $port `
         -ExpectFailure
     Assert-NativeProof `
-        -Condition ($bundleFailure.Output -match '(?i)(42P07|portal_payment_claims.*already exists|already exists.*portal_payment_claims)') `
+        -Condition ($bundleFailure.Output -match '(?i)(42P07|local_operators.*already exists|already exists.*local_operators)') `
         -Message 'The deliberately failed migration did not report the reviewed relation conflict.'
     $migrationFailureRecord = Assert-LifecycleFailure `
         -Case MigrationConflict `
@@ -549,7 +549,7 @@ try {
         candidateApiActivationTested = $false
         candidateApiActivationReason = 'API service creation belongs to OFFICE-P0-05.'
     }
-    $null = Invoke-PackagedPsql -PsqlPath $psql -Passfile $paths.MigratorPassfilePath -Role $migratorRole -Database $databaseName -Port $port -Sql 'DROP TABLE control.portal_payment_claims;'
+    $null = Invoke-PackagedPsql -PsqlPath $psql -Passfile $paths.MigratorPassfilePath -Role $migratorRole -Database $databaseName -Port $port -Sql 'DROP TABLE auth.local_operators;'
     $failedMigrationRecovery = Repair-OfficeDatabaseLifecycle -PackageDirectory $PackageDirectory -ProgramFilesRoot $programFilesRoot -ProgramDataRoot $programDataRoot
     Assert-NativeProof -Condition ($failedMigrationRecovery.FinalState -eq 'Ready') -Message 'Database did not recover after removing the deliberate migration conflict.'
 
