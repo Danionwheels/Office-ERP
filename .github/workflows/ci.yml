@@ -524,6 +524,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeApiPayloadInstaller.Hermetic.ps1
 
+      - name: Prove API service registration contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeApiServiceRegistration.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-
