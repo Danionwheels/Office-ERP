@@ -1084,6 +1084,8 @@ function Invoke-OfficePsql {
     )
 
     $psqlPath = Join-Path $Context.Paths.RuntimeRoot "bin\psql.exe"
+    # An ambient PGPASSWORD takes precedence over PGPASSFILE in libpq.
+    # Clear it for the child so only this managed passfile can authenticate.
     $result = Invoke-OfficeNativeCommand `
         -FilePath $psqlPath `
         -Arguments @(
@@ -1091,8 +1093,6 @@ function Invoke-OfficePsql {
             '-h', '127.0.0.1', '-p', [string]$Context.Distribution.port,
             '-U', $Role, '-d', $Database
         ) `
-        # An ambient PGPASSWORD takes precedence over PGPASSFILE in libpq.
-        # Clear it for the child so only this managed passfile can authenticate.
         -Environment @{ PGPASSFILE = $Passfile; PGPASSWORD = '' } `
         -StandardInput $Sql `
         -TimeoutSeconds 120 `

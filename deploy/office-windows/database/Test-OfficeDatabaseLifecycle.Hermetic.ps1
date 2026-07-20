@@ -197,6 +197,51 @@ Assert-OfficeTest `
     -Condition (($psqlFailureClassifications -join '|') -eq 'PasswordNotSupplied|PasswordAuthenticationFailed|HbaRejected|ConnectionUnavailable|Unclassified') `
     -Message 'Secret-safe psql failure classification changed unexpectedly.'
 
+$psqlInvocationProof = & $lifecycleModule {
+    $originalNativeCommand = (Get-Command Invoke-OfficeNativeCommand -CommandType Function).ScriptBlock
+    try {
+        Set-Item Function:\Invoke-OfficeNativeCommand -Value {
+            param(
+                [string]$FilePath,
+                [string[]]$Arguments,
+                [hashtable]$Environment,
+                [string]$StandardInput,
+                [int]$TimeoutSeconds,
+                [switch]$AllowFailure
+            )
+            return [pscustomobject]@{
+                ExitCode = 0
+                StandardOutput = ''
+                StandardError = ''
+                Arguments = $Arguments
+                Environment = $Environment
+                StandardInput = $StandardInput
+                AllowFailure = $AllowFailure.IsPresent
+            }
+        }
+        $context = [pscustomobject]@{
+            Paths = [pscustomobject]@{ RuntimeRoot = 'C:\approved-runtime' }
+            Distribution = [pscustomobject]@{ port = 54329 }
+        }
+        return Invoke-OfficePsql `
+            -Context $context `
+            -Role 'approved-role' `
+            -Database 'approved-database' `
+            -Passfile 'C:\approved-secret\admin.pgpass' `
+            -Sql 'SELECT 1;'
+    }
+    finally {
+        Set-Item Function:\Invoke-OfficeNativeCommand -Value $originalNativeCommand
+    }
+}
+Assert-OfficeTest `
+    -Condition ($psqlInvocationProof.AllowFailure -and
+        $psqlInvocationProof.Arguments -contains '-w' -and
+        $psqlInvocationProof.Environment.PGPASSFILE -ceq 'C:\approved-secret\admin.pgpass' -and
+        $psqlInvocationProof.Environment.PGPASSWORD -ceq '' -and
+        $psqlInvocationProof.StandardInput -ceq 'SELECT 1;') `
+    -Message 'Managed psql invocation did not disable prompting and isolate its passfile from ambient passwords.'
+
 $serviceConfigArguments = & $lifecycleModule {
     $context = [pscustomobject]@{
         Distribution = [pscustomobject]@{
