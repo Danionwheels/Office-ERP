@@ -188,6 +188,15 @@ function New-SmokePasswordHash {
 
 $productionSettings = Get-Content -Raw -LiteralPath $productionSettingsPath | ConvertFrom-Json
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+
+if (Test-Path -LiteralPath (Join-Path $packagePath "appsettings.Development.json")) {
+    throw "The office package must not include Development settings or fixture credentials."
+}
+$packagedSettingsText = (Get-ChildItem -LiteralPath $packagePath -Filter "appsettings*.json" -File |
+    ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }) -join [Environment]::NewLine
+if ($packagedSettingsText -match "local-development|safarsuite-owner-dev-key|safarsuite_dev_password") {
+    throw "The office package settings contain development-only secret material."
+}
 Import-Module $databaseLifecycleModulePath -Force
 $databaseManifest = Test-OfficeDatabasePackage -PackageDirectory $packagePath
 if ($manifest.packageFormat -ne "office-windows-native-postgresql-v2") {
@@ -239,6 +248,16 @@ Assert-PackagedStartupRejected `
         ControlDesk__Logging__File__Enabled = "false"
     }) `
     -ExpectedOutputPattern "must not use development"
+
+Assert-PackagedStartupRejected `
+    -EnvironmentOverrides ([ordered]@{
+        ASPNETCORE_ENVIRONMENT = "Production"
+        Persistence__Provider = "Postgres"
+        ConnectionStrings__ControlDesk = "Host=localhost;Port=54329;Database=safarsuite_control_desk;Username=safarsuite;Password=office-package-production-proof"
+        ControlDesk__Logging__File__Enabled = "false"
+        ControlCloud__OutboxWorker__Enabled = "false"
+    }) `
+    -ExpectedOutputPattern "machine-secret"
 
 $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $executablePath

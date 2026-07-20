@@ -6,8 +6,7 @@ public sealed class ControlCloudStatusOptions
 
     public string BaseUrl { get; set; } = "http://localhost:5127";
 
-    public string ProviderAccessSecret { get; set; } =
-        "local-development-provider-access-secret-change-before-cloud";
+    public string ProviderAccessSecret { get; set; } = string.Empty;
 
     public string ProviderAccessToken { get; set; } = "";
 }

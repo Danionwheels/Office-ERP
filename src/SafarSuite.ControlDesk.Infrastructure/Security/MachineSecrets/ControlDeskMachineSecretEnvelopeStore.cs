@@ -31,16 +31,23 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _mutexTimeout;
     private readonly Action<MachineSecretWriteStage>? _writeObserver;
+    private readonly IMachineSecretAccessPolicy _accessPolicy;
+    private readonly ControlDeskMachineSecretAccessProfile _accessProfile;
 
     [SupportedOSPlatform("windows")]
-    public ControlDeskMachineSecretEnvelopeStore(string envelopePath)
+    public ControlDeskMachineSecretEnvelopeStore(
+        string envelopePath,
+        ControlDeskMachineSecretAccessProfile accessProfile =
+            ControlDeskMachineSecretAccessProfile.PreService)
         : this(
             envelopePath,
             new WindowsDpapiMachineSecretProtector(),
             TimeProvider.System,
             DefaultLifecycleMutexName,
             TimeSpan.FromSeconds(30),
-            null)
+            null,
+            new WindowsMachineSecretAccessPolicy(),
+            accessProfile)
     {
     }
 
@@ -50,7 +57,10 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
         TimeProvider timeProvider,
         string lifecycleMutexName,
         TimeSpan mutexTimeout,
-        Action<MachineSecretWriteStage>? writeObserver)
+        Action<MachineSecretWriteStage>? writeObserver,
+        IMachineSecretAccessPolicy? accessPolicy = null,
+        ControlDeskMachineSecretAccessProfile accessProfile =
+            ControlDeskMachineSecretAccessProfile.PreService)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(envelopePath);
         ArgumentNullException.ThrowIfNull(protector);
@@ -68,6 +78,8 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
         _lifecycleMutexName = lifecycleMutexName;
         _mutexTimeout = mutexTimeout;
         _writeObserver = writeObserver;
+        _accessPolicy = accessPolicy ?? PermissiveMachineSecretAccessPolicy.Instance;
+        _accessProfile = accessProfile;
     }
 
     public ControlDeskMachineSecretSnapshot CreateOrLoad() =>
@@ -76,6 +88,13 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
     public ControlDeskMachineSecretSnapshot Read() => ExecuteLocked(ReadCore);
 
     public ControlDeskMachineSecretSnapshot Replace() => ExecuteLocked(CreateAndWriteCore);
+
+    public ControlDeskMachineSecretSnapshot RepairAccessControl() =>
+        ExecuteLocked(() =>
+        {
+            _accessPolicy.Repair(_envelopePath, _accessProfile);
+            return ReadCore();
+        });
 
     private ControlDeskMachineSecretSnapshot ExecuteLocked(
         Func<ControlDeskMachineSecretSnapshot> operation)
@@ -114,6 +133,7 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
 
     private ControlDeskMachineSecretSnapshot CreateAndWriteCore()
     {
+        _accessPolicy.PrepareForWrite(_envelopePath, _accessProfile);
         var generationId = Guid.NewGuid();
         var createdAtUtc = _timeProvider.GetUtcNow();
         var keyId = $"control-desk-session-{generationId:N}";
@@ -194,6 +214,7 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
     {
         try
         {
+            _accessPolicy.ValidateForRead(_envelopePath, _accessProfile);
             var fileInfo = new FileInfo(_envelopePath);
 
             if (!fileInfo.Exists || fileInfo.Length is <= 0 or > MaximumEnvelopeBytes)
@@ -274,7 +295,6 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
     {
         var directory = Path.GetDirectoryName(_envelopePath)
             ?? throw new InvalidOperationException("The machine-secret envelope path must have a parent directory.");
-        Directory.CreateDirectory(directory);
         var fileName = Path.GetFileName(_envelopePath);
         var temporaryPath = Path.Combine(directory, $".{fileName}.{Guid.NewGuid():N}.tmp");
         var backupPath = Path.Combine(directory, $".{fileName}.{Guid.NewGuid():N}.bak");
@@ -295,6 +315,7 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
                 stream.Flush(flushToDisk: true);
             }
 
+            _accessPolicy.ProtectTransientFile(temporaryPath);
             _writeObserver?.Invoke(MachineSecretWriteStage.TemporaryFileFlushed);
 
             if (hadExistingEnvelope)
@@ -307,6 +328,13 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
             }
 
             replacementCommitted = true;
+            _accessPolicy.ProtectEnvelope(_envelopePath, _accessProfile);
+
+            if (File.Exists(backupPath))
+            {
+                _accessPolicy.ProtectTransientFile(backupPath);
+            }
+
             _writeObserver?.Invoke(MachineSecretWriteStage.EnvelopeReplaced);
 
             using var verified = ReadCore();
@@ -351,6 +379,7 @@ public sealed class ControlDeskMachineSecretEnvelopeStore
             if (hadExistingEnvelope && File.Exists(backupPath))
             {
                 File.Replace(backupPath, _envelopePath, null, ignoreMetadataErrors: true);
+                _accessPolicy.ProtectEnvelope(_envelopePath, _accessProfile);
             }
             else if (!hadExistingEnvelope)
             {

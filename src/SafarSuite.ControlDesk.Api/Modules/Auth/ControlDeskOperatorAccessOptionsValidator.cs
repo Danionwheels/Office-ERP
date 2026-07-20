@@ -1,10 +1,12 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
 
 namespace SafarSuite.ControlDesk.Api.Modules.Auth;
 
 public sealed class ControlDeskOperatorAccessOptionsValidator(
     IHostEnvironment environment,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    IControlDeskSessionSigningKeyProvider? signingKeyProvider = null)
     : IValidateOptions<ControlDeskOperatorAccessOptions>
 {
     private const string DevelopmentOperatorUserId = "local-control-desk-admin";
@@ -28,7 +30,46 @@ public sealed class ControlDeskOperatorAccessOptionsValidator(
 
         var secret = options.SessionSigningSecret?.Trim() ?? string.Empty;
 
-        if (secret.Length < 32)
+        if (environment.IsProduction())
+        {
+            if (!string.IsNullOrWhiteSpace(secret)
+                || !string.IsNullOrWhiteSpace(configuration[
+                    $"{ControlDeskOperatorAccessOptions.SectionName}:SessionSigningSecret"]))
+            {
+                failures.Add(
+                    "ControlDesk:OperatorAccess:SessionSigningSecret must not be supplied through Production configuration.");
+            }
+
+            if (signingKeyProvider is null)
+            {
+                failures.Add("The installed Control Desk machine-secret provider is unavailable.");
+            }
+            else
+            {
+                try
+                {
+                    var key = signingKeyProvider.CopySessionSigningKey();
+
+                    try
+                    {
+                        if (key.Length < 32 || string.IsNullOrWhiteSpace(signingKeyProvider.SessionSigningKeyId))
+                        {
+                            failures.Add("The installed Control Desk machine-secret provider is unavailable.");
+                        }
+                    }
+                    finally
+                    {
+                        CryptographicOperations.ZeroMemory(key);
+                    }
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException
+                                                   and not StackOverflowException)
+                {
+                    failures.Add("The installed Control Desk machine-secret provider is unavailable.");
+                }
+            }
+        }
+        else if (secret.Length < 32)
         {
             failures.Add("ControlDesk:OperatorAccess:SessionSigningSecret must contain at least 32 characters.");
         }

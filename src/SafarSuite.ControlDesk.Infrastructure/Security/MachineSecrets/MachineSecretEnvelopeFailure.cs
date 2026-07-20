@@ -5,5 +5,8 @@ public enum MachineSecretEnvelopeFailure
     InvalidEnvelope,
     ProtectionFailed,
     LifecycleBusy,
-    WriteVerificationFailed
+    WriteVerificationFailed,
+    AccessControlInvalid,
+    AccessControlFailed,
+    UnsafePath
 }

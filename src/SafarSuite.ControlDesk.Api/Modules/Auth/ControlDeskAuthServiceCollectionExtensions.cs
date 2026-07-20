@@ -13,6 +13,24 @@ public static class ControlDeskAuthServiceCollectionExtensions
         services.AddOptions<ControlDeskOperatorAccessOptions>()
             .Bind(configuration.GetSection(ControlDeskOperatorAccessOptions.SectionName))
             .ValidateOnStart();
+        services.AddSingleton<IControlDeskSessionSigningKeyProvider>(serviceProvider =>
+        {
+            var environment = serviceProvider.GetRequiredService<IHostEnvironment>();
+
+            if (environment.IsProduction())
+            {
+                if (!OperatingSystem.IsWindows())
+                {
+                    throw new PlatformNotSupportedException(
+                        "Installed Control Desk Production requires Windows machine-secret storage.");
+                }
+
+                return new InstalledControlDeskSessionSigningKeyProvider();
+            }
+
+            return new ConfiguredControlDeskSessionSigningKeyProvider(configuration);
+        });
+        services.AddHostedService<ControlDeskSessionSigningKeyStartupValidator>();
         services.AddSingleton<IValidateOptions<ControlDeskOperatorAccessOptions>, ControlDeskOperatorAccessOptionsValidator>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IControlDeskSessionTokenService, ControlDeskSessionTokenService>();

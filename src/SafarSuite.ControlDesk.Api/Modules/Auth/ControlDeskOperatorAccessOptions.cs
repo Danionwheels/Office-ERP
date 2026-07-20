@@ -6,6 +6,8 @@ public sealed class ControlDeskOperatorAccessOptions
 
     public int SessionMinutes { get; set; } = 480;
 
+    public string SessionSigningKeyId { get; set; } = ConfiguredControlDeskSessionSigningKeyProvider.DefaultKeyId;
+
     public string SessionSigningSecret { get; set; } = string.Empty;
 
     public List<ControlDeskOperatorUserOptions> Users { get; set; } = [];

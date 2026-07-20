@@ -12,7 +12,7 @@ public sealed class ControlCloudPublisherOptions
 
     public string SigningKeyId { get; set; } = "local-dev";
 
-    public string SigningSecret { get; set; } = "local-development-signing-secret-change-before-cloud";
+    public string SigningSecret { get; set; } = string.Empty;
 
     public string? EndpointUrl { get; set; }
 

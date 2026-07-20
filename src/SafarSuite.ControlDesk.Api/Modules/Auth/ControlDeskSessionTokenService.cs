@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Extensions.Options;
 using SafarSuite.ControlDesk.Application.Modules.Auth.AuthenticateLocalOperator;
 
 namespace SafarSuite.ControlDesk.Api.Modules.Auth;
@@ -42,20 +41,19 @@ public sealed record ControlDeskSessionTokenSnapshot(
     string Actor,
     IReadOnlyCollection<string> Roles,
     IReadOnlyCollection<string> Scopes,
-    long SecurityVersion);
+    long SecurityVersion,
+    string SigningKeyId);
 
 public sealed class ControlDeskSessionTokenService(
-    IOptions<ControlDeskOperatorAccessOptions> options,
+    IControlDeskSessionSigningKeyProvider signingKeyProvider,
     TimeProvider timeProvider) : IControlDeskSessionTokenService
 {
     public const string AuthenticationScheme = "ControlDeskBearer";
     public const string ScopeClaimType = "scope";
 
-    private const int TokenVersion = 2;
+    private const int TokenVersion = 3;
     private const int MaximumTokenLength = 16_384;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
-    private readonly ControlDeskOperatorAccessOptions _options = options.Value;
 
     public ControlDeskIssuedSession Issue(
         LocalOperatorSessionPrincipal localOperator,
@@ -70,6 +68,7 @@ public sealed class ControlDeskSessionTokenService(
         var scopes = Normalize(localOperator.Scopes);
         var payload = new SessionTokenPayload(
             TokenVersion,
+            signingKeyProvider.SessionSigningKeyId,
             localOperator.OperatorId,
             localOperator.Email.Trim(),
             actor,
@@ -130,6 +129,10 @@ public sealed class ControlDeskSessionTokenService(
 
         if (payload is null
             || payload.Version != TokenVersion
+            || !string.Equals(
+                payload.SigningKeyId,
+                signingKeyProvider.SessionSigningKeyId,
+                StringComparison.Ordinal)
             || payload.OperatorId == Guid.Empty
             || string.IsNullOrWhiteSpace(payload.Email)
             || string.IsNullOrWhiteSpace(payload.Actor)
@@ -152,13 +155,23 @@ public sealed class ControlDeskSessionTokenService(
             payload.Actor,
             Normalize(payload.Roles),
             Normalize(payload.Scopes),
-            payload.SecurityVersion));
+            payload.SecurityVersion,
+            payload.SigningKeyId));
     }
 
     private string Sign(string encodedPayload)
     {
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_options.SessionSigningSecret.Trim()));
-        return Base64UrlEncode(hmac.ComputeHash(Encoding.UTF8.GetBytes(encodedPayload)));
+        var key = signingKeyProvider.CopySessionSigningKey();
+
+        try
+        {
+            using var hmac = new HMACSHA256(key);
+            return Base64UrlEncode(hmac.ComputeHash(Encoding.UTF8.GetBytes(encodedPayload)));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
     }
 
     private static string[] Normalize(IEnumerable<string>? values) =>
@@ -208,6 +221,7 @@ public sealed class ControlDeskSessionTokenService(
 
     private sealed record SessionTokenPayload(
         int Version,
+        string SigningKeyId,
         Guid OperatorId,
         string Email,
         string Actor,

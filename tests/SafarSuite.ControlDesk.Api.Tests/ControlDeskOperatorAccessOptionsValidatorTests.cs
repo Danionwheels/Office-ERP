@@ -8,14 +8,16 @@ namespace SafarSuite.ControlDesk.Api.Tests;
 public sealed class ControlDeskOperatorAccessOptionsValidatorTests
 {
     [Fact]
-    public void Postgres_production_accepts_no_configured_users_with_external_signing_secret()
+    public void Postgres_production_rejects_external_signing_secret_configuration()
     {
         var validator = CreateValidator("Production", "Postgres");
         var options = ValidOptions();
 
         var result = validator.Validate(null, options);
 
-        Assert.True(result.Succeeded);
+        Assert.True(result.Failed);
+        Assert.Contains(result.Failures!, failure =>
+            failure.Contains("must not be supplied through Production configuration", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -67,12 +69,28 @@ public sealed class ControlDeskOperatorAccessOptionsValidatorTests
 
         Assert.True(result.Failed);
         Assert.Contains(result.Failures!, failure =>
-            failure.Contains("at least 32 characters", StringComparison.Ordinal));
+            failure.Contains("machine-secret provider is unavailable", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Production_accepts_machine_provider_material_without_configuration_secret()
+    {
+        var validator = CreateValidator(
+            "Production",
+            "Postgres",
+            new TestSigningKeyProvider("control-desk-session-generation"));
+        var options = ValidOptions();
+        options.SessionSigningSecret = string.Empty;
+
+        var result = validator.Validate(null, options);
+
+        Assert.True(result.Succeeded);
     }
 
     private static ControlDeskOperatorAccessOptionsValidator CreateValidator(
         string environmentName,
-        string persistenceProvider)
+        string persistenceProvider,
+        IControlDeskSessionSigningKeyProvider? signingKeyProvider = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -83,7 +101,8 @@ public sealed class ControlDeskOperatorAccessOptionsValidatorTests
 
         return new ControlDeskOperatorAccessOptionsValidator(
             new TestHostEnvironment(environmentName),
-            configuration);
+            configuration,
+            signingKeyProvider);
     }
 
     private static ControlDeskOperatorAccessOptions ValidOptions() => new()
@@ -112,5 +131,14 @@ public sealed class ControlDeskOperatorAccessOptionsValidatorTests
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
 
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private sealed class TestSigningKeyProvider(string keyId) : IControlDeskSessionSigningKeyProvider
+    {
+        private static readonly byte[] Key = new byte[32];
+
+        public string SessionSigningKeyId => keyId;
+
+        public byte[] CopySessionSigningKey() => Key.ToArray();
     }
 }

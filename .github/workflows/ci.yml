@@ -519,6 +519,23 @@ jobs:
         run: >-
           ./deploy/office-windows/database/Test-OfficeDatabaseLifecycle.Hermetic.ps1
 
+      - name: Prove Control Desk machine-secret ACL implementation
+        shell: pwsh
+        run: >-
+          dotnet test
+          tests/SafarSuite.ControlDesk.Api.Tests/SafarSuite.ControlDesk.Api.Tests.csproj
+          --configuration Release
+          --filter FullyQualifiedName~ControlDeskMachineSecretAclTests
+
+      - name: Prove native machine-secret ACL and normal-user denial
+        shell: powershell
+        run: |
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'safarsuite-office-package-evidence'
+          New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+          ./deploy/office-windows/security/Test-MachineSecretAcl.Native.ps1 `
+            -TestRoot (Join-Path $env:RUNNER_TEMP "safarsuite-machine-secret-acl-$([Guid]::NewGuid().ToString('N'))") `
+            -EvidencePath (Join-Path $evidenceRoot 'machine-secret-acl-evidence.json')
+
       - name: Prove PostgreSQL lifecycle boundary diagnostics
         shell: powershell
         run: >-

@@ -74,6 +74,20 @@ Work this queue in order unless a ticket is explicitly marked as an independent 
 
 Do not skip to the top-level installer before the operator and secret-custody boundary is fixed.
 
+## Current Task Card — `SEC04-06B`
+
+Objective: make the installed Office Control API consume its session-signing material only from the canonical DPAPI machine-secret envelope after exact Windows ACL validation, without changing the one-PC deployment boundary.
+
+| Step | Action | Pass condition |
+| --- | --- | --- |
+| `SEC04-06B.1` | Freeze the canonical ProgramData path, API service SID, and the pre-service and installed directory/file ACL profiles from the storage contract. | Tests assert the exact owner, protected DACL, allowed trustees, and rights for both lifecycle phases. |
+| `SEC04-06B.2` | Add ACL audit/convergence around `Infrastructure/Security/MachineSecrets`, including directory protection before any secret write, reparse-point refusal, atomic replacement protection, and same-machine repair. | ACL drift is detected; an authorized repair preserves the envelope generation, fingerprint, key identifier, and signing key. |
+| `SEC04-06B.3` | Add a read-only installed configuration provider and wire `Api/Program.cs` and authentication options to load only the validated key identifier and signing key. | Installed Production calls `Read`, never creates or reissues a secret, and missing, invalid, undecryptable, or ACL-invalid state fails closed with no appsettings, argument, environment, registry, or configuration-user fallback. |
+| `SEC04-06B.4` | Add focused Infrastructure/API coverage for ACL validation, provider loading, token key identifiers, authentication round trips, failure cases, and redaction. | Focused tests pass without writing secret material to output, logs, evidence, or published settings. |
+| `SEC04-06B.5` | Add and run a Windows PowerShell 5.1 native proof under `deploy/office-windows/security`, including a temporary normal local-user child process and package/evidence secret scans. | The normal account cannot read or replace the envelope; service read access and exact ACLs pass; cleanup succeeds; all existing solution, package, CI, and diff gates remain green. |
+
+Stopping condition: the exact Windows ACL and read-only installed-provider proof passes at one commit and all existing release gates remain green. Mark only `SEC04-06B` done and advance `SEC04-07A`; keep `L1-05` open for bootstrap, recovery, and the full installed security matrix.
+
 ## Completed Task Card — `DB03-F09`
 
 Objective: identify the one lifecycle mutation that changes a loader-ready sealed PostgreSQL runtime into an `initdb.exe` `0xC0000135` failure, without applying a corrective lifecycle change and without exposing arguments, stdin, credentials, unrestricted output, or full paths.

@@ -118,6 +118,11 @@ $webRoot = Join-Path $outputPath "wwwroot"
 New-Item -ItemType Directory -Force -Path $webRoot | Out-Null
 Get-ChildItem -LiteralPath $frontendDist -Force | Copy-Item -Destination $webRoot -Recurse -Force
 
+$developmentSettingsPath = Join-Path $outputPath "appsettings.Development.json"
+if (Test-Path -LiteralPath $developmentSettingsPath) {
+    Remove-Item -LiteralPath $developmentSettingsPath -Force
+}
+
 $databasePackage = & (Join-Path $PSScriptRoot "database\New-OfficeDatabasePackage.ps1") `
     -RepoRoot $repoRoot `
     -PackageDirectory $outputPath `
