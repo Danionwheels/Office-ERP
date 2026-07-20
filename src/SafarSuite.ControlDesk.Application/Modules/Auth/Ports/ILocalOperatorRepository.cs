@@ -14,6 +14,10 @@ public interface ILocalOperatorRepository
         string normalizedEmail,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<LocalOperator>> ListByNormalizedEmailAsync(
+        string normalizedEmail,
+        CancellationToken cancellationToken = default);
+
     Task<bool> ExistsByNormalizedEmailAsync(
         string normalizedEmail,
         CancellationToken cancellationToken = default);

@@ -106,6 +106,17 @@ public sealed class AuthenticateLocalOperatorHandlerTests
                     : null);
         }
 
+        public Task<IReadOnlyCollection<LocalOperator>> ListByNormalizedEmailAsync(
+            string normalizedEmail,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyCollection<LocalOperator>>(
+                string.Equals(
+                    normalizedEmail,
+                    localOperator.NormalizedEmail,
+                    StringComparison.Ordinal)
+                    ? [localOperator]
+                    : []);
+
         public Task<bool> ExistsByNormalizedEmailAsync(
             string normalizedEmail,
             CancellationToken cancellationToken = default) =>

@@ -179,6 +179,13 @@ public sealed class CreateLocalOperatorHandlerTests
             Task.FromResult(_operators.SingleOrDefault(candidate =>
                 candidate.NormalizedEmail == normalizedEmail));
 
+        public Task<IReadOnlyCollection<LocalOperator>> ListByNormalizedEmailAsync(
+            string normalizedEmail,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyCollection<LocalOperator>>(_operators
+                .Where(candidate => candidate.NormalizedEmail == normalizedEmail)
+                .ToArray());
+
         public Task<bool> ExistsByNormalizedEmailAsync(
             string normalizedEmail,
             CancellationToken cancellationToken = default) =>
