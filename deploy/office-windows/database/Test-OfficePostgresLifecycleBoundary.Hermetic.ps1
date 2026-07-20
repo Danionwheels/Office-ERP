@@ -93,6 +93,70 @@ function Get-BoundaryTestDecision {
     } $Transitions $Probes
 }
 
+$emptyListBuilderProof = & $boundaryModule {
+    param($Module)
+
+    $originalVersionProbe = ${function:Invoke-BoundaryVersionProbe}
+    try {
+        function Invoke-BoundaryVersionProbe {
+            param(
+                [Management.Automation.PSModuleInfo]$LifecycleModule,
+                [string]$RuntimeRoot,
+                [string]$Phase,
+                [string]$RuntimeClass,
+                [string]$AclClass,
+                [string]$LaunchContext,
+                [string]$Executable,
+                [string]$PostgresVersion,
+                [int]$Sequence
+            )
+
+            return [ordered]@{
+                sequence = $Sequence
+                phase = $Phase
+                runtimeClass = $RuntimeClass
+                aclClass = $AclClass
+                launchContext = $LaunchContext
+                executable = $Executable
+                completed = $true
+                exitCode = 0
+                exitCodeHex = '0x00000000'
+                versionMatched = $true
+                issueCode = $null
+            }
+        }
+
+        $probeList = [Collections.Generic.List[object]]::new()
+        $initialCount = $probeList.Count
+        Add-BoundaryProbeSet `
+            -Probes $probeList `
+            -LifecycleModule $Module `
+            -RuntimeRoot 'empty-list-binding-runtime' `
+            -Phase FreshBeforeAcl `
+            -RuntimeClass FreshExtracted `
+            -AclClass InheritedRunnerAcl `
+            -PostgresVersion '17.10'
+        return [pscustomobject]@{
+            InitialCount = $initialCount
+            Probes = @($probeList)
+        }
+    }
+    finally {
+        Set-Item -Path Function:\Invoke-BoundaryVersionProbe -Value $originalVersionProbe
+    }
+} $lifecycleModule
+
+$builtProbes = @($emptyListBuilderProof.Probes)
+Assert-BoundaryTest -Condition ($emptyListBuilderProof.InitialCount -eq 0) -Message 'The real probe-set binding test did not start empty.'
+Assert-BoundaryTest -Condition ($builtProbes.Count -eq 4) -Message 'The real probe-set builder did not add four probes to an empty typed list.'
+Assert-BoundaryTest `
+    -Condition ((@($builtProbes.sequence) -join ',') -ceq '1,2,3,4') `
+    -Message 'The real probe-set builder did not retain the exact probe sequence.'
+Assert-BoundaryTest `
+    -Condition ((@($builtProbes | ForEach-Object { "$($_.executable)|$($_.launchContext)" }) -join ',') -ceq
+        'initdb.exe|InheritedProcess,initdb.exe|RuntimeBin,postgres.exe|InheritedProcess,postgres.exe|RuntimeBin') `
+    -Message 'The real probe-set builder did not retain the exact executable and launch-context matrix.'
+
 $transitionCases = @(
     [pscustomobject]@{ Name = 'AlreadySatisfied'; Before = '14.60.0.0'; ExitCode = $null; After = '14.60.0.0'; Throws = $false },
     [pscustomobject]@{ Name = 'InstalledNoReboot'; Before = $null; ExitCode = 0; After = '14.60.0.0'; Throws = $false },
@@ -462,6 +526,7 @@ Assert-BoundaryTest `
     -Message 'A workflow step can hide the native lifecycle failure.'
 
 Write-Host 'Office PostgreSQL lifecycle boundary diagnostics hermetic proof passed.'
+Write-Host 'Empty typed probe-set binding: covered'
 Write-Host 'VC++ transition classifications: covered'
 Write-Host 'Fresh, ACL, working-directory, and installed boundaries: covered'
 Write-Host 'Evidence schema and forbidden-material rejection: covered'

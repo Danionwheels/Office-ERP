@@ -262,7 +262,7 @@ function Invoke-BoundaryVersionProbe {
 
 function Add-BoundaryProbeSet {
     param(
-        [Parameter(Mandatory = $true)][Collections.Generic.List[object]]$Probes,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][Collections.Generic.List[object]]$Probes,
         [Parameter(Mandatory = $true)][Management.Automation.PSModuleInfo]$LifecycleModule,
         [Parameter(Mandatory = $true)][string]$RuntimeRoot,
         [Parameter(Mandatory = $true)][ValidateSet('FreshBeforeAcl', 'FreshAfterAcl', 'InstalledAfterLifecycle')][string]$Phase,
