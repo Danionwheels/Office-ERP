@@ -17,4 +17,11 @@ public interface ILocalOperatorRepository
     Task<bool> ExistsByNormalizedEmailAsync(
         string normalizedEmail,
         CancellationToken cancellationToken = default);
+
+    Task AcquireAdministratorMutationLockAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<bool> HasOtherActiveAdministratorAsync(
+        LocalOperatorId excludedOperatorId,
+        CancellationToken cancellationToken = default);
 }

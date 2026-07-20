@@ -113,6 +113,13 @@ public sealed class AuthenticateLocalOperatorHandlerTests
                 normalizedEmail,
                 localOperator.NormalizedEmail,
                 StringComparison.Ordinal));
+
+        public Task AcquireAdministratorMutationLockAsync(
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<bool> HasOtherActiveAdministratorAsync(
+            LocalOperatorId excludedOperatorId,
+            CancellationToken cancellationToken = default) => Task.FromResult(false);
     }
 
     private sealed class StubPasswordCodec(string acceptedPassword) : ILocalOperatorPasswordCodec

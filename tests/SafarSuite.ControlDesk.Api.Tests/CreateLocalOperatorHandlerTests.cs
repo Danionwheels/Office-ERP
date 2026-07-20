@@ -184,6 +184,18 @@ public sealed class CreateLocalOperatorHandlerTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(_operators.Any(candidate =>
                 candidate.NormalizedEmail == normalizedEmail));
+
+        public Task AcquireAdministratorMutationLockAsync(
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<bool> HasOtherActiveAdministratorAsync(
+            LocalOperatorId excludedOperatorId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_operators.Any(candidate =>
+                candidate.Id != excludedOperatorId
+                && candidate.Status == LocalOperatorStatus.Active
+                && candidate.Roles.Contains(LocalOperatorRole.Administrator, StringComparer.Ordinal)
+                && candidate.Scopes.Contains(LocalOperatorScope.Admin, StringComparer.Ordinal)));
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork
