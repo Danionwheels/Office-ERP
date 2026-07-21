@@ -247,7 +247,7 @@ There will be no unauthenticated first-operator web endpoint. Bootstrap and emer
 | `SVC05-10B` | `DONE` | Extend the same setup entry through machine secrets and no-echo first-operator provisioning. | `SEC04-07A`, `SVC05-10A` | Operator-ready setup, protected passfile configuration, machine-secret bootstrap, and rerun refusal pass in hosted CI run [29792481386](https://github.com/Danionwheels/Office-ERP/actions/runs/29792481386). |
 | `SVC05-10C` | `CURRENT` | Extend the same setup entry through API service, launcher/shortcut, and final readiness. | `SVC05-03`, `SVC05-05B`, `SVC05-06B`, `SVC05-08`, `SVC05-10B` | One invocation reaches routine operator entry with explicit rollback boundaries. |
 | `SVC05-11A` | `PENDING` | Add the complete one-setup lifecycle to the hermetic Windows gate. | `SVC05-10C`, `SVC05-09` | Interruption, recovery, ACL drift, and reinstall simulations pass. |
-| `SVC05-11B` | `PENDING` | Run the complete setup/service lifecycle on a disposable native Windows host. | `SVC05-11A` | Real stop/start, interruption, recovery, ACL, uninstall, and reinstall evidence pass. |
+| `SVC05-11B` | `PENDING` | Run the complete setup/service lifecycle on a disposable native Windows host. | `SVC05-11A` | Native-host acceptance runbook and 9-check contract are prepared in [office-native-setup-acceptance-v1.md](../architecture/office-native-setup-acceptance-v1.md); physical disposable-host evidence remains required. |
 | `SVC05-12` | `PENDING` | Run a persistent reference-PC cold reboot with both real services and launcher login. | `SVC05-11B` | New boot ID, exact migrations, Ready, loopback listeners, and normal login. This also supplies `DB03-05`. |
 
 ### `OFFICE-P0-06` — Backup And Replacement-PC Restore

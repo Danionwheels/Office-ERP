@@ -579,6 +579,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeSetupLifecycle.Hermetic.ps1
 
+      - name: Validate native setup acceptance contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeNativeSetupAcceptance.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-
