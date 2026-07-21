@@ -329,6 +329,10 @@ The fresh package also passed `Test-OfficePostgresRuntimeDependencies.ps1`: raw 
 
 Final local sanity pass: `dotnet test SafarSuite.ControlDesk.sln --configuration Release --no-restore` passed 127 tests, including 13 architecture tests. This is regression evidence only; it does not replace the designated disposable Windows native-service proof.
 
+CI run `29866597537` on commit `10f6a8f` completed UI, backend, deployment, office packaging, package smoke, and raw runtime probes successfully, then reproduced `initdb.exe` `0xC0000135` during the native lifecycle step. Uploaded boundary evidence shows all 12 fresh/restricted/installed version probes passed and VC++ was already satisfied; outcome is `FullInitdbInvocationBoundary` / `VersionProbesPassButLifecycleFails`.
+
+The focused runtime-PATH workaround in commit `68b72f6` was tested in CI run `29867228511` and produced the identical `initdb.exe` `0xC0000135` failure. It was reverted in commit `fb34f38`; no unproven lifecycle workaround remains. This confirms the retained DB03-F09 boundary diagnosis and prevents speculative fixes from accumulating.
+
 CI handoff check 2026-07-22: the repository remote is `https://github.com/Danionwheels/Office-ERP.git`, but local `gh auth status` reports the stored GitHub token is invalid. No workflow dispatch, push, or remote mutation was attempted. Re-authentication is required before the disposable Windows native lifecycle proof can be started from this workspace.
 
 While the external native proof remains pending, a read-only REC-05 characterization was recorded in `docs/planning/rec05-client-characterization-2026-07-22.md`. It inventories the existing 21 client routes and narrows the first replacement workspace to identity, search/list, selection, update, and primary-contact maintenance. No REC-05 production implementation or database change has started.
