@@ -2284,7 +2284,6 @@ function New-OfficeNativeDatabaseAdapter {
                     '--auth-host=scram-sha-256', '--auth-local=scram-sha-256',
                     '--encoding=UTF8', '--locale=C', "--pwfile=$bootstrapPasswordPath"
                 ) `
-                -Environment @{ PATH = "$(Join-Path $ctx.Paths.RuntimeRoot 'bin');$([Environment]::GetEnvironmentVariable('PATH', 'Process'))" } `
                 -TimeoutSeconds 180 | Out-Null
             Invoke-OfficeDatabaseTestFault -Context $ctx -Point 'AfterClusterInitialize'
         }
