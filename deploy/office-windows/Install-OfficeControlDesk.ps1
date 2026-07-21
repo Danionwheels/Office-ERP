@@ -18,8 +18,11 @@ $databaseParameters = @{
 }
 
 if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight and database-ready setup')) {
+    $checkpoint = 'Starting'
+    try {
     $databaseResult = & $databaseInstaller @databaseParameters
     if ($LASTEXITCODE -ne 0) { throw 'The database setup entry failed.' }
+    $checkpoint = 'DatabaseReady'
 
     $applicationPassfilePath = Join-Path $ProgramDataRoot 'Secrets\Database\application.pgpass'
     if (-not (Test-Path -LiteralPath $applicationPassfilePath -PathType Leaf)) {
@@ -49,12 +52,52 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
     finally {
         [Environment]::SetEnvironmentVariable('ControlDesk__ConnectionStrings__ControlDesk', $priorConnectionString, 'Process')
     }
+    $checkpoint = 'OperatorReady'
+
+    $apiPayloadInstaller = Join-Path $PSScriptRoot 'Install-OfficeApiPayload.ps1'
+    & $apiPayloadInstaller -PackageDirectory $PackageDirectory -ProgramFilesRoot $ProgramFilesRoot
+    if ($LASTEXITCODE -ne 0) { throw 'API payload installation failed.' }
+    $checkpoint = 'ApiPayloadInstalled'
+
+    $installRoot = Join-Path $ProgramFilesRoot 'SafarSuite\ControlDesk'
+    $launcherDirectory = Join-Path $installRoot 'Launcher'
+    New-Item -ItemType Directory -Force -Path $launcherDirectory | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PackageDirectory 'Start-OfficeControlDesk.ps1') `
+        -Destination (Join-Path $launcherDirectory 'Start-OfficeControlDesk.ps1') -Force
+
+    $registerService = Join-Path $PSScriptRoot 'Register-OfficeApiService.ps1'
+    & $registerService -InstallRoot $installRoot -ProgramDataRoot $ProgramDataRoot
+    if ($LASTEXITCODE -ne 0) { throw 'API service registration failed.' }
+    $checkpoint = 'ApiRegistered'
+
+    $configureActivation = Join-Path $PSScriptRoot 'Configure-OfficeServiceActivation.ps1'
+    & $configureActivation
+    if ($LASTEXITCODE -ne 0) { throw 'Service activation configuration failed.' }
+    $checkpoint = 'ServicesConfigured'
+
+    $installShortcuts = Join-Path $PSScriptRoot 'Install-OfficeShortcuts.ps1'
+    & $installShortcuts -InstallRoot $installRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Shortcut installation failed.' }
+    $checkpoint = 'ShortcutsInstalled'
+
+    $activateApi = Join-Path $PSScriptRoot 'Activate-OfficeApiService.ps1'
+    & $activateApi
+    if ($LASTEXITCODE -ne 0) { throw 'Final API readiness activation failed.' }
+    $checkpoint = 'Ready'
 
     [pscustomobject]@{
-        checkpoint = 'OperatorReady'
+        checkpoint = $checkpoint
         database = $databaseResult.database
         apiDependency = $databaseResult.apiDependency
         productionSettings = Join-Path $ProgramDataRoot 'Config\appsettings.Production.json'
-        nextStep = 'Install the API payload, register the service, and activate readiness-gated services.'
+        installRoot = $installRoot
+        nextStep = 'Launch SafarSuite Control Desk from the owned shortcut.'
+    }
+    }
+    catch {
+        if ($checkpoint -in @('ApiRegistered', 'ServicesConfigured', 'ShortcutsInstalled')) {
+            Stop-Service -Name 'SafarSuiteControlDeskApi' -Force -ErrorAction SilentlyContinue
+        }
+        throw "Office setup failed at checkpoint '$checkpoint'. Owned payload/configuration remain for repair; database, operators, and secrets were not removed. $($_.Exception.Message)"
     }
 }

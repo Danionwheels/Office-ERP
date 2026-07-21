@@ -30,7 +30,7 @@ On an elevated disposable/reference Windows PC, the packaged setup entry is:
   -ProgramDataRoot 'C:/ProgramData'
 ```
 
-It installs or verifies the owned PostgreSQL cluster, generates non-secret production settings that reference the protected application passfile, creates or loads the DPAPI machine-secret envelope, and invokes the packaged no-echo first-operator bootstrap. A rerun refuses to replace an existing operator or machine secret. It stops at the explicit `OperatorReady` checkpoint; API payload installation and service activation remain the next setup phase.
+It installs or verifies the owned PostgreSQL cluster, generates non-secret production settings that reference the protected application passfile, creates or loads the DPAPI machine-secret envelope, invokes the packaged no-echo first-operator bootstrap, installs the API payload, registers/configures both services, installs the owned shortcut, and verifies final `/ready` status. A rerun refuses to replace an existing operator or machine secret. Failures leave owned payload/configuration available for repair and never remove database, operator, or secret state.
 
 The lower-level database lifecycle entry points remain available for repair and diagnostics:
 
