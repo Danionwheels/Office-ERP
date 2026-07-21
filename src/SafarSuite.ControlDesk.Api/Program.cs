@@ -33,13 +33,15 @@ var installedProductionSettingsPath = Path.Combine(
     "Config",
     "appsettings.Production.json");
 var installedProductionSettingsDirectory = Path.GetDirectoryName(installedProductionSettingsPath)!;
-builder.Configuration
-    .AddJsonFile(
+if (Directory.Exists(installedProductionSettingsDirectory))
+{
+    builder.Configuration.AddJsonFile(
         new PhysicalFileProvider(installedProductionSettingsDirectory),
         Path.GetFileName(installedProductionSettingsPath),
         optional: true,
-        reloadOnChange: false)
-    .AddEnvironmentVariables();
+        reloadOnChange: false);
+}
+builder.Configuration.AddEnvironmentVariables();
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
