@@ -574,6 +574,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeFirstOperatorBootstrap.Hermetic.ps1
 
+      - name: Prove complete setup lifecycle contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeSetupLifecycle.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-
