@@ -333,6 +333,8 @@ CI run `29866597537` on commit `10f6a8f` completed UI, backend, deployment, offi
 
 The focused runtime-PATH workaround in commit `68b72f6` was tested in CI run `29867228511` and produced the identical `initdb.exe` `0xC0000135` failure. It was reverted in commit `fb34f38`; no unproven lifecycle workaround remains. This confirms the retained DB03-F09 boundary diagnosis and prevents speculative fixes from accumulating.
 
+Working-directory diagnostic commit `57550af` was tested in CI run `29868373349`; it also produced the identical `initdb.exe` `0xC0000135` failure after all package/probe gates passed. It was reverted in commit `25c0edfe`. Both candidate variables are now explicitly disproven; the remaining investigation must instrument the full `initdb` child/dependency path before any corrective lifecycle change.
+
 CI handoff check 2026-07-22: the repository remote is `https://github.com/Danionwheels/Office-ERP.git`, but local `gh auth status` reports the stored GitHub token is invalid. No workflow dispatch, push, or remote mutation was attempted. Re-authentication is required before the disposable Windows native lifecycle proof can be started from this workspace.
 
 While the external native proof remains pending, a read-only REC-05 characterization was recorded in `docs/planning/rec05-client-characterization-2026-07-22.md`. It inventories the existing 21 client routes and narrows the first replacement workspace to identity, search/list, selection, update, and primary-contact maintenance. No REC-05 production implementation or database change has started.
