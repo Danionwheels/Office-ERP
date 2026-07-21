@@ -10,6 +10,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $databaseInstaller = Join-Path $PSScriptRoot 'database\Install-OfficeDatabase.ps1'
+$installedProgramFilesRoot = Join-Path $ProgramFilesRoot 'SafarSuite\ControlDesk'
+$installedProgramDataRoot = Join-Path $ProgramDataRoot 'SafarSuite\ControlDesk'
 
 function Invoke-OfficeSetupPowerShellStep {
     param(
@@ -28,6 +30,21 @@ function Invoke-OfficeSetupPowerShellStep {
     }
 }
 
+function Wait-OfficeSetupFile {
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [Parameter(Mandatory)] [string]$Description,
+        [int]$TimeoutSeconds = 15
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) { return }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    throw "$Description was not published within $TimeoutSeconds seconds: $Path"
+}
+
 $databaseParameters = @{
     PackageDirectory = $PackageDirectory
     ProgramFilesRoot = $ProgramFilesRoot
@@ -44,16 +61,16 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
         -FailureMessage 'The database setup entry failed.'
     $checkpoint = 'DatabaseReady'
 
-    $applicationPassfilePath = Join-Path $ProgramDataRoot 'Secrets\Database\application.pgpass'
-    if (-not (Test-Path -LiteralPath $applicationPassfilePath -PathType Leaf)) {
-        throw 'The database setup did not leave the protected application passfile required by the API.'
-    }
+    $applicationPassfilePath = Join-Path $installedProgramDataRoot 'Secrets\Database\application.pgpass'
+    Wait-OfficeSetupFile `
+        -Path $applicationPassfilePath `
+        -Description 'The database setup did not leave the protected application passfile required by the API'
 
     $settingsGenerator = Join-Path $PSScriptRoot 'New-OfficeProductionSettings.ps1'
     Invoke-OfficeSetupPowerShellStep `
         -Path $settingsGenerator `
         -Parameters @{
-            ConfigRoot = Join-Path $ProgramDataRoot 'Config'
+            ConfigRoot = Join-Path $installedProgramDataRoot 'Config'
             ApplicationPassfilePath = $applicationPassfilePath
         } `
         -FailureMessage 'Production settings generation failed.'
@@ -85,7 +102,7 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
         -FailureMessage 'API payload installation failed.'
     $checkpoint = 'ApiPayloadInstalled'
 
-    $installRoot = Join-Path $ProgramFilesRoot 'SafarSuite\ControlDesk'
+    $installRoot = $installedProgramFilesRoot
     $launcherDirectory = Join-Path $installRoot 'Launcher'
     New-Item -ItemType Directory -Force -Path $launcherDirectory | Out-Null
     Copy-Item -LiteralPath (Join-Path $PackageDirectory 'Start-OfficeControlDesk.ps1') `
@@ -94,7 +111,7 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
     $registerService = Join-Path $PSScriptRoot 'Register-OfficeApiService.ps1'
     Invoke-OfficeSetupPowerShellStep `
         -Path $registerService `
-        -Parameters @{ InstallRoot = $installRoot; ProgramDataRoot = $ProgramDataRoot } `
+        -Parameters @{ InstallRoot = $installRoot; ProgramDataRoot = $installedProgramDataRoot } `
         -FailureMessage 'API service registration failed.'
     $checkpoint = 'ApiRegistered'
 
@@ -121,7 +138,7 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
         checkpoint = $checkpoint
         database = $databaseResult.database
         apiDependency = $databaseResult.apiDependency
-        productionSettings = Join-Path $ProgramDataRoot 'Config\appsettings.Production.json'
+        productionSettings = Join-Path $installedProgramDataRoot 'Config\appsettings.Production.json'
         installRoot = $installRoot
         nextStep = 'Launch SafarSuite Control Desk from the owned shortcut.'
     }

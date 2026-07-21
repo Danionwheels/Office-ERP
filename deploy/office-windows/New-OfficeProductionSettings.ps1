@@ -29,6 +29,10 @@ $settings = [ordered]@{
 $outputPath = Join-Path $ConfigRoot 'appsettings.Production.json'
 $settings | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $outputPath -Encoding utf8
 $content = Get-Content -Raw -LiteralPath $outputPath
-if ($content -match '(?i)(password|secret|token|apikey|privatekey)') { throw 'Generated Production settings contain a secret-bearing property.' }
+# Inspect JSON property names, not values: the canonical protected passfile path
+# contains the directory name "Secrets" and must remain a valid non-secret value.
+if ($content -match '(?im)^\s*"[^"]*(password|secret|token|apikey|privatekey)[^"]*"\s*:') {
+    throw 'Generated Production settings contain a secret-bearing property.'
+}
 if ($content -notmatch '(?i)Passfile=') { throw 'Generated Production settings must reference the protected PostgreSQL application passfile.' }
 Write-Output "Generated non-secret Production settings at $outputPath."

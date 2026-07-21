@@ -3,8 +3,10 @@ $source = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'Install-Office
 $checks = [ordered]@{
     administrator = $source.Contains('#Requires -RunAsAdministrator')
     nestedPowerShellExitState = $source.Contains('Invoke-OfficeSetupPowerShellStep') -and $source.Contains('$global:LASTEXITCODE = 0')
+    protectedFilePublicationWait = $source.Contains('Wait-OfficeSetupFile') -and $source.Contains('TimeoutSeconds = 15')
     databaseEntry = $source.Contains('Install-OfficeDatabase.ps1')
     explicitRoots = $source.Contains('ProgramFilesRoot') -and $source.Contains('ProgramDataRoot')
+    canonicalProductRoots = $source.Contains('Join-Path $ProgramDataRoot ''SafarSuite\ControlDesk''') -and $source.Contains('Join-Path $ProgramFilesRoot ''SafarSuite\ControlDesk''')
     apiDependency = $source.Contains('ExpectedApiExecutablePath')
     applicationPassfile = $source.Contains('application.pgpass')
     productionSettings = $source.Contains('New-OfficeProductionSettings.ps1') -and $source.Contains('appsettings.Production.json')
