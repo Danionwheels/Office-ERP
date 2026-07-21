@@ -24,7 +24,10 @@ $settings = [ordered]@{
         OperatorAccess = [ordered]@{ SessionMinutes = 480 }
     }
     ControlCloud = [ordered]@{ OutboxWorker = [ordered]@{ Enabled = $false; BatchSize = 20; PollIntervalSeconds = 15 } }
-    Kestrel = [ordered]@{ Endpoints = [ordered]@{ Http = [ordered]@{ Url = $ApiUrl } } }
+    # The sealed package already defines the OfficeLocal endpoint. Use the
+    # same endpoint name so generated settings override its URL instead of
+    # adding a second listener on the same loopback port.
+    Kestrel = [ordered]@{ Endpoints = [ordered]@{ OfficeLocal = [ordered]@{ Url = $ApiUrl } } }
 }
 $outputPath = Join-Path $ConfigRoot 'appsettings.Production.json'
 $settings | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $outputPath -Encoding utf8

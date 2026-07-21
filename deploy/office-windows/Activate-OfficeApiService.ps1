@@ -20,17 +20,29 @@ if ($database.Status -ne 'Running') { throw 'API activation refused because Post
 try {
     if ($api.Status -ne 'Running') { Start-Service -Name $ApiServiceName }
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastServiceState = $api.Status
+    $lastReadinessFailure = $null
     do {
+        $api = Get-Service -Name $ApiServiceName -ErrorAction Stop
+        $lastServiceState = $api.Status
+        if ($api.Status -eq 'Stopped') {
+            $serviceDetails = Get-CimInstance Win32_Service -Filter "Name='$ApiServiceName'" -ErrorAction SilentlyContinue
+            $exitCode = if ($null -eq $serviceDetails) { 'unknown' } else { [string]$serviceDetails.ExitCode }
+            throw "The Control Desk API stopped during activation (service exit code $exitCode)."
+        }
         try {
             $readiness = Invoke-RestMethod -Uri $ReadyUrl -TimeoutSec 2
             if ($readiness.status -eq 'Ready' -and $readiness.database.status -eq 'Ready') {
                 Write-Output 'Control Desk API activated after database and migration readiness.'
                 return
             }
-        } catch { }
+            $lastReadinessFailure = "The API returned a non-ready response ($($readiness.status))."
+        } catch {
+            $lastReadinessFailure = $_.Exception.Message
+        }
         Start-Sleep -Milliseconds 500
     } while ([DateTimeOffset]::UtcNow -lt $deadline)
-    throw 'The Control Desk API did not reach database-ready state within the activation timeout.'
+    throw "The Control Desk API did not reach database-ready state within the activation timeout. Last service state: $lastServiceState. Last readiness result: $lastReadinessFailure"
 }
 catch {
     Stop-Service -Name $ApiServiceName -Force -ErrorAction SilentlyContinue

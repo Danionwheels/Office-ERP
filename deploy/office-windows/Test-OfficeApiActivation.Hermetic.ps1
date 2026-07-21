@@ -7,6 +7,8 @@ $checks = [ordered]@{
     loopback = $source.Contains('127\.0\.0\.1')
     timeout = $source.Contains('TimeoutSeconds')
     stopOnFailure = $source.Contains('Stop-Service -Name $ApiServiceName')
+    reportsStoppedService = $source.Contains('stopped during activation') -and $source.Contains('service exit code')
+    reportsLastReadiness = $source.Contains('Last readiness result') -and $source.Contains('lastReadinessFailure')
 }
 foreach ($check in $checks.GetEnumerator()) { if (-not $check.Value) { throw "API activation contract check failed: $($check.Key)" } }
 Write-Host "API activation hermetic contract: passed ($($checks.Count) checks)"
