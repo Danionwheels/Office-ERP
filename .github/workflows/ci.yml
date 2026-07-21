@@ -569,6 +569,11 @@ jobs:
         run: >-
           ./deploy/office-windows/Test-OfficeSetupEntry.Hermetic.ps1
 
+      - name: Prove first-operator bootstrap contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeFirstOperatorBootstrap.Hermetic.ps1
+
       - name: Prove Control Desk machine-secret ACL implementation
         shell: pwsh
         run: >-

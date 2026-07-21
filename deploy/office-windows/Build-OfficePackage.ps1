@@ -20,6 +20,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $frontendRoot = Join-Path $repoRoot "apps\control-desk-ui"
 $frontendDist = Join-Path $frontendRoot "dist"
 $apiProject = Join-Path $repoRoot "src\SafarSuite.ControlDesk.Api\SafarSuite.ControlDesk.Api.csproj"
+$firstOperatorProject = Join-Path $repoRoot "tools\SafarSuite.ControlDesk.FirstOperator\SafarSuite.ControlDesk.FirstOperator.csproj"
 $outputPath = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
     [System.IO.Path]::GetFullPath($OutputDirectory)
 }
@@ -114,6 +115,25 @@ Invoke-NativeCommand `
     ) `
     -WorkingDirectory $repoRoot
 
+$setupOutput = Join-Path $outputPath "Setup"
+New-Item -ItemType Directory -Force -Path $setupOutput | Out-Null
+Invoke-NativeCommand `
+    -FilePath "dotnet" `
+    -Arguments @(
+        "publish",
+        $firstOperatorProject,
+        "--configuration", "Release",
+        "--runtime", "win-x64",
+        "--self-contained", "true",
+        "--output", $setupOutput,
+        "-p:PublishSingleFile=false",
+        "-p:DebugType=None",
+        "-p:DebugSymbols=false",
+        "-p:InformationalVersion=1.0.0+$sourceRevision",
+        "-p:IncludeSourceRevisionInInformationalVersion=false"
+    ) `
+    -WorkingDirectory $repoRoot
+
 $webRoot = Join-Path $outputPath "wwwroot"
 New-Item -ItemType Directory -Force -Path $webRoot | Out-Null
 Get-ChildItem -LiteralPath $frontendDist -Force | Copy-Item -Destination $webRoot -Recurse -Force
@@ -129,6 +149,22 @@ $databasePackage = & (Join-Path $PSScriptRoot "database\New-OfficeDatabasePackag
     -PostgresDistributionArchivePath $PostgresDistributionArchivePath `
     -VisualCppRedistributablePath $VisualCppRedistributablePath `
     -SourceRevision $sourceRevision
+
+$setupScripts = @(
+    'Install-OfficeControlDesk.ps1',
+    'New-OfficeProductionSettings.ps1',
+    'Install-OfficeApiPayload.ps1',
+    'Register-OfficeApiService.ps1',
+    'Configure-OfficeServiceActivation.ps1',
+    'Activate-OfficeApiService.ps1',
+    'Repair-OfficeApiService.ps1',
+    'Start-OfficeControlDesk.ps1',
+    'Install-OfficeShortcuts.ps1',
+    'Uninstall-OfficeControlDesk.ps1'
+)
+foreach ($setupScript in $setupScripts) {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot $setupScript) -Destination (Join-Path $outputPath $setupScript)
+}
 
 if ($RequireCleanSource) {
     $finalSourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
@@ -174,6 +210,10 @@ $manifest = [ordered]@{
             manifestSha256 = $databaseManifestHash
             migrationCount = [int]$databasePackage.MigrationCount
             migrationTarget = [string]$databasePackage.MigrationTarget
+        }
+        setup = [ordered]@{
+            firstOperatorExecutable = "Setup\SafarSuite.ControlDesk.FirstOperator.exe"
+            creationWorkPackage = "SVC05-10B"
         }
     }
 }

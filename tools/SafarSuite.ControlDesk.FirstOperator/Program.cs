@@ -4,11 +4,12 @@ using SafarSuite.ControlDesk.Application.Modules.Auth.ProvisionFirstOperator;
 using SafarSuite.ControlDesk.Domain.Modules.Auth;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 using SafarSuite.ControlDesk.Infrastructure.Security;
+using SafarSuite.ControlDesk.Infrastructure.Security.MachineSecrets;
 
 if (args is ["--help"] or ["-h"])
 {
     Console.WriteLine("SafarSuite Control Desk first-operator bootstrap");
-    Console.WriteLine("Usage: dotnet run --project tools/SafarSuite.ControlDesk.FirstOperator -- --connection <PostgreSQL connection string>");
+    Console.WriteLine("Usage: SafarSuite.ControlDesk.FirstOperator.exe [--connection <PostgreSQL connection string>]");
     return 0;
 }
 
@@ -27,6 +28,17 @@ if (string.IsNullOrWhiteSpace(connection))
     return 2;
 }
 
+await using var db = new ControlDeskDbContext(
+    new DbContextOptionsBuilder<ControlDeskDbContext>()
+        .UseNpgsql(connection)
+        .Options);
+
+if (await db.LocalOperators.AnyAsync())
+{
+    Console.Error.WriteLine("First-operator provisioning is single-use; an operator already exists.");
+    return 2;
+}
+
 var email = ReadRequired("Operator email: ");
 var fullName = ReadRequired("Operator full name: ");
 var password = ReadSecret("Operator password: ");
@@ -37,14 +49,14 @@ if (!string.Equals(password, confirmation, StringComparison.Ordinal))
     return 2;
 }
 
-await using var db = new ControlDeskDbContext(
-    new DbContextOptionsBuilder<ControlDeskDbContext>()
-        .UseNpgsql(connection)
-        .Options);
+var machineSecretStore = new ControlDeskMachineSecretEnvelopeStore(
+    ControlDeskMachineSecretPaths.GetCanonicalEnvelopePath(),
+    ControlDeskMachineSecretAccessProfile.PreService);
+machineSecretStore.CreateOrLoad().Dispose();
 
 var decision = FirstOperatorProvisioningPolicy.Evaluate(new(
     IsElevated: true,
-    OperatorAlreadyExists: await db.LocalOperators.AnyAsync(),
+    OperatorAlreadyExists: false,
     email,
     fullName,
     password));

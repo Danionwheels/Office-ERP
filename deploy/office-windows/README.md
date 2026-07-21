@@ -21,7 +21,18 @@ Smoke the package:
 
 The package smoke deliberately runs the API with Development in-memory persistence so it remains non-elevated and independent of the native database proof. The separate lifecycle gates test package integrity, state-machine behavior under Windows PowerShell 5.1, and a real PostgreSQL Windows service on a disposable GitHub runner. The hosted runner proves automatic start configuration, not a physical reboot.
 
-On an elevated disposable/reference Windows PC, the packaged database entry points are:
+On an elevated disposable/reference Windows PC, the packaged setup entry is:
+
+```powershell
+./Install-OfficeControlDesk.ps1 `
+  -PackageDirectory . `
+  -ProgramFilesRoot 'C:/Program Files' `
+  -ProgramDataRoot 'C:/ProgramData'
+```
+
+It installs or verifies the owned PostgreSQL cluster, generates non-secret production settings that reference the protected application passfile, creates or loads the DPAPI machine-secret envelope, and invokes the packaged no-echo first-operator bootstrap. A rerun refuses to replace an existing operator or machine secret. It stops at the explicit `OperatorReady` checkpoint; API payload installation and service activation remain the next setup phase.
+
+The lower-level database lifecycle entry points remain available for repair and diagnostics:
 
 ```powershell
 ./database/Install-OfficeDatabase.ps1
