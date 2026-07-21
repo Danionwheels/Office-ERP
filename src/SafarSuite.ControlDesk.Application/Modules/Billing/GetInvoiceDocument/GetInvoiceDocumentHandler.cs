@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Common;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
@@ -12,15 +13,18 @@ public sealed class GetInvoiceDocumentHandler
     private readonly IInvoiceRepository _invoices;
     private readonly ICreditNoteRepository _creditNotes;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
 
     public GetInvoiceDocumentHandler(
         IInvoiceRepository invoices,
         ICreditNoteRepository creditNotes,
-        IJournalEntryRepository journalEntries)
+        IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts)
     {
         _invoices = invoices;
         _creditNotes = creditNotes;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
     }
 
     public async Task<Result<InvoiceDocumentResult>> HandleAsync(
@@ -45,13 +49,13 @@ public sealed class GetInvoiceDocumentHandler
 
         var issueJournal = await FindJournalAsync(
             JournalSourceType.BillingInvoice,
-            invoice.Number.Value,
+            invoice.Id.Value,
             invoice.CurrencyCode,
             invoice.TotalAmount.Amount,
             cancellationToken);
         var voidJournal = await FindJournalAsync(
             JournalSourceType.BillingInvoiceVoid,
-            invoice.Number.Value,
+            invoice.Id.Value,
             invoice.CurrencyCode,
             invoice.TotalAmount.Amount,
             cancellationToken);
@@ -60,35 +64,47 @@ public sealed class GetInvoiceDocumentHandler
             ? null
             : await FindJournalAsync(
                 JournalSourceType.BillingCreditNote,
-                creditNote.Number.Value,
+                creditNote.Id.Value,
                 creditNote.CurrencyCode,
                 creditNote.TotalAmount.Amount,
                 cancellationToken);
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
 
         return Result<InvoiceDocumentResult>.Success(new InvoiceDocumentResult(
             BillingDocumentResultFactory.ToInvoiceDraftResult(invoice),
-            issueJournal is null ? null : BillingDocumentResultFactory.ToIssueInvoiceResult(invoice, issueJournal),
+            issueJournal is null
+                ? null
+                : BillingDocumentResultFactory.ToIssueInvoiceResult(invoice, issueJournal, ledgerAccountsById),
             issueJournal is null || voidJournal is null
                 ? null
-                : BillingDocumentResultFactory.ToVoidInvoiceResult(invoice, issueJournal, voidJournal),
+                : BillingDocumentResultFactory.ToVoidInvoiceResult(
+                    invoice,
+                    issueJournal,
+                    voidJournal,
+                    ledgerAccountsById),
             creditNote is null || creditNoteJournal is null
                 ? null
-                : BillingDocumentResultFactory.ToIssueCreditNoteResult(creditNote, invoice, creditNoteJournal)));
+                : BillingDocumentResultFactory.ToIssueCreditNoteResult(
+                    creditNote,
+                    invoice,
+                    creditNoteJournal,
+                    ledgerAccountsById)));
     }
 
     private async Task<JournalEntry?> FindJournalAsync(
         JournalSourceType sourceType,
-        string sourceReference,
+        Guid sourceDocumentId,
         string currencyCode,
         decimal amount,
         CancellationToken cancellationToken)
     {
-        var entries = await _journalEntries.ListAsync(
-            sourceType: sourceType,
-            cancellationToken: cancellationToken);
+        var entries = await _journalEntries.ListForSourceDocumentAsync(
+            sourceType,
+            sourceDocumentId,
+            cancellationToken);
 
         return entries
-            .Where(entry => string.Equals(entry.SourceReference, sourceReference, StringComparison.OrdinalIgnoreCase))
             .Where(entry => string.Equals(entry.CurrencyCode, currencyCode, StringComparison.OrdinalIgnoreCase))
             .Where(entry => entry.TotalDebit.Amount == amount)
             .OrderBy(entry => entry.EntryDate)

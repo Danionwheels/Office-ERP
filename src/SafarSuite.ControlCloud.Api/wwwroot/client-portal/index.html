@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
     <title>SafarSuite Client Portal</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -16,81 +17,210 @@
             <h1 id="portal-title">Client Portal</h1>
           </div>
         </div>
-        <div class="portal-status" id="connectionStatus">Ready</div>
+        <div class="header-actions">
+          <div id="sessionSummary" class="session-summary" hidden>
+            <span id="sessionIdentity"></span>
+            <button id="logoutButton" class="secondary-button compact-button" type="button">Log out</button>
+            <button id="logoutAllButton" class="link-button compact-button" type="button">
+              Log out everywhere
+            </button>
+          </div>
+          <div class="portal-status" id="connectionStatus" role="status" aria-live="polite">
+            Ready
+          </div>
+        </div>
       </section>
 
-      <section class="lookup-panel" aria-label="Client lookup">
-        <label>
-          <span>Client ID</span>
-          <input
-            id="clientIdInput"
-            type="text"
-            autocomplete="off"
-            placeholder="00000000-0000-0000-0000-000000000000"
-          />
-        </label>
-        <label>
-          <span>Installation ID</span>
-          <input
-            id="installationIdInput"
-            type="text"
-            autocomplete="off"
-            placeholder="office-main"
-          />
-        </label>
-        <label>
-          <span>Email</span>
-          <input
-            id="emailInput"
-            type="email"
-            autocomplete="email"
-            placeholder="accounts@example.com"
-          />
-        </label>
-        <label>
-          <span>Password</span>
-          <input
-            id="passwordInput"
-            type="password"
-            autocomplete="current-password"
-            placeholder="Password"
-          />
-        </label>
-        <button id="loadButton" type="button">Load</button>
+      <section id="authZone" class="auth-zone" aria-label="Client Portal access">
+        <form id="loginView" class="lookup-panel auth-view login-panel">
+          <label>
+            <span>Client ID</span>
+            <input id="clientIdInput" type="text" autocomplete="organization"
+              placeholder="00000000-0000-0000-0000-000000000000" required />
+          </label>
+          <label>
+            <span>Installation ID</span>
+            <input id="installationIdInput" type="text" autocomplete="off" placeholder="office-main" />
+          </label>
+          <label>
+            <span>Email</span>
+            <input id="emailInput" type="email" autocomplete="email"
+              placeholder="accounts@example.com" required />
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="passwordInput" type="password" autocomplete="current-password"
+              placeholder="Password" required />
+          </label>
+          <div class="auth-actions">
+            <button id="loadButton" type="submit">Sign in</button>
+            <button id="forgotPasswordButton" class="link-button" type="button">Forgot password?</button>
+            <button id="showInvitationButton" class="link-button" type="button">Accept an invitation</button>
+          </div>
+        </form>
+
+        <form id="invitationView" class="lookup-panel invitation-panel auth-view"
+          aria-label="Accept portal invitation" hidden>
+          <div class="auth-copy">
+            <strong>Accept your portal invitation</strong>
+            <span id="invitationHint">Enter the invitation token sent by SafarSuite.</span>
+          </div>
+          <label>
+            <span>Invitation token</span>
+            <input id="inviteTokenInput" type="text" autocomplete="off" placeholder="Paste invitation token" />
+          </label>
+          <label>
+            <span>Full name</span>
+            <input id="inviteFullNameInput" type="text" autocomplete="name" placeholder="Client contact" />
+          </label>
+          <label>
+            <span>New password</span>
+            <input id="invitePasswordInput" type="password" autocomplete="new-password"
+              placeholder="At least 8 characters" minlength="8" required />
+          </label>
+          <div class="auth-actions">
+            <button id="acceptInviteButton" type="submit">Accept invitation</button>
+            <button class="link-button back-to-login" type="button">Back to sign in</button>
+          </div>
+        </form>
+
+        <form id="mfaView" class="lookup-panel mfa-panel auth-view" hidden>
+          <div class="auth-copy">
+            <strong>Verification required</strong>
+            <span>Enter a code from your authenticator, or use one of your recovery codes.</span>
+          </div>
+          <div class="mfa-methods" role="group" aria-label="Verification method">
+            <button id="useTotpButton" class="secondary-button" type="button">Authenticator code</button>
+            <button id="useRecoveryButton" class="link-button" type="button">Recovery code</button>
+          </div>
+          <label id="totpChallengeField">
+            <span>Authenticator code</span>
+            <input id="totpCodeInput" class="mfa-code" type="text" inputmode="numeric"
+              autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" />
+          </label>
+          <label id="recoveryChallengeField" hidden>
+            <span>Recovery code</span>
+            <input id="recoveryCodeInput" type="text" autocomplete="one-time-code"
+              placeholder="Enter a recovery code" />
+          </label>
+          <div class="auth-actions">
+            <button id="verifyMfaButton" type="submit">Verify</button>
+            <button id="cancelMfaButton" class="link-button" type="button">Back to sign in</button>
+          </div>
+        </form>
+
+        <form id="forgotPasswordView" class="lookup-panel password-panel auth-view" hidden>
+          <div class="auth-copy">
+            <strong>Reset your password</strong>
+            <span>We will send reset instructions if this portal account exists.</span>
+          </div>
+          <label>
+            <span>Client ID</span>
+            <input id="resetClientIdInput" type="text" autocomplete="organization"
+              placeholder="00000000-0000-0000-0000-000000000000" required />
+          </label>
+          <label>
+            <span>Email</span>
+            <input id="resetEmailInput" type="email" autocomplete="email"
+              placeholder="accounts@example.com" required />
+          </label>
+          <div class="auth-actions">
+            <button id="requestResetButton" type="submit">Send reset instructions</button>
+            <button class="link-button back-to-login" type="button">Back to sign in</button>
+          </div>
+        </form>
+
+        <form id="resetPasswordView" class="lookup-panel password-panel auth-view" hidden>
+          <div class="auth-copy">
+            <strong>Choose a new password</strong>
+            <span>This reset link can only be used once.</span>
+          </div>
+          <label>
+            <span>New password</span>
+            <input id="newPasswordInput" type="password" autocomplete="new-password"
+              minlength="8" placeholder="At least 8 characters" required />
+          </label>
+          <label>
+            <span>Confirm new password</span>
+            <input id="confirmPasswordInput" type="password" autocomplete="new-password"
+              minlength="8" placeholder="Repeat password" required />
+          </label>
+          <div class="auth-actions">
+            <button id="resetPasswordButton" type="submit">Reset password</button>
+          </div>
+        </form>
       </section>
 
-      <section class="lookup-panel invitation-panel" aria-label="Accept portal invitation">
-        <label>
-          <span>Invitation token</span>
-          <input
-            id="inviteTokenInput"
-            type="text"
-            autocomplete="off"
-            placeholder="Paste invitation token"
-          />
-        </label>
-        <label>
-          <span>Full name</span>
-          <input
-            id="inviteFullNameInput"
-            type="text"
-            autocomplete="name"
-            placeholder="Client contact"
-          />
-        </label>
-        <label>
-          <span>New password</span>
-          <input
-            id="invitePasswordInput"
-            type="password"
-            autocomplete="new-password"
-            placeholder="At least 8 characters"
-          />
-        </label>
-        <button id="acceptInviteButton" type="button">Accept</button>
-      </section>
+      <section id="portalContent" class="authenticated-content" hidden>
+        <nav class="portal-nav" aria-label="Client Portal sections">
+          <button class="portal-nav-button active" type="button" data-portal-view="overview"
+            aria-current="page">Overview</button>
+          <button class="portal-nav-button" type="button" data-portal-view="billing">
+            Billing &amp; payments
+          </button>
+          <button class="portal-nav-button" type="button" data-portal-view="claims">
+            Payment claims
+          </button>
+        </nav>
 
-      <section class="portal-grid">
+        <div id="billingNotice" class="portal-notice" role="alert" hidden></div>
+
+        <section id="overviewView" class="portal-view" aria-labelledby="overview-heading">
+          <h2 id="overview-heading" class="visually-hidden">Account overview</h2>
+        <article class="portal-card security-card">
+          <header>
+            <span>Account security</span>
+            <strong id="mfaState">Authenticator</strong>
+          </header>
+          <div id="enrollmentStart" class="security-row">
+            <div>
+              <p>Use an authenticator app and recovery codes to protect your portal account.</p>
+              <label>
+                <span>Current password</span>
+                <input id="enrollmentPasswordInput" type="password" autocomplete="current-password"
+                  maxlength="256" placeholder="Confirm your password" />
+              </label>
+            </div>
+            <button id="startEnrollmentButton" class="secondary-button" type="button">
+              Set up authenticator
+            </button>
+          </div>
+          <div id="enrollmentPanel" class="enrollment-panel" hidden>
+            <div class="enrollment-details">
+              <img id="totpQrCode" alt="Authenticator setup QR code" hidden />
+              <div>
+                <p>Scan the QR code, or enter this secret in your authenticator app.</p>
+                <code id="totpSecret"></code>
+                <a id="otpAuthUriLink" class="otp-auth-link" href="#">Open in authenticator app</a>
+              </div>
+            </div>
+            <form id="totpConfirmForm" class="inline-form">
+              <label>
+                <span>Verification code</span>
+                <input id="totpEnrollmentCodeInput" class="mfa-code" type="text"
+                  inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}"
+                  maxlength="6" placeholder="000000" required />
+              </label>
+              <div class="auth-actions inline-actions">
+                <button id="confirmEnrollmentButton" type="submit">Confirm setup</button>
+                <button id="cancelEnrollmentButton" class="link-button" type="button">Cancel</button>
+              </div>
+            </form>
+          </div>
+          <div id="recoveryCodesPanel" class="recovery-panel" hidden>
+            <div>
+              <strong>Save your recovery codes</strong>
+              <p>Each code can be used once if you lose access to your authenticator.</p>
+            </div>
+            <ol id="recoveryCodeList" class="recovery-code-list"></ol>
+            <div class="auth-actions horizontal-actions">
+              <button id="copyRecoveryCodesButton" class="secondary-button" type="button">Copy codes</button>
+              <button id="finishRecoveryCodesButton" type="button">I saved these codes</button>
+            </div>
+          </div>
+        </article>
+
+        <section class="portal-grid">
         <article class="portal-card balance-card">
           <header>
             <span>Account</span>
@@ -153,9 +283,34 @@
             </div>
           </dl>
         </article>
-      </section>
 
-      <section class="detail-zone">
+        <article class="portal-card pairing-card">
+          <header>
+            <span>Device pairing</span>
+            <strong id="pairingState">Not loaded</strong>
+          </header>
+          <dl>
+            <div>
+              <dt>Mode</dt>
+              <dd id="pairingMode">-</dd>
+            </div>
+            <div>
+              <dt>First manager</dt>
+              <dd id="firstManagerState">-</dd>
+            </div>
+            <div>
+              <dt>Devices</dt>
+              <dd id="pairingDevices">-</dd>
+            </div>
+            <div>
+              <dt>Last update</dt>
+              <dd id="pairingLastUpdate">-</dd>
+            </div>
+          </dl>
+        </article>
+        </section>
+
+        <section class="detail-zone">
         <article class="portal-card">
           <header>
             <span>Recent invoices</span>
@@ -167,7 +322,7 @@
                 <tr>
                   <th>Invoice</th>
                   <th>Status</th>
-                  <th>Due</th>
+                  <th>Date</th>
                   <th>Balance</th>
                 </tr>
               </thead>
@@ -178,6 +333,7 @@
               </tbody>
             </table>
           </div>
+          <button id="invoiceMoreButton" class="table-more" type="button" hidden>Load more</button>
         </article>
 
         <article class="portal-card">
@@ -189,6 +345,268 @@
             <span>No modules loaded</span>
           </div>
         </article>
+        </section>
+        </section>
+
+        <section id="billingView" class="portal-view billing-view" aria-labelledby="billing-heading" hidden>
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow">Billing</span>
+              <h2 id="billing-heading">Invoices &amp; payments</h2>
+              <p>Review invoices and submit bank transfers for provider verification.</p>
+            </div>
+            <button id="refreshBillingButton" class="secondary-button" type="button">Refresh</button>
+          </div>
+
+          <article class="portal-card billing-summary-card">
+            <header>
+              <span>Outstanding balance</span>
+              <strong id="billingSummaryState">Not loaded</strong>
+            </header>
+            <dl>
+              <div>
+                <dt>Total outstanding</dt>
+                <dd id="billingTotalOutstanding">-</dd>
+              </div>
+              <div>
+                <dt>Unpaid invoices</dt>
+                <dd id="billingUnpaidCount">-</dd>
+              </div>
+              <div>
+                <dt>Last payment</dt>
+                <dd id="billingLastPayment">-</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="portal-card invoice-list-card">
+            <header class="table-header">
+              <div>
+                <span>Invoices</span>
+                <strong id="billingInvoiceCount">0</strong>
+              </div>
+              <label class="table-filter">
+                <span>Status</span>
+                <select id="invoiceStatusFilter">
+                  <option value="all">All statuses</option>
+                  <option value="overdue">Overdue</option>
+                  <option value="partial">Partial</option>
+                  <option value="pending">Pending</option>
+                  <option value="paid">Paid</option>
+                </select>
+              </label>
+            </header>
+            <div class="table-shell">
+              <table class="billing-table">
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>Issue date</th>
+                    <th>Due date</th>
+                    <th>Total</th>
+                    <th>Paid</th>
+                    <th>Remaining</th>
+                    <th>Status</th>
+                    <th><span class="visually-hidden">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody id="billingInvoiceRows"></tbody>
+              </table>
+            </div>
+            <div id="billingInvoicesEmpty" class="empty-state" hidden>
+              <strong>No invoices to show</strong>
+              <span>Your invoices will appear here when they are issued.</span>
+            </div>
+          </article>
+        </section>
+
+        <section id="invoiceDetailView" class="portal-view billing-view" aria-labelledby="invoice-detail-heading" hidden>
+          <div class="page-heading compact-heading">
+            <div>
+              <button class="link-button billing-back-button" type="button" data-portal-view="billing">
+                &larr; Back to invoices
+              </button>
+              <h2 id="invoice-detail-heading">Invoice detail</h2>
+            </div>
+            <button id="invoicePayButton" type="button" hidden>Pay now</button>
+          </div>
+
+          <article class="portal-card invoice-detail-card">
+            <header>
+              <div>
+                <span>Invoice</span>
+                <strong id="detailInvoiceNumber">-</strong>
+              </div>
+              <span id="detailInvoiceStatus" class="status-badge">-</span>
+            </header>
+            <dl class="invoice-metadata">
+              <div><dt>Issue date</dt><dd id="detailIssueDate">-</dd></div>
+              <div><dt>Due date</dt><dd id="detailDueDate">-</dd></div>
+              <div><dt>Client</dt><dd id="detailClientName">-</dd></div>
+              <div><dt>Billing contact</dt><dd id="detailClientContact">-</dd></div>
+            </dl>
+            <div class="table-shell">
+              <table class="line-items-table">
+                <thead>
+                  <tr><th>Description</th><th>Quantity</th><th>Unit price</th><th>Line total</th></tr>
+                </thead>
+                <tbody id="invoiceLineRows"></tbody>
+              </table>
+            </div>
+            <dl class="invoice-totals">
+              <div><dt>Invoice total</dt><dd id="detailInvoiceTotal">-</dd></div>
+              <div><dt>Payments applied</dt><dd id="detailPaymentsApplied">-</dd></div>
+              <div class="remaining-total"><dt>Balance remaining</dt><dd id="detailBalanceRemaining">-</dd></div>
+            </dl>
+          </article>
+
+          <div class="detail-zone payment-history-zone">
+            <article class="portal-card">
+              <header><span>Verified payments</span><strong id="detailPaymentCount">0</strong></header>
+              <div class="table-shell">
+                <table class="history-table">
+                  <thead><tr><th>Date</th><th>Reference</th><th>Method</th><th>Amount</th></tr></thead>
+                  <tbody id="invoicePaymentRows"></tbody>
+                </table>
+              </div>
+              <div id="invoicePaymentsEmpty" class="empty-state compact-empty" hidden>
+                <span>No verified payments have been applied to this invoice.</span>
+              </div>
+            </article>
+            <article class="portal-card">
+              <header><span>Payment claims</span><strong id="detailClaimCount">0</strong></header>
+              <div id="invoiceClaimList" class="claim-card-list"></div>
+              <div id="invoiceClaimsEmpty" class="empty-state compact-empty" hidden>
+                <span>No payment claims have been submitted for this invoice.</span>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="paymentView" class="portal-view billing-view" aria-labelledby="payment-heading" hidden>
+          <div class="page-heading compact-heading">
+            <div>
+              <button id="paymentBackButton" class="link-button" type="button">&larr; Back to invoice</button>
+              <h2 id="payment-heading">Submit a bank transfer</h2>
+              <p>Your payment will remain pending until the provider verifies the transfer.</p>
+            </div>
+          </div>
+
+          <div id="paymentEntryStep" class="payment-layout">
+            <article class="portal-card bank-details-card">
+              <header><span>Transfer to</span><strong id="bankDetailsState">Bank details</strong></header>
+              <dl>
+                <div><dt>Bank</dt><dd id="bankName">-</dd></div>
+                <div><dt>Account title</dt><dd id="bankAccountTitle">-</dd></div>
+                <div><dt>Account number</dt><dd id="bankAccountNumber">-</dd></div>
+                <div><dt>IBAN</dt><dd id="bankIban">-</dd></div>
+                <div><dt>Branch / routing</dt><dd id="bankBranchInfo">-</dd></div>
+              </dl>
+            </article>
+
+            <form id="paymentForm" class="portal-card payment-form">
+              <header><span>Payment claim</span><strong id="paymentInvoiceNumber">-</strong></header>
+              <label>
+                <span>Amount</span>
+                <input id="paymentAmountInput" type="number" min="0.01" step="0.01" inputmode="decimal" required />
+                <small id="paymentBalanceHint">-</small>
+              </label>
+              <label>
+                <span>Transfer reference number</span>
+                <input id="paymentReferenceInput" type="text" maxlength="80"
+                  autocomplete="off" placeholder="Reference shown by your bank" required />
+              </label>
+              <label>
+                <span>Proof of transfer <small>(optional)</small></span>
+                <input id="paymentProofInput" type="file" accept="image/jpeg,image/png,application/pdf" />
+                <small>JPEG, PNG, or PDF. Maximum 5 MB.</small>
+              </label>
+              <button type="submit">Review payment</button>
+            </form>
+          </div>
+
+          <article id="paymentConfirmStep" class="portal-card confirmation-card" hidden>
+            <header><span>Confirm submission</span><strong>Review carefully</strong></header>
+            <dl>
+              <div><dt>Invoice</dt><dd id="confirmInvoiceNumber">-</dd></div>
+              <div><dt>Amount</dt><dd id="confirmPaymentAmount">-</dd></div>
+              <div><dt>Transfer reference</dt><dd id="confirmTransferReference">-</dd></div>
+              <div><dt>Proof</dt><dd id="confirmProofName">No attachment</dd></div>
+            </dl>
+            <p class="verification-note">Submitting this claim does not mark the invoice paid. The provider will verify the transfer first.</p>
+            <div class="confirmation-actions">
+              <button id="editPaymentButton" class="secondary-button" type="button">Edit</button>
+              <button id="submitPaymentButton" type="button">Submit payment claim</button>
+            </div>
+          </article>
+
+          <article id="paymentSuccessStep" class="portal-card success-card" hidden>
+            <div class="success-mark" aria-hidden="true">&#10003;</div>
+            <div>
+              <span class="eyebrow">Payment submitted</span>
+              <h2>Pending verification</h2>
+              <p>The provider will review your bank transfer. Your invoice balance will update after verification.</p>
+            </div>
+            <dl>
+              <div><dt>Claim reference</dt><dd id="successClaimReference">-</dd></div>
+              <div><dt>Submitted</dt><dd id="successSubmittedAt">-</dd></div>
+              <div><dt>Amount</dt><dd id="successAmount">-</dd></div>
+              <div><dt>Transfer reference</dt><dd id="successTransferReference">-</dd></div>
+            </dl>
+            <div class="confirmation-actions">
+              <button id="printSuccessButton" class="secondary-button" type="button">Print summary</button>
+              <button id="viewClaimsButton" type="button">View payment claims</button>
+            </div>
+          </article>
+        </section>
+
+        <section id="claimsView" class="portal-view billing-view" aria-labelledby="claims-heading" hidden>
+          <div class="page-heading">
+            <div>
+              <span class="eyebrow">Payments</span>
+              <h2 id="claims-heading">Payment claims</h2>
+              <p>Track bank transfers submitted for provider verification.</p>
+            </div>
+            <button id="refreshClaimsButton" class="secondary-button" type="button">Refresh</button>
+          </div>
+          <article class="portal-card">
+            <header><span>Claim history</span><strong id="claimHistoryCount">0</strong></header>
+            <div id="claimHistoryList" class="claim-history-list"></div>
+            <div id="claimsEmpty" class="empty-state" hidden>
+              <strong>No payment claims yet</strong>
+              <span>Claims you submit from an invoice will appear here.</span>
+            </div>
+          </article>
+        </section>
+
+        <section id="claimDetailView" class="portal-view billing-view print-receipt" aria-labelledby="claim-detail-heading" hidden>
+          <div class="page-heading compact-heading no-print">
+            <div>
+              <button class="link-button" type="button" data-portal-view="claims">&larr; Back to claims</button>
+              <h2 id="claim-detail-heading">Payment claim detail</h2>
+            </div>
+            <button id="printClaimButton" class="secondary-button" type="button">Print summary</button>
+          </div>
+          <article class="portal-card receipt-card">
+            <header>
+              <div><span>SafarSuite payment claim</span><strong id="claimDetailReference">-</strong></div>
+              <span id="claimDetailStatus" class="status-badge">-</span>
+            </header>
+            <p id="claimDetailNotice" class="verification-note"></p>
+            <dl>
+              <div><dt>Invoice</dt><dd id="claimDetailInvoice">-</dd></div>
+              <div><dt>Amount</dt><dd id="claimDetailAmount">-</dd></div>
+              <div><dt>Transfer reference</dt><dd id="claimDetailTransferReference">-</dd></div>
+              <div><dt>Submitted</dt><dd id="claimDetailSubmitted">-</dd></div>
+              <div><dt>Reviewed</dt><dd id="claimDetailReviewed">-</dd></div>
+              <div><dt>Proof attachment</dt><dd id="claimDetailProof">-</dd></div>
+            </dl>
+            <div id="claimRejectionPanel" class="rejection-panel" hidden>
+              <strong>Reason for rejection</strong>
+              <p id="claimRejectionReason"></p>
+            </div>
+          </article>
+        </section>
       </section>
     </main>
 

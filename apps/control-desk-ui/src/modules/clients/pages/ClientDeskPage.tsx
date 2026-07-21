@@ -1,76 +1,29 @@
 import {
-  AlertCircle,
-  ArrowRight,
   Banknote,
   CheckCircle2,
-  Cloud,
+  Download,
+  FilePlus2,
   FileText,
   KeyRound,
-  LayoutDashboard,
   ListTree,
+  Plus,
+  Printer,
   ReceiptText,
+  RefreshCw,
   ScrollText,
-  UserRound,
-  Users,
-  type LucideIcon
+  Save,
+  Send,
+  Users
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../../../shared/api/apiError";
-import {
-  closeAccountingPeriod,
-  configureAccountingControlSettings,
-  configureAccountCodeRange,
-  createAccountingPeriod,
-  createLedgerAccount as createAccountingLedgerAccount,
-  getAccountingControlSettings,
-  getAccountingPeriodCloseJournalPreview,
-  getAccountingPeriodCloseReadiness,
-  getJournalEntry,
-  getJournalEntrySourceDocument,
-  getLedgerAccountActivity,
-  getLedgerAccountReconciliation,
-  getLedgerAccountRepairPlan,
-  getTrialBalance,
-  listAccountCodeRanges,
-  listAccountingPeriods,
-  listJournalEntries,
-  listLedgerAccounts,
-  postManualJournalEntry,
-  reopenAccountingPeriod,
-  suggestLedgerAccountCode as suggestAccountingLedgerAccountCode,
-  updateLedgerAccount,
-  voidManualJournalEntry
-} from "../../accounting/api/accountingApi";
-import { AccountingControlsPanel } from "../../accounting/components/AccountingControlsPanel";
-import { AccountingPeriodsPanel } from "../../accounting/components/AccountingPeriodsPanel";
-import { ChartOfAccountsPanel } from "../../accounting/components/ChartOfAccountsPanel";
-import { JournalWorkbenchPanel } from "../../accounting/components/JournalWorkbenchPanel";
-import { LedgerAccountReconciliationPanel } from "../../accounting/components/LedgerAccountReconciliationPanel";
-import { TrialBalancePanel } from "../../accounting/components/TrialBalancePanel";
+import { AccountingWorkspace } from "../../accounting/components/AccountingWorkspace";
+import { useAccountingWorkspace } from "../../accounting/hooks/useAccountingWorkspace";
 import type {
-  AccountCodeRange,
-  AccountCodeRangeFormInput,
-  AccountingControlSettings,
-  AccountingControlSettingsInput,
-  AccountingPeriod,
-  AccountingPeriodCloseJournalPreview,
-  AccountingPeriodCloseReadiness,
-  AccountingPeriodFormInput,
-  JournalEntryFilters,
   JournalEntrySourceDocument,
-  JournalEntrySummary,
-  LedgerAccountActivity,
-  LedgerAccountActivityLine,
-  LedgerAccountEditorInput,
-  LedgerAccountFilters,
-  LedgerAccountReconciliation,
-  LedgerAccountRepairPlan,
-  LedgerAccountSummary,
-  ManualJournalEntryInput,
-  TrialBalance,
-  TrialBalanceFilters,
-  TrialBalanceLine
+  JournalEntrySummary
 } from "../../accounting/types/accountingTypes";
+import { getJournalSourceDocumentFallbackLabel } from "../../accounting/utils/accountingSourceDocuments";
 import {
   createChargeCode,
   createClientChargeRule,
@@ -104,14 +57,22 @@ import type {
 import {
   createClientContract,
   listClientContracts,
+  listProductAccessCatalog,
+  listProductCatalogRevisions,
   listProductModules,
+  publishProductCatalogRevision,
+  publishProductAccessCatalogCommand,
   replaceActiveClientContract,
+  saveProductAccessCatalog,
   suspendClientContract
 } from "../../contracts/api/contractApi";
 import { ClientContractsPanel } from "../../contracts/components/ClientContractsPanel";
 import type {
   ClientContract,
   ClientContractFormInput,
+  ProductAccessCatalog,
+  PublishedProductAccessCatalogCommand,
+  PublishProductAccessCatalogCommandInput,
   ProductModule
 } from "../../contracts/types/contractTypes";
 import { findProductModule } from "../../contracts/utils/productModuleDisplay";
@@ -120,20 +81,40 @@ import {
   createCloudInstallationSetupToken,
   getLatestCloudInstallationDiagnostics,
   getCloudInstallationStatus,
+  issueCloudAppActivationToken,
+  issueCloudFirstManagerSetupToken,
+  listCloudAppActivationIssues,
+  listCloudInstallationBootstrapPackages,
   listCloudInstallationAuditEvents,
-  queueCloudInstallationSupportCommand
+  listCloudOutboxMessagePage,
+  markCloudBootstrapPackageHandoff,
+  publishCloudOutboxMessages,
+  queueCloudInstallationSupportCommand,
+  revokeCloudAppActivationIssue
 } from "../../control-cloud/api/controlCloudApi";
 import { CloudInstallationStatusPanel } from "../../control-cloud/components/CloudInstallationStatusPanel";
+import { ProviderAccessPanel } from "../../control-cloud/components/ProviderAccessPanel";
 import type {
+  CloudAppActivationTokenFormInput,
+  CloudAppActivationRevocationFormInput,
+  CloudBootstrapPackageHandoffFormInput,
+  CloudFirstManagerSetupTokenFormInput,
+  CloudOutboxMessage,
+  CloudOutboxMessageRegisterSummary,
   ControlCloudAuditEvent,
+  ControlCloudConnectionState,
   CreateCloudInstallationProvisioningInput,
   CloudInstallationSupportCommandFormInput,
   ControlCloudInstallationStatus,
+  IssuedSafarSuiteAppActivationToken,
+  IssuedLocalServerFirstManagerSetupToken,
   LocalServerBootstrapPackage,
+  LocalServerBootstrapPackageSummary,
   LocalServerDiagnosticReport,
-  LocalServerDeploymentProfile,
   LocalServerSetupToken,
-  QueuedCloudInstallationSupportCommand
+  PublishCloudOutboxMessagesResult,
+  QueuedCloudInstallationSupportCommand,
+  SafarSuiteAppActivationIssue
 } from "../../control-cloud/types/controlCloudTypes";
 import {
   getLatestEntitlementSnapshot,
@@ -155,6 +136,7 @@ import {
   reverseInvoicePayment
 } from "../../payments/api/paymentApi";
 import { PaymentReceiptPanel } from "../../payments/components/PaymentReceiptPanel";
+import { PortalPaymentClaimsPanel } from "../../payments/components/PortalPaymentClaimsPanel";
 import type {
   AppliedClientCredit,
   ApplyClientCreditInput,
@@ -164,9 +146,12 @@ import type {
   RecordInvoicePaymentInput,
   ReversedInvoicePayment
 } from "../../payments/types/paymentTypes";
-import { getClientStatement } from "../../statements/api/statementApi";
+import { getClientStatement, loadMoreClientStatement } from "../../statements/api/statementApi";
 import { ClientStatementPanel } from "../../statements/components/ClientStatementPanel";
-import type { ClientStatement } from "../../statements/types/statementTypes";
+import type {
+  ClientStatement,
+  ClientStatementRegister
+} from "../../statements/types/statementTypes";
 import {
   activateClient,
   addClientContact,
@@ -179,20 +164,31 @@ import {
   inviteClientPortalContact,
   listClientDeployments,
   listClientPortalInvitations,
-  listClients,
+  listClientPage,
   resendClientPortalInvitation,
   revokeClientPortalInvitation,
   suspendClient,
   updateClient
 } from "../api/clientApi";
+import { ClientDashboardHome } from "../components/ClientDashboardHome";
 import { ClientCreateForm } from "../components/ClientCreateForm";
+import { ClientDeskShell } from "../components/ClientDeskShell";
 import { ClientDetailPanel } from "../components/ClientDetailPanel";
 import { ClientListPanel } from "../components/ClientListPanel";
+import type {
+  BillingDashboardStep,
+  DashboardModule,
+  JournalSourceDocumentTarget,
+  ModuleCommandItem,
+  PaymentDashboardStep
+} from "../types/clientDashboardTypes";
 import type {
   AddClientContactInput,
   AddClientSupportNoteInput,
   ClientAccountingProfile,
   ClientDeployment,
+  ClientDirectorySort,
+  ClientDirectorySortDirection,
   ClientDetails,
   ClientLookup,
   ClientPortalInvitation,
@@ -201,6 +197,13 @@ import type {
   CreateClientInput,
   UpdateClientInput
 } from "../types/clientTypes";
+import {
+  getCloudDeploymentProfile,
+  getDashboardMetrics,
+  getDashboardNavigation,
+  getDashboardNavigationItem,
+  getDashboardWorkQueueItems
+} from "../utils/clientDashboardModel";
 
 const emptyCreateForm: CreateClientInput = {
   code: "",
@@ -227,136 +230,50 @@ const emptyContactForm: AddClientContactInput = {
   isPrimary: true
 };
 
-const accountingCompanyCode = "MAIN";
-
-const defaultLedgerAccountFilters: LedgerAccountFilters = {
-  companyCode: accountingCompanyCode,
-  search: "",
-  type: "",
-  status: "",
-  posting: "",
-  role: "",
-  viewMode: "default",
-  level: ""
+type PendingJournalSourceOpen = {
+  sourceDocument: JournalEntrySourceDocument;
+  target: JournalSourceDocumentTarget;
 };
 
-const emptyAccountCodeRangeForm: AccountCodeRangeFormInput = {
-  displayName: "",
-  searchPrefix: "",
-  rangeStart: "",
-  rangeEnd: "",
-  codeLength: "",
-  accountType: "Asset",
-  normalBalance: "Debit",
-  isPostingAccount: true,
-  parentCode: "",
-  isActive: true
+type JournalSourceHydrationContext = {
+  client?: ClientDetails | null;
+  accountingProfile?: ClientAccountingProfile | null;
+  clientStatement?: ClientStatement | null;
 };
 
-const emptyLedgerAccountEditorForm: LedgerAccountEditorInput = {
-  code: "",
-  name: "",
-  type: "Asset",
-  normalBalance: "Debit",
-  level: "Detail",
-  parentAccountId: "",
-  isPostingAccount: true,
-  status: "Active"
+const defaultCloudConnectionState: ControlCloudConnectionState = {
+  status: "notChecked",
+  detail: "Control Cloud connection has not been checked for this deployment.",
+  checkedAtUtc: null
 };
-
-const defaultAccountingControlSettingsForm: AccountingControlSettingsInput = {
-  companyCode: accountingCompanyCode,
-  baseCurrencyCode: "PKR",
-  retainedEarningsAccountId: "",
-  incomeSummaryAccountId: "",
-  roundingAccountId: ""
-};
-
-const defaultJournalEntryFilters: JournalEntryFilters = {
-  fromDate: "",
-  toDate: "",
-  sourceType: ""
-};
-
-function createDefaultTrialBalanceFilters(): TrialBalanceFilters {
-  return {
-    asOfDate: toDateInputValue(new Date()),
-    currencyCode: "PKR"
-  };
-}
-
-type DashboardModule =
-  | "dashboard"
-  | "clients"
-  | "profile"
-  | "contracts"
-  | "accounting"
-  | "billing"
-  | "payments"
-  | "entitlements"
-  | "cloud"
-  | "statement";
-
-type BillingDashboardStep = "accounting" | "rules" | "draft" | "issue";
-
-type PaymentDashboardStep = "readiness" | "cash" | "receipt" | "settlement" | "refund" | "result";
-
-type JournalSourceDocumentTarget =
-  | { module: "billing"; step: BillingDashboardStep; label: string }
-  | { module: "payments"; step: PaymentDashboardStep; label: string };
 
 export function ClientDeskPage() {
   const [clients, setClients] = useState<ClientLookup[]>([]);
+  const [clientDirectoryQuery, setClientDirectoryQuery] = useState<{
+    search: string;
+    sort: ClientDirectorySort;
+    direction: ClientDirectorySortDirection;
+  }>({ search: "", sort: "code", direction: "asc" });
+  const [clientFilteredCount, setClientFilteredCount] = useState(0);
+  const [clientNextCursor, setClientNextCursor] = useState<string | null>(null);
+  const [isLoadingMoreClients, setIsLoadingMoreClients] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState("");
   const [selectedClient, setSelectedClient] = useState<ClientDetails | null>(null);
   const [accountingProfile, setAccountingProfile] = useState<ClientAccountingProfile | null>(null);
   const [accountingProfileMissing, setAccountingProfileMissing] = useState(false);
   const [contracts, setContracts] = useState<ClientContract[]>([]);
   const [productModules, setProductModules] = useState<ProductModule[]>([]);
+  const [productAccessCatalog, setProductAccessCatalog] =
+    useState<ProductAccessCatalog | null>(null);
+  const [productAccessCatalogRevisions, setProductAccessCatalogRevisions] =
+    useState<ProductAccessCatalog[]>([]);
+  const [publishedAccessCatalogCommand, setPublishedAccessCatalogCommand] =
+    useState<PublishedProductAccessCatalogCommand | null>(null);
+  const [accessCatalogPublishForm, setAccessCatalogPublishForm] =
+    useState<PublishProductAccessCatalogCommandInput>(createDefaultAccessCatalogPublishForm());
   const [chargeCodes, setChargeCodes] = useState<ChargeCodeLookup[]>([]);
-  const [ledgerAccounts, setLedgerAccounts] = useState<LedgerAccountSummary[]>([]);
-  const [ledgerAccountReconciliation, setLedgerAccountReconciliation] =
-    useState<LedgerAccountReconciliation | null>(null);
-  const [ledgerAccountRepairPlan, setLedgerAccountRepairPlan] =
-    useState<LedgerAccountRepairPlan | null>(null);
-  const [accountCodeRanges, setAccountCodeRanges] = useState<AccountCodeRange[]>([]);
-  const [accountingControlSettings, setAccountingControlSettings] =
-    useState<AccountingControlSettings | null>(null);
-  const [accountingPeriods, setAccountingPeriods] = useState<AccountingPeriod[]>([]);
-  const [accountingPeriodReadiness, setAccountingPeriodReadiness] =
-    useState<AccountingPeriodCloseReadiness | null>(null);
-  const [accountingPeriodCloseJournalPreview, setAccountingPeriodCloseJournalPreview] =
-    useState<AccountingPeriodCloseJournalPreview | null>(null);
-  const [journalEntries, setJournalEntries] = useState<JournalEntrySummary[]>([]);
-  const [focusedJournalEntryId, setFocusedJournalEntryId] = useState("");
-  const [focusedJournalEntry, setFocusedJournalEntry] = useState<JournalEntrySummary | null>(null);
-  const [journalSourceDocumentsById, setJournalSourceDocumentsById] =
-    useState<Record<string, JournalEntrySourceDocument>>({});
-  const [ledgerAccountActivity, setLedgerAccountActivity] =
-    useState<LedgerAccountActivity | null>(null);
-  const [trialBalance, setTrialBalance] = useState<TrialBalance | null>(null);
-  const [selectedAccountCodeRangeRole, setSelectedAccountCodeRangeRole] = useState("");
-  const [accountCodeRangeForm, setAccountCodeRangeForm] =
-    useState<AccountCodeRangeFormInput>(emptyAccountCodeRangeForm);
-  const [selectedLedgerAccountId, setSelectedLedgerAccountId] = useState("");
-  const [ledgerAccountEditorForm, setLedgerAccountEditorForm] =
-    useState<LedgerAccountEditorInput>(emptyLedgerAccountEditorForm);
-  const [ledgerAccountFilters, setLedgerAccountFilters] = useState<LedgerAccountFilters>(
-    defaultLedgerAccountFilters
-  );
-  const [journalEntryFilters, setJournalEntryFilters] = useState<JournalEntryFilters>(
-    defaultJournalEntryFilters
-  );
-  const [trialBalanceFilters, setTrialBalanceFilters] = useState<TrialBalanceFilters>(
-    createDefaultTrialBalanceFilters()
-  );
-  const [accountingControlSettingsForm, setAccountingControlSettingsForm] =
-    useState<AccountingControlSettingsInput>(createDefaultAccountingControlSettingsForm());
-  const [accountingPeriodForm, setAccountingPeriodForm] = useState<AccountingPeriodFormInput>(
-    createDefaultAccountingPeriodForm()
-  );
-  const [manualJournalEntryForm, setManualJournalEntryForm] =
-    useState<ManualJournalEntryInput>(createDefaultManualJournalEntryForm());
+  const [pendingJournalSourceOpen, setPendingJournalSourceOpen] =
+    useState<PendingJournalSourceOpen | null>(null);
   const [createForm, setCreateForm] = useState<CreateClientInput>(emptyCreateForm);
   const [editForm, setEditForm] = useState<UpdateClientInput>(emptyEditForm);
   const [contactForm, setContactForm] = useState<AddClientContactInput>(emptyContactForm);
@@ -413,6 +330,8 @@ export function ClientDeskPage() {
   const [cloudInstallationId, setCloudInstallationId] = useState("");
   const [cloudInstallationStatus, setCloudInstallationStatus] =
     useState<ControlCloudInstallationStatus | null>(null);
+  const [cloudConnectionState, setCloudConnectionState] =
+    useState<ControlCloudConnectionState>(defaultCloudConnectionState);
   const [clientDeployments, setClientDeployments] = useState<ClientDeployment[]>([]);
   const [deploymentForm, setDeploymentForm] = useState<ConfigureClientDeploymentInput>(
     createDefaultDeploymentForm()
@@ -421,10 +340,32 @@ export function ClientDeskPage() {
   const [cloudSetupToken, setCloudSetupToken] = useState<LocalServerSetupToken | null>(null);
   const [cloudBootstrapPackage, setCloudBootstrapPackage] =
     useState<LocalServerBootstrapPackage | null>(null);
+  const [cloudBootstrapPackages, setCloudBootstrapPackages] =
+    useState<LocalServerBootstrapPackageSummary[]>([]);
+  const [bootstrapPackageHandoffForm, setBootstrapPackageHandoffForm] =
+    useState<CloudBootstrapPackageHandoffFormInput>(createDefaultBootstrapPackageHandoffForm());
   const [supportCommandForm, setSupportCommandForm] =
     useState<CloudInstallationSupportCommandFormInput>(createDefaultSupportCommandForm());
   const [queuedSupportCommand, setQueuedSupportCommand] =
     useState<QueuedCloudInstallationSupportCommand | null>(null);
+  const [appActivationForm, setAppActivationForm] =
+    useState<CloudAppActivationTokenFormInput>(createDefaultAppActivationForm());
+  const [issuedAppActivation, setIssuedAppActivation] =
+    useState<IssuedSafarSuiteAppActivationToken | null>(null);
+  const [firstManagerSetupTokenForm, setFirstManagerSetupTokenForm] =
+    useState<CloudFirstManagerSetupTokenFormInput>(createDefaultFirstManagerSetupTokenForm());
+  const [issuedFirstManagerSetupToken, setIssuedFirstManagerSetupToken] =
+    useState<IssuedLocalServerFirstManagerSetupToken | null>(null);
+  const [appActivationIssues, setAppActivationIssues] =
+    useState<SafarSuiteAppActivationIssue[]>([]);
+  const [appActivationIssueSearch, setAppActivationIssueSearch] = useState("");
+  const [appActivationRevocationForm, setAppActivationRevocationForm] =
+    useState<CloudAppActivationRevocationFormInput>(createDefaultAppActivationRevocationForm());
+  const [cloudOutboxMessages, setCloudOutboxMessages] = useState<CloudOutboxMessage[]>([]);
+  const [cloudOutboxSummary, setCloudOutboxSummary] =
+    useState<CloudOutboxMessageRegisterSummary | null>(null);
+  const [latestCloudOutboxPublish, setLatestCloudOutboxPublish] =
+    useState<PublishCloudOutboxMessagesResult | null>(null);
   const [cloudAuditEvents, setCloudAuditEvents] = useState<ControlCloudAuditEvent[]>([]);
   const [cloudDiagnosticsReport, setCloudDiagnosticsReport] =
     useState<LocalServerDiagnosticReport | null>(null);
@@ -441,29 +382,19 @@ export function ClientDeskPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const accounting = useAccountingWorkspace({
+    runAction: runClientAction,
+    setMessage,
+    onLedgerSetupChanged: applyLedgerAccountCodeSuggestions,
+    onShowAccounting: () => setActiveDashboardModule("accounting")
+  });
 
   useEffect(() => {
     void refreshClients();
     void refreshChargeCodes();
     void refreshProductModules();
+    void refreshProductAccessCatalog();
   }, []);
-
-  useEffect(() => {
-    void refreshAccountingSetup(ledgerAccountFilters);
-  }, [ledgerAccountFilters]);
-
-  useEffect(() => {
-    void refreshAccountingPeriods();
-    void refreshAccountingControls();
-  }, []);
-
-  useEffect(() => {
-    void refreshJournalEntries(journalEntryFilters);
-  }, [journalEntryFilters]);
-
-  useEffect(() => {
-    void refreshTrialBalance(trialBalanceFilters);
-  }, [trialBalanceFilters]);
 
   useEffect(() => {
     if (selectedClientId !== "") {
@@ -472,7 +403,31 @@ export function ClientDeskPage() {
   }, [selectedClientId]);
 
   async function refreshClients(nextSelectedClientId = selectedClientId) {
-    await runClientAction(() => loadClientList(nextSelectedClientId));
+    await runClientAction(() => loadClientList(nextSelectedClientId, false, clientDirectoryQuery));
+  }
+
+  async function handleClientDirectoryQuery(
+    search: string,
+    sort: ClientDirectorySort,
+    direction: ClientDirectorySortDirection
+  ) {
+    const nextQuery = { search: search.trim(), sort, direction };
+    setClientDirectoryQuery(nextQuery);
+    await runClientAction(() => loadClientList(selectedClientId, false, nextQuery));
+  }
+
+  async function loadMoreClients() {
+    if (clientNextCursor === null) {
+      return;
+    }
+
+    setIsLoadingMoreClients(true);
+
+    try {
+      await runClientAction(() => loadClientList(selectedClientId, true, clientDirectoryQuery));
+    } finally {
+      setIsLoadingMoreClients(false);
+    }
   }
 
   async function refreshChargeCodes() {
@@ -499,433 +454,60 @@ export function ClientDeskPage() {
     });
   }
 
-  function handleLedgerAccountFiltersChange(filters: LedgerAccountFilters) {
-    setLedgerAccountFilters(withAccountingCompanyCode(filters));
-  }
-
-  async function refreshAccountingSetup(filters = ledgerAccountFilters) {
+  async function refreshProductAccessCatalog() {
     await runClientAction(async () => {
-      const accountingFilters = withAccountingCompanyCode(filters);
-      const [accounts, ranges, reconciliation, repairPlan] = await Promise.all([
-        listLedgerAccounts(accountingFilters),
-        listAccountCodeRanges(accountingCompanyCode),
-        getLedgerAccountReconciliation(accountingCompanyCode),
-        getLedgerAccountRepairPlan(accountingCompanyCode)
+      const [nextCatalog, revisions] = await Promise.all([
+        listProductAccessCatalog(),
+        listProductCatalogRevisions()
       ]);
-      const sortedRanges = sortAccountCodeRanges(ranges);
-      const selectedRange =
-        sortedRanges.find((range) => range.role === selectedAccountCodeRangeRole)
-        ?? sortedRanges[0]
-        ?? null;
-
-      setLedgerAccounts(accounts);
-      setLedgerAccountReconciliation(reconciliation);
-      setLedgerAccountRepairPlan(repairPlan);
-      setAccountCodeRanges(sortedRanges);
-      setSelectedAccountCodeRangeRole(selectedRange?.role ?? "");
-      setAccountCodeRangeForm(
-        selectedRange === null ? emptyAccountCodeRangeForm : toAccountCodeRangeForm(selectedRange)
-      );
-
-      if (selectedLedgerAccountId === "") {
-        setLedgerAccountEditorForm((current) =>
-          current.code.trim() !== "" || current.name.trim() !== ""
-            ? current
-            : createDefaultLedgerAccountEditorForm(selectedRange));
-      }
+      setProductAccessCatalog(nextCatalog);
+      setProductAccessCatalogRevisions(revisions);
     });
   }
 
-  async function refreshAccountingControls() {
+  async function handleRefreshProductAccessCatalog() {
     await runClientAction(async () => {
-      const settings = await getAccountingControlSettings(accountingCompanyCode);
-
-      setAccountingControlSettings(settings);
-      setAccountingControlSettingsForm(toAccountingControlSettingsForm(settings));
-    });
-  }
-
-  async function handleSaveAccountingControls() {
-    await runClientAction(async () => {
-      const settings = await configureAccountingControlSettings({
-        ...accountingControlSettingsForm,
-        companyCode: accountingCompanyCode
-      });
-
-      setAccountingControlSettings(settings);
-      setAccountingControlSettingsForm(toAccountingControlSettingsForm(settings));
-      setMessage(settings.isConfigured
-        ? "GL controls configured."
-        : "GL controls saved as partial.");
-    });
-  }
-
-  async function refreshAccountingPeriods() {
-    await runClientAction(async () => {
-      const periods = await listAccountingPeriods(accountingCompanyCode);
-      setAccountingPeriods(periods);
-      setAccountingPeriodReadiness((current) =>
-        current !== null
-          && periods.some((period) => period.accountingPeriodId === current.period.accountingPeriodId)
-          ? current
-          : null);
-      setAccountingPeriodCloseJournalPreview((current) =>
-        current !== null
-          && periods.some((period) => period.accountingPeriodId === current.period.accountingPeriodId)
-          ? current
-          : null);
-      setAccountingPeriodForm((current) => {
-        if (
-          current.companyCode.trim().toUpperCase() === accountingCompanyCode
-          && current.startsOn.trim() !== ""
-          && current.endsOn.trim() !== ""
-        ) {
-          return current;
-        }
-
-        return createDefaultAccountingPeriodForm(periods, accountingCompanyCode);
-      });
-    });
-  }
-
-  async function refreshLedgerAccountReconciliation() {
-    await runClientAction(async () => {
-      const [reconciliation, repairPlan] = await Promise.all([
-        getLedgerAccountReconciliation(accountingCompanyCode),
-        getLedgerAccountRepairPlan(accountingCompanyCode)
+      const [nextCatalog, revisions] = await Promise.all([
+        listProductAccessCatalog(),
+        listProductCatalogRevisions()
       ]);
-
-      setLedgerAccountReconciliation(reconciliation);
-      setLedgerAccountRepairPlan(repairPlan);
-      setMessage(
-        reconciliation.issueCount === 0
-          ? "COA reconciliation passed."
-          : `COA reconciliation found ${reconciliation.issueCount} issue(s) and ${repairPlan.actionCount} repair action(s).`
-      );
+      setProductAccessCatalog(nextCatalog);
+      setProductAccessCatalogRevisions(revisions);
+      setMessage("Product access catalog refreshed.");
     });
   }
 
-  function handlePrepareNextAccountingPeriod() {
-    setAccountingPeriodForm(createDefaultAccountingPeriodForm(
-      accountingPeriods,
-      accountingCompanyCode
-    ));
-  }
-
-  async function handleCreateAccountingPeriod() {
+  async function handleSaveProductAccessCatalog(
+    catalog: ProductAccessCatalog,
+    requestedBy: string
+  ) {
     await runClientAction(async () => {
-      const createdPeriod = await createAccountingPeriod({
-        ...accountingPeriodForm,
-        companyCode: accountingCompanyCode
-      });
-      const periods = await listAccountingPeriods(accountingCompanyCode);
-
-      setAccountingPeriods(periods);
-      setAccountingPeriodReadiness(null);
-      setAccountingPeriodCloseJournalPreview(null);
-      setAccountingPeriodForm(createDefaultAccountingPeriodForm(periods, accountingCompanyCode));
-      setMessage(`Accounting period ${createdPeriod.name} opened.`);
+      const savedCatalog = await saveProductAccessCatalog(catalog, requestedBy);
+      setProductAccessCatalog(savedCatalog);
+      setMessage("Product catalog draft saved. Published contract behavior is unchanged.");
     });
   }
 
-  async function handleCheckAccountingPeriodReadiness(period: AccountingPeriod) {
+  async function handlePublishProductAccessCatalogRevision() {
     await runClientAction(async () => {
-      const readiness = await getAccountingPeriodCloseReadiness(period.accountingPeriodId);
-      setAccountingPeriodReadiness(readiness);
-      setMessage(readiness.canClose
-        ? `${readiness.period.name} is ready to close.`
-        : `${readiness.period.name} has close blockers.`);
-    });
-  }
-
-  async function handlePreviewAccountingCloseJournal(period: AccountingPeriod) {
-    await runClientAction(async () => {
-      const preview = await getAccountingPeriodCloseJournalPreview(period.accountingPeriodId);
-      setAccountingPeriodCloseJournalPreview(preview);
-      setMessage(preview.canGenerate
-        ? `${preview.period.name} close journal preview is ready.`
-        : `${preview.period.name} close journal preview has blockers.`);
-    });
-  }
-
-  async function handleCloseAccountingPeriod(period: AccountingPeriod) {
-    await runClientAction(async () => {
-      const readiness = await getAccountingPeriodCloseReadiness(period.accountingPeriodId);
-
-      setAccountingPeriodReadiness(readiness);
-
-      if (!readiness.canClose) {
-        setMessage(`${readiness.period.name} has close blockers.`);
-        return;
-      }
-
-      const closedPeriod = await closeAccountingPeriod(period.accountingPeriodId);
-      const periods = await listAccountingPeriods(accountingCompanyCode);
-
-      setAccountingPeriods(periods);
-      setAccountingPeriodReadiness(null);
-      setAccountingPeriodCloseJournalPreview(null);
-      setMessage(`Accounting period ${closedPeriod.name} closed with close artifact.`);
-    });
-  }
-
-  async function handleReopenAccountingPeriod(period: AccountingPeriod) {
-    await runClientAction(async () => {
-      const reopenedPeriod = await reopenAccountingPeriod(period.accountingPeriodId);
-      const periods = await listAccountingPeriods(accountingCompanyCode);
-
-      setAccountingPeriods(periods);
-      setAccountingPeriodReadiness(await getAccountingPeriodCloseReadiness(reopenedPeriod.accountingPeriodId));
-      setAccountingPeriodCloseJournalPreview(null);
-      setMessage(`Accounting period ${reopenedPeriod.name} reopened.`);
-    });
-  }
-
-  function handleSelectAccountCodeRange(range: AccountCodeRange) {
-    setSelectedAccountCodeRangeRole(range.role);
-    setAccountCodeRangeForm(toAccountCodeRangeForm(range));
-
-    if (selectedLedgerAccountId === "") {
-      setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(range));
-    }
-  }
-
-  async function refreshJournalEntries(filters = journalEntryFilters) {
-    await runClientAction(async () => {
-      const entries = await listJournalEntries(filters);
-      setJournalEntries(entries);
-    });
-  }
-
-  async function refreshTrialBalance(filters = trialBalanceFilters) {
-    await runClientAction(async () => {
-      const balance = await getTrialBalance(filters);
-      setTrialBalance(balance);
-    });
-  }
-
-  async function handleSaveAccountCodeRange() {
-    if (selectedAccountCodeRangeRole === "") {
-      return;
-    }
-
-    await runClientAction(async () => {
-      const accountingFilters = withAccountingCompanyCode(ledgerAccountFilters);
-      const savedRange = await configureAccountCodeRange(
-        accountingCompanyCode,
-        selectedAccountCodeRangeRole,
-        accountCodeRangeForm
-      );
-      const [accounts, ranges, reconciliation] = await Promise.all([
-        listLedgerAccounts(accountingFilters),
-        listAccountCodeRanges(accountingCompanyCode),
-        getLedgerAccountReconciliation(accountingCompanyCode)
+      const published = await publishProductCatalogRevision(accessCatalogPublishForm.requestedBy);
+      const [revisions, nextModules] = await Promise.all([
+        listProductCatalogRevisions(),
+        listProductModules()
       ]);
-      const sortedRanges = sortAccountCodeRanges(ranges);
-      const selectedRange =
-        sortedRanges.find((range) => range.role === savedRange.role) ?? savedRange;
-
-      setLedgerAccounts(accounts);
-      setLedgerAccountReconciliation(reconciliation);
-      setAccountCodeRanges(sortedRanges);
-      setSelectedAccountCodeRangeRole(selectedRange.role);
-      setAccountCodeRangeForm(toAccountCodeRangeForm(selectedRange));
-      await applyLedgerAccountCodeSuggestions();
-      setMessage("Accounting setup range saved.");
+      setProductAccessCatalog(published);
+      setProductAccessCatalogRevisions(revisions);
+      setProductModules(nextModules);
+      setMessage(`Product catalog revision #${published.revisionNumber ?? "-"} published.`);
     });
   }
 
-  async function handleNewLedgerAccount() {
-    const selectedRange = accountCodeRanges.find((range) => range.role === selectedAccountCodeRangeRole) ?? null;
-
-    setSelectedLedgerAccountId("");
-    setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(selectedRange));
-
-    if (selectedRange === null) {
-      return;
-    }
-
+  async function handlePublishProductAccessCatalog() {
     await runClientAction(async () => {
-      const suggestion = await suggestAccountingLedgerAccountCode(
-        selectedRange.role,
-        accountingCompanyCode
-      );
-
-      setSelectedLedgerAccountId("");
-      setLedgerAccountEditorForm((current) => ({
-        ...current,
-        code: suggestion.suggestedCode,
-        type: suggestion.type,
-        normalBalance: suggestion.normalBalance,
-        level: getDefaultLedgerAccountLevel(selectedRange, suggestion.isPostingAccount),
-        isPostingAccount: suggestion.isPostingAccount,
-        status: "Active"
-      }));
-      setMessage(`Prepared ${suggestion.displayCode}.`);
-    });
-  }
-
-  function handleEditLedgerAccount(account: LedgerAccountSummary) {
-    setSelectedLedgerAccountId(account.ledgerAccountId);
-    setLedgerAccountEditorForm(toLedgerAccountEditorForm(account));
-  }
-
-  async function handleSuggestAccountingLedgerAccountCode() {
-    if (selectedAccountCodeRangeRole === "") {
-      return;
-    }
-
-    await runClientAction(async () => {
-      const selectedRange =
-        accountCodeRanges.find((range) => range.role === selectedAccountCodeRangeRole) ?? null;
-      const suggestion = await suggestAccountingLedgerAccountCode(
-        selectedAccountCodeRangeRole,
-        accountingCompanyCode
-      );
-
-      setLedgerAccountEditorForm((current) => ({
-        ...current,
-        code: suggestion.suggestedCode,
-        type: suggestion.type,
-        normalBalance: suggestion.normalBalance,
-        level: getDefaultLedgerAccountLevel(selectedRange, suggestion.isPostingAccount),
-        isPostingAccount: suggestion.isPostingAccount,
-        status: "Active"
-      }));
-      setMessage(`Suggested ${suggestion.displayCode}.`);
-    });
-  }
-
-  async function handleSaveLedgerAccount() {
-    await runClientAction(async () => {
-      if (selectedLedgerAccountId === "") {
-        await createAccountingLedgerAccount(ledgerAccountEditorForm);
-      } else {
-        await updateLedgerAccount(selectedLedgerAccountId, ledgerAccountEditorForm);
-      }
-
-      const accountingFilters = withAccountingCompanyCode(ledgerAccountFilters);
-      const [accounts, ranges, reconciliation] = await Promise.all([
-        listLedgerAccounts(accountingFilters),
-        listAccountCodeRanges(accountingCompanyCode),
-        getLedgerAccountReconciliation(accountingCompanyCode)
-      ]);
-      const sortedRanges = sortAccountCodeRanges(ranges);
-      const selectedRange =
-        sortedRanges.find((range) => range.role === selectedAccountCodeRangeRole)
-        ?? sortedRanges[0]
-        ?? null;
-
-      setLedgerAccounts(accounts);
-      setLedgerAccountReconciliation(reconciliation);
-      setAccountCodeRanges(sortedRanges);
-      setSelectedAccountCodeRangeRole(selectedRange?.role ?? "");
-      setAccountCodeRangeForm(
-        selectedRange === null ? emptyAccountCodeRangeForm : toAccountCodeRangeForm(selectedRange)
-      );
-
-      if (selectedLedgerAccountId === "") {
-        setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(selectedRange));
-      } else {
-        const updatedAccount = accounts.find((account) => account.ledgerAccountId === selectedLedgerAccountId);
-        if (updatedAccount === undefined) {
-          setSelectedLedgerAccountId("");
-          setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(selectedRange));
-        } else {
-          setLedgerAccountEditorForm(toLedgerAccountEditorForm(updatedAccount));
-        }
-      }
-
-      await applyLedgerAccountCodeSuggestions();
-      setMessage(selectedLedgerAccountId === "" ? "Ledger account created." : "Ledger account saved.");
-    });
-  }
-
-  async function handleToggleLedgerAccountStatus(account: LedgerAccountSummary) {
-    await runClientAction(async () => {
-      const nextStatus = account.status === "Active" ? "Inactive" : "Active";
-
-      await updateLedgerAccount(account.ledgerAccountId, {
-        ...toLedgerAccountEditorForm(account),
-        status: nextStatus
-      });
-
-      const [accounts, reconciliation] = await Promise.all([
-        listLedgerAccounts(withAccountingCompanyCode(ledgerAccountFilters)),
-        getLedgerAccountReconciliation(accountingCompanyCode)
-      ]);
-      setLedgerAccounts(accounts);
-      setLedgerAccountReconciliation(reconciliation);
-
-      if (selectedLedgerAccountId === account.ledgerAccountId) {
-        const updatedAccount = accounts.find((item) => item.ledgerAccountId === account.ledgerAccountId);
-        if (updatedAccount === undefined) {
-          setSelectedLedgerAccountId("");
-          setLedgerAccountEditorForm(createDefaultLedgerAccountEditorForm(
-            accountCodeRanges.find((range) => range.role === selectedAccountCodeRangeRole) ?? null));
-        } else {
-          setLedgerAccountEditorForm(toLedgerAccountEditorForm(updatedAccount));
-        }
-      }
-
-      setMessage(nextStatus === "Active" ? "Ledger account reactivated." : "Ledger account deactivated.");
-    });
-  }
-
-  async function handleViewLedgerAccountActivity(account: LedgerAccountSummary) {
-    await runClientAction(async () => {
-      const activity = await getLedgerAccountActivity(account.ledgerAccountId);
-      setLedgerAccountActivity(activity);
-      setMessage(`Loaded ${account.displayCode} activity.`);
-    });
-  }
-
-  async function handleViewTrialBalanceAccountActivity(line: TrialBalanceLine) {
-    await runClientAction(async () => {
-      const activity = await getLedgerAccountActivity(line.ledgerAccountId);
-      setLedgerAccountActivity(activity);
-      setMessage(`Loaded ${line.code} activity from trial balance.`);
-    });
-  }
-
-  async function handleViewJournalEntryById(journalEntryId: string) {
-    const normalizedJournalEntryId = journalEntryId.trim();
-
-    if (normalizedJournalEntryId === "") {
-      return;
-    }
-
-    await runClientAction(async () => {
-      const entry = await getJournalEntry(normalizedJournalEntryId);
-
-      setFocusedJournalEntryId(entry.journalEntryId);
-      setFocusedJournalEntry(entry);
-      await loadJournalSourceDocument(entry);
-      setJournalEntryFilters((current) => ({
-        ...current,
-        fromDate: entry.entryDate,
-        toDate: entry.entryDate,
-        sourceType: ""
-      }));
-      setActiveDashboardModule("accounting");
-      setMessage(`Opened journal ${entry.sourceReference ?? entry.journalEntryId}.`);
-    });
-  }
-
-  async function handleFocusJournalEntry(journalEntryId: string) {
-    if (journalEntryId === "" || focusedJournalEntryId === journalEntryId) {
-      setFocusedJournalEntryId("");
-      setFocusedJournalEntry(null);
-      return;
-    }
-
-    await runClientAction(async () => {
-      const entry = await getJournalEntry(journalEntryId);
-
-      setFocusedJournalEntryId(entry.journalEntryId);
-      setFocusedJournalEntry(entry);
-      await loadJournalSourceDocument(entry);
-      setMessage(`Focused journal ${entry.sourceReference ?? entry.journalEntryId}.`);
+      const publishedCommand = await publishProductAccessCatalogCommand(accessCatalogPublishForm);
+      setPublishedAccessCatalogCommand(publishedCommand);
+      setProductAccessCatalog(await listProductAccessCatalog());
+      setMessage(`Product access catalog command issued (${publishedCommand.commandId}).`);
     });
   }
 
@@ -942,11 +524,22 @@ export function ClientDeskPage() {
     }
 
     await runClientAction(async () => {
-      const sourceDocument = await getJournalEntrySourceDocument(entry.journalEntryId);
+      const sourceDocument = await accounting.loadJournalSourceDocument(entry);
+
+      if (sourceDocument === null) {
+        setMessage("That journal source could not be resolved.");
+        return;
+      }
+
       const resolvedTarget = getJournalSourceDocumentTargetFromResolved(sourceDocument);
-      rememberJournalSourceDocument(sourceDocument);
 
       if (resolvedTarget === null) {
+        if (sourceDocument.documentKind === "OpeningBalance") {
+          setActiveDashboardModule("accounting");
+          setMessage(sourceDocument.message ?? `Opened ${sourceDocument.label ?? "opening balance"}.`);
+          return;
+        }
+
         setMessage(sourceDocument.message ?? "That journal source could not be resolved.");
         return;
       }
@@ -957,6 +550,10 @@ export function ClientDeskPage() {
         || sourceDocument.clientId === selectedClientId;
 
       if (!isLoadedClientSource && sourceDocument.clientId !== null && sourceDocument.clientId !== undefined) {
+        setPendingJournalSourceOpen({
+          sourceDocument,
+          target: resolvedTarget
+        });
         setSelectedClientId(sourceDocument.clientId);
         openJournalSourceDocumentTarget(resolvedTarget, sourceDocument);
         return;
@@ -984,7 +581,10 @@ export function ClientDeskPage() {
       : `Opened ${target.label} (${sourceDocument.status}).`);
   }
 
-  async function hydrateJournalSourceDocument(sourceDocument: JournalEntrySourceDocument) {
+  async function hydrateJournalSourceDocument(
+    sourceDocument: JournalEntrySourceDocument,
+    context: JournalSourceHydrationContext = {}
+  ) {
     if (
       !sourceDocument.isResolved
       || sourceDocument.documentKind === null
@@ -1003,7 +603,7 @@ export function ClientDeskPage() {
         voidedInvoice: document.voidedInvoice ?? null,
         creditNote: document.creditNote ?? null,
         resetPaymentArtifacts: true
-      });
+      }, context);
       return;
     }
 
@@ -1013,7 +613,7 @@ export function ClientDeskPage() {
       applyHydratedInvoiceContext(document.invoice, {
         creditNote: document.creditNote,
         resetPaymentArtifacts: true
-      });
+      }, context);
       return;
     }
 
@@ -1023,7 +623,7 @@ export function ClientDeskPage() {
         ? mapReversedPaymentToRecordedPayment(document.reversal)
         : document.payment;
 
-      applyHydratedInvoiceContext(document.invoice, { resetPaymentArtifacts: false });
+      applyHydratedInvoiceContext(document.invoice, { resetPaymentArtifacts: false }, context);
       setRecordedPayment(payment);
       setIssuedRefund(null);
       setAppliedCredit(null);
@@ -1048,7 +648,9 @@ export function ClientDeskPage() {
         postingDate: document.refund.postingDate,
         accountsReceivableAccountId:
           current.accountsReceivableAccountId.trim() === ""
-            ? accountingProfile?.accountsReceivableAccountId ?? ""
+            ? context.accountingProfile?.accountsReceivableAccountId
+              ?? accountingProfile?.accountsReceivableAccountId
+              ?? ""
             : current.accountsReceivableAccountId
       }));
     }
@@ -1061,8 +663,12 @@ export function ClientDeskPage() {
       voidedInvoice?: VoidedInvoice | null;
       creditNote?: IssuedCreditNote | null;
       resetPaymentArtifacts: boolean;
-    }
+    },
+    context: JournalSourceHydrationContext = {}
   ) {
+    const hydratedClient = context.client ?? selectedClient;
+    const hydratedAccountingProfile = context.accountingProfile ?? accountingProfile;
+    const hydratedClientStatement = context.clientStatement ?? clientStatement;
     const postingDate =
       options.issuedInvoice?.postingDate
       ?? options.voidedInvoice?.voidDate
@@ -1083,18 +689,23 @@ export function ClientDeskPage() {
     setIssuedCreditNote(options.creditNote ?? null);
     setIssueInvoiceForm((current) => ({
       ...current,
-      postingDate
+      postingDate,
+      accountsReceivableAccountId:
+        current.accountsReceivableAccountId.trim() === ""
+          ? hydratedAccountingProfile?.accountsReceivableAccountId ?? ""
+          : current.accountsReceivableAccountId
     }));
     setPaymentForm(createDefaultPaymentForm(
-      selectedClient,
+      hydratedClient,
       invoice,
-      accountingProfile,
-      issueInvoiceForm.accountsReceivableAccountId
+      hydratedAccountingProfile,
+      hydratedAccountingProfile?.accountsReceivableAccountId
+        ?? issueInvoiceForm.accountsReceivableAccountId
     ));
     setCreditApplicationForm(createDefaultCreditApplicationForm(
-      selectedClient,
+      hydratedClient,
       invoice,
-      clientStatement
+      hydratedClientStatement
     ));
 
     if (options.resetPaymentArtifacts) {
@@ -1227,26 +838,6 @@ export function ClientDeskPage() {
     return null;
   }
 
-  async function loadJournalSourceDocument(
-    entry: JournalEntrySummary
-  ): Promise<JournalEntrySourceDocument | null> {
-    if (getJournalSourceDocumentFallbackLabel(entry) === null) {
-      return null;
-    }
-
-    const sourceDocument = await getJournalEntrySourceDocument(entry.journalEntryId);
-    rememberJournalSourceDocument(sourceDocument);
-
-    return sourceDocument;
-  }
-
-  function rememberJournalSourceDocument(sourceDocument: JournalEntrySourceDocument) {
-    setJournalSourceDocumentsById((current) => ({
-      ...current,
-      [sourceDocument.journalEntryId]: sourceDocument
-    }));
-  }
-
   function getJournalSourceDocumentClientLabel(sourceDocument: JournalEntrySourceDocument): string {
     if (sourceDocument.clientId === null || sourceDocument.clientId === undefined) {
       return "-";
@@ -1263,74 +854,31 @@ export function ClientDeskPage() {
       : `${client.code} ${client.displayName}`;
   }
 
-  async function handleViewJournalEntryFromActivity(line: LedgerAccountActivityLine) {
-    await runClientAction(async () => {
-      const entry = await getJournalEntry(line.journalEntryId);
-
-      setFocusedJournalEntryId(entry.journalEntryId);
-      setFocusedJournalEntry(entry);
-      await loadJournalSourceDocument(entry);
-      setJournalEntryFilters((current) => ({
-        ...current,
-        fromDate: line.entryDate,
-        toDate: line.entryDate,
-        sourceType: ""
-      }));
-      setMessage(`Focused journal ${entry.sourceReference ?? entry.journalEntryId}.`);
+  async function loadClientList(
+    nextSelectedClientId = selectedClientId,
+    append = false,
+    query = clientDirectoryQuery
+  ) {
+    const page = await listClientPage({
+      search: query.search,
+      sort: query.sort,
+      direction: query.direction,
+      take: 50,
+      cursor: append ? clientNextCursor ?? undefined : undefined
     });
-  }
+    let clientList = append
+      ? mergeClientLookups(clients, page.clients)
+      : page.clients;
 
-  async function handlePostManualJournalEntry() {
-    await runClientAction(async () => {
-      const postedEntry = await postManualJournalEntry(manualJournalEntryForm);
-      const [entries, balance] = await Promise.all([
-        listJournalEntries(journalEntryFilters),
-        getTrialBalance(trialBalanceFilters)
-      ]);
-
-      setJournalEntries(entries);
-      setTrialBalance(balance);
-      setManualJournalEntryForm(createDefaultManualJournalEntryForm());
-      setFocusedJournalEntryId(postedEntry.journalEntryId);
-      setFocusedJournalEntry(postedEntry);
-      await refreshSelectedLedgerAccountActivity();
-      setMessage(`Manual journal ${postedEntry.sourceReference ?? postedEntry.journalEntryId} posted.`);
-    });
-  }
-
-  async function handleVoidManualJournalEntry(entry: JournalEntrySummary) {
-    await runClientAction(async () => {
-      const result = await voidManualJournalEntry(entry.journalEntryId, {
-        voidDate: toDateInputValue(new Date()),
-        reason: "Voided from GL workbench"
-      });
-      const [entries, balance, reversalEntry] = await Promise.all([
-        listJournalEntries(journalEntryFilters),
-        getTrialBalance(trialBalanceFilters),
-        getJournalEntry(result.reversalJournalEntryId)
-      ]);
-
-      setJournalEntries(entries);
-      setTrialBalance(balance);
-      setFocusedJournalEntryId(result.reversalJournalEntryId);
-      setFocusedJournalEntry(reversalEntry);
-      await refreshSelectedLedgerAccountActivity();
-      setMessage(`Manual journal reversal ${result.reversalJournalEntryId} posted.`);
-    });
-  }
-
-  async function refreshSelectedLedgerAccountActivity() {
-    if (ledgerAccountActivity === null) {
-      return;
+    if (nextSelectedClientId !== ""
+      && !clientList.some((client) => client.clientId === nextSelectedClientId)) {
+      const selected = await getClient(nextSelectedClientId);
+      clientList = mergeClientLookups(clientList, [toClientLookup(selected)]);
     }
 
-    const activity = await getLedgerAccountActivity(ledgerAccountActivity.ledgerAccountId);
-    setLedgerAccountActivity(activity);
-  }
-
-  async function loadClientList(nextSelectedClientId = selectedClientId) {
-    const clientList = await listClients();
     setClients(clientList);
+    setClientFilteredCount(page.filteredCount);
+    setClientNextCursor(page.nextCursor ?? null);
 
     if (clientList.length === 0) {
       setSelectedClientId("");
@@ -1340,9 +888,12 @@ export function ClientDeskPage() {
       setContracts([]);
       setCloudInstallationId("");
       setCloudInstallationStatus(null);
+      setCloudConnectionState(defaultCloudConnectionState);
       setClientDeployments([]);
       setDeploymentForm(createDefaultDeploymentForm());
       clearCloudProvisioningArtifacts();
+      setCloudOutboxMessages([]);
+      setCloudOutboxSummary(null);
       setLatestPortalInvitation(null);
       setPortalInvitations([]);
       setClientStatement(null);
@@ -1371,10 +922,42 @@ export function ClientDeskPage() {
       applyBillingDefaults(client, getActiveContract(clientContracts));
       await applyLedgerAccountCodeSuggestions();
       await loadClientChargeRules(clientId, getActiveContract(clientContracts)?.contractId);
-      await loadAccountingProfile(clientId);
+      const loadedAccountingProfile = await loadAccountingProfile(clientId);
       await loadLatestEntitlementSnapshot(clientId);
+      await loadCloudOutboxMessages(clientId);
       await loadClientPortalInvitations(clientId, true);
+      await hydratePendingJournalSourceOpen(
+        clientId,
+        client,
+        loadedAccountingProfile,
+        statement);
     });
+  }
+
+  async function hydratePendingJournalSourceOpen(
+    clientId: string,
+    client: ClientDetails,
+    loadedAccountingProfile: ClientAccountingProfile | null,
+    statement: ClientStatement
+  ) {
+    if (
+      pendingJournalSourceOpen === null
+      || pendingJournalSourceOpen.sourceDocument.clientId !== clientId
+    ) {
+      return;
+    }
+
+    await hydrateJournalSourceDocument(
+      pendingJournalSourceOpen.sourceDocument,
+      {
+        client,
+        accountingProfile: loadedAccountingProfile,
+        clientStatement: statement
+      });
+    openJournalSourceDocumentTarget(
+      pendingJournalSourceOpen.target,
+      pendingJournalSourceOpen.sourceDocument);
+    setPendingJournalSourceOpen(null);
   }
 
   async function refreshClientStatement(clientId = selectedClient?.clientId) {
@@ -1388,10 +971,11 @@ export function ClientDeskPage() {
     return statement;
   }
 
-  async function loadAccountingProfile(clientId: string) {
+  async function loadAccountingProfile(clientId: string): Promise<ClientAccountingProfile | null> {
     try {
       const profile = await getClientAccountingProfile(clientId);
       applyAccountingProfile(profile, clientId);
+      return profile;
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
         setAccountingProfile(null);
@@ -1409,7 +993,7 @@ export function ClientDeskPage() {
           ...current,
           clientId
         }));
-        return;
+        return null;
       }
 
       throw caughtError;
@@ -1511,15 +1095,37 @@ export function ClientDeskPage() {
       return false;
     }
 
+    setCloudConnectionState(createCloudConnectionState(
+      "checking",
+      "Checking Control Cloud status..."
+    ));
+
     try {
       const status = await getCloudInstallationStatus(clientId, normalizedInstallationId);
       setCloudInstallationStatus(status);
       setDeploymentForm((current) => mergeDeploymentStatus(current, status));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud."
+      ));
 
       return true;
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
         setCloudInstallationStatus(null);
+        setCloudConnectionState(createCloudConnectionState(
+          "connected",
+          "Connected to Control Cloud; this installation was not found."
+        ));
+
+        return false;
+      }
+
+      const cloudIssue = toCloudConnectionIssue(caughtError);
+
+      if (cloudIssue !== null) {
+        setCloudInstallationStatus(null);
+        setCloudConnectionState(cloudIssue);
 
         return false;
       }
@@ -1540,11 +1146,106 @@ export function ClientDeskPage() {
       return false;
     }
 
-    const auditEvents = await listCloudInstallationAuditEvents(
+    try {
+      const auditEvents = await listCloudInstallationAuditEvents(
+        clientId,
+        normalizedInstallationId,
+        50);
+      setCloudAuditEvents(auditEvents);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud history."
+      ));
+    } catch (caughtError) {
+      const cloudIssue = toCloudConnectionIssue(caughtError);
+
+      if (cloudIssue !== null) {
+        setCloudAuditEvents([]);
+        setCloudConnectionState(cloudIssue);
+
+        return false;
+      }
+
+      throw caughtError;
+    }
+
+    return true;
+  }
+
+  async function loadCloudBootstrapPackages(
+    clientId = selectedClient?.clientId,
+    installationId = cloudInstallationId
+  ): Promise<boolean> {
+    const normalizedInstallationId = installationId.trim();
+
+    if (clientId === undefined || normalizedInstallationId === "") {
+      setCloudBootstrapPackages([]);
+
+      return false;
+    }
+
+    try {
+      const packages = await listCloudInstallationBootstrapPackages(
+        clientId,
+        normalizedInstallationId,
+        20);
+      setCloudBootstrapPackages(packages);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud deployment package register."
+      ));
+
+      return true;
+    } catch (caughtError) {
+      const cloudIssue = toCloudConnectionIssue(caughtError);
+
+      if (cloudIssue !== null) {
+        setCloudBootstrapPackages([]);
+        setCloudConnectionState(cloudIssue);
+
+        return false;
+      }
+
+      throw caughtError;
+    }
+  }
+
+  async function loadCloudAppActivationIssues(
+    clientId = selectedClient?.clientId,
+    installationId = cloudInstallationId,
+    query = appActivationIssueSearch
+  ): Promise<boolean> {
+    if (clientId === undefined) {
+      setAppActivationIssues([]);
+
+      return false;
+    }
+
+    const activationIssues = await listCloudAppActivationIssues(
       clientId,
-      normalizedInstallationId,
-      50);
-    setCloudAuditEvents(auditEvents);
+      {
+        installationId: installationId.trim() || undefined,
+        query: query.trim() || undefined,
+        take: 50
+      });
+    setAppActivationIssues(activationIssues);
+
+    return true;
+  }
+
+  async function loadCloudOutboxMessages(
+    clientId = selectedClient?.clientId
+  ): Promise<boolean> {
+    if (clientId === undefined) {
+      setCloudOutboxMessages([]);
+      setCloudOutboxSummary(null);
+
+      return false;
+    }
+
+    const page = await listCloudOutboxMessagePage({ clientId, take: 100 });
+    setCloudOutboxMessages(page.messages);
+    setCloudOutboxSummary(page.summary);
 
     return true;
   }
@@ -1561,16 +1262,38 @@ export function ClientDeskPage() {
       return false;
     }
 
+    setCloudConnectionState(createCloudConnectionState(
+      "checking",
+      "Checking Control Cloud diagnostics..."
+    ));
+
     try {
       const diagnostics = await getLatestCloudInstallationDiagnostics(
         clientId,
         normalizedInstallationId);
       setCloudDiagnosticsReport(diagnostics);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud diagnostics."
+      ));
 
       return true;
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
         setCloudDiagnosticsReport(null);
+        setCloudConnectionState(createCloudConnectionState(
+          "connected",
+          "Connected to Control Cloud; no diagnostics report was found."
+        ));
+
+        return false;
+      }
+
+      const cloudIssue = toCloudConnectionIssue(caughtError);
+
+      if (cloudIssue !== null) {
+        setCloudDiagnosticsReport(null);
+        setCloudConnectionState(cloudIssue);
 
         return false;
       }
@@ -1592,6 +1315,10 @@ export function ClientDeskPage() {
     try {
       const invitations = await listClientPortalInvitations(clientId);
       setPortalInvitations(invitations);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud portal invitations."
+      ));
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.statusCode === 404) {
         setPortalInvitations([]);
@@ -1601,6 +1328,12 @@ export function ClientDeskPage() {
 
       if (suppressUnavailable && caughtError instanceof ApiError && caughtError.statusCode >= 500) {
         setPortalInvitations([]);
+        setCloudConnectionState(
+          toCloudConnectionIssue(caughtError)
+          ?? createCloudConnectionState(
+            "unavailable",
+            "Control Cloud portal invitations are unavailable."
+          ));
 
         return;
       }
@@ -1613,7 +1346,7 @@ export function ClientDeskPage() {
     await runClientAction(async () => {
       const createdClient = await createClient(createForm);
       setCreateForm(emptyCreateForm);
-      await loadClientList(createdClient.clientId);
+      await loadClientList(createdClient.clientId, false, clientDirectoryQuery);
       setMessage("Client created.");
     });
   }
@@ -1683,11 +1416,15 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const invitation = await inviteClientPortalContact(
         selectedClient.clientId,
         clientContactId
       );
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud portal invitations."
+      ));
       setLatestPortalInvitation(invitation);
       upsertPortalInvitation(invitation);
       setMessage(`Portal invite created for ${invitation.email}.`);
@@ -1699,7 +1436,7 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       await loadClientPortalInvitations(selectedClient.clientId);
       setMessage("Portal invitations refreshed.");
     });
@@ -1710,8 +1447,12 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const invitation = await resendClientPortalInvitation(selectedClient.clientId, invitationId);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud portal invitations."
+      ));
       setLatestPortalInvitation(invitation);
       upsertPortalInvitation(invitation);
       setMessage(`Portal invite resent to ${invitation.email}.`);
@@ -1727,8 +1468,12 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const invitation = await revokeClientPortalInvitation(selectedClient.clientId, invitationId);
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud portal invitations."
+      ));
       upsertPortalInvitation(invitation);
       setMessage(`Portal invite revoked for ${invitation.email}.`);
     });
@@ -2026,6 +1771,7 @@ export function ClientDeskPage() {
         nextInvoiceDraft,
         statement ?? clientStatement
       ));
+      await loadCloudOutboxMessages();
       setMessage("Invoice issued.");
     });
   }
@@ -2061,6 +1807,7 @@ export function ClientDeskPage() {
       setRecordedPayment(null);
       setAppliedCredit(null);
       await refreshClientStatement(selectedClient?.clientId);
+      await loadCloudOutboxMessages();
       setMessage("Invoice voided.");
     });
   }
@@ -2098,6 +1845,7 @@ export function ClientDeskPage() {
         invoiceDraft,
         statement ?? clientStatement
       ));
+      await loadCloudOutboxMessages();
       setMessage("Credit note issued.");
     });
   }
@@ -2146,6 +1894,7 @@ export function ClientDeskPage() {
         ...current,
         amount: getStatementCredit(refreshedStatement, application.currencyCode).availableCredit.toFixed(2)
       }));
+      await loadCloudOutboxMessages();
       setMessage("Client credit applied.");
     });
   }
@@ -2186,6 +1935,7 @@ export function ClientDeskPage() {
         invoiceDraft,
         refreshedStatement
       ));
+      await loadCloudOutboxMessages();
       setMessage("Client refund issued.");
     });
   }
@@ -2225,6 +1975,7 @@ export function ClientDeskPage() {
       setIssuedCreditNote(null);
       setAppliedCredit(null);
       await refreshClientStatement(selectedClient?.clientId);
+      await loadCloudOutboxMessages();
       setMessage(payment.paymentStatus === "PendingReview" ? "Payment recorded for review." : "Payment recorded.");
     });
   }
@@ -2269,6 +2020,7 @@ export function ClientDeskPage() {
       setIssuedEntitlementSnapshot(null);
       setAppliedCredit(null);
       await refreshClientStatement(selectedClient?.clientId);
+      await loadCloudOutboxMessages();
       setMessage("Payment approved and posted.");
     });
   }
@@ -2342,6 +2094,7 @@ export function ClientDeskPage() {
       setIssuedEntitlementSnapshot(null);
       setAppliedCredit(null);
       await refreshClientStatement(selectedClient?.clientId);
+      await loadCloudOutboxMessages();
       setMessage("Payment reversed.");
     });
   }
@@ -2373,9 +2126,12 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const found = await loadCloudInstallationStatus();
       await loadCloudInstallationAuditEvents();
+      await loadCloudBootstrapPackages();
+      await loadCloudAppActivationIssues();
+      await loadCloudOutboxMessages();
       setMessage(found
         ? "Cloud installation status refreshed."
         : "No cloud installation status found.");
@@ -2387,11 +2143,86 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const found = await loadCloudInstallationAuditEvents();
+      await loadCloudAppActivationIssues();
       setMessage(found
         ? "Cloud installation history refreshed."
         : "Select an installation before refreshing cloud history.");
+    });
+  }
+
+  async function handleLoadMoreClientStatement(register: ClientStatementRegister) {
+    if (selectedClient === null || clientStatement === null) {
+      return;
+    }
+
+    await runClientAction(async () => {
+      const statement = await loadMoreClientStatement(
+        selectedClient.clientId,
+        clientStatement,
+        register
+      );
+      setClientStatement(statement);
+    });
+  }
+
+  async function handleRefreshCloudBootstrapPackages() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      const found = await loadCloudBootstrapPackages();
+      setMessage(found
+        ? "Deployment package register refreshed."
+        : "Select an installation before refreshing deployment packages.");
+    });
+  }
+
+  async function handleRefreshCloudAppActivationIssues() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      await loadCloudAppActivationIssues();
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud app activation register."
+      ));
+      setMessage("App activation register refreshed.");
+    });
+  }
+
+  async function handleRefreshCloudOutboxMessages() {
+    await runClientAction(async () => {
+      await loadCloudOutboxMessages();
+      setMessage("Local cloud outbox refreshed.");
+    });
+  }
+
+  async function handlePublishCloudOutboxMessages() {
+    await runCloudAction(async () => {
+      const publishResult = await publishCloudOutboxMessages(20);
+      setLatestCloudOutboxPublish(publishResult);
+      applyCloudOutboxPublishConnectionState(publishResult);
+      await loadCloudOutboxMessages();
+
+      if (publishResult.messages.length === 0) {
+        setMessage("No local outbox messages are ready to publish.");
+        return;
+      }
+
+      const summary =
+        `Cloud outbox publish attempted: ${publishResult.publishedCount} sent, ${publishResult.failedCount} failed.`;
+
+      if (publishResult.failedCount > 0) {
+        setError(summary);
+        return;
+      }
+
+      setMessage(summary);
     });
   }
 
@@ -2400,7 +2231,7 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const found = await loadCloudInstallationDiagnostics();
       setMessage(found
         ? "Cloud diagnostics refreshed."
@@ -2428,6 +2259,11 @@ export function ClientDeskPage() {
     setQueuedSupportCommand(null);
   }
 
+  function handleAppActivationValueChange(value: CloudAppActivationTokenFormInput) {
+    setAppActivationForm(value);
+    setIssuedAppActivation(null);
+  }
+
   function handleSelectClientDeployment(clientDeploymentId: string) {
     if (selectedClient === null) {
       return;
@@ -2441,6 +2277,7 @@ export function ClientDeskPage() {
     setDeploymentForm(nextForm);
     setCloudInstallationId(nextForm.installationId);
     setCloudInstallationStatus(null);
+    setCloudConnectionState(defaultCloudConnectionState);
     clearCloudProvisioningArtifacts();
   }
 
@@ -2460,14 +2297,19 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
       const setupToken = await createCloudInstallationSetupToken(
         selectedClient.clientId,
         savedDeployment.installationId,
         toCloudProvisioningInput(toDeploymentForm(savedDeployment), setupTokenHours));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; setup token was created."
+      ));
       setCloudSetupToken(setupToken);
       setCloudBootstrapPackage(null);
+      await loadCloudBootstrapPackages(selectedClient.clientId, savedDeployment.installationId);
       await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
       setMessage("Cloud setup token created.");
     });
@@ -2478,16 +2320,49 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
       const bootstrapPackage = await createCloudInstallationBootstrapPackage(
         selectedClient.clientId,
         savedDeployment.installationId,
         toCloudProvisioningInput(toDeploymentForm(savedDeployment), setupTokenHours));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; bootstrap package was created."
+      ));
       setCloudBootstrapPackage(bootstrapPackage);
       setCloudSetupToken(null);
+      await loadCloudBootstrapPackages(selectedClient.clientId, savedDeployment.installationId);
       await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
       setMessage("Cloud bootstrap package created.");
+    });
+  }
+
+  async function handleMarkCloudBootstrapPackageHandoff(bootstrapPackageId: string) {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
+      const handoff = await markCloudBootstrapPackageHandoff(
+        selectedClient.clientId,
+        savedDeployment.installationId,
+        bootstrapPackageId,
+        {
+          channel: bootstrapPackageHandoffForm.channel,
+          recipient: bootstrapPackageHandoffForm.recipient,
+          markedBy: bootstrapPackageHandoffForm.markedBy,
+          preflightAcknowledgements: bootstrapPackageHandoffForm.preflightAcknowledgements,
+          note: bootstrapPackageHandoffForm.note
+        });
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; setup packet handoff was marked."
+      ));
+      await loadCloudBootstrapPackages(selectedClient.clientId, savedDeployment.installationId);
+      await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
+      setMessage(`Setup packet handoff marked for ${handoff.bootstrapPackageId.slice(0, 8)}.`);
     });
   }
 
@@ -2496,7 +2371,7 @@ export function ClientDeskPage() {
       return;
     }
 
-    await runClientAction(async () => {
+    await runCloudAction(async () => {
       const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
       const queuedCommand = await queueCloudInstallationSupportCommand(
         selectedClient.clientId,
@@ -2507,11 +2382,97 @@ export function ClientDeskPage() {
           requestedBy: supportCommandForm.requestedBy,
           expiresInHours: parseSupportCommandHours(supportCommandForm.expiresInHours)
         });
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; support command was queued."
+      ));
       setQueuedSupportCommand(queuedCommand);
       await loadCloudInstallationStatus(selectedClient.clientId, savedDeployment.installationId);
       await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
       setMessage(`${formatSupportCommandType(queuedCommand.commandType)} command queued.`);
     });
+  }
+
+  async function handleIssueCloudAppActivationToken() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
+      const issuedActivation = await issueCloudAppActivationToken(
+        selectedClient.clientId,
+        savedDeployment.installationId,
+        toCloudAppActivationTokenInput(appActivationForm));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; app activation token was issued."
+      ));
+      setIssuedAppActivation(issuedActivation);
+      await loadCloudInstallationStatus(selectedClient.clientId, savedDeployment.installationId);
+      await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
+      await loadCloudAppActivationIssues(selectedClient.clientId, savedDeployment.installationId);
+      setMessage("SafarSuite app activation token issued.");
+    });
+  }
+
+  async function handleIssueCloudFirstManagerSetupToken() {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      const savedDeployment = await saveDeploymentForClient(selectedClient.clientId);
+      const issuedToken = await issueCloudFirstManagerSetupToken(
+        selectedClient.clientId,
+        savedDeployment.installationId,
+        toCloudFirstManagerSetupTokenInput(firstManagerSetupTokenForm));
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; first-manager setup token was issued."
+      ));
+      setIssuedFirstManagerSetupToken(issuedToken);
+      await loadCloudInstallationAuditEvents(selectedClient.clientId, savedDeployment.installationId);
+      setMessage("First-manager setup token issued.");
+    });
+  }
+
+  async function handleRevokeCloudAppActivationIssue(activationIssueId: string) {
+    if (selectedClient === null) {
+      return;
+    }
+
+    await runCloudAction(async () => {
+      await revokeCloudAppActivationIssue(
+        selectedClient.clientId,
+        activationIssueId,
+        {
+          revokedBy: appActivationRevocationForm.revokedBy,
+          reason: appActivationRevocationForm.reason
+        });
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        "Connected to Control Cloud; app activation mapping was revoked."
+      ));
+      await loadCloudAppActivationIssues();
+      await loadCloudInstallationAuditEvents();
+      setIssuedAppActivation((current) =>
+        current?.activationIssueId === activationIssueId ? null : current);
+      setMessage("App activation mapping revoked. Import a fresh app request before issuing a replacement.");
+    });
+  }
+
+  function handlePrepareReplacementAppActivationIssue(issue: SafarSuiteAppActivationIssue) {
+    setAppActivationForm((current) => ({
+      ...current,
+      activationRequestId: "",
+      replacesActivationIssueId: issue.activationIssueId,
+      serverInstallationId: "",
+      fingerprintHash: "",
+      serverPublicKey: ""
+    }));
+    setIssuedAppActivation(null);
+    setMessage("Replacement prepared. Import a fresh SafarSuite app request before issuing.");
   }
 
   async function saveDeploymentForClient(clientId: string): Promise<ClientDeployment> {
@@ -2525,16 +2486,22 @@ export function ClientDeskPage() {
     return savedDeployment;
   }
 
-  async function handleIssueEntitlementSnapshot() {
+  async function handleIssueEntitlementSnapshot(
+    approvalReason = "Paid invoice and active contract verified in Control Desk."
+  ) {
     if (invoiceDraft === null) {
       return;
     }
 
     await runClientAction(async () => {
-      const snapshot = await issueEntitlementFromPaidInvoiceDefaults(invoiceDraft.invoiceId);
+      const snapshot = await issueEntitlementFromPaidInvoiceDefaults(
+        invoiceDraft.invoiceId,
+        approvalReason
+      );
       setIssuedEntitlementSnapshot(snapshot);
       setLatestEntitlementSnapshot(snapshot);
       setLatestEntitlementSnapshotMissing(false);
+      await loadCloudOutboxMessages();
       setMessage("Entitlement snapshot issued.");
     });
   }
@@ -2569,10 +2536,54 @@ export function ClientDeskPage() {
     }
   }
 
+  async function runCloudAction(action: () => Promise<void>) {
+    await runClientAction(async () => {
+      setCloudConnectionState(createCloudConnectionState(
+        "checking",
+        "Contacting Control Cloud..."
+      ));
+
+      try {
+        await action();
+      } catch (caughtError) {
+        const cloudIssue = toCloudConnectionIssue(caughtError);
+
+        if (cloudIssue !== null) {
+          setCloudConnectionState(cloudIssue);
+        }
+
+        throw caughtError;
+      }
+    });
+  }
+
+  function applyCloudOutboxPublishConnectionState(result: PublishCloudOutboxMessagesResult) {
+    const failedMessage = result.messages.find((item) => item.status.toLowerCase() === "failed");
+
+    if (failedMessage !== undefined) {
+      const detail = failedMessage.failureReason?.trim() || "Control Cloud publish failed.";
+      const normalized = detail.toLowerCase();
+      const status = normalized.includes("not configured") || normalized.includes("notconfigured")
+        ? "notConfigured"
+        : "unavailable";
+
+      setCloudConnectionState(createCloudConnectionState(status, detail));
+      return;
+    }
+
+    if (result.publishedCount > 0) {
+      setCloudConnectionState(createCloudConnectionState(
+        "connected",
+        `${result.publishedCount} local outbox message(s) published to Control Cloud.`
+      ));
+    }
+  }
+
   function applyLoadedClient(client: ClientDetails) {
     setSelectedClient(client);
     setLatestPortalInvitation(null);
     setPortalInvitations([]);
+    setCloudConnectionState(defaultCloudConnectionState);
     setEditForm({
       legalName: client.legalName,
       displayName: client.displayName
@@ -2590,6 +2601,7 @@ export function ClientDeskPage() {
     setDeploymentForm(nextForm);
     setCloudInstallationId(nextForm.installationId);
     setCloudInstallationStatus(null);
+    setCloudConnectionState(defaultCloudConnectionState);
     clearCloudProvisioningArtifacts();
   }
 
@@ -2667,6 +2679,11 @@ export function ClientDeskPage() {
     setCloudInstallationStatus(null);
     setClientDeployments([]);
     setDeploymentForm(createDefaultDeploymentForm(client));
+    setAppActivationForm(createDefaultAppActivationForm());
+    setFirstManagerSetupTokenForm(createDefaultFirstManagerSetupTokenForm());
+    setAppActivationRevocationForm(createDefaultAppActivationRevocationForm());
+    setIssuedAppActivation(null);
+    setIssuedFirstManagerSetupToken(null);
     clearCloudProvisioningArtifacts();
     setClientStatement(null);
   }
@@ -2674,9 +2691,14 @@ export function ClientDeskPage() {
   function clearCloudProvisioningArtifacts() {
     setCloudSetupToken(null);
     setCloudBootstrapPackage(null);
+    setCloudBootstrapPackages([]);
     setQueuedSupportCommand(null);
+    setIssuedAppActivation(null);
+    setIssuedFirstManagerSetupToken(null);
+    setAppActivationIssues([]);
     setCloudAuditEvents([]);
     setCloudDiagnosticsReport(null);
+    setCloudConnectionState(defaultCloudConnectionState);
   }
 
   function applyBillingContractDefaults(
@@ -2712,26 +2734,401 @@ export function ClientDeskPage() {
     setIssuedEntitlementSnapshot(null);
   }
 
+  function focusClientQuickAdd() {
+    setActiveDashboardModule("clients");
+    window.requestAnimationFrame(() => {
+      const codeField = document.querySelector<HTMLInputElement>(".client-window-create input");
+      codeField?.focus();
+      codeField?.select();
+    });
+  }
+
+  async function handleRefreshActiveModuleCommand() {
+    switch (activeDashboardModule) {
+      case "clients":
+        await refreshClients();
+        return;
+      case "contracts":
+        await handleRefreshContractsCommand();
+        return;
+      case "accounting":
+        await accounting.refreshAccountingSetup();
+        return;
+      case "billing":
+        await handleRefreshBillingCommand();
+        return;
+      case "payments":
+      case "statement":
+        await handleRefreshClientStatement();
+        return;
+      case "entitlements":
+        await handleRefreshLatestEntitlementSnapshot();
+        return;
+      case "cloud":
+        await handleRefreshCloudInstallationStatus();
+        return;
+      case "dashboard":
+      case "profile":
+      default:
+        if (selectedClient === null) {
+          await refreshClients();
+          return;
+        }
+
+        await loadClient(selectedClient.clientId);
+    }
+  }
+
+  async function handleRefreshContractsCommand() {
+    await runClientAction(async () => {
+      const [nextProductModules, nextCatalog, revisions] = await Promise.all([
+        listProductModules(),
+        listProductAccessCatalog(),
+        listProductCatalogRevisions()
+      ]);
+      setProductModules(nextProductModules);
+      setProductAccessCatalog(nextCatalog);
+      setProductAccessCatalogRevisions(revisions);
+
+      if (selectedClient !== null) {
+        const nextContracts = await listClientContracts(selectedClient.clientId);
+        const nextActiveContract = getActiveContract(nextContracts);
+        setContracts(sortContracts(nextContracts));
+        await loadClientChargeRules(selectedClient.clientId, nextActiveContract?.contractId);
+      }
+
+      setMessage("Contracts refreshed.");
+    });
+  }
+
+  async function handleRefreshBillingCommand() {
+    await runClientAction(async () => {
+      const nextChargeCodes = await listChargeCodes();
+      setChargeCodes(sortChargeCodes(nextChargeCodes));
+
+      if (selectedClient !== null) {
+        await loadClientChargeRules(selectedClient.clientId, getActiveContract(contracts)?.contractId);
+      }
+
+      setMessage("Billing setup refreshed.");
+    });
+  }
+
+  function getModuleCommandItems(): ModuleCommandItem[] {
+    const clientCommandDisabled = isBusy || selectedClient === null;
+    const cloudWriteDisabled =
+      clientCommandDisabled || isCloudConnectionBlockingWrites(cloudConnectionState);
+    const canGenerateInvoiceDraft =
+      selectedClient !== null
+      && invoiceDraftForm.contractId.trim() !== ""
+      && invoiceDraftForm.invoiceNumber.trim() !== ""
+      && invoiceDraftForm.issueDate !== ""
+      && invoiceDraftForm.dueDate >= invoiceDraftForm.issueDate
+      && invoiceDraftForm.billingDate !== ""
+      && invoiceDraftForm.currencyCode.trim().length === 3;
+    const canIssueInvoiceFromCommand =
+      invoiceDraft !== null
+      && issuedInvoice === null
+      && invoiceDraft.status === "Draft"
+      && issueInvoiceForm.postingDate !== ""
+      && issueInvoiceForm.accountsReceivableAccountId.trim() !== "";
+    const canRecordPaymentFromCommand =
+      selectedClient !== null
+      && issuedInvoice !== null
+      && invoiceDraft !== null
+      && invoiceDraft.balanceDue > 0;
+    const refreshCommand: ModuleCommandItem = {
+      key: "refresh",
+      label: "Refresh",
+      title: "Refresh this section",
+      Icon: RefreshCw,
+      onClick: handleRefreshActiveModuleCommand,
+      disabled: isBusy
+    };
+
+    switch (activeDashboardModule) {
+      case "clients":
+        return [
+          refreshCommand,
+          {
+            key: "new-client",
+            label: "New",
+            title: "Move to quick add",
+            Icon: Plus,
+            onClick: focusClientQuickAdd,
+            disabled: isBusy,
+            variant: "primary"
+          }
+        ];
+      case "dashboard":
+        return [
+          refreshCommand,
+          {
+            key: "client-register",
+            label: "Clients",
+            title: "Open client register",
+            Icon: Users,
+            onClick: () => setActiveDashboardModule("clients")
+          },
+          {
+            key: "statement",
+            label: "Statement",
+            title: "Open client statement",
+            Icon: ScrollText,
+            onClick: () => setActiveDashboardModule("statement"),
+            disabled: clientCommandDisabled
+          }
+        ];
+      case "profile":
+        return [
+          refreshCommand,
+          {
+            key: "save-profile",
+            label: "Save",
+            title: "Save client profile",
+            Icon: Save,
+            onClick: handleUpdateClient,
+            disabled: clientCommandDisabled,
+            variant: "primary"
+          }
+        ];
+      case "contracts":
+        return [
+          refreshCommand,
+          {
+            key: "create-contract",
+            label: "New",
+            title: "Create contract from the current contract form",
+            Icon: Plus,
+            onClick: handleCreateContract,
+            disabled: clientCommandDisabled,
+            variant: "primary"
+          },
+          {
+            key: "replace-contract",
+            label: "Replace",
+            title: "Replace the active contract from the current contract form",
+            Icon: Send,
+            onClick: handleReplaceActiveContract,
+            disabled: clientCommandDisabled
+          },
+          {
+            key: "catalog",
+            label: "Catalog",
+            title: "Refresh product access catalog",
+            Icon: ListTree,
+            onClick: handleRefreshProductAccessCatalog,
+            disabled: isBusy
+          }
+        ];
+      case "accounting":
+        return [
+          refreshCommand,
+          {
+            key: "reports",
+            label: "Reports",
+            title: "Refresh accounting reports",
+            Icon: FileText,
+            onClick: () => accounting.refreshAccountingReports(),
+            disabled: isBusy
+          },
+          {
+            key: "reconcile",
+            label: "Reconcile",
+            title: "Refresh chart of accounts reconciliation",
+            Icon: CheckCircle2,
+            onClick: () => accounting.refreshLedgerAccountReconciliation(),
+            disabled: isBusy,
+            variant: "primary"
+          }
+        ];
+      case "billing":
+        return [
+          refreshCommand,
+          {
+            key: "save-accounting-profile",
+            label: "Save",
+            title: "Save client accounting profile",
+            Icon: Save,
+            onClick: handleSaveAccountingProfile,
+            disabled: clientCommandDisabled
+          },
+          {
+            key: "generate-draft",
+            label: "Draft",
+            title: "Generate invoice draft",
+            Icon: FilePlus2,
+            onClick: handleGenerateInvoiceDraft,
+            disabled: isBusy || !canGenerateInvoiceDraft,
+            variant: "primary"
+          },
+          {
+            key: "issue-invoice",
+            label: "Issue",
+            title: "Issue the current invoice draft",
+            Icon: Send,
+            onClick: handleIssueInvoice,
+            disabled: isBusy || !canIssueInvoiceFromCommand
+          }
+        ];
+      case "payments":
+        return [
+          refreshCommand,
+          {
+            key: "cash-account",
+            label: "Cash",
+            title: "Create cash or bank account from the current form",
+            Icon: Banknote,
+            onClick: handleCreateCashAccount,
+            disabled: clientCommandDisabled
+          },
+          {
+            key: "record-payment",
+            label: "Receipt",
+            title: "Record the current invoice payment",
+            Icon: ReceiptText,
+            onClick: handleRecordInvoicePayment,
+            disabled: isBusy || !canRecordPaymentFromCommand,
+            variant: "primary"
+          }
+        ];
+      case "entitlements":
+        return [
+          refreshCommand,
+          {
+            key: "issue-entitlement",
+            label: "Issue",
+            title: "Issue entitlement snapshot from paid invoice",
+            Icon: KeyRound,
+            onClick: handleIssueEntitlementSnapshot,
+            disabled: isBusy || !canIssueCurrentEntitlementSnapshot,
+            variant: "primary"
+          }
+        ];
+      case "cloud":
+        return [
+          refreshCommand,
+          {
+            key: "save-deployment",
+            label: "Save",
+            title: "Save client deployment",
+            Icon: Save,
+            onClick: handleSaveClientDeployment,
+            disabled: clientCommandDisabled,
+            variant: "primary"
+          },
+          {
+            key: "setup-token",
+            label: "Token",
+            title: "Create setup token",
+            Icon: KeyRound,
+            onClick: handleCreateCloudSetupToken,
+            disabled: cloudWriteDisabled
+          },
+          {
+            key: "bootstrap",
+            label: "Bootstrap",
+            title: "Create bootstrap package",
+            Icon: Download,
+            onClick: handleCreateCloudBootstrapPackage,
+            disabled: cloudWriteDisabled
+          }
+        ];
+      case "statement":
+        return [
+          refreshCommand,
+          {
+            key: "billing",
+            label: "Billing",
+            title: "Open billing workspace",
+            Icon: FileText,
+            onClick: () => setActiveDashboardModule("billing"),
+            disabled: clientCommandDisabled
+          },
+          {
+            key: "payments",
+            label: "Payments",
+            title: "Open payment workspace",
+            Icon: Banknote,
+            onClick: () => setActiveDashboardModule("payments"),
+            disabled: clientCommandDisabled
+          }
+        ];
+      default:
+        return [refreshCommand];
+    }
+  }
+
+  function getModuleOutputCommandItems(): ModuleCommandItem[] {
+    return [
+      {
+        key: "print",
+        label: "Print",
+        title: "Print output is not available for this section yet",
+        Icon: Printer,
+        disabled: true
+      },
+      {
+        key: "export",
+        label: "Export",
+        title: "Export output is not available for this section yet",
+        Icon: Download,
+        disabled: true
+      }
+    ];
+  }
+
+  function getModuleCommandStatus() {
+    if (isBusy) {
+      return "Working...";
+    }
+
+    if (activeDashboardModule === "clients") {
+      return `${clients.length} clients`;
+    }
+
+    if (selectedClient === null) {
+      return "Select a client";
+    }
+
+    switch (activeDashboardModule) {
+      case "billing":
+        return invoiceDraft === null
+          ? "No invoice draft"
+          : `${invoiceDraft.invoiceNumber} ${invoiceDraft.status}`;
+      case "payments":
+        return recordedPayment === null
+          ? "No receipt posted"
+          : `${recordedPayment.invoiceNumber} ${recordedPayment.paymentStatus}`;
+      case "entitlements":
+        return issuedEntitlementSnapshot !== null || latestEntitlementSnapshot !== null
+          ? "Snapshot available"
+          : "Snapshot not loaded";
+      case "cloud":
+        if (cloudConnectionState.status === "notConfigured") {
+          return "Cloud not configured";
+        }
+
+        if (cloudConnectionState.status === "unavailable") {
+          return "Cloud unavailable";
+        }
+
+        return cloudInstallationStatus?.installationStatus ?? "Cloud status not loaded";
+      case "statement":
+        return clientStatement === null ? "Statement not loaded" : "Statement loaded";
+      default:
+        return `${selectedClient.code} selected`;
+    }
+  }
+
   const activeContract = getActiveContract(contracts);
   const canIssueCurrentEntitlementSnapshot = canIssueEntitlementSnapshot(
     invoiceDraft,
     recordedPayment
   );
-  const clientReadinessItems = getClientReadinessItems({
-    activeContract,
-    accountingProfile,
-    productModules,
-    chargeRules: clientChargeRules,
-    issuedEntitlementSnapshot,
-    latestEntitlementSnapshot,
-    latestEntitlementSnapshotMissing,
-    cloudInstallationStatus,
-    latestPortalInvitation,
-    portalInvitations
-  });
   const dashboardMetrics = getDashboardMetrics({
     activeContract,
-    accountCodeRangeCount: accountCodeRanges.length,
+    accountCodeRangeCount: accounting.accountCodeRanges.length,
     invoiceDraft,
     recordedPayment,
     issuedEntitlementSnapshot,
@@ -2739,96 +3136,59 @@ export function ClientDeskPage() {
     cloudInstallationStatus,
     clientStatement
   });
+  const dashboardWorkQueueItems = getDashboardWorkQueueItems({
+    clientCount: clients.length,
+    selectedClient,
+    activeContract,
+    accountingProfile,
+    productModules,
+    chargeRules: clientChargeRules,
+    invoiceDraft,
+    issuedInvoice,
+    recordedPayment,
+    issuedEntitlementSnapshot,
+    latestEntitlementSnapshot,
+    latestEntitlementSnapshotMissing,
+    cloudInstallationStatus,
+    latestPortalInvitation,
+    portalInvitations,
+    clientStatement
+  });
   const dashboardNavigation = getDashboardNavigation(dashboardMetrics, clients.length, selectedClient);
   const activeNavigationItem = getDashboardNavigationItem(
     dashboardNavigation,
     activeDashboardModule
   );
+  const moduleCommandItems = getModuleCommandItems();
+  const moduleOutputCommandItems = getModuleOutputCommandItems();
+  const moduleCommandStatus = getModuleCommandStatus();
 
   return (
-    <div className="client-desk control-desk-shell">
-      <aside className="control-sidebar" aria-label="Client control navigation">
-        <div className="sidebar-brand">
-          <div>
-            <span>SafarSuite</span>
-            <h1>Control Desk</h1>
-          </div>
-          {selectedClient !== null && (
-            <span className={`status-pill ${selectedClient.status.toLowerCase()}`}>
-              {selectedClient.status}
-            </span>
-          )}
-        </div>
-
-        <nav className="module-sidebar-nav" aria-label="Client modules">
-          {dashboardNavigation.map((item) => (
-            <button
-              aria-current={activeDashboardModule === item.module ? "page" : undefined}
-              className={`module-nav-item ${item.tone}${
-                activeDashboardModule === item.module ? " active" : ""
-              }`}
-              key={item.module}
-              type="button"
-              onClick={() => setActiveDashboardModule(item.module)}
-            >
-              <item.Icon size={18} />
-              <span>
-                <strong>{item.label}</strong>
-                <small>{item.summary}</small>
-              </span>
-            </button>
-          ))}
-        </nav>
-
-      </aside>
-
-      <main className="control-main-window">
-        <div className="status-line" aria-live="polite">
-          {error !== "" && (
-            <span className="status-error">
-              <AlertCircle size={16} />
-              {error}
-            </span>
-          )}
-          {message !== "" && (
-            <span className="status-success">
-              <CheckCircle2 size={16} />
-              {message}
-            </span>
-          )}
-        </div>
-
-        <section className="module-window">
-          <header className="module-window-header">
-            <div>
-              <span>{selectedClient?.code ?? "No client selected"}</span>
-              <h1>{activeNavigationItem.label}</h1>
-              <p>{activeNavigationItem.description}</p>
-            </div>
-            {selectedClient !== null && (
-              <div className="module-window-client">
-                <span>{selectedClient.displayName}</span>
-                <strong>{selectedClient.legalName}</strong>
-              </div>
-            )}
-          </header>
-
-          {selectedClient !== null && (
-            <ClientReadinessStrip
-              items={clientReadinessItems}
-              onNavigate={setActiveDashboardModule}
-            />
-          )}
-
-          <div className="module-window-body">
+    <ClientDeskShell
+      activeModule={activeDashboardModule}
+      activeNavigationItem={activeNavigationItem}
+      commandItems={moduleCommandItems}
+      commandStatus={moduleCommandStatus}
+      error={error}
+      message={message}
+      navigationItems={dashboardNavigation}
+      outputCommandItems={moduleOutputCommandItems}
+      selectedClient={selectedClient}
+      onModuleChange={setActiveDashboardModule}
+    >
             {activeDashboardModule === "clients" && (
               <section className="client-window-strip client-window-module" aria-label="Client workspace">
                 <ClientListPanel
                   clients={clients}
                   selectedClientId={selectedClientId}
                   isBusy={isBusy}
+                  isLoadingMore={isLoadingMoreClients}
+                  filteredCount={clientFilteredCount}
+                  hasMore={clientNextCursor !== null}
                   onSelect={setSelectedClientId}
                   onRefresh={() => refreshClients()}
+                  onLoadMore={loadMoreClients}
+                  onQueryChange={handleClientDirectoryQuery}
                 />
 
                 <section className="client-window-create" aria-label="Create client">
@@ -2847,38 +3207,12 @@ export function ClientDeskPage() {
             )}
 
             {activeDashboardModule === "dashboard" && (
-              <section className="client-stat-window">
-                <div className="client-dashboard-heading">
-                  <div>
-                    <span>{selectedClient?.code ?? "No client selected"}</span>
-                    <h2>{selectedClient?.displayName ?? "Select a client"}</h2>
-                  </div>
-                  {selectedClient !== null && (
-                    <span className={`status-pill large ${selectedClient.status.toLowerCase()}`}>
-                      {selectedClient.status}
-                    </span>
-                  )}
-                </div>
-
-                <div className="dashboard-metrics stat-action-grid">
-                  {dashboardMetrics.map((metric) => (
-                    <button
-                      className={`dashboard-metric stat-action ${metric.tone}`}
-                      key={metric.label}
-                      type="button"
-                      onClick={() => setActiveDashboardModule(metric.module)}
-                    >
-                      <metric.Icon size={20} />
-                      <div>
-                        <span>{metric.label}</span>
-                        <strong>{metric.value}</strong>
-                        <small>{metric.summary}</small>
-                      </div>
-                      <ArrowRight className="stat-action-arrow" size={16} />
-                    </button>
-                  ))}
-                </div>
-              </section>
+              <ClientDashboardHome
+                metrics={dashboardMetrics}
+                selectedClient={selectedClient}
+                workQueueItems={dashboardWorkQueueItems}
+                onNavigate={setActiveDashboardModule}
+              />
             )}
 
             {activeDashboardModule === "profile" && (
@@ -2911,6 +3245,10 @@ export function ClientDeskPage() {
               <ClientContractsPanel
                 contracts={contracts}
                 productModules={productModules}
+                accessCatalog={productAccessCatalog}
+                accessCatalogRevisions={productAccessCatalogRevisions}
+                publishedAccessCatalogCommand={publishedAccessCatalogCommand}
+                accessCatalogPublishValue={accessCatalogPublishForm}
                 chargeRules={clientChargeRules}
                 latestSnapshot={latestEntitlementSnapshot}
                 latestSnapshotMissing={latestEntitlementSnapshotMissing}
@@ -2918,6 +3256,11 @@ export function ClientDeskPage() {
                 value={contractForm}
                 isBusy={isBusy || selectedClient === null}
                 onChange={setContractForm}
+                onAccessCatalogPublishValueChange={setAccessCatalogPublishForm}
+                onRefreshAccessCatalog={handleRefreshProductAccessCatalog}
+                onSaveAccessCatalog={handleSaveProductAccessCatalog}
+                onPublishAccessCatalogRevision={handlePublishProductAccessCatalogRevision}
+                onPublishAccessCatalog={handlePublishProductAccessCatalog}
                 onCreate={handleCreateContract}
                 onReplaceActive={handleReplaceActiveContract}
                 onSuspend={handleSuspendContract}
@@ -2927,91 +3270,13 @@ export function ClientDeskPage() {
             )}
 
             {activeDashboardModule === "accounting" && (
-              <>
-                <ChartOfAccountsPanel
-                  accounts={ledgerAccounts}
-                  ranges={accountCodeRanges}
-                  filters={ledgerAccountFilters}
-                  selectedRangeRole={selectedAccountCodeRangeRole}
-                  rangeValue={accountCodeRangeForm}
-                  accountMode={selectedLedgerAccountId === "" ? "create" : "edit"}
-                  accountValue={ledgerAccountEditorForm}
-                  activity={ledgerAccountActivity}
-                  journalEntries={journalEntries}
-                  isBusy={isBusy}
-                  onFiltersChange={handleLedgerAccountFiltersChange}
-                  onRangeSelect={handleSelectAccountCodeRange}
-                  onRangeChange={setAccountCodeRangeForm}
-                  onSaveRange={handleSaveAccountCodeRange}
-                  onAccountChange={setLedgerAccountEditorForm}
-                  onNewAccount={handleNewLedgerAccount}
-                  onEditAccount={handleEditLedgerAccount}
-                  onSaveAccount={handleSaveLedgerAccount}
-                  onToggleAccountStatus={handleToggleLedgerAccountStatus}
-                  onViewAccountActivity={handleViewLedgerAccountActivity}
-                  onViewJournalEntry={handleViewJournalEntryFromActivity}
-                  onSuggestAccountCode={handleSuggestAccountingLedgerAccountCode}
-                  onRefresh={() => refreshAccountingSetup()}
-                />
-                <AccountingControlsPanel
-                  settings={accountingControlSettings}
-                  value={accountingControlSettingsForm}
-                  accounts={ledgerAccounts}
-                  isBusy={isBusy}
-                  onValueChange={setAccountingControlSettingsForm}
-                  onSave={handleSaveAccountingControls}
-                  onRefresh={() => refreshAccountingControls()}
-                />
-                <AccountingPeriodsPanel
-                  periods={accountingPeriods}
-                  readiness={accountingPeriodReadiness}
-                  closeJournalPreview={accountingPeriodCloseJournalPreview}
-                  value={accountingPeriodForm}
-                  isBusy={isBusy}
-                  onValueChange={setAccountingPeriodForm}
-                  onPrepareNext={handlePrepareNextAccountingPeriod}
-                  onCreate={handleCreateAccountingPeriod}
-                  onCheckReadiness={handleCheckAccountingPeriodReadiness}
-                  onPreviewCloseJournal={handlePreviewAccountingCloseJournal}
-                  onClose={handleCloseAccountingPeriod}
-                  onReopen={handleReopenAccountingPeriod}
-                  onRefresh={() => refreshAccountingPeriods()}
-                />
-                <LedgerAccountReconciliationPanel
-                  reconciliation={ledgerAccountReconciliation}
-                  repairPlan={ledgerAccountRepairPlan}
-                  isBusy={isBusy}
-                  onRefresh={() => refreshLedgerAccountReconciliation()}
-                />
-                <JournalWorkbenchPanel
-                  accounts={ledgerAccounts}
-                  periods={accountingPeriods}
-                  entries={journalEntries}
-                  filters={journalEntryFilters}
-                  value={manualJournalEntryForm}
-                  focusedJournalEntryId={focusedJournalEntryId}
-                  focusedJournalEntry={focusedJournalEntry}
-                  sourceDocumentsByJournalEntryId={journalSourceDocumentsById}
-                  isBusy={isBusy}
-                  onFiltersChange={setJournalEntryFilters}
-                  onValueChange={setManualJournalEntryForm}
-                  onFocusJournalEntry={handleFocusJournalEntry}
-                  onPost={handlePostManualJournalEntry}
-                  onVoidEntry={handleVoidManualJournalEntry}
-                  onOpenSourceDocument={handleOpenJournalSourceDocument}
-                  getSourceDocumentLabel={getJournalSourceDocumentLabel}
-                  getSourceDocumentClientLabel={getJournalSourceDocumentClientLabel}
-                  onRefresh={() => refreshJournalEntries()}
-                />
-                <TrialBalancePanel
-                  balance={trialBalance}
-                  filters={trialBalanceFilters}
-                  isBusy={isBusy}
-                  onFiltersChange={setTrialBalanceFilters}
-                  onViewAccountActivity={handleViewTrialBalanceAccountActivity}
-                  onRefresh={() => refreshTrialBalance()}
-                />
-              </>
+              <AccountingWorkspace
+                workspace={accounting}
+                isBusy={isBusy}
+                onOpenSourceDocument={handleOpenJournalSourceDocument}
+                getSourceDocumentLabel={getJournalSourceDocumentLabel}
+                getSourceDocumentClientLabel={getJournalSourceDocumentClientLabel}
+              />
             )}
 
             {activeDashboardModule === "billing" && (
@@ -3053,12 +3318,13 @@ export function ClientDeskPage() {
                 onIssueInvoice={handleIssueInvoice}
                 onVoidInvoice={handleVoidInvoice}
                 onIssueCreditNote={handleIssueCreditNote}
-                onViewJournalEntry={handleViewJournalEntryById}
+                onViewJournalEntry={accounting.viewJournalEntryById}
               />
             )}
 
             {activeDashboardModule === "payments" && (
-              <PaymentReceiptPanel
+              <>
+                <PaymentReceiptPanel
                 invoiceDraft={invoiceDraft}
                 issuedInvoice={issuedInvoice}
                 initialStep={preferredPaymentStep}
@@ -3083,8 +3349,15 @@ export function ClientDeskPage() {
                 onApprovePayment={handleApproveInvoicePayment}
                 onRejectPayment={handleRejectInvoicePayment}
                 onReversePayment={handleReverseInvoicePayment}
-                onViewJournalEntry={handleViewJournalEntryById}
-              />
+                onViewJournalEntry={accounting.viewJournalEntryById}
+                />
+                <PortalPaymentClaimsPanel
+                  clientId={selectedClient?.clientId ?? ""}
+                  cashOrBankAccountId={paymentForm.cashOrBankAccountId}
+                  accountsReceivableAccountId={paymentForm.accountsReceivableAccountId}
+                  postingDate={paymentForm.postingDate}
+                />
+              </>
             )}
 
             {activeDashboardModule === "entitlements" && (
@@ -3102,34 +3375,64 @@ export function ClientDeskPage() {
             )}
 
             {activeDashboardModule === "cloud" && (
-              <CloudInstallationStatusPanel
-                client={selectedClient}
-                installationId={cloudInstallationId}
-                deployments={clientDeployments}
-                selectedDeploymentId={getSelectedDeploymentId(clientDeployments, cloudInstallationId)}
-                deploymentValue={deploymentForm}
-                setupTokenHours={setupTokenHours}
-                status={cloudInstallationStatus}
-                setupToken={cloudSetupToken}
-                bootstrapPackage={cloudBootstrapPackage}
-                supportCommandValue={supportCommandForm}
-                queuedSupportCommand={queuedSupportCommand}
-                auditEvents={cloudAuditEvents}
-                diagnosticsReport={cloudDiagnosticsReport}
-                isBusy={isBusy || selectedClient === null}
-                onInstallationIdChange={handleCloudInstallationIdChange}
-                onDeploymentValueChange={handleDeploymentValueChange}
-                onSetupTokenHoursChange={setSetupTokenHours}
-                onDeploymentSelect={handleSelectClientDeployment}
-                onSaveDeployment={handleSaveClientDeployment}
-                onCreateSetupToken={handleCreateCloudSetupToken}
-                onCreateBootstrapPackage={handleCreateCloudBootstrapPackage}
-                onSupportCommandValueChange={handleSupportCommandValueChange}
-                onQueueSupportCommand={handleQueueCloudSupportCommand}
-                onRefreshAuditEvents={handleRefreshCloudAuditEvents}
-                onRefreshDiagnostics={handleRefreshCloudDiagnostics}
-                onRefresh={handleRefreshCloudInstallationStatus}
-              />
+              <div className="cloud-workspace">
+                <CloudInstallationStatusPanel
+                  client={selectedClient}
+                  installationId={cloudInstallationId}
+                  deployments={clientDeployments}
+                  selectedDeploymentId={getSelectedDeploymentId(clientDeployments, cloudInstallationId)}
+                  deploymentValue={deploymentForm}
+                  setupTokenHours={setupTokenHours}
+                  connectionState={cloudConnectionState}
+                  status={cloudInstallationStatus}
+                  setupToken={cloudSetupToken}
+                  bootstrapPackage={cloudBootstrapPackage}
+                  bootstrapPackages={cloudBootstrapPackages}
+                  bootstrapPackageHandoffValue={bootstrapPackageHandoffForm}
+                  supportCommandValue={supportCommandForm}
+                  queuedSupportCommand={queuedSupportCommand}
+                  appActivationValue={appActivationForm}
+                  issuedAppActivation={issuedAppActivation}
+                  firstManagerSetupTokenValue={firstManagerSetupTokenForm}
+                  issuedFirstManagerSetupToken={issuedFirstManagerSetupToken}
+                  appActivationIssues={appActivationIssues}
+                  appActivationIssueSearch={appActivationIssueSearch}
+                  appActivationRevocationValue={appActivationRevocationForm}
+                  outboxMessages={cloudOutboxMessages}
+                  outboxSummary={cloudOutboxSummary}
+                  latestOutboxPublish={latestCloudOutboxPublish}
+                  auditEvents={cloudAuditEvents}
+                  diagnosticsReport={cloudDiagnosticsReport}
+                  isBusy={isBusy || selectedClient === null}
+                  onInstallationIdChange={handleCloudInstallationIdChange}
+                  onDeploymentValueChange={handleDeploymentValueChange}
+                  onSetupTokenHoursChange={setSetupTokenHours}
+                  onDeploymentSelect={handleSelectClientDeployment}
+                  onSaveDeployment={handleSaveClientDeployment}
+                  onCreateSetupToken={handleCreateCloudSetupToken}
+                  onCreateBootstrapPackage={handleCreateCloudBootstrapPackage}
+                  onRefreshBootstrapPackages={handleRefreshCloudBootstrapPackages}
+                  onBootstrapPackageHandoffValueChange={setBootstrapPackageHandoffForm}
+                  onMarkBootstrapPackageHandoff={handleMarkCloudBootstrapPackageHandoff}
+                  onSupportCommandValueChange={handleSupportCommandValueChange}
+                  onQueueSupportCommand={handleQueueCloudSupportCommand}
+                  onAppActivationValueChange={handleAppActivationValueChange}
+                  onIssueAppActivationToken={handleIssueCloudAppActivationToken}
+                  onFirstManagerSetupTokenValueChange={setFirstManagerSetupTokenForm}
+                  onIssueFirstManagerSetupToken={handleIssueCloudFirstManagerSetupToken}
+                  onAppActivationIssueSearchChange={setAppActivationIssueSearch}
+                  onRefreshAppActivationIssues={handleRefreshCloudAppActivationIssues}
+                  onAppActivationRevocationValueChange={setAppActivationRevocationForm}
+                  onRevokeAppActivationIssue={handleRevokeCloudAppActivationIssue}
+                  onPrepareReplacementAppActivationIssue={handlePrepareReplacementAppActivationIssue}
+                  onRefreshOutboxMessages={handleRefreshCloudOutboxMessages}
+                  onPublishOutboxMessages={handlePublishCloudOutboxMessages}
+                  onRefreshAuditEvents={handleRefreshCloudAuditEvents}
+                  onRefreshDiagnostics={handleRefreshCloudDiagnostics}
+                  onRefresh={handleRefreshCloudInstallationStatus}
+                />
+                <ProviderAccessPanel />
+              </div>
             )}
 
             {activeDashboardModule === "statement" && (
@@ -3138,534 +3441,11 @@ export function ClientDeskPage() {
                 statement={clientStatement}
                 isBusy={isBusy || selectedClient === null}
                 onRefresh={handleRefreshClientStatement}
+                onLoadMore={handleLoadMoreClientStatement}
               />
             )}
-          </div>
-        </section>
-      </main>
-    </div>
+    </ClientDeskShell>
   );
-}
-
-function ClientReadinessStrip({
-  items,
-  onNavigate
-}: {
-  items: ClientReadinessItem[];
-  onNavigate: (module: DashboardModule) => void;
-}) {
-  return (
-    <section className="client-readiness-strip" aria-label="Client readiness">
-      {items.map((item) => (
-        <button
-          className={`client-readiness-item ${item.tone}`}
-          key={item.key}
-          type="button"
-          onClick={() => onNavigate(item.module)}
-          title={item.label}
-        >
-          <item.Icon size={16} />
-          <span>
-            <small>{item.label}</small>
-            <strong>{item.value}</strong>
-            <em>{item.summary}</em>
-          </span>
-        </button>
-      ))}
-    </section>
-  );
-}
-
-type DashboardMetric = {
-  label: string;
-  value: string;
-  summary: string;
-  tone: "neutral" | "ready" | "warning";
-  Icon: LucideIcon;
-  module: DashboardModule;
-};
-
-type DashboardNavigationItem = {
-  module: DashboardModule;
-  label: string;
-  summary: string;
-  description: string;
-  tone: DashboardMetric["tone"];
-  Icon: LucideIcon;
-};
-
-type ClientReadinessItem = {
-  key: string;
-  label: string;
-  value: string;
-  summary: string;
-  tone: DashboardMetric["tone"];
-  Icon: LucideIcon;
-  module: DashboardModule;
-};
-
-type DashboardMetricInput = {
-  activeContract: ClientContract | null;
-  accountCodeRangeCount: number;
-  invoiceDraft: InvoiceDraft | null;
-  recordedPayment: RecordedInvoicePayment | null;
-  issuedEntitlementSnapshot: IssuedEntitlementSnapshot | null;
-  latestEntitlementSnapshot: EntitlementSnapshot | null;
-  cloudInstallationStatus: ControlCloudInstallationStatus | null;
-  clientStatement: ClientStatement | null;
-};
-
-type ClientReadinessInput = {
-  activeContract: ClientContract | null;
-  accountingProfile: ClientAccountingProfile | null;
-  productModules: ProductModule[];
-  chargeRules: ClientChargeRule[];
-  issuedEntitlementSnapshot: IssuedEntitlementSnapshot | null;
-  latestEntitlementSnapshot: EntitlementSnapshot | null;
-  latestEntitlementSnapshotMissing: boolean;
-  cloudInstallationStatus: ControlCloudInstallationStatus | null;
-  latestPortalInvitation: ClientPortalInvitation | null;
-  portalInvitations: ClientPortalInvitation[];
-};
-
-function getClientReadinessItems({
-  activeContract,
-  accountingProfile,
-  productModules,
-  chargeRules,
-  issuedEntitlementSnapshot,
-  latestEntitlementSnapshot,
-  latestEntitlementSnapshotMissing,
-  cloudInstallationStatus,
-  latestPortalInvitation,
-  portalInvitations
-}: ClientReadinessInput): ClientReadinessItem[] {
-  const contractStatus = activeContract?.status ?? "Missing";
-  const contractIsReady = activeContract?.status.toLowerCase() === "active";
-
-  return [
-    {
-      key: "contract",
-      label: "Contract",
-      value: contractStatus,
-      summary: activeContract === null
-        ? "Create agreement"
-        : `${activeContract.allowedDevices} devices, ${activeContract.allowedBranches} branches`,
-      tone: contractIsReady ? "ready" : "warning",
-      Icon: FileText,
-      module: "contracts"
-    },
-    getBillingReadinessItem(activeContract, accountingProfile, productModules, chargeRules),
-    getEntitlementReadinessItem(
-      activeContract,
-      issuedEntitlementSnapshot ?? latestEntitlementSnapshot,
-      latestEntitlementSnapshotMissing
-    ),
-    getCloudReadinessItem(cloudInstallationStatus),
-    getPortalReadinessItem(latestPortalInvitation, portalInvitations)
-  ];
-}
-
-function getBillingReadinessItem(
-  activeContract: ClientContract | null,
-  accountingProfile: ClientAccountingProfile | null,
-  productModules: ProductModule[],
-  chargeRules: ClientChargeRule[]
-): ClientReadinessItem {
-  if (accountingProfile === null) {
-    return {
-      key: "billing",
-      label: "Billing",
-      value: "Not linked",
-      summary: "Accounting profile",
-      tone: "warning",
-      Icon: ReceiptText,
-      module: "billing"
-    };
-  }
-
-  if (activeContract === null) {
-    return {
-      key: "billing",
-      label: "Billing",
-      value: accountingProfile.defaultCurrencyCode,
-      summary: "Needs contract",
-      tone: "warning",
-      Icon: ReceiptText,
-      module: "billing"
-    };
-  }
-
-  const paidAddOnCodes = getPaidAddOnModuleCodes(activeContract, productModules);
-  const billedModuleCodes = getBilledModuleCodes(chargeRules, activeContract);
-  const missingCount = paidAddOnCodes.filter((moduleCode) => !billedModuleCodes.has(moduleCode)).length;
-
-  if (missingCount > 0) {
-    return {
-      key: "billing",
-      label: "Billing",
-      value: `${missingCount} missing`,
-      summary: "Paid add-on rules",
-      tone: "warning",
-      Icon: ReceiptText,
-      module: "billing"
-    };
-  }
-
-  return {
-    key: "billing",
-    label: "Billing",
-    value: "Ready",
-    summary: paidAddOnCodes.length === 0 ? "Base plan" : `${paidAddOnCodes.length} add-ons covered`,
-    tone: "ready",
-    Icon: ReceiptText,
-    module: "billing"
-  };
-}
-
-function getEntitlementReadinessItem(
-  activeContract: ClientContract | null,
-  snapshot: EntitlementSnapshot | null,
-  latestEntitlementSnapshotMissing: boolean
-): ClientReadinessItem {
-  if (activeContract === null) {
-    return {
-      key: "entitlement",
-      label: "Entitlement",
-      value: "Blocked",
-      summary: "Needs contract",
-      tone: "warning",
-      Icon: KeyRound,
-      module: "entitlements"
-    };
-  }
-
-  if (snapshot === null) {
-    return {
-      key: "entitlement",
-      label: "Entitlement",
-      value: latestEntitlementSnapshotMissing ? "Missing" : "Not loaded",
-      summary: "Snapshot required",
-      tone: "warning",
-      Icon: KeyRound,
-      module: "entitlements"
-    };
-  }
-
-  const contractModuleCodes = getEnabledModuleCodes(activeContract.modules);
-  const snapshotModuleCodes = getEnabledModuleCodes(snapshot.modules);
-  const hasContractMismatch = snapshot.contractId !== activeContract.contractId;
-  const hasLimitMismatch =
-    snapshot.allowedDevices !== activeContract.allowedDevices
-    || snapshot.allowedBranches !== activeContract.allowedBranches;
-  const hasModuleMismatch =
-    contractModuleCodes.some((moduleCode) => !snapshotModuleCodes.includes(moduleCode))
-    || snapshotModuleCodes.some((moduleCode) => !contractModuleCodes.includes(moduleCode));
-
-  if (hasContractMismatch || hasLimitMismatch || hasModuleMismatch) {
-    const differences = [
-      hasContractMismatch ? "contract" : null,
-      hasLimitMismatch ? "limits" : null,
-      hasModuleMismatch ? "modules" : null
-    ].filter((item): item is string => item !== null);
-
-    return {
-      key: "entitlement",
-      label: "Entitlement",
-      value: "Out of sync",
-      summary: differences.join(", "),
-      tone: "warning",
-      Icon: KeyRound,
-      module: "entitlements"
-    };
-  }
-
-  return {
-    key: "entitlement",
-    label: "Entitlement",
-    value: snapshot.status,
-    summary: `${snapshotModuleCodes.length} modules aligned`,
-    tone: snapshot.status.toLowerCase() === "active" ? "ready" : "warning",
-    Icon: KeyRound,
-    module: "entitlements"
-  };
-}
-
-function getCloudReadinessItem(
-  cloudInstallationStatus: ControlCloudInstallationStatus | null
-): ClientReadinessItem {
-  const cloudHeartbeat = cloudInstallationStatus?.latestHeartbeat ?? null;
-  const deploymentProfile = getCloudDeploymentProfile(cloudInstallationStatus);
-  const deploymentSummary = formatCloudDeploymentSummary(deploymentProfile);
-  const cloudStatus = cloudHeartbeat?.licenseStatus
-    ?? cloudInstallationStatus?.installationStatus
-    ?? "Not loaded";
-  const normalizedCloudStatus = cloudStatus.toLowerCase();
-  const cloudReady =
-    normalizedCloudStatus === "active"
-    || normalizedCloudStatus === "healthy"
-    || normalizedCloudStatus === "registered";
-
-  return {
-    key: "cloud",
-    label: "Cloud",
-    value: cloudStatus,
-    summary: cloudHeartbeat === null
-      ? deploymentSummary
-      : `${deploymentSummary} / ${formatDashboardDateTime(cloudHeartbeat.receivedAtUtc)}`,
-    tone: cloudReady ? "ready" : cloudInstallationStatus === null ? "neutral" : "warning",
-    Icon: Cloud,
-    module: "cloud"
-  };
-}
-
-function getPortalReadinessItem(
-  latestPortalInvitation: ClientPortalInvitation | null,
-  portalInvitations: ClientPortalInvitation[]
-): ClientReadinessItem {
-  const invitation = getLatestPortalInvitation(latestPortalInvitation, portalInvitations);
-
-  if (invitation === null) {
-    return {
-      key: "portal",
-      label: "Portal",
-      value: "No invite",
-      summary: "Client access",
-      tone: "neutral",
-      Icon: UserRound,
-      module: "profile"
-    };
-  }
-
-  const status = invitation.status.toLowerCase();
-  const isReady = status === "accepted";
-  const isWarning = status === "revoked" || status === "expired";
-
-  return {
-    key: "portal",
-    label: "Portal",
-    value: invitation.status,
-    summary: invitation.email,
-    tone: isReady ? "ready" : isWarning ? "warning" : "neutral",
-    Icon: UserRound,
-    module: "profile"
-  };
-}
-
-function getDashboardMetrics({
-  activeContract,
-  accountCodeRangeCount,
-  invoiceDraft,
-  recordedPayment,
-  issuedEntitlementSnapshot,
-  latestEntitlementSnapshot,
-  cloudInstallationStatus,
-  clientStatement
-}: DashboardMetricInput): DashboardMetric[] {
-  const entitlementSnapshot = issuedEntitlementSnapshot ?? latestEntitlementSnapshot;
-  const cloudHeartbeat = cloudInstallationStatus?.latestHeartbeat ?? null;
-  const deploymentProfile = getCloudDeploymentProfile(cloudInstallationStatus);
-  const deploymentSummary = formatCloudDeploymentSummary(deploymentProfile);
-  const cloudStatus = cloudHeartbeat?.licenseStatus
-    ?? cloudInstallationStatus?.installationStatus
-    ?? "Not loaded";
-  const normalizedCloudStatus = cloudStatus.toLowerCase();
-  const primaryStatementSummary = clientStatement?.currencySummaries[0] ?? null;
-
-  return [
-    {
-      label: "Contract",
-      value: activeContract === null ? "Missing" : activeContract.status,
-      summary: "Agreement, pricing, and allowances",
-      tone: activeContract?.status.toLowerCase() === "active" ? "ready" : "warning",
-      Icon: FileText,
-      module: "contracts"
-    },
-    {
-      label: "Accounting",
-      value: accountCodeRangeCount === 0 ? "Not loaded" : `${accountCodeRangeCount} ranges`,
-      summary: "COA setup and ledger register",
-      tone: accountCodeRangeCount === 0 ? "warning" : "ready",
-      Icon: Banknote,
-      module: "accounting"
-    },
-    {
-      label: "Invoice",
-      value: invoiceDraft === null
-        ? "No draft"
-        : `${invoiceDraft.status} ${invoiceDraft.balanceDue.toFixed(2)} ${invoiceDraft.currencyCode}`,
-      summary: "Draft, issue, and receivable state",
-      tone: invoiceDraft?.status.toLowerCase() === "paid" ? "ready" : "neutral",
-      Icon: ReceiptText,
-      module: "billing"
-    },
-    {
-      label: "Payment",
-      value: recordedPayment === null ? "Pending" : recordedPayment.paymentStatus,
-      summary: "Receipt posting and balance",
-      tone: recordedPayment?.paymentStatus.toLowerCase() === "approved" ? "ready" : "neutral",
-      Icon: CheckCircle2,
-      module: "payments"
-    },
-    {
-      label: "Entitlement",
-      value: entitlementSnapshot === null ? "Not issued" : entitlementSnapshot.status,
-      summary: "Cloud access snapshot",
-      tone: entitlementSnapshot?.status.toLowerCase() === "active" ? "ready" : "neutral",
-      Icon: KeyRound,
-      module: "entitlements"
-    },
-    {
-      label: "Cloud",
-      value: cloudStatus,
-      summary: cloudHeartbeat === null
-        ? deploymentSummary
-        : `${deploymentSummary} / ${formatDashboardDateTime(cloudHeartbeat.receivedAtUtc)}`,
-      tone:
-        normalizedCloudStatus === "active"
-          || normalizedCloudStatus === "healthy"
-          || normalizedCloudStatus === "registered"
-          ? "ready"
-          : cloudInstallationStatus === null
-            ? "neutral"
-            : "warning",
-      Icon: Cloud,
-      module: "cloud"
-    },
-    {
-      label: "Statement",
-      value: primaryStatementSummary === null
-        ? "No balance"
-        : `${primaryStatementSummary.balanceDue.toFixed(2)} ${primaryStatementSummary.currencyCode}`,
-      summary: "Invoices, receipts, and GL trail",
-      tone: primaryStatementSummary !== null && primaryStatementSummary.balanceDue === 0 ? "ready" : "neutral",
-      Icon: ScrollText,
-      module: "statement"
-    }
-  ];
-}
-
-function getDashboardNavigation(
-  metrics: DashboardMetric[],
-  clientCount: number,
-  selectedClient: ClientDetails | null
-): DashboardNavigationItem[] {
-  const contractMetric = findDashboardMetric(metrics, "Contract");
-  const accountingMetric = findDashboardMetric(metrics, "Accounting");
-  const invoiceMetric = findDashboardMetric(metrics, "Invoice");
-  const paymentMetric = findDashboardMetric(metrics, "Payment");
-  const entitlementMetric = findDashboardMetric(metrics, "Entitlement");
-  const cloudMetric = findDashboardMetric(metrics, "Cloud");
-  const statementMetric = findDashboardMetric(metrics, "Statement");
-  const selectedClientStatus = selectedClient?.status ?? "No client";
-
-  return [
-    {
-      module: "dashboard",
-      label: "Dashboard",
-      summary: "Current stats",
-      description: "Current operational status for the selected client.",
-      tone: "neutral",
-      Icon: LayoutDashboard
-    },
-    {
-      module: "clients",
-      label: "Clients",
-      summary: `${clientCount} total`,
-      description: "Select, refresh, and quick add clients.",
-      tone: selectedClient === null ? "warning" : "neutral",
-      Icon: Users
-    },
-    {
-      module: "profile",
-      label: "Profile",
-      summary: selectedClientStatus,
-      description: "Client profile, contacts, support notes, and lifecycle actions.",
-      tone: selectedClient?.status.toLowerCase() === "active" ? "ready" : "neutral",
-      Icon: UserRound
-    },
-    {
-      module: "contracts",
-      label: "Contracts",
-      summary: contractMetric.value,
-      description: "Agreement terms, allowed modules, devices, branches, and contract replacement.",
-      tone: contractMetric.tone,
-      Icon: FileText
-    },
-    {
-      module: "accounting",
-      label: "Accounting",
-      summary: accountingMetric.value,
-      description: "Chart of accounts, code ranges, and ledger setup.",
-      tone: accountingMetric.tone,
-      Icon: ListTree
-    },
-    {
-      module: "billing",
-      label: "Billing",
-      summary: invoiceMetric.value,
-      description: "Accounting profile, charge rules, invoice drafts, and invoice issue.",
-      tone: invoiceMetric.tone,
-      Icon: ReceiptText
-    },
-    {
-      module: "payments",
-      label: "Payments",
-      summary: paymentMetric.value,
-      description: "Cash or bank account setup and invoice payment receipt.",
-      tone: paymentMetric.tone,
-      Icon: Banknote
-    },
-    {
-      module: "entitlements",
-      label: "Entitlements",
-      summary: entitlementMetric.value,
-      description: "Issue and refresh the latest cloud entitlement snapshot.",
-      tone: entitlementMetric.tone,
-      Icon: KeyRound
-    },
-    {
-      module: "cloud",
-      label: "Cloud",
-      summary: cloudMetric.value,
-      description: "Control Cloud heartbeat, license, entitlement, and command status.",
-      tone: cloudMetric.tone,
-      Icon: Cloud
-    },
-    {
-      module: "statement",
-      label: "Statement",
-      summary: statementMetric.value,
-      description: "Client invoices, payments, receivable balance, and journal postings.",
-      tone: statementMetric.tone,
-      Icon: ScrollText
-    }
-  ];
-}
-
-function getDashboardNavigationItem(
-  items: DashboardNavigationItem[],
-  module: DashboardModule
-): DashboardNavigationItem {
-  return items.find((item) => item.module === module) ?? items[0] ?? {
-    module: "dashboard",
-    label: "Dashboard",
-    summary: "Current stats",
-    description: "Current operational status for the selected client.",
-    tone: "neutral",
-    Icon: LayoutDashboard
-  };
-}
-
-function findDashboardMetric(metrics: DashboardMetric[], label: string): DashboardMetric {
-  return metrics.find((metric) => metric.label === label) ?? {
-    label,
-    value: "Unknown",
-    summary: "No signal",
-    tone: "neutral",
-    Icon: LayoutDashboard,
-    module: "dashboard"
-  };
 }
 
 function createDefaultReceivableAccountForm(client?: ClientDetails): LedgerAccountFormInput {
@@ -3705,144 +3485,6 @@ function createDefaultCashAccountForm(client?: ClientDetails): LedgerAccountForm
   };
 }
 
-function createDefaultLedgerAccountEditorForm(
-  range?: AccountCodeRange | null
-): LedgerAccountEditorInput {
-  return {
-    code: "",
-    name: "",
-    type: range?.accountType ?? "Asset",
-    normalBalance: range?.normalBalance ?? "Debit",
-    level: getDefaultLedgerAccountLevel(range),
-    parentAccountId: "",
-    isPostingAccount: range?.isPostingAccount ?? true,
-    status: "Active"
-  };
-}
-
-function getDefaultLedgerAccountLevel(
-  range?: AccountCodeRange | null,
-  isPostingAccount = range?.isPostingAccount ?? true
-): string {
-  if (range !== null && range !== undefined) {
-    if (hasLedgerRangeIntent(range, "Header")) {
-      return "Header";
-    }
-
-    if (hasLedgerRangeIntent(range, "Total")) {
-      return "Total";
-    }
-
-    if (hasLedgerRangeIntent(range, "Control")) {
-      return "Control";
-    }
-
-    if (hasLedgerRangeIntent(range, "Master")) {
-      return "Master";
-    }
-
-    if ((range.parentCode ?? "").trim() !== "") {
-      return "Subsidiary";
-    }
-  }
-
-  return isPostingAccount ? "Detail" : "Master";
-}
-
-function hasLedgerRangeIntent(range: AccountCodeRange, intent: string): boolean {
-  const normalizedIntent = intent.toLowerCase();
-
-  return range.role.toLowerCase().includes(normalizedIntent)
-    || range.displayName.toLowerCase().includes(normalizedIntent);
-}
-
-function createDefaultManualJournalEntryForm(value = new Date()): ManualJournalEntryInput {
-  return {
-    entryDate: toDateInputValue(value),
-    currencyCode: "PKR",
-    sourceReference: defaultManualJournalReference(value),
-    memo: "",
-    lines: [
-      {
-        ledgerAccountId: "",
-        debit: "",
-        credit: "",
-        description: ""
-      },
-      {
-        ledgerAccountId: "",
-        debit: "",
-        credit: "",
-        description: ""
-      }
-    ]
-  };
-}
-
-function createDefaultAccountingPeriodForm(
-  periods: AccountingPeriod[] = [],
-  companyCode = accountingCompanyCode
-): AccountingPeriodFormInput {
-  const nextPeriod = getNextMonthlyPeriod(periods);
-
-  return {
-    companyCode: normalizeAccountingCompanyCode(companyCode),
-    name: formatAccountingPeriodName(nextPeriod.startsOn),
-    startsOn: nextPeriod.startsOn,
-    endsOn: nextPeriod.endsOn
-  };
-}
-
-function createDefaultAccountingControlSettingsForm(
-  companyCode = accountingCompanyCode
-): AccountingControlSettingsInput {
-  return {
-    ...defaultAccountingControlSettingsForm,
-    companyCode: normalizeAccountingCompanyCode(companyCode)
-  };
-}
-
-function toAccountingControlSettingsForm(
-  settings: AccountingControlSettings
-): AccountingControlSettingsInput {
-  return {
-    companyCode: normalizeAccountingCompanyCode(settings.companyCode),
-    baseCurrencyCode: settings.baseCurrencyCode,
-    retainedEarningsAccountId: settings.retainedEarningsAccountId ?? "",
-    incomeSummaryAccountId: settings.incomeSummaryAccountId ?? "",
-    roundingAccountId: settings.roundingAccountId ?? ""
-  };
-}
-
-function getNextMonthlyPeriod(periods: AccountingPeriod[]): { startsOn: string; endsOn: string } {
-  if (periods.length === 0) {
-    const today = new Date();
-    const startsOn = new Date(today.getFullYear(), today.getMonth(), 1);
-    const endsOn = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-    return {
-      startsOn: toDateInputValue(startsOn),
-      endsOn: toDateInputValue(endsOn)
-    };
-  }
-
-  const latestPeriod = [...periods].sort((left, right) => right.endsOn.localeCompare(left.endsOn))[0];
-  const startsOn = addDays(parseDateInput(latestPeriod.endsOn), 1);
-  const endsOn = new Date(startsOn.getFullYear(), startsOn.getMonth() + 1, 0);
-
-  return {
-    startsOn: toDateInputValue(startsOn),
-    endsOn: toDateInputValue(endsOn)
-  };
-}
-
-function formatAccountingPeriodName(startsOn: string): string {
-  return parseDateInput(startsOn).toLocaleString("en-US", {
-    month: "short",
-    year: "numeric"
-  });
-}
-
 function createDefaultAccountingProfileForm(
   client?: ClientDetails,
   contract?: ClientContract | null
@@ -3879,6 +3521,55 @@ function createDefaultSupportCommandForm(): CloudInstallationSupportCommandFormI
     reason: "Support review",
     requestedBy: "SafarSuite Control Desk",
     expiresInHours: "72"
+  };
+}
+
+function createDefaultBootstrapPackageHandoffForm(): CloudBootstrapPackageHandoffFormInput {
+  return {
+    channel: "Secure email",
+    recipient: "",
+    markedBy: "SafarSuite Control Desk",
+    preflightAcknowledgements: [],
+    note: ""
+  };
+}
+
+function createDefaultAppActivationForm(): CloudAppActivationTokenFormInput {
+  return {
+    activationRequestId: "",
+    replacesActivationIssueId: "",
+    serverInstallationId: "",
+    fingerprintHash: "",
+    serverPublicKey: "",
+    requestedBy: "SafarSuite Control Desk"
+  };
+}
+
+function createDefaultFirstManagerSetupTokenForm(): CloudFirstManagerSetupTokenFormInput {
+  return {
+    pendingDeviceRequestId: "",
+    managerDisplayName: "First Manager",
+    managerEmail: "",
+    createdBy: "SafarSuite Control Desk",
+    expiresInHours: "24",
+    purpose: "FirstManagerBootstrap",
+    recoveryReason: "Provider-assisted manager recovery"
+  };
+}
+
+function createDefaultAppActivationRevocationForm(): CloudAppActivationRevocationFormInput {
+  return {
+    revokedBy: "SafarSuite Control Desk",
+    reason: "Rotate app activation mapping"
+  };
+}
+
+function createDefaultAccessCatalogPublishForm(): PublishProductAccessCatalogCommandInput {
+  return {
+    activationRequestId: "",
+    expiresInHours: "2",
+    requestedBy: "Control Desk",
+    changeReason: "Product definition reviewed for the next published revision."
   };
 }
 
@@ -4058,31 +3749,6 @@ function referencesMatch(
   return normalizedFirst !== "" && normalizedFirst === normalizedSecond;
 }
 
-function getJournalSourceDocumentFallbackLabel(entry: JournalEntrySummary): string | null {
-  const reference = entry.sourceReference?.trim();
-
-  if (reference === undefined || reference === "") {
-    return null;
-  }
-
-  switch (entry.sourceType) {
-    case "BillingInvoice":
-      return `invoice ${reference}`;
-    case "BillingInvoiceVoid":
-      return `voided invoice ${reference}`;
-    case "BillingCreditNote":
-      return `credit note ${reference}`;
-    case "PaymentReceipt":
-      return `payment ${reference}`;
-    case "PaymentReversal":
-      return `payment reversal ${reference}`;
-    case "ClientRefund":
-      return `refund ${reference}`;
-    default:
-      return null;
-  }
-}
-
 function toBillingDashboardStep(value: string | null | undefined): BillingDashboardStep | null {
   return value === "accounting"
     || value === "rules"
@@ -4124,34 +3790,6 @@ function toAccountingProfileForm(
   };
 }
 
-function toAccountCodeRangeForm(range: AccountCodeRange): AccountCodeRangeFormInput {
-  return {
-    displayName: range.displayName,
-    searchPrefix: range.searchPrefix,
-    rangeStart: range.rangeStart,
-    rangeEnd: range.rangeEnd,
-    codeLength: range.codeLength.toString(),
-    accountType: range.accountType,
-    normalBalance: range.normalBalance,
-    isPostingAccount: range.isPostingAccount,
-    parentCode: range.parentCode ?? "",
-    isActive: range.isActive
-  };
-}
-
-function toLedgerAccountEditorForm(account: LedgerAccountSummary): LedgerAccountEditorInput {
-  return {
-    code: account.code,
-    name: account.name,
-    type: account.type,
-    normalBalance: account.normalBalance,
-    level: account.level ?? getDefaultLedgerAccountLevel(null, account.isPostingAccount),
-    parentAccountId: account.parentAccountId ?? "",
-    isPostingAccount: account.isPostingAccount,
-    status: account.status
-  };
-}
-
 function toDeploymentForm(deployment: ClientDeployment): ConfigureClientDeploymentInput {
   return {
     installationId: deployment.installationId,
@@ -4188,6 +3826,36 @@ function toCloudProvisioningInput(
   };
 }
 
+function toCloudAppActivationTokenInput(
+  value: CloudAppActivationTokenFormInput
+) {
+  const activationRequestId = value.activationRequestId.trim();
+  const replacesActivationIssueId = value.replacesActivationIssueId.trim();
+
+  return {
+    activationRequestId: activationRequestId === "" ? null : activationRequestId,
+    replacesActivationIssueId: replacesActivationIssueId === "" ? null : replacesActivationIssueId,
+    serverInstallationId: value.serverInstallationId.trim(),
+    fingerprintHash: value.fingerprintHash.trim(),
+    serverPublicKey: value.serverPublicKey.trim(),
+    requestedBy: value.requestedBy.trim()
+  };
+}
+
+function toCloudFirstManagerSetupTokenInput(
+  value: CloudFirstManagerSetupTokenFormInput
+) {
+  return {
+    pendingDeviceRequestId: value.pendingDeviceRequestId.trim(),
+    managerDisplayName: value.managerDisplayName.trim(),
+    managerEmail: value.managerEmail.trim(),
+    createdBy: value.createdBy.trim(),
+    expiresInHours: parseSetupTokenHours(value.expiresInHours),
+    purpose: value.purpose,
+    recoveryReason: value.recoveryReason.trim()
+  };
+}
+
 function parseSetupTokenHours(value: string): number {
   const parsed = Number.parseInt(value, 10);
 
@@ -4220,7 +3888,11 @@ function createDefaultContractForm(
     billingDayOfMonth: "1",
     allowedDevices: "1",
     allowedBranches: "1",
-    moduleCodes: defaultContractModuleCodes(productModules)
+    allowedNamedUsers: "",
+    allowedConcurrentUsers: "",
+    approvalReason: "Commercial terms reviewed and approved in Control Desk.",
+    moduleCodes: defaultContractModuleCodes(productModules),
+    featureLimits: []
   };
 }
 
@@ -4275,15 +3947,6 @@ function defaultReceiptReference(clientCode: string | undefined, value: Date): s
     : `RCPT-${clientCode.trim().toUpperCase()}`;
 
   return `${prefix}-${datePart}-${timePart}`.slice(0, 40);
-}
-
-function defaultManualJournalReference(value: Date): string {
-  const datePart = toDateInputValue(value).replaceAll("-", "");
-  const timePart = [value.getHours(), value.getMinutes(), value.getSeconds()]
-    .map((item) => item.toString().padStart(2, "0"))
-    .join("");
-
-  return `JE-${datePart}-${timePart}`.slice(0, 40);
 }
 
 function defaultRefundReference(clientCode: string | undefined, value: Date): string {
@@ -4374,19 +4037,6 @@ function formatAccountingAmount(amount: number, currencyCode: string): string {
   return `${safeAmount.toFixed(2)} ${normalizedCurrency}`;
 }
 
-function formatDashboardDateTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(value));
-}
-
-function getCloudDeploymentProfile(
-  status: ControlCloudInstallationStatus | null
-): LocalServerDeploymentProfile | null {
-  return status?.deploymentProfile ?? status?.latestHeartbeat?.deploymentProfile ?? null;
-}
-
 function mergeDeploymentStatus(
   current: ConfigureClientDeploymentInput,
   status: ControlCloudInstallationStatus
@@ -4409,22 +4059,6 @@ function mergeDeploymentStatus(
     syncTopologyId: deploymentProfile.syncTopologyId ?? "",
     localServerVersion: status.latestHeartbeat?.localServerVersion ?? current.localServerVersion
   };
-}
-
-function formatCloudDeploymentSummary(profile: LocalServerDeploymentProfile | null): string {
-  if (profile === null) {
-    return "Install status";
-  }
-
-  const role = profile.siteRole.trim();
-  const site = profile.branchCode?.trim() || profile.siteId.trim();
-  const mode = profile.clientDeploymentMode.trim();
-
-  if (role !== "" && site !== "") {
-    return `${role} ${site}`;
-  }
-
-  return mode === "" ? "Install status" : mode;
 }
 
 function formatSupportCommandType(commandType: string): string {
@@ -4463,12 +4097,6 @@ function addDays(value: Date, days: number): Date {
   return next;
 }
 
-function parseDateInput(value: string): Date {
-  const [year, month, day] = value.split("-").map((part) => Number(part));
-
-  return new Date(year, month - 1, day);
-}
-
 function toDateInputValue(value: Date): string {
   const year = value.getFullYear();
   const month = (value.getMonth() + 1).toString().padStart(2, "0");
@@ -4485,29 +4113,6 @@ function sortContracts(contracts: ClientContract[]): ClientContract[] {
 
 function sortChargeCodes(chargeCodes: ChargeCodeLookup[]): ChargeCodeLookup[] {
   return [...chargeCodes].sort((left, right) => left.code.localeCompare(right.code));
-}
-
-function sortAccountCodeRanges(ranges: AccountCodeRange[]): AccountCodeRange[] {
-  return [...ranges].sort((left, right) => {
-    const rangeOrder = left.rangeStart.localeCompare(right.rangeStart);
-
-    return rangeOrder !== 0 ? rangeOrder : left.role.localeCompare(right.role);
-  });
-}
-
-function withAccountingCompanyCode(filters: LedgerAccountFilters): LedgerAccountFilters {
-  return {
-    ...filters,
-    companyCode: accountingCompanyCode
-  };
-}
-
-function normalizeAccountingCompanyCode(companyCode?: string): string {
-  if (companyCode?.trim().toUpperCase() === accountingCompanyCode) {
-    return accountingCompanyCode;
-  }
-
-  return accountingCompanyCode;
 }
 
 function sortClientChargeRules(chargeRules: ClientChargeRule[]): ClientChargeRule[] {
@@ -4552,76 +4157,6 @@ function getSelectedDeploymentId(deployments: ClientDeployment[], installationId
   )?.clientDeploymentId ?? "";
 }
 
-function getPaidAddOnModuleCodes(
-  contract: ClientContract,
-  productModules: ProductModule[]
-): string[] {
-  return getEnabledModuleCodes(contract.modules).filter((moduleCode) =>
-    findProductModule(productModules, moduleCode)?.commercialMode === "PaidAddOn"
-  );
-}
-
-function getBilledModuleCodes(
-  chargeRules: ClientChargeRule[],
-  contract: ClientContract
-): Set<string> {
-  return new Set(
-    chargeRules
-      .filter((rule) => rule.status.toLowerCase() === "active")
-      .filter((rule) => rule.contractId === undefined
-        || rule.contractId === null
-        || rule.contractId === contract.contractId)
-      .map((rule) => normalizeOptionalModuleCode(rule.productModuleCode))
-      .filter((moduleCode): moduleCode is string => moduleCode !== null)
-  );
-}
-
-function getEnabledModuleCodes(modules: Array<{ moduleCode: string; isEnabled: boolean }>): string[] {
-  const seen = new Set<string>();
-
-  return modules
-    .filter((module) => module.isEnabled)
-    .map((module) => normalizeModuleCode(module.moduleCode))
-    .filter((moduleCode) => {
-      if (moduleCode === "" || seen.has(moduleCode)) {
-        return false;
-      }
-
-      seen.add(moduleCode);
-      return true;
-    });
-}
-
-function getLatestPortalInvitation(
-  latestPortalInvitation: ClientPortalInvitation | null,
-  portalInvitations: ClientPortalInvitation[]
-): ClientPortalInvitation | null {
-  const invitations = latestPortalInvitation === null
-    ? portalInvitations
-    : [latestPortalInvitation, ...portalInvitations];
-
-  return invitations
-    .filter((invitation, index, source) =>
-      source.findIndex((item) => item.invitationId === invitation.invitationId) === index
-    )
-    .sort((left, right) => right.invitedAtUtc.localeCompare(left.invitedAtUtc))[0]
-    ?? null;
-}
-
-function normalizeOptionalModuleCode(value: string | null | undefined): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  const normalizedModuleCode = normalizeModuleCode(value);
-
-  return normalizedModuleCode === "" ? null : normalizedModuleCode;
-}
-
-function normalizeModuleCode(value: string): string {
-  return value.trim().toUpperCase();
-}
-
 function canIssueEntitlementSnapshot(
   invoiceDraft: InvoiceDraft | null,
   recordedPayment: RecordedInvoicePayment | null
@@ -4631,10 +4166,61 @@ function canIssueEntitlementSnapshot(
     && recordedPayment !== null;
 }
 
+function createCloudConnectionState(
+  status: ControlCloudConnectionState["status"],
+  detail: string
+): ControlCloudConnectionState {
+  return {
+    status,
+    detail,
+    checkedAtUtc: status === "notChecked" ? null : new Date().toISOString()
+  };
+}
+
+function toCloudConnectionIssue(caughtError: unknown): ControlCloudConnectionState | null {
+  if (!(caughtError instanceof ApiError)) {
+    return null;
+  }
+
+  const detail = formatError(caughtError);
+  const normalized = `${caughtError.message} ${detail}`.toLowerCase();
+  const isCloudDependencyError =
+    caughtError.statusCode === 503
+    || (caughtError.statusCode >= 500 && normalized.includes("control cloud"));
+
+  if (!isCloudDependencyError) {
+    return null;
+  }
+
+  const status = normalized.includes("not configured") || normalized.includes("notconfigured")
+    ? "notConfigured"
+    : "unavailable";
+  const fallbackDetail = status === "notConfigured"
+    ? "Control Cloud endpoint is not configured."
+    : "Control Cloud is unavailable.";
+
+  return createCloudConnectionState(status, detail.trim() || fallbackDetail);
+}
+
+function isCloudConnectionBlockingWrites(state: ControlCloudConnectionState): boolean {
+  return state.status === "unavailable" || state.status === "notConfigured";
+}
+
 function getActiveContract(contracts: ClientContract[]): ClientContract | null {
   return contracts.find((contract) => contract.status.toLowerCase() === "active")
     ?? contracts[0]
     ?? null;
+}
+
+function mergeClientLookups(
+  current: ClientLookup[],
+  next: ClientLookup[]
+): ClientLookup[] {
+  const byClientId = new Map(current.map((client) => [client.clientId, client]));
+
+  next.forEach((client) => byClientId.set(client.clientId, client));
+
+  return [...byClientId.values()];
 }
 
 function toClientLookup(client: ClientDetails): ClientLookup {

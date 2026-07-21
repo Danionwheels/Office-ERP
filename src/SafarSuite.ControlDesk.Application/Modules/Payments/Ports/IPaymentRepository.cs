@@ -9,6 +9,10 @@ public interface IPaymentRepository
 
     Task<Payment?> GetByIdAsync(PaymentId id, CancellationToken cancellationToken = default);
 
+    Task<Payment?> GetByPortalClaimIdAsync(
+        PortalPaymentClaimId portalClaimId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<Payment>> ListByReferenceAsync(
         PaymentReference reference,
         CancellationToken cancellationToken = default);

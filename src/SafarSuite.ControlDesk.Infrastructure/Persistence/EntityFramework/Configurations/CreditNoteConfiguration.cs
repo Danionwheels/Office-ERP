@@ -99,6 +99,15 @@ internal sealed class CreditNoteConfiguration : IEntityTypeConfiguration<CreditN
         builder.HasIndex(creditNote => creditNote.ClientId)
             .HasDatabaseName("ix_credit_notes_client_id");
 
+        builder.HasIndex(creditNote => new
+            {
+                creditNote.ClientId,
+                creditNote.CreditDate,
+                creditNote.CreatedAtUtc,
+                creditNote.Id
+            })
+            .HasDatabaseName("ix_credit_notes_client_credit_created_id");
+
         builder.HasIndex(creditNote => creditNote.InvoiceId)
             .IsUnique()
             .HasDatabaseName("ux_credit_notes_invoice_id");

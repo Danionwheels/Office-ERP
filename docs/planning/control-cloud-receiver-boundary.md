@@ -26,6 +26,7 @@ Accepted commercial messages are also projected into a cloud-owned client portal
 
 ```text
 GET /api/v1/client-portal/clients/{clientId}/commercial-summary
+GET /api/v1/client-portal/clients/{clientId}/commercial-documents?documentType={type}&take={1..100}&cursor={cursor}
 ```
 
 The projection currently covers:
@@ -38,7 +39,7 @@ The projection currently covers:
 - client credit applications
 - entitlement snapshots
 
-The portal summary reports total invoiced, paid, credited, refunded, applied credit, gross invoice balance due, remaining available credit, invoice rows, payment rows, credit rows, refund rows, credit application rows, and entitlement snapshots.
+The portal summary reports bounded totals, gross invoice balance due, remaining available credit, and the latest entitlement. Commercial document history is stored as normalized rows and read through type-scoped keyset pages; the legacy collections in the summary response remain empty for contract compatibility.
 
 The Client Portal can request a signed entitlement bundle from the latest projected entitlement snapshot after a client-scoped portal session is validated:
 
@@ -129,6 +130,7 @@ Apply the cloud receiver schema:
 
 ```powershell
 dotnet tool restore
+$env:SAFARSUITE_CONTROL_CLOUD_CONNECTION_STRING = "<explicit PostgreSQL connection string>"
 dotnet tool run dotnet-ef database update --project src\SafarSuite.ControlCloud.Infrastructure\SafarSuite.ControlCloud.Infrastructure.csproj --startup-project src\SafarSuite.ControlCloud.Infrastructure\SafarSuite.ControlCloud.Infrastructure.csproj --context ControlCloudDbContext
 ```
 
@@ -137,6 +139,7 @@ The PostgreSQL-backed implementation stores:
 ```text
 cloud.control_desk_envelope_receipts
 cloud.client_commercial_projections
+cloud.commercial_documents
 cloud.client_installations
 cloud.entitlement_bundle_issues
 cloud.installation_commands

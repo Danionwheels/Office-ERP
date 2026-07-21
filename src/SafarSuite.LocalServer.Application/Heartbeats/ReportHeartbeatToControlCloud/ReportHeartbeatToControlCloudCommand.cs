@@ -1,3 +1,5 @@
+using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
+
 namespace SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatToControlCloud;
 
 public sealed record ReportHeartbeatToControlCloudCommand(
@@ -5,4 +7,5 @@ public sealed record ReportHeartbeatToControlCloudCommand(
     string InstallationId,
     string LocalServerVersion,
     DateOnly? AsOfDate = null,
-    string? Detail = null);
+    string? Detail = null,
+    LocalServerPairingStatusResponse? PairingStatus = null);

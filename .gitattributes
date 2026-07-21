@@ -1,0 +1,2 @@
+docs/planning/evidence/*.json text eol=lf
+docs/planning/evidence/*.sha256 text eol=lf

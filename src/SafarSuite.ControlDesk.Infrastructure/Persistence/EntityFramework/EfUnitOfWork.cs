@@ -1,20 +1,53 @@
 using Microsoft.EntityFrameworkCore.Storage;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
+using SafarSuite.ControlDesk.Domain.Modules.Billing;
+using SafarSuite.ControlDesk.Domain.Modules.Clients;
+using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
+using SafarSuite.ControlDesk.Domain.Modules.Entitlements;
 
 namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 
 public sealed class EfUnitOfWork : IUnitOfWork
 {
     private readonly ControlDeskDbContext _dbContext;
+    private readonly EfClientWorkQueueProjector _clientWorkQueue;
 
-    public EfUnitOfWork(ControlDeskDbContext dbContext)
+    public EfUnitOfWork(
+        ControlDeskDbContext dbContext,
+        EfClientWorkQueueProjector clientWorkQueue)
     {
         _dbContext = dbContext;
+        _clientWorkQueue = clientWorkQueue;
     }
 
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        var affectedClientIds = CaptureAffectedClientIds();
+
+        if (affectedClientIds.Length == 0)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        if (_dbContext.Database.CurrentTransaction is not null)
+        {
+            await SaveAndRefreshClientWorkAsync(affectedClientIds, cancellationToken);
+            return;
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            await SaveAndRefreshClientWorkAsync(affectedClientIds, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task ExecuteInTransactionAsync(
@@ -58,5 +91,32 @@ public sealed class EfUnitOfWork : IUnitOfWork
             await transaction.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    private async Task SaveAndRefreshClientWorkAsync(
+        IReadOnlyCollection<Guid> affectedClientIds,
+        CancellationToken cancellationToken)
+    {
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _clientWorkQueue.RefreshAsync(affectedClientIds, cancellationToken);
+    }
+
+    private Guid[] CaptureAffectedClientIds()
+    {
+        return _dbContext.ChangeTracker
+            .Entries()
+            .Select(entry => entry.Entity switch
+            {
+                Client client => (Guid?)client.Id.Value,
+                ClientDeployment deployment => deployment.ClientId.Value,
+                Invoice invoice => invoice.ClientId.Value,
+                EntitlementSnapshot entitlement => entitlement.ClientId.Value,
+                CloudOutboxMessage message => message.ClientId?.Value,
+                _ => null
+            })
+            .Where(clientId => clientId.HasValue && clientId.Value != Guid.Empty)
+            .Select(clientId => clientId!.Value)
+            .Distinct()
+            .ToArray();
     }
 }

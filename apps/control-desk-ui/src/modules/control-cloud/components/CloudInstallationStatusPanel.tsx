@@ -1,7 +1,10 @@
+import { useRef, useState } from "react";
 import {
   Activity,
   Cloud,
+  Copy,
   Download,
+  FileText,
   History,
   KeyRound,
   MapPin,
@@ -9,89 +12,58 @@ import {
   PackageCheck,
   RefreshCw,
   Send,
-  ServerCog
+  ServerCog,
+  ShieldCheck,
+  ShieldOff,
+  Upload
 } from "lucide-react";
+import type { CloudInstallationStatusPanelProps } from "../types/cloudWorkspaceTypes";
+import {
+  copyTextToClipboard,
+  buildPairingDescriptor,
+  downloadBootstrapArtifact,
+  downloadAppActivationImport,
+  downloadBootstrapBundle,
+  downloadCustomerSetupGuide,
+  downloadDiagnosticsReport,
+  downloadFirstManagerSetupToken,
+  downloadPairingDescriptor,
+  downloadPairingDescriptorFile,
+  type PairingDescriptorAppIdentity
+} from "../utils/cloudDownloads";
+import { issueCloudPairingDescriptor } from "../api/controlCloudApi";
+import {
+  cloudConnectionStatusClass,
+  formatAuditEventType,
+  formatAvailability,
+  formatBranchLabel,
+  formatCheckCode,
+  formatCloudConnectionStatus,
+  formatCloudOutboxTiming,
+  formatCloudOutboxType,
+  formatNullableDateTime,
+  formatNullableText,
+  formatSyncLabel,
+  getAppIdentityMapping,
+  getCloudControlRows,
+  getCloudOutboxCounts,
+  isCloudConnectionBlockingWrites,
+  isRevokedAppActivationIssue,
+  shortIdentifier,
+  statusClass,
+  toAppActivationRequestJson
+} from "../utils/cloudWorkspaceModel";
+import { CloudControlBoard } from "./shared/CloudControlBoard";
+import { EntitlementReconciliationTable } from "./shared/EntitlementReconciliationTable";
 import type {
-  ClientDeployment,
-  ClientDetails,
-  ConfigureClientDeploymentInput
-} from "../../clients/types/clientTypes";
-import type {
-  CloudInstallationSupportCommandFormInput,
-  ControlCloudAuditEvent,
   ControlCloudInstallationStatus,
+  IssuedSafarSuiteAppActivationToken,
   LocalServerBootstrapPackage,
+  LocalServerBootstrapPackageSummary,
   LocalServerDiagnosticReport,
-  LocalServerDeploymentProfile,
-  LocalServerSetupToken,
-  QueuedCloudInstallationSupportCommand
+  SafarSuiteAppActivationIssue,
+  SetupPreflightAcknowledgementKey
 } from "../types/controlCloudTypes";
-
-type CloudInstallationStatusPanelProps = {
-  client: ClientDetails | null;
-  installationId: string;
-  deployments: ClientDeployment[];
-  selectedDeploymentId: string;
-  deploymentValue: ConfigureClientDeploymentInput;
-  setupTokenHours: string;
-  status: ControlCloudInstallationStatus | null;
-  setupToken: LocalServerSetupToken | null;
-  bootstrapPackage: LocalServerBootstrapPackage | null;
-  supportCommandValue: CloudInstallationSupportCommandFormInput;
-  queuedSupportCommand: QueuedCloudInstallationSupportCommand | null;
-  auditEvents: ControlCloudAuditEvent[];
-  diagnosticsReport: LocalServerDiagnosticReport | null;
-  isBusy: boolean;
-  onInstallationIdChange: (value: string) => void;
-  onDeploymentValueChange: (value: ConfigureClientDeploymentInput) => void;
-  onSetupTokenHoursChange: (value: string) => void;
-  onDeploymentSelect: (clientDeploymentId: string) => void;
-  onSaveDeployment: () => Promise<void>;
-  onCreateSetupToken: () => Promise<void>;
-  onCreateBootstrapPackage: () => Promise<void>;
-  onSupportCommandValueChange: (value: CloudInstallationSupportCommandFormInput) => void;
-  onQueueSupportCommand: () => Promise<void>;
-  onRefreshAuditEvents: () => Promise<void>;
-  onRefreshDiagnostics: () => Promise<void>;
-  onRefresh: () => Promise<void>;
-};
-
-const defaultBundleContentType = "application/vnd.safarsuite.local-server-bootstrap+json";
-
-function downloadBootstrapBundle(bootstrapPackage: LocalServerBootstrapPackage) {
-  const bundleJson = JSON.stringify(bootstrapPackage.signedBundle, null, 2);
-  const blob = new Blob([bundleJson], {
-    type: bootstrapPackage.bundleContentType || defaultBundleContentType
-  });
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const fallbackFileName = `${bootstrapPackage.installationId}-bootstrap.json`;
-
-  link.href = objectUrl;
-  link.download = bootstrapPackage.bundleFileName.trim() || fallbackFileName;
-  link.style.display = "none";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-}
-
-function downloadDiagnosticsReport(diagnosticsReport: LocalServerDiagnosticReport) {
-  const diagnosticsJson = JSON.stringify(diagnosticsReport, null, 2);
-  const blob = new Blob([diagnosticsJson], {
-    type: "application/json"
-  });
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = objectUrl;
-  link.download = `safarsuite-diagnostics-${diagnosticsReport.installationId}.json`;
-  link.style.display = "none";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-}
 
 export function CloudInstallationStatusPanel({
   client,
@@ -100,11 +72,24 @@ export function CloudInstallationStatusPanel({
   selectedDeploymentId,
   deploymentValue,
   setupTokenHours,
+  connectionState,
   status,
   setupToken,
   bootstrapPackage,
+  bootstrapPackages,
+  bootstrapPackageHandoffValue,
   supportCommandValue,
   queuedSupportCommand,
+  appActivationValue,
+  issuedAppActivation,
+  firstManagerSetupTokenValue,
+  issuedFirstManagerSetupToken,
+  appActivationIssues,
+  appActivationIssueSearch,
+  appActivationRevocationValue,
+  outboxMessages,
+  outboxSummary,
+  latestOutboxPublish,
   auditEvents,
   diagnosticsReport,
   isBusy,
@@ -115,18 +100,216 @@ export function CloudInstallationStatusPanel({
   onSaveDeployment,
   onCreateSetupToken,
   onCreateBootstrapPackage,
+  onRefreshBootstrapPackages,
+  onBootstrapPackageHandoffValueChange,
+  onMarkBootstrapPackageHandoff,
   onSupportCommandValueChange,
   onQueueSupportCommand,
+  onAppActivationValueChange,
+  onIssueAppActivationToken,
+  onFirstManagerSetupTokenValueChange,
+  onIssueFirstManagerSetupToken,
+  onAppActivationIssueSearchChange,
+  onRefreshAppActivationIssues,
+  onAppActivationRevocationValueChange,
+  onRevokeAppActivationIssue,
+  onPrepareReplacementAppActivationIssue,
+  onRefreshOutboxMessages,
+  onPublishOutboxMessages,
   onRefreshAuditEvents,
   onRefreshDiagnostics,
   onRefresh
 }: CloudInstallationStatusPanelProps) {
+  const appActivationRequestInputRef = useRef<HTMLInputElement>(null);
+  const [appActivationImportError, setAppActivationImportError] = useState("");
+  const [installCommandCopyState, setInstallCommandCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const latestHeartbeat = status?.latestHeartbeat ?? null;
+  const pairingStatus = latestHeartbeat?.pairingStatus ?? null;
   const latestEntitlement = status?.latestEntitlement ?? null;
+  const entitlementSync = status?.entitlementSync ?? null;
+  const reconciliation = status?.reconciliation ?? null;
   const commandStatus = status?.commandStatus ?? null;
   const deploymentProfile = status?.deploymentProfile ?? latestHeartbeat?.deploymentProfile ?? null;
+  const cloudConnectionText = formatCloudConnectionStatus(connectionState);
+  const cloudWritesBlocked = isCloudConnectionBlockingWrites(connectionState);
   const statusText =
-    latestHeartbeat?.licenseStatus ?? status?.installationStatus ?? "Not loaded";
+    connectionState.status === "connected" || connectionState.status === "notChecked"
+      ? latestHeartbeat?.licenseStatus ?? status?.installationStatus ?? "Not loaded"
+      : cloudConnectionText;
+  const cloudControlRows = getCloudControlRows({
+    auditEvents,
+    appActivationIssues,
+    connectionState,
+    commandStatus,
+    deploymentProfile,
+    deploymentValue,
+    diagnosticsReport,
+    issuedAppActivation,
+    installationId,
+    latestEntitlement,
+    latestHeartbeat,
+    status
+  });
+  const setupSteps = getCustomerSetupSteps({
+    selectedDeploymentId,
+    deploymentValue,
+    status,
+    bootstrapPackage,
+    bootstrapPackages,
+    auditEvents,
+    latestHeartbeat,
+    latestEntitlement,
+    diagnosticsReport,
+    issuedAppActivation,
+    appActivationIssues
+  });
+  const setupPreflightItems = getCustomerSetupPreflightItems({
+    deploymentValue,
+    status,
+    bootstrapPackage,
+    bootstrapPackages,
+    diagnosticsReport
+  });
+  const completedSetupSteps = setupSteps.filter((step) => step.done).length;
+  const warningSetupSteps = setupSteps.filter((step) => step.tone === "warning").length;
+  const readyPreflightItems = setupPreflightItems.filter((item) => item.tone === "ready").length;
+  const warningPreflightItems = setupPreflightItems.filter((item) => item.tone === "warning").length;
+  const selectedPreflightAcknowledgements: string[] =
+    bootstrapPackageHandoffValue.preflightAcknowledgements ?? [];
+  const acknowledgedPreflightItems = setupPreflightItems.filter((item) =>
+    selectedPreflightAcknowledgements.includes(item.key)
+  ).length;
+  const allSetupPreflightAcknowledged = acknowledgedPreflightItems === setupPreflightItems.length;
+  const setupReadinessTone = completedSetupSteps === setupSteps.length
+    ? warningSetupSteps > 0 ? "warning" : "ready"
+    : "neutral";
+  const setupReadinessStatus = completedSetupSteps === setupSteps.length
+    ? warningSetupSteps > 0 ? "Review" : "Complete"
+    : `${completedSetupSteps}/${setupSteps.length} ready`;
+  const outboxCounts = getCloudOutboxCounts(outboxMessages, outboxSummary);
+  const canIssueAppActivationToken =
+    !isBusy
+    && !cloudWritesBlocked
+    && client !== null
+    && deploymentValue.installationId.trim() !== ""
+    && appActivationValue.serverInstallationId.trim() !== ""
+    && appActivationValue.fingerprintHash.trim() !== ""
+    && appActivationValue.serverPublicKey.trim() !== "";
+  const canIssueFirstManagerSetupToken =
+    !isBusy
+    && !cloudWritesBlocked
+    && client !== null
+    && deploymentValue.installationId.trim() !== ""
+    && firstManagerSetupTokenValue.pendingDeviceRequestId.trim() !== ""
+    && firstManagerSetupTokenValue.managerDisplayName.trim() !== ""
+    && (
+      firstManagerSetupTokenValue.purpose !== "ManagerRecovery"
+      || firstManagerSetupTokenValue.recoveryReason.trim() !== ""
+    );
+  const canRevokeAppActivationIssue =
+    !isBusy
+    && !cloudWritesBlocked
+    && client !== null
+    && appActivationRevocationValue.revokedBy.trim() !== ""
+    && appActivationRevocationValue.reason.trim() !== "";
+  const appIdentityMapping = getAppIdentityMapping({
+    appActivationValue,
+    issuedAppActivation,
+    providerInstallationId: deploymentValue.installationId.trim() || installationId.trim()
+  });
+  const activeAppActivationIssue = appActivationIssues.find((issue) =>
+    !isRevokedAppActivationIssue(issue)
+  );
+  const pairingDescriptorAppIdentity = getPairingDescriptorAppIdentity(
+    issuedAppActivation,
+    activeAppActivationIssue,
+    appActivationValue.serverInstallationId,
+    appActivationValue.fingerprintHash);
+
+  function handlePreflightAcknowledgementChange(key: string, checked: boolean) {
+    const acknowledgementKey = key as SetupPreflightAcknowledgementKey;
+    const current = bootstrapPackageHandoffValue.preflightAcknowledgements ?? [];
+    const preflightAcknowledgements = checked
+      ? Array.from(new Set([...current, acknowledgementKey]))
+      : current.filter((value) => value !== acknowledgementKey);
+
+    onBootstrapPackageHandoffValueChange({
+      ...bootstrapPackageHandoffValue,
+      preflightAcknowledgements
+    });
+  }
+
+  async function handleImportAppActivationRequest(file: File) {
+    setAppActivationImportError("");
+
+    try {
+      const request = toAppActivationRequestJson(JSON.parse(await file.text()));
+      onAppActivationValueChange({
+        ...appActivationValue,
+        activationRequestId: request.activationRequestId ?? "",
+        serverInstallationId: request.serverInstallationId,
+        fingerprintHash: request.fingerprintHash,
+        serverPublicKey: request.serverPublicKey,
+        requestedBy: request.requestedBy?.trim() || appActivationValue.requestedBy
+      });
+    } catch (error) {
+      setAppActivationImportError(error instanceof Error
+        ? error.message
+        : "Activation request JSON could not be read.");
+    }
+  }
+
+  async function handleCopyInstallCommand() {
+    if (bootstrapPackage === null) {
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(bootstrapPackage.installCommand);
+      setInstallCommandCopyState("copied");
+      window.setTimeout(() => setInstallCommandCopyState("idle"), 1800);
+    } catch {
+      setInstallCommandCopyState("failed");
+      window.setTimeout(() => setInstallCommandCopyState("idle"), 2400);
+    }
+  }
+
+  async function handleDownloadPairingDescriptor() {
+    if (bootstrapPackage === null) {
+      return;
+    }
+
+    const localDescriptor = buildPairingDescriptor(
+      bootstrapPackage,
+      client?.code ?? null,
+      pairingDescriptorAppIdentity);
+
+    try {
+      const descriptor = await issueCloudPairingDescriptor(
+        bootstrapPackage.clientId,
+        bootstrapPackage.installationId,
+        {
+          bootstrapPackageId: bootstrapPackage.bootstrapPackageId,
+          setupTokenId: bootstrapPackage.setupTokenId,
+          clientCode: client?.code,
+          customerName: client?.displayName ?? client?.legalName,
+          appServerInstallationId: pairingDescriptorAppIdentity?.appServerInstallationId,
+          fingerprintHash: pairingDescriptorAppIdentity?.fingerprintHash ?? undefined,
+          urlCandidates: localDescriptor.urlCandidates,
+          tlsCaSha256: localDescriptor.tlsCaSha256,
+          tlsCertificateSha256: localDescriptor.tlsCertificateSha256,
+          serverPairingKeySha256: localDescriptor.serverPairingKeySha256,
+          requestedBy: "SafarSuite Control Desk"
+        });
+
+      downloadPairingDescriptorFile(descriptor, bootstrapPackage.installationId);
+    } catch {
+      downloadPairingDescriptor(
+        bootstrapPackage,
+        client?.code ?? null,
+        pairingDescriptorAppIdentity);
+    }
+  }
 
   return (
     <section className="client-panel cloud-status-panel">
@@ -135,11 +318,12 @@ export function CloudInstallationStatusPanel({
           <span>Control Cloud</span>
           <strong>{statusText}</strong>
         </div>
-        {status !== null && (
-          <span className={`status-pill ${statusClass(statusText)}`}>
-            {statusText}
-          </span>
-        )}
+        <span
+          className={`status-pill ${cloudConnectionStatusClass(connectionState)}`}
+          title={connectionState.detail}
+        >
+          {cloudConnectionText}
+        </span>
       </div>
 
       <div className="entitlement-action-row">
@@ -185,6 +369,151 @@ export function CloudInstallationStatusPanel({
         <span className="billing-small-fact">
           {client === null ? "Select a client" : client.code}
         </span>
+      </div>
+
+      <CloudControlBoard rows={cloudControlRows} />
+
+      <div className={`cloud-setup-readiness ${setupReadinessTone}`}>
+        <div className="cloud-audit-heading">
+          <div>
+            <span>Customer setup</span>
+            <strong>{setupReadinessStatus}</strong>
+          </div>
+          <span className={`status-pill ${setupReadinessTone === "ready" ? "active" : setupReadinessTone === "warning" ? "pending" : "draft"}`}>
+            {warningSetupSteps > 0
+              ? `${warningSetupSteps} review`
+              : `${completedSetupSteps}/${setupSteps.length}`}
+          </span>
+        </div>
+        <div className="cloud-setup-step-grid">
+          {setupSteps.map((step) => (
+            <article className={`cloud-setup-step ${step.tone}`} key={step.key}>
+              <span className={`cloud-setup-step-icon ${step.done ? "ready" : step.tone}`}>
+                {step.done ? <ShieldCheck size={15} /> : <ShieldOff size={15} />}
+              </span>
+              <div>
+                <strong>{step.label}</strong>
+                <span>{step.detail}</span>
+              </div>
+              <span className={`status-pill ${step.done ? "active" : step.tone === "warning" ? "pending" : "draft"}`}>
+                {step.status}
+              </span>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className={`cloud-setup-preflight ${warningPreflightItems > 0 ? "warning" : "ready"}`}>
+        <div className="cloud-audit-heading">
+          <div>
+            <span>Setup preflight</span>
+            <strong>{readyPreflightItems}/{setupPreflightItems.length} clear</strong>
+          </div>
+          <span className={`status-pill ${warningPreflightItems > 0 ? "pending" : "active"}`}>
+            {warningPreflightItems > 0 ? `${warningPreflightItems} review` : "Clear"}
+          </span>
+        </div>
+        <div className="cloud-setup-preflight-grid">
+          {setupPreflightItems.map((item) => (
+            <article className={`cloud-setup-preflight-item ${item.tone}`} key={item.key}>
+              <span className={`cloud-setup-step-icon ${item.tone}`}>
+                {item.tone === "ready" ? <ShieldCheck size={15} /> : <ServerCog size={15} />}
+              </span>
+              <div>
+                <strong>{item.label}</strong>
+                <span>{item.detail}</span>
+              </div>
+              <span className={`status-pill ${item.tone === "ready" ? "active" : item.tone === "warning" ? "pending" : "draft"}`}>
+                {item.status}
+              </span>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className="cloud-audit-panel">
+        <div className="cloud-audit-heading">
+          <div>
+            <span>Local outbox</span>
+            <strong>
+              {outboxCounts.pending} pending / {outboxCounts.failed} failed
+            </strong>
+          </div>
+          <div className="cloud-diagnostics-actions">
+            <button
+              className="icon-button"
+              type="button"
+              disabled={isBusy}
+              onClick={onRefreshOutboxMessages}
+              title="Refresh local cloud outbox"
+            >
+              <RefreshCw size={16} />
+              Outbox
+            </button>
+            <button
+              className="icon-button primary"
+              type="button"
+              disabled={isBusy || outboxCounts.ready === 0 || cloudWritesBlocked}
+              onClick={onPublishOutboxMessages}
+              title="Publish ready local outbox messages to Control Cloud"
+            >
+              <Send size={16} />
+              Publish
+            </button>
+          </div>
+        </div>
+
+        <dl className="cloud-provisioning-facts">
+          <div>
+            <dt>Ready</dt>
+            <dd>{outboxCounts.ready}</dd>
+          </div>
+          <div>
+            <dt>Sent</dt>
+            <dd>{outboxCounts.sent}</dd>
+          </div>
+          <div>
+            <dt>Attempts</dt>
+            <dd>{outboxCounts.attempts}</dd>
+          </div>
+          <div>
+            <dt>Last publish</dt>
+            <dd>
+              {latestOutboxPublish === null
+                ? "Not run"
+                : `${latestOutboxPublish.publishedCount} sent / ${latestOutboxPublish.failedCount} failed`}
+            </dd>
+          </div>
+        </dl>
+
+        {outboxMessages.length === 0 ? (
+          <div className="client-empty-state">No local cloud outbox messages loaded</div>
+        ) : (
+          <div className="cloud-audit-list">
+            {outboxMessages.slice(0, 8).map((outboxMessage) => (
+              <article
+                className="cloud-audit-item"
+                key={outboxMessage.cloudOutboxMessageId}
+              >
+                <header>
+                  <div>
+                    <strong>{formatCloudOutboxType(outboxMessage)}</strong>
+                    <span>
+                      {outboxMessage.subjectType} / {shortIdentifier(outboxMessage.subjectId)}
+                    </span>
+                  </div>
+                  <span className={`status-pill ${statusClass(outboxMessage.status)}`}>
+                    {outboxMessage.status}
+                  </span>
+                </header>
+                <p>
+                  {formatCloudOutboxTiming(outboxMessage)}
+                  {outboxMessage.failureReason === null ? "" : ` ${outboxMessage.failureReason}`}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="cloud-deployment-grid">
@@ -363,7 +692,12 @@ export function CloudInstallationStatusPanel({
           <button
             className="icon-button"
             type="button"
-            disabled={isBusy || client === null || deploymentValue.installationId.trim() === ""}
+            disabled={
+              cloudWritesBlocked
+              || isBusy
+              || client === null
+              || deploymentValue.installationId.trim() === ""
+            }
             onClick={onCreateSetupToken}
             title="Create setup token"
           >
@@ -374,7 +708,8 @@ export function CloudInstallationStatusPanel({
             className="icon-button primary"
             type="button"
             disabled={
-              isBusy
+              cloudWritesBlocked
+              || isBusy
               || client === null
               || deploymentValue.installationId.trim() === ""
               || deploymentValue.localServerVersion.trim() === ""
@@ -418,15 +753,49 @@ export function CloudInstallationStatusPanel({
                 <span>Bootstrap package</span>
                 <strong>{bootstrapPackage.bundleFileName}</strong>
               </div>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => downloadBootstrapBundle(bootstrapPackage)}
-                title="Download signed bootstrap bundle"
-              >
-                <Download size={16} />
-                Download
-              </button>
+              <div className="cloud-setup-packet-actions">
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={handleCopyInstallCommand}
+                  title="Copy install command"
+                >
+                  <Copy size={16} />
+                  {installCommandCopyState === "copied"
+                    ? "Copied"
+                    : installCommandCopyState === "failed" ? "Failed" : "Copy"}
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => downloadCustomerSetupGuide(
+                    bootstrapPackage,
+                    client?.code ?? null,
+                    pairingDescriptorAppIdentity)}
+                  title="Download customer setup guide"
+                >
+                  <FileText size={16} />
+                  Guide
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => void handleDownloadPairingDescriptor()}
+                  title="Download SafarSuite app pairing descriptor"
+                >
+                  <Network size={16} />
+                  Descriptor
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => downloadBootstrapBundle(bootstrapPackage)}
+                  title="Download signed bootstrap bundle"
+                >
+                  <Download size={16} />
+                  Bundle
+                </button>
+              </div>
             </div>
             <textarea rows={3} readOnly value={bootstrapPackage.installCommand} />
             <dl className="cloud-provisioning-facts">
@@ -446,9 +815,779 @@ export function CloudInstallationStatusPanel({
                 <dt>Signature</dt>
                 <dd>{bootstrapPackage.signedBundle.signature.keyId}</dd>
               </div>
+              <div>
+                <dt>Secret readiness</dt>
+                <dd>{formatSecretReadiness(bootstrapPackage)}</dd>
+              </div>
+              <div>
+                <dt>Artifacts</dt>
+                <dd>{bootstrapPackage.artifacts.length}</dd>
+              </div>
             </dl>
+            {bootstrapPackage.artifacts.length > 0 && (
+              <div className="cloud-setup-artifact-list">
+                {bootstrapPackage.artifacts.map((artifact) => (
+                  <div
+                    className="cloud-setup-artifact"
+                    key={`${artifact.artifactType}-${artifact.fileName}`}
+                  >
+                    <div>
+                      <strong>{artifact.fileName}</strong>
+                      <span>{artifact.artifactType} / {artifact.targetPath}</span>
+                    </div>
+                    <span>{formatPackageHash(artifact.sha256)}</span>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => downloadBootstrapArtifact(artifact)}
+                      title={`Download ${artifact.fileName}`}
+                    >
+                      <Download size={16} />
+                      File
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
+
+        <div className="cloud-bootstrap-register">
+          <div className="cloud-audit-heading">
+            <div>
+              <span>Deployment packages</span>
+              <strong>{bootstrapPackages.length} loaded</strong>
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              disabled={isBusy || client === null || deploymentValue.installationId.trim() === ""}
+              onClick={onRefreshBootstrapPackages}
+              title="Refresh deployment package register"
+            >
+              <RefreshCw size={16} />
+              Packages
+            </button>
+          </div>
+
+          <div className="cloud-bootstrap-handoff-form">
+            <label>
+              <span>Channel</span>
+              <select
+                value={bootstrapPackageHandoffValue.channel}
+                disabled={isBusy}
+                onChange={(event) => onBootstrapPackageHandoffValueChange({
+                  ...bootstrapPackageHandoffValue,
+                  channel: event.target.value
+                })}
+              >
+                <option value="Secure email">Secure email</option>
+                <option value="Portal">Portal</option>
+                <option value="USB handoff">USB handoff</option>
+                <option value="On-site install">On-site install</option>
+                <option value="Remote session">Remote session</option>
+              </select>
+            </label>
+            <label>
+              <span>Recipient</span>
+              <input
+                type="text"
+                value={bootstrapPackageHandoffValue.recipient}
+                maxLength={160}
+                disabled={isBusy}
+                onChange={(event) => onBootstrapPackageHandoffValueChange({
+                  ...bootstrapPackageHandoffValue,
+                  recipient: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Marked by</span>
+              <input
+                type="text"
+                value={bootstrapPackageHandoffValue.markedBy}
+                maxLength={120}
+                disabled={isBusy}
+                onChange={(event) => onBootstrapPackageHandoffValueChange({
+                  ...bootstrapPackageHandoffValue,
+                  markedBy: event.target.value
+                })}
+              />
+            </label>
+            <label className="wide">
+              <span>Note</span>
+              <input
+                type="text"
+                value={bootstrapPackageHandoffValue.note}
+                maxLength={500}
+                disabled={isBusy}
+                onChange={(event) => onBootstrapPackageHandoffValueChange({
+                  ...bootstrapPackageHandoffValue,
+                  note: event.target.value
+                })}
+              />
+            </label>
+          </div>
+
+          <div className="cloud-bootstrap-preflight-acknowledgements">
+            <div className="cloud-bootstrap-preflight-heading">
+              <span>Handoff preflight</span>
+              <strong>{acknowledgedPreflightItems}/{setupPreflightItems.length}</strong>
+            </div>
+            <div className="cloud-bootstrap-preflight-list">
+              {setupPreflightItems.map((item) => {
+                const checked = selectedPreflightAcknowledgements.includes(item.key);
+
+                return (
+                  <label
+                    className={`cloud-bootstrap-preflight-check ${item.tone}${checked ? " checked" : ""}`}
+                    key={item.key}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={isBusy || cloudWritesBlocked}
+                      onChange={(event) => handlePreflightAcknowledgementChange(
+                        item.key,
+                        event.target.checked
+                      )}
+                    />
+                    <span>
+                      <strong>{item.label}</strong>
+                      <small>{item.detail}</small>
+                    </span>
+                    <em>{item.status}</em>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {bootstrapPackages.length === 0 ? (
+            <div className="client-empty-state">No deployment packages loaded</div>
+          ) : (
+            <div className="cloud-bootstrap-package-list">
+              {bootstrapPackages.slice(0, 6).map((packageSummary) => {
+                const handoffEvent = getBootstrapPackageHandoffEvent(packageSummary, auditEvents);
+
+                return (
+                  <article
+                    className="cloud-bootstrap-package"
+                    key={packageSummary.bootstrapPackageId}
+                  >
+                    <header>
+                      <div>
+                        <strong>
+                          {packageSummary.bundleFileName.trim()
+                            || shortIdentifier(packageSummary.bootstrapPackageId)}
+                        </strong>
+                        <span>
+                          {shortIdentifier(packageSummary.bootstrapPackageId)}
+                          {" / setup "}
+                          {shortIdentifier(packageSummary.setupTokenId)}
+                        </span>
+                      </div>
+                      <div className="cloud-bootstrap-package-actions">
+                        <span className={`status-pill ${statusClass(packageSummary.packageStatus)}`}>
+                          {packageSummary.packageStatus}
+                        </span>
+                        {handoffEvent !== null && (
+                          <span className="status-pill active">Handed off</span>
+                        )}
+                        <button
+                          className="icon-button"
+                          type="button"
+                          disabled={
+                            cloudWritesBlocked
+                              || isBusy
+                              || bootstrapPackageHandoffValue.channel.trim() === ""
+                              || bootstrapPackageHandoffValue.markedBy.trim() === ""
+                              || !allSetupPreflightAcknowledged
+                          }
+                          onClick={() => onMarkBootstrapPackageHandoff(packageSummary.bootstrapPackageId)}
+                          title={!allSetupPreflightAcknowledged
+                            ? "Acknowledge setup preflight before handoff"
+                            : handoffEvent === null
+                            ? "Mark setup packet handoff"
+                            : "Update setup packet handoff"}
+                        >
+                          <Send size={16} />
+                          {handoffEvent === null ? "Mark" : "Update"}
+                        </button>
+                      </div>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>Generated</dt>
+                        <dd>{formatNullableDateTime(packageSummary.generatedAtUtc)}</dd>
+                      </div>
+                      <div>
+                        <dt>Expires</dt>
+                        <dd>{formatNullableDateTime(packageSummary.setupTokenExpiresAtUtc)}</dd>
+                      </div>
+                      <div>
+                        <dt>Consumed</dt>
+                        <dd>{formatPackageConsumption(packageSummary)}</dd>
+                      </div>
+                      <div>
+                        <dt>Runtime</dt>
+                        <dd>{formatPackageRuntime(packageSummary)}</dd>
+                      </div>
+                      <div>
+                        <dt>Site</dt>
+                        <dd>{formatNullableText(packageSummary.deploymentProfile.siteId)}</dd>
+                      </div>
+                      <div>
+                        <dt>Bundle SHA</dt>
+                        <dd>{formatPackageHash(packageSummary.bundleSha256)}</dd>
+                      </div>
+                      {handoffEvent !== null && (
+                        <div>
+                          <dt>Handoff</dt>
+                          <dd>{formatNullableDateTime(handoffEvent.occurredAtUtc)}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="cloud-command-panel">
+          <div className="cloud-audit-heading">
+            <div>
+              <span>First manager</span>
+              <strong>{issuedFirstManagerSetupToken === null ? "Ready" : "Issued"}</strong>
+            </div>
+            <div className="cloud-diagnostics-actions">
+              <button
+                className="icon-button primary"
+                type="button"
+                disabled={!canIssueFirstManagerSetupToken}
+                onClick={onIssueFirstManagerSetupToken}
+                title="Issue first-manager setup token"
+              >
+                <KeyRound size={16} />
+                Issue
+              </button>
+            </div>
+          </div>
+
+          <div className="cloud-app-activation-grid">
+            <label>
+              <span>Purpose</span>
+              <select
+                value={firstManagerSetupTokenValue.purpose}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  purpose: event.target.value as typeof firstManagerSetupTokenValue.purpose
+                })}
+              >
+                <option value="FirstManagerBootstrap">First manager</option>
+                <option value="ManagerRecovery">Manager recovery</option>
+              </select>
+            </label>
+            <label>
+              <span>Pending request</span>
+              <input
+                type="text"
+                value={firstManagerSetupTokenValue.pendingDeviceRequestId}
+                maxLength={36}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  pendingDeviceRequestId: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Manager name</span>
+              <input
+                type="text"
+                value={firstManagerSetupTokenValue.managerDisplayName}
+                maxLength={160}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  managerDisplayName: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Manager email</span>
+              <input
+                type="email"
+                value={firstManagerSetupTokenValue.managerEmail}
+                maxLength={160}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  managerEmail: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Created by</span>
+              <input
+                type="text"
+                value={firstManagerSetupTokenValue.createdBy}
+                maxLength={160}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  createdBy: event.target.value
+                })}
+              />
+            </label>
+            {firstManagerSetupTokenValue.purpose === "ManagerRecovery" && (
+              <label>
+                <span>Recovery reason</span>
+                <input
+                  type="text"
+                  value={firstManagerSetupTokenValue.recoveryReason}
+                  maxLength={500}
+                  disabled={isBusy}
+                  onChange={(event) => onFirstManagerSetupTokenValueChange({
+                    ...firstManagerSetupTokenValue,
+                    recoveryReason: event.target.value
+                  })}
+                />
+              </label>
+            )}
+            <label>
+              <span>Expires in hours</span>
+              <input
+                type="number"
+                min={1}
+                max={168}
+                value={firstManagerSetupTokenValue.expiresInHours}
+                disabled={isBusy}
+                onChange={(event) => onFirstManagerSetupTokenValueChange({
+                  ...firstManagerSetupTokenValue,
+                  expiresInHours: event.target.value
+                })}
+              />
+            </label>
+          </div>
+
+          {issuedFirstManagerSetupToken !== null && (
+            <div className="cloud-provisioning-result">
+              <div className="cloud-provisioning-result-heading">
+                <div>
+                  <span>Setup token</span>
+                  <strong>{shortIdentifier(issuedFirstManagerSetupToken.tokenId)}</strong>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => downloadFirstManagerSetupToken(issuedFirstManagerSetupToken)}
+                  title="Download signed first-manager setup token"
+                >
+                  <Download size={16} />
+                  Download
+                </button>
+              </div>
+              <input readOnly value={issuedFirstManagerSetupToken.signedToken.signature.payloadSha256} />
+              <dl className="cloud-provisioning-facts">
+                <div>
+                  <dt>Purpose</dt>
+                  <dd>{formatSetupTokenPurpose(issuedFirstManagerSetupToken.purpose)}</dd>
+                </div>
+                <div>
+                  <dt>Pending request</dt>
+                  <dd>{issuedFirstManagerSetupToken.pendingDeviceRequestId}</dd>
+                </div>
+                <div>
+                  <dt>Manager</dt>
+                  <dd>{issuedFirstManagerSetupToken.managerDisplayName}</dd>
+                </div>
+                <div>
+                  <dt>Expires</dt>
+                  <dd>{formatNullableDateTime(issuedFirstManagerSetupToken.expiresAtUtc)}</dd>
+                </div>
+                <div>
+                  <dt>Signature</dt>
+                  <dd>{issuedFirstManagerSetupToken.signingKeyId}</dd>
+                </div>
+                {Array.isArray(issuedFirstManagerSetupToken.allowedActions) && (
+                  <div>
+                    <dt>Actions</dt>
+                    <dd>{issuedFirstManagerSetupToken.allowedActions.join(", ")}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+        </div>
+
+        <div className="cloud-command-panel">
+          <div className="cloud-audit-heading">
+            <div>
+              <span>App activation</span>
+              <strong>{issuedAppActivation === null ? "Ready" : "Issued"}</strong>
+            </div>
+            <div className="cloud-diagnostics-actions">
+              <button
+                className="icon-button"
+                type="button"
+                disabled={isBusy}
+                onClick={() => appActivationRequestInputRef.current?.click()}
+                title="Import SafarSuite app activation request JSON"
+              >
+                <Upload size={16} />
+                Import request
+              </button>
+              <input
+                ref={appActivationRequestInputRef}
+                className="cloud-hidden-file"
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0] ?? null;
+                  event.currentTarget.value = "";
+
+                  if (file !== null) {
+                    void handleImportAppActivationRequest(file);
+                  }
+                }}
+              />
+              <button
+                className="icon-button primary"
+                type="button"
+                disabled={!canIssueAppActivationToken}
+                onClick={onIssueAppActivationToken}
+                title="Issue SafarSuite app activation token"
+              >
+                <ShieldCheck size={16} />
+                Issue
+              </button>
+            </div>
+          </div>
+
+          <div className={`cloud-app-identity-map ${appIdentityMapping.tone}`}>
+            <div>
+              <span>Provider installation</span>
+              <strong>{appIdentityMapping.providerInstallationId}</strong>
+            </div>
+            <div>
+              <span>App server</span>
+              <strong>{appIdentityMapping.appServerInstallationId}</strong>
+            </div>
+            <div>
+              <span>App fingerprint</span>
+              <strong>{appIdentityMapping.appFingerprint}</strong>
+            </div>
+            <div>
+              <span>Mapping</span>
+              <strong>{appIdentityMapping.status}</strong>
+            </div>
+          </div>
+
+          {appActivationImportError !== "" && (
+            <div className="cloud-app-activation-error">{appActivationImportError}</div>
+          )}
+
+          <div className="cloud-app-activation-grid">
+            <label>
+              <span>Activation request</span>
+              <input
+                type="text"
+                value={appActivationValue.activationRequestId}
+                maxLength={36}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  activationRequestId: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Replacing issue</span>
+              <input
+                type="text"
+                value={appActivationValue.replacesActivationIssueId}
+                maxLength={36}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  replacesActivationIssueId: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>App server</span>
+              <input
+                type="text"
+                value={appActivationValue.serverInstallationId}
+                maxLength={36}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  serverInstallationId: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Fingerprint</span>
+              <input
+                type="text"
+                value={appActivationValue.fingerprintHash}
+                maxLength={512}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  fingerprintHash: event.target.value
+                })}
+              />
+            </label>
+            <label>
+              <span>Requested by</span>
+              <input
+                type="text"
+                value={appActivationValue.requestedBy}
+                maxLength={120}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  requestedBy: event.target.value
+                })}
+              />
+            </label>
+            <label className="cloud-app-activation-key">
+              <span>Public key</span>
+              <textarea
+                rows={4}
+                value={appActivationValue.serverPublicKey}
+                maxLength={4096}
+                disabled={isBusy}
+                onChange={(event) => onAppActivationValueChange({
+                  ...appActivationValue,
+                  serverPublicKey: event.target.value
+                })}
+              />
+            </label>
+          </div>
+
+          {issuedAppActivation !== null && (
+            <div className="cloud-provisioning-result">
+              <div className="cloud-provisioning-result-heading">
+                <div>
+                  <span>Activation import</span>
+                  <strong>{issuedAppActivation.activationIssueId}</strong>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => downloadAppActivationImport(issuedAppActivation)}
+                  title="Download signed app activation import"
+                >
+                  <Download size={16} />
+                  Download
+                </button>
+              </div>
+              <input readOnly value={issuedAppActivation.import.activationToken} />
+              <dl className="cloud-provisioning-facts">
+                <div>
+                  <dt>Provider install</dt>
+                  <dd>{issuedAppActivation.installationId}</dd>
+                </div>
+                <div>
+                  <dt>App server</dt>
+                  <dd>{issuedAppActivation.appServerInstallationId}</dd>
+                </div>
+                <div>
+                  <dt>Activation request</dt>
+                  <dd>{issuedAppActivation.activationRequestId}</dd>
+                </div>
+                {issuedAppActivation.replacesActivationIssueId !== null && (
+                  <div>
+                    <dt>Replaces</dt>
+                    <dd>{issuedAppActivation.replacesActivationIssueId}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Entitlement</dt>
+                  <dd>{issuedAppActivation.entitlementVersion}</dd>
+                </div>
+                <div>
+                  <dt>Expires</dt>
+                  <dd>{formatNullableDateTime(issuedAppActivation.expiresAtUtc)}</dd>
+                </div>
+                <div>
+                  <dt>Signature</dt>
+                  <dd>{issuedAppActivation.signingKeyId}</dd>
+                </div>
+                <div>
+                  <dt>Customer</dt>
+                  <dd>{issuedAppActivation.import.customerCode}</dd>
+                </div>
+                <div>
+                  <dt>Branch</dt>
+                  <dd>{issuedAppActivation.import.branchName}</dd>
+                </div>
+              </dl>
+            </div>
+          )}
+
+          <div className="cloud-app-activation-register">
+            <div className="cloud-audit-heading">
+              <div>
+                <span>Activation register</span>
+                <strong>{appActivationIssues.length}</strong>
+              </div>
+              <div className="cloud-diagnostics-actions">
+                <label className="cloud-app-activation-search">
+                  <span>Search</span>
+                  <input
+                    type="search"
+                    value={appActivationIssueSearch}
+                    maxLength={200}
+                    disabled={isBusy}
+                    onChange={(event) => onAppActivationIssueSearchChange(event.target.value)}
+                  />
+                </label>
+                <label className="cloud-app-activation-search">
+                  <span>Revoked by</span>
+                  <input
+                    type="text"
+                    value={appActivationRevocationValue.revokedBy}
+                    maxLength={120}
+                    disabled={isBusy}
+                    onChange={(event) => onAppActivationRevocationValueChange({
+                      ...appActivationRevocationValue,
+                      revokedBy: event.target.value
+                    })}
+                  />
+                </label>
+                <label className="cloud-app-activation-search wide">
+                  <span>Reason</span>
+                  <input
+                    type="text"
+                    value={appActivationRevocationValue.reason}
+                    maxLength={500}
+                    disabled={isBusy}
+                    onChange={(event) => onAppActivationRevocationValueChange({
+                      ...appActivationRevocationValue,
+                      reason: event.target.value
+                    })}
+                  />
+                </label>
+                <button
+                  className="icon-button"
+                  type="button"
+                  disabled={isBusy || client === null}
+                  onClick={onRefreshAppActivationIssues}
+                  title="Refresh app activation register"
+                >
+                  <RefreshCw size={16} />
+                  Register
+                </button>
+              </div>
+            </div>
+
+            {appActivationIssues.length === 0 ? (
+              <div className="client-empty-state">No app activation mappings loaded</div>
+            ) : (
+              <div className="cloud-app-activation-issue-list">
+                {appActivationIssues.map((issue) => (
+                  <article
+                    className={`cloud-app-activation-issue ${isRevokedAppActivationIssue(issue) ? "revoked" : ""}`}
+                    key={issue.activationIssueId}
+                  >
+                    <header>
+                      <div>
+                        <strong>{shortIdentifier(issue.installationId)} - {shortIdentifier(issue.appServerInstallationId)}</strong>
+                        <span>{issue.status} / v{issue.entitlementVersion}</span>
+                      </div>
+                      <div className="cloud-app-activation-issue-actions">
+                        <time dateTime={issue.issuedAtUtc}>
+                          {formatNullableDateTime(issue.issuedAtUtc)}
+                        </time>
+                        {!isRevokedAppActivationIssue(issue) && (
+                          <button
+                            className="icon-button"
+                            type="button"
+                            disabled={!canRevokeAppActivationIssue}
+                            onClick={() => onRevokeAppActivationIssue(issue.activationIssueId)}
+                            title="Revoke app activation mapping"
+                          >
+                            <ShieldOff size={16} />
+                            Revoke
+                          </button>
+                        )}
+                        {isRevokedAppActivationIssue(issue) && (
+                          <button
+                            className="icon-button"
+                            type="button"
+                            disabled={isBusy || client === null}
+                            onClick={() => onPrepareReplacementAppActivationIssue(issue)}
+                            title="Prepare replacement activation mapping"
+                          >
+                            <RefreshCw size={16} />
+                            Replace
+                          </button>
+                        )}
+                      </div>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>Issue</dt>
+                        <dd>{issue.activationIssueId}</dd>
+                      </div>
+                      <div>
+                        <dt>Request</dt>
+                        <dd>{issue.activationRequestId}</dd>
+                      </div>
+                      {issue.replacesActivationIssueId !== null && (
+                        <div>
+                          <dt>Replaces</dt>
+                          <dd>{issue.replacesActivationIssueId}</dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt>Fingerprint</dt>
+                        <dd>{shortIdentifier(issue.fingerprintHash)}</dd>
+                      </div>
+                      <div>
+                        <dt>Expires</dt>
+                        <dd>{formatNullableDateTime(issue.expiresAtUtc)}</dd>
+                      </div>
+                      <div>
+                        <dt>Requested by</dt>
+                        <dd>{issue.requestedBy}</dd>
+                      </div>
+                      <div>
+                        <dt>Key</dt>
+                        <dd>{issue.signingKeyId}</dd>
+                      </div>
+                      {issue.revokedAtUtc !== null && (
+                        <div>
+                          <dt>Revoked</dt>
+                          <dd>{formatNullableDateTime(issue.revokedAtUtc)}</dd>
+                        </div>
+                      )}
+                      {issue.revokedBy !== null && (
+                        <div>
+                          <dt>Revoked by</dt>
+                          <dd>{issue.revokedBy}</dd>
+                        </div>
+                      )}
+                      {issue.revocationReason !== null && (
+                        <div>
+                          <dt>Reason</dt>
+                          <dd>{issue.revocationReason}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         <div className="cloud-command-panel">
           <div className="cloud-audit-heading">
@@ -459,8 +1598,9 @@ export function CloudInstallationStatusPanel({
             <button
               className="icon-button"
               type="button"
-              disabled={
-                isBusy
+            disabled={
+              cloudWritesBlocked
+                || isBusy
                 || client === null
                 || deploymentValue.installationId.trim() === ""
                 || supportCommandValue.reason.trim() === ""
@@ -739,6 +1879,26 @@ export function CloudInstallationStatusPanel({
               <dd>{formatNullableText(deploymentProfile?.siteRole)}</dd>
             </div>
             <div>
+              <dt>Pairing</dt>
+              <dd>{pairingStatus?.pairingMode ?? "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Devices</dt>
+              <dd>
+                {pairingStatus === null
+                  ? "Not reported"
+                  : `${pairingStatus.approvedDeviceCount}/${pairingStatus.totalDeviceCount} approved`}
+              </dd>
+            </div>
+            <div>
+              <dt>First manager</dt>
+              <dd>
+                {pairingStatus === null
+                  ? "Not reported"
+                  : pairingStatus.firstManagerDeviceApproved ? "Approved" : "Needed"}
+              </dd>
+            </div>
+            <div>
               <dt>Paid until</dt>
               <dd>
                 {latestHeartbeat?.paidUntil
@@ -747,8 +1907,56 @@ export function CloudInstallationStatusPanel({
               </dd>
             </div>
             <div>
-              <dt>Entitlement</dt>
-              <dd>{status.latestEntitlementVersion}</dd>
+              <dt>Access sync</dt>
+              <dd>{entitlementSync?.state ?? "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>Versions</dt>
+              <dd>
+                {entitlementSync === null
+                  ? "Not available"
+                  : `${entitlementSync.desiredVersion ?? "-"} desired / ${entitlementSync.signedVersion ?? "-"} signed / ${entitlementSync.observedVersion ?? "-"} applied`}
+              </dd>
+            </div>
+            <div>
+              <dt>Access revision</dt>
+              <dd title={latestEntitlement?.clientAccessRevisionId}>
+                {latestEntitlement === null
+                  ? "Not signed"
+                  : `#${latestEntitlement.entitlementVersion} / ${latestEntitlement.clientAccessRevisionId.slice(0, 8)}`}
+              </dd>
+            </div>
+            <div>
+              <dt>Contract revision</dt>
+              <dd>
+                {latestEntitlement === null
+                  ? "Not signed"
+                  : latestEntitlement.contractRevisionNumber > 0
+                    ? `#${latestEntitlement.contractRevisionNumber}`
+                    : "Historical"}
+              </dd>
+            </div>
+            <div>
+              <dt>Product catalog</dt>
+              <dd title={latestEntitlement?.productCatalogRevisionId}>
+                {latestEntitlement === null
+                  ? "Not signed"
+                  : latestEntitlement.productCatalogRevisionNumber > 0
+                    ? `#${latestEntitlement.productCatalogRevisionNumber}`
+                    : "Historical"}
+              </dd>
+            </div>
+            <div>
+              <dt>Named users</dt>
+              <dd>{latestEntitlement?.allowedNamedUsers ?? "No cap"}</dd>
+            </div>
+            <div>
+              <dt>Concurrent users</dt>
+              <dd>{latestEntitlement?.allowedConcurrentUsers ?? "No cap"}</dd>
+            </div>
+            <div>
+              <dt>Feature limits</dt>
+              <dd>{latestEntitlement?.featureLimitCount ?? 0}</dd>
             </div>
             <div>
               <dt>Commands</dt>
@@ -757,6 +1965,12 @@ export function CloudInstallationStatusPanel({
           </dl>
 
           <div className="cloud-status-notes">
+            {entitlementSync !== null && (
+              <span>
+                <ShieldCheck size={15} />
+                {entitlementSync.detail}
+              </span>
+            )}
             <span>
               <Cloud size={15} />
               Last bundle {formatNullableDateTime(status.lastBundleIssuedAtUtc)}
@@ -778,96 +1992,455 @@ export function CloudInstallationStatusPanel({
               {commandStatus?.latestCommandStatus ?? "No command"} command
             </span>
           </div>
+
+          <EntitlementReconciliationTable reconciliation={reconciliation} />
         </>
       )}
     </section>
   );
 }
 
-function statusClass(value: string): string {
+type CustomerSetupStep = {
+  key: string;
+  label: string;
+  status: string;
+  detail: string;
+  done: boolean;
+  tone: "neutral" | "ready" | "warning";
+};
+
+type CustomerSetupPreflightItem = {
+  key: string;
+  label: string;
+  status: string;
+  detail: string;
+  tone: "neutral" | "ready" | "warning";
+};
+
+type CustomerSetupStepsInput = {
+  selectedDeploymentId: string;
+  deploymentValue: CloudInstallationStatusPanelProps["deploymentValue"];
+  status: ControlCloudInstallationStatus | null;
+  bootstrapPackage: LocalServerBootstrapPackage | null;
+  bootstrapPackages: LocalServerBootstrapPackageSummary[];
+  auditEvents: CloudInstallationStatusPanelProps["auditEvents"];
+  latestHeartbeat: ControlCloudInstallationStatus["latestHeartbeat"];
+  latestEntitlement: ControlCloudInstallationStatus["latestEntitlement"];
+  diagnosticsReport: LocalServerDiagnosticReport | null;
+  issuedAppActivation: IssuedSafarSuiteAppActivationToken | null;
+  appActivationIssues: SafarSuiteAppActivationIssue[];
+};
+
+type CustomerSetupPreflightInput = {
+  deploymentValue: CloudInstallationStatusPanelProps["deploymentValue"];
+  status: ControlCloudInstallationStatus | null;
+  bootstrapPackage: LocalServerBootstrapPackage | null;
+  bootstrapPackages: LocalServerBootstrapPackageSummary[];
+  diagnosticsReport: LocalServerDiagnosticReport | null;
+};
+
+function getCustomerSetupSteps({
+  selectedDeploymentId,
+  deploymentValue,
+  status,
+  bootstrapPackage,
+  bootstrapPackages,
+  auditEvents,
+  latestHeartbeat,
+  latestEntitlement,
+  diagnosticsReport,
+  issuedAppActivation,
+  appActivationIssues
+}: CustomerSetupStepsInput): CustomerSetupStep[] {
+  const installationId = deploymentValue.installationId.trim();
+  const deploymentSaved = selectedDeploymentId.trim() !== "";
+  const latestRegisteredPackage = bootstrapPackages[0] ?? null;
+  const packageStatus = bootstrapPackage === null
+    ? latestRegisteredPackage?.packageStatus ?? "Waiting"
+    : "Ready";
+  const packageReady = bootstrapPackage !== null || isUsablePackage(latestRegisteredPackage);
+  const handoffEvent = latestRegisteredPackage === null
+    ? null
+    : getBootstrapPackageHandoffEvent(latestRegisteredPackage, auditEvents);
+  const handoffReady = handoffEvent !== null;
+  const registrationReady = status !== null;
+  const heartbeatReady = latestHeartbeat !== null;
+  const heartbeatEntitlementVersion = latestHeartbeat?.entitlementVersion ?? null;
+  const entitlementPulled = heartbeatEntitlementVersion !== null;
+  const pairingStatus = latestHeartbeat?.pairingStatus ?? null;
+  const pairingReady = pairingStatus?.firstManagerDeviceApproved === true;
+  const diagnosticsErrorCount = diagnosticsReport?.bundle.recentErrors?.length ?? 0;
+  const activeAppActivationIssue = appActivationIssues.find((issue) =>
+    !isRevokedAppActivationIssue(issue)
+  );
+  const appActivationReady = issuedAppActivation !== null || activeAppActivationIssue !== undefined;
+
+  return [
+    {
+      key: "deployment",
+      label: "Deployment profile",
+      status: deploymentSaved ? "Saved" : "Waiting",
+      detail: deploymentSaved
+        ? deploymentValue.displayName.trim() || installationId
+        : installationId === "" ? "Installation not set" : "Save deployment profile",
+      done: deploymentSaved,
+      tone: deploymentSaved ? "ready" : "neutral"
+    },
+    {
+      key: "package",
+      label: "Setup packet",
+      status: packageReady ? packageStatus : "Waiting",
+      detail: formatSetupPackageDetail(bootstrapPackage, latestRegisteredPackage),
+      done: packageReady,
+      tone: packageReady
+        ? isExpiredPackage(latestRegisteredPackage) && bootstrapPackage === null ? "warning" : "ready"
+        : "neutral"
+    },
+    {
+      key: "packet-handoff",
+      label: "Packet handoff",
+      status: handoffReady ? "Handed off" : "Waiting",
+      detail: formatSetupPackageHandoffDetail(latestRegisteredPackage, handoffEvent, packageReady),
+      done: handoffReady,
+      tone: handoffReady ? "ready" : packageReady ? "warning" : "neutral"
+    },
+    {
+      key: "registration",
+      label: "Local server",
+      status: status?.installationStatus ?? "Waiting",
+      detail: status === null
+        ? "No registration loaded"
+        : `Registered ${formatNullableDateTime(status.registeredAtUtc)}`,
+      done: registrationReady,
+      tone: registrationReady ? "ready" : "neutral"
+    },
+    {
+      key: "heartbeat",
+      label: "Heartbeat",
+      status: latestHeartbeat?.heartbeatStatus ?? "Waiting",
+      detail: latestHeartbeat === null
+        ? "No heartbeat loaded"
+        : `${latestHeartbeat.licenseStatus} at ${formatNullableDateTime(latestHeartbeat.receivedAtUtc)}`,
+      done: heartbeatReady,
+      tone: heartbeatReady ? "ready" : "neutral"
+    },
+    {
+      key: "device-pairing",
+      label: "Device pairing",
+      status: pairingStatus === null
+        ? "Waiting"
+        : pairingReady ? "First manager ready" : "Manager needed",
+      detail: pairingStatus === null
+        ? "No pairing status reported"
+        : `${pairingStatus.approvedDeviceCount} approved, ${pairingStatus.pendingDeviceCount} pending`,
+      done: pairingReady,
+      tone: pairingStatus === null ? "neutral" : pairingReady ? "ready" : "warning"
+    },
+    {
+      key: "entitlement",
+      label: "Entitlement pulled",
+      status: entitlementPulled
+        ? `v${heartbeatEntitlementVersion}`
+        : latestEntitlement === null ? "Waiting" : "Issued",
+      detail: entitlementPulled
+        ? `Heartbeat confirmed entitlement v${heartbeatEntitlementVersion}`
+        : latestEntitlement === null
+          ? "No entitlement evidence loaded"
+          : `Cloud issued v${latestEntitlement.entitlementVersion}`,
+      done: entitlementPulled,
+      tone: entitlementPulled ? "ready" : latestEntitlement === null ? "neutral" : "warning"
+    },
+    {
+      key: "diagnostics",
+      label: "Diagnostics",
+      status: diagnosticsReport?.status ?? "Waiting",
+      detail: diagnosticsReport === null
+        ? "No diagnostics loaded"
+        : `${diagnosticsReport.bundle.checks.length} checks, ${diagnosticsErrorCount} recent errors`,
+      done: diagnosticsReport !== null,
+      tone: diagnosticsReport === null
+        ? "neutral"
+        : diagnosticsErrorCount > 0 || isWarningStatus(diagnosticsReport.status) ? "warning" : "ready"
+    },
+    {
+      key: "app-activation",
+      label: "SafarSuite app",
+      status: issuedAppActivation !== null ? "Issued" : activeAppActivationIssue?.status ?? "Waiting",
+      detail: formatAppActivationSetupDetail(issuedAppActivation, activeAppActivationIssue),
+      done: appActivationReady,
+      tone: appActivationReady ? "ready" : "neutral"
+    }
+  ];
+}
+
+function getCustomerSetupPreflightItems({
+  deploymentValue,
+  status,
+  bootstrapPackage,
+  bootstrapPackages,
+  diagnosticsReport
+}: CustomerSetupPreflightInput): CustomerSetupPreflightItem[] {
+  const latestRegisteredPackage = bootstrapPackages[0] ?? null;
+  const packageReady = bootstrapPackage !== null || isUsablePackage(latestRegisteredPackage);
+  const packageConsumed = latestRegisteredPackage?.consumedAtUtc !== null
+    && latestRegisteredPackage?.consumedAtUtc !== undefined;
+  const runtimeStarted = status !== null || diagnosticsReport !== null;
+  const secretReadiness = bootstrapPackage?.secretReadiness ?? null;
+  const packageSignature = bootstrapPackage?.signedBundle.signature ?? null;
+  const packageHasProviderSignature =
+    packageSignature !== null
+    && packageSignature.keyId.trim() !== ""
+    && packageSignature.payloadSha256.trim() !== ""
+    && packageSignature.value.trim() !== "";
+  const runtimePlan = bootstrapPackage?.runtimePlan ?? null;
+  const appVersion = runtimePlan?.safarSuiteAppVersion ?? deploymentValue.safarSuiteAppVersion;
+  const hasAppRuntimeVersion = appVersion.trim() !== "";
+  const artifacts = bootstrapPackage?.artifacts ?? [];
+  const composeArtifact = artifacts.find((artifact) =>
+    artifact.artifactType === "DockerComposeTemplate"
+      || artifact.fileName.toLowerCase().includes("compose")
+  );
+  const composeIncludesAppRuntime =
+    composeArtifact?.content.includes("app-runtime") === true
+    || composeArtifact?.content.includes("safarsuite-app") === true;
+  const diagnosticsRuntime = diagnosticsReport?.bundle.runtime ?? null;
+  const diagnosticsDockerKnown = diagnosticsRuntime?.dockerAvailable !== null
+    && diagnosticsRuntime?.dockerAvailable !== undefined;
+  const diagnosticsDockerReady = diagnosticsRuntime?.dockerAvailable === true
+    || diagnosticsReport !== null;
+  const localApiIsHttps =
+    bootstrapPackage?.runtimePlan?.runtimeMode.trim() !== ""
+    && (
+      bootstrapPackage?.installCommand.includes("SAFARSUITE_LOCAL_API_TLS_MODE")
+        || bootstrapPackage?.artifacts.some((artifact) =>
+          artifact.content.includes("SAFARSUITE_LOCAL_API_TLS_MODE=GeneratedLocalCa")
+        ) === true
+    );
+
+  return [
+    {
+      key: "docker-target",
+      label: "Docker target",
+      status: runtimeStarted ? "Observed" : packageReady ? "Check" : "Waiting",
+      detail: diagnosticsDockerReady
+        ? diagnosticsDockerKnown
+          ? `Diagnostics reported Docker ${formatAvailability(diagnosticsRuntime?.dockerAvailable ?? null)}`
+          : "Runtime evidence is present after the generated install"
+        : packageReady
+          ? "Confirm Docker Desktop or Docker Compose is running before handoff"
+          : "Generate setup packet before target checks",
+      tone: runtimeStarted ? "ready" : packageReady ? "warning" : "neutral"
+    },
+    {
+      key: "clean-target",
+      label: "Clean target",
+      status: runtimeStarted || packageConsumed ? "Runtime used" : packageReady ? "Confirm" : "Waiting",
+      detail: runtimeStarted || packageConsumed
+        ? "Setup token has runtime evidence; do not remove live volumes"
+        : packageReady
+          ? "Remove only stale safarsuite-local-server proof stack and volumes before rerun"
+          : "No generated package selected",
+      tone: runtimeStarted || packageConsumed ? "ready" : packageReady ? "warning" : "neutral"
+    },
+    {
+      key: "trust-custody",
+      label: "Trust custody",
+      status: status !== null
+        ? "Verified"
+        : secretReadiness !== null
+          ? secretReadiness.status === "Ready" ? "Provider-held" : secretReadiness.status
+          : packageHasProviderSignature ? "Provider-held" : "Waiting",
+      detail: status !== null
+        ? "LocalServer accepted the signed bootstrap and reported status"
+        : formatSecretReadinessPreflightDetail(secretReadiness, packageSignature),
+      tone: status !== null ? "ready" : packageHasProviderSignature ? "warning" : "neutral"
+    },
+    {
+      key: "app-runtime-profile",
+      label: "App runtime",
+      status: composeIncludesAppRuntime || hasAppRuntimeVersion ? "Included" : packageReady ? "Review" : "Waiting",
+      detail: composeIncludesAppRuntime
+        ? `Compose profile app-runtime with app ${formatNullableText(appVersion)}`
+        : hasAppRuntimeVersion
+          ? `App version ${appVersion}; verify compose profile before handoff`
+          : "No app-runtime version/profile evidence loaded",
+      tone: composeIncludesAppRuntime ? "ready" : packageReady ? "warning" : "neutral"
+    },
+    {
+      key: "windows-local-api-tls",
+      label: "Windows TLS",
+      status: runtimeStarted && localApiIsHttps ? "Follow-up" : localApiIsHttps ? "Git Bash" : "Waiting",
+      detail: localApiIsHttps
+        ? "Use Git Bash or WSL for install verification until host Schannel/.NET evidence is cleared"
+        : "Generated Local API TLS mode not loaded",
+      tone: localApiIsHttps ? "warning" : "neutral"
+    }
+  ];
+}
+
+function isUsablePackage(packageSummary: LocalServerBootstrapPackageSummary | null): boolean {
+  return packageSummary !== null && !isExpiredPackage(packageSummary);
+}
+
+function isExpiredPackage(packageSummary: LocalServerBootstrapPackageSummary | null): boolean {
+  return packageSummary?.packageStatus.trim().toLowerCase() === "expired";
+}
+
+function isWarningStatus(value: string): boolean {
   const normalized = value.trim().toLowerCase();
 
-  if (normalized === "active" || normalized === "healthy" || normalized === "registered" || normalized === "ok") {
-    return "active";
-  }
-
-  if (
-    normalized === "suspended"
-    || normalized === "expired"
-    || normalized === "failed"
-    || normalized === "failure"
-  ) {
-    return "suspended";
-  }
-
-  return "draft";
+  return normalized !== "healthy"
+    && normalized !== "active"
+    && normalized !== "registered"
+    && normalized !== "ok"
+    && normalized !== "received";
 }
 
-function formatNullableText(value: string | null | undefined): string {
-  return value === null || value === undefined || value.trim() === ""
-    ? "Not set"
-    : value;
+function formatSetupPackageDetail(
+  bootstrapPackage: LocalServerBootstrapPackage | null,
+  packageSummary: LocalServerBootstrapPackageSummary | null
+): string {
+  if (bootstrapPackage !== null) {
+    return `${bootstrapPackage.bundleFileName} generated ${formatNullableDateTime(bootstrapPackage.generatedAtUtc)}`;
+  }
+
+  if (packageSummary === null) {
+    return "No package generated";
+  }
+
+  return `${packageSummary.bundleFileName || shortIdentifier(packageSummary.bootstrapPackageId)} generated ${formatNullableDateTime(packageSummary.generatedAtUtc)}`;
 }
 
-function formatNullableDateTime(value: string | null | undefined): string {
-  if (value === null || value === undefined || value.trim() === "") {
-    return "Not available";
+function formatSetupPackageHandoffDetail(
+  packageSummary: LocalServerBootstrapPackageSummary | null,
+  handoffEvent: CloudInstallationStatusPanelProps["auditEvents"][number] | null,
+  packageReady: boolean
+): string {
+  if (handoffEvent !== null) {
+    return `Marked ${formatNullableDateTime(handoffEvent.occurredAtUtc)}`;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(value));
+  if (packageSummary !== null) {
+    return `${shortIdentifier(packageSummary.bootstrapPackageId)} has not been marked handed off`;
+  }
+
+  return packageReady
+    ? "Refresh package register to load handoff evidence"
+    : "Generate setup packet before handoff";
 }
 
-function formatAvailability(value: boolean | null | undefined): string {
-  if (value === true) {
-    return "Available";
+function formatAppActivationSetupDetail(
+  issuedAppActivation: IssuedSafarSuiteAppActivationToken | null,
+  activeIssue: SafarSuiteAppActivationIssue | undefined
+): string {
+  if (issuedAppActivation !== null) {
+    return `${shortIdentifier(issuedAppActivation.installationId)} -> ${shortIdentifier(issuedAppActivation.appServerInstallationId)}`;
   }
 
-  if (value === false) {
-    return "Unavailable";
+  if (activeIssue !== undefined) {
+    return `${shortIdentifier(activeIssue.installationId)} -> ${shortIdentifier(activeIssue.appServerInstallationId)}`;
   }
 
-  return "Not reported";
+  return "No active app activation loaded";
 }
 
-function formatCheckCode(value: string): string {
-  return value
-    .split("-")
-    .filter((part) => part.trim() !== "")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+function formatSetupTokenPurpose(
+  purpose: string
+): string {
+  return purpose === "ManagerRecovery" ? "Manager recovery" : "First manager";
 }
 
-function formatAuditEventType(value: string): string {
-  return value
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2");
+function getPairingDescriptorAppIdentity(
+  issuedAppActivation: IssuedSafarSuiteAppActivationToken | null,
+  activeIssue: SafarSuiteAppActivationIssue | undefined,
+  requestedAppServerInstallationId: string,
+  requestedFingerprintHash: string
+): PairingDescriptorAppIdentity | null {
+  const importedAppServerInstallationId = requestedAppServerInstallationId.trim();
+  const appServerInstallationId =
+    issuedAppActivation?.appServerInstallationId
+    ?? activeIssue?.appServerInstallationId
+    ?? (importedAppServerInstallationId === "" ? null : importedAppServerInstallationId);
+
+  if (appServerInstallationId === null) {
+    return null;
+  }
+
+  const importedFingerprintHash = requestedFingerprintHash.trim();
+  const fingerprintHash =
+    activeIssue?.fingerprintHash
+    ?? (importedFingerprintHash === "" ? null : importedFingerprintHash);
+
+  return {
+    appServerInstallationId,
+    fingerprintHash
+  };
 }
 
-function formatBranchLabel(profile: LocalServerDeploymentProfile | null): string {
-  if (profile === null) {
-    return "No site profile";
+function formatPackageConsumption(packageSummary: LocalServerBootstrapPackageSummary): string {
+  if (packageSummary.consumedAtUtc === null) {
+    return "Not consumed";
   }
 
-  if (profile.branchCode !== null && profile.branchCode.trim() !== "") {
-    return `Branch ${profile.branchCode}`;
-  }
+  const consumedVersion = formatNullableText(packageSummary.consumedLocalServerVersion);
 
-  if (profile.parentSiteId !== null && profile.parentSiteId.trim() !== "") {
-    return `Parent ${profile.parentSiteId}`;
-  }
-
-  return profile.siteRole;
+  return consumedVersion === "Not set"
+    ? formatNullableDateTime(packageSummary.consumedAtUtc)
+    : `${formatNullableDateTime(packageSummary.consumedAtUtc)} / ${consumedVersion}`;
 }
 
-function formatSyncLabel(profile: LocalServerDeploymentProfile | null): string {
-  if (profile === null) {
-    return "Sync not loaded";
+function formatPackageRuntime(packageSummary: LocalServerBootstrapPackageSummary): string {
+  const localServerVersion = formatNullableText(packageSummary.localServerVersion);
+  const safarSuiteVersion = formatNullableText(packageSummary.safarSuiteAppVersion);
+
+  return safarSuiteVersion === "Not set"
+    ? localServerVersion
+    : `${localServerVersion} / ${safarSuiteVersion}`;
+}
+
+function formatSecretReadiness(bootstrapPackage: LocalServerBootstrapPackage): string {
+  const readiness = bootstrapPackage.secretReadiness;
+
+  return readiness === null
+    ? "Not reported"
+    : `${readiness.status} / ${readiness.activeKeyId}`;
+}
+
+function formatSecretReadinessPreflightDetail(
+  readiness: LocalServerBootstrapPackage["secretReadiness"],
+  packageSignature: LocalServerBootstrapPackage["signedBundle"]["signature"] | null
+): string {
+  if (readiness === null) {
+    return packageSignature === null
+      ? "Package signature not loaded"
+      : `Signing key ${packageSignature.keyId}; provider secret must match at install time`;
   }
 
-  return profile.syncTopologyId === null || profile.syncTopologyId.trim() === ""
-    ? "No sync topology"
-    : profile.syncTopologyId;
+  if (!readiness.hasActiveSecret || readiness.status === "Blocked") {
+    return `${readiness.activeKeyId}: ${readiness.detail}`;
+  }
+
+  if (readiness.warnings.length > 0) {
+    return `${readiness.activeKeyId}: ${readiness.warnings[0]}`;
+  }
+
+  const requiredVariables = readiness.requiredEnvironmentVariables.join(", ");
+
+  return requiredVariables.trim() === ""
+    ? `${readiness.activeKeyId}: provider secret must match at install time`
+    : `${readiness.activeKeyId}: control ${requiredVariables} during install`;
+}
+
+function formatPackageHash(value: string): string {
+  return value.trim() === "" ? "Not set" : shortIdentifier(value);
+}
+
+function getBootstrapPackageHandoffEvent(
+  packageSummary: LocalServerBootstrapPackageSummary,
+  auditEvents: CloudInstallationStatusPanelProps["auditEvents"]
+): CloudInstallationStatusPanelProps["auditEvents"][number] | null {
+  return auditEvents.find((auditEvent) =>
+    auditEvent.eventType === "BootstrapPackageHandedOff"
+      && auditEvent.detail.includes(packageSummary.bootstrapPackageId)
+  ) ?? null;
 }

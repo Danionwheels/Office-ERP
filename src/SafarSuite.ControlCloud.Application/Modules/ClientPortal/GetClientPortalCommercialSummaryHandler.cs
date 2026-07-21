@@ -13,10 +13,23 @@ public sealed class GetClientPortalCommercialSummaryHandler
         _projections = projections;
     }
 
-    public Task<ControlCloudClientCommercialProjection?> HandleAsync(
+    public async Task<ControlCloudClientCommercialProjection?> HandleAsync(
         GetClientPortalCommercialSummaryQuery query,
         CancellationToken cancellationToken = default)
     {
-        return _projections.GetByClientIdAsync(query.ClientId, cancellationToken);
+        var projection = await _projections.GetByClientIdAsync(query.ClientId, cancellationToken);
+
+        if (projection is null)
+        {
+            return null;
+        }
+
+        projection.Invoices.Clear();
+        projection.Payments.Clear();
+        projection.CreditNotes.Clear();
+        projection.Refunds.Clear();
+        projection.CreditApplications.Clear();
+
+        return projection;
     }
 }

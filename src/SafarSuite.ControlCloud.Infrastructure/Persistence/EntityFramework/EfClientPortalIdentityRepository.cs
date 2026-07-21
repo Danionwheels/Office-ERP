@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 using SafarSuite.ControlCloud.Domain.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Entities;
@@ -76,6 +77,15 @@ public sealed class EfClientPortalIdentityRepository : IClientPortalIdentityRepo
         return entity is null ? null : ToDomain(entity);
     }
 
+    public async Task<ControlCloudClientPortalUser?> GetUserByIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await _dbContext.ClientPortalUsers
+            .SingleOrDefaultAsync(user => user.UserId == userId, cancellationToken);
+        return entity is null ? null : ToDomain(entity);
+    }
+
     public async Task AddUserAsync(
         ControlCloudClientPortalUser user,
         CancellationToken cancellationToken = default)
@@ -90,6 +100,8 @@ public sealed class EfClientPortalIdentityRepository : IClientPortalIdentityRepo
         var entity = await _dbContext.ClientPortalUsers
             .SingleAsync(stored => stored.UserId == user.UserId, cancellationToken);
         Apply(user, entity);
+        _dbContext.Entry(entity).Property(value => value.ConcurrencyToken).OriginalValue =
+            user.OriginalConcurrencyToken;
     }
 
     private static ControlCloudClientPortalInvitation ToDomain(
@@ -125,7 +137,19 @@ public sealed class EfClientPortalIdentityRepository : IClientPortalIdentityRepo
             PasswordHash = entity.PasswordHash,
             Status = entity.Status,
             CreatedAtUtc = entity.CreatedAtUtc,
-            LastLoginAtUtc = entity.LastLoginAtUtc
+            LastLoginAtUtc = entity.LastLoginAtUtc,
+            ProtectedTotpSecret = entity.ProtectedTotpSecret,
+            PendingProtectedTotpSecret = entity.PendingProtectedTotpSecret,
+            TotpEnrollmentStartedAtUtc = entity.TotpEnrollmentStartedAtUtc,
+            TotpEnabledAtUtc = entity.TotpEnabledAtUtc,
+            LastTotpStep = entity.LastTotpStep,
+            RecoveryCodeHashes = DeserializeHashes(entity.RecoveryCodeHashesJson),
+            PendingRecoveryCodeHashes = DeserializeHashes(entity.PendingRecoveryCodeHashesJson),
+            RecoveryCodesGeneratedAtUtc = entity.RecoveryCodesGeneratedAtUtc,
+            LastRecoveryCodeUsedAtUtc = entity.LastRecoveryCodeUsedAtUtc,
+            SecurityVersion = Math.Max(1, entity.SecurityVersion),
+            ConcurrencyToken = entity.ConcurrencyToken,
+            OriginalConcurrencyToken = entity.ConcurrencyToken
         };
     }
 
@@ -180,5 +204,28 @@ public sealed class EfClientPortalIdentityRepository : IClientPortalIdentityRepo
         entity.Status = user.Status;
         entity.CreatedAtUtc = user.CreatedAtUtc;
         entity.LastLoginAtUtc = user.LastLoginAtUtc;
+        entity.ProtectedTotpSecret = user.ProtectedTotpSecret;
+        entity.PendingProtectedTotpSecret = user.PendingProtectedTotpSecret;
+        entity.TotpEnrollmentStartedAtUtc = user.TotpEnrollmentStartedAtUtc;
+        entity.TotpEnabledAtUtc = user.TotpEnabledAtUtc;
+        entity.LastTotpStep = user.LastTotpStep;
+        entity.RecoveryCodeHashesJson = JsonSerializer.Serialize(user.RecoveryCodeHashes ?? []);
+        entity.PendingRecoveryCodeHashesJson = JsonSerializer.Serialize(user.PendingRecoveryCodeHashes ?? []);
+        entity.RecoveryCodesGeneratedAtUtc = user.RecoveryCodesGeneratedAtUtc;
+        entity.LastRecoveryCodeUsedAtUtc = user.LastRecoveryCodeUsedAtUtc;
+        entity.SecurityVersion = Math.Max(1, user.SecurityVersion);
+        entity.ConcurrencyToken = user.ConcurrencyToken;
+    }
+
+    private static string[] DeserializeHashes(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 }

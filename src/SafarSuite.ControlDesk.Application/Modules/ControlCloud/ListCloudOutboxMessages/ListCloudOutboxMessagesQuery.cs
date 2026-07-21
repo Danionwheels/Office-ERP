@@ -2,4 +2,7 @@ namespace SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutbo
 
 public sealed record ListCloudOutboxMessagesQuery(
     string? Status,
-    string? MessageType);
+    string? MessageType,
+    Guid? ClientId,
+    int Take,
+    string? Cursor);

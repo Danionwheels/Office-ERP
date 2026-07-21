@@ -2,7 +2,7 @@ name: safarsuite-local-server
 
 services:
   local-db:
-    image: postgres:16-alpine
+    image: ${SAFARSUITE_LOCAL_DB_IMAGE:-postgres:16-alpine}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${SAFARSUITE_LOCAL_DB_NAME:-safarsuite_local}
@@ -29,6 +29,8 @@ services:
       - "${SAFARSUITE_LOCAL_SERVER_HTTP_PORT:-8080}:8080"
     volumes:
       - safarsuite-local-data:/var/lib/safarsuite/local-server
+      - ./certs/local-api:/etc/safarsuite/local-server/certs/local-api:ro
+      - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
 
   local-worker:
     image: ${SAFARSUITE_LOCAL_SERVER_IMAGE:?Set SAFARSUITE_LOCAL_SERVER_IMAGE}
@@ -41,6 +43,7 @@ services:
         condition: service_healthy
     volumes:
       - safarsuite-local-data:/var/lib/safarsuite/local-server
+      - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
 
   local-agent:
     image: ${SAFARSUITE_LOCAL_SERVER_IMAGE:?Set SAFARSUITE_LOCAL_SERVER_IMAGE}
@@ -53,6 +56,7 @@ services:
         condition: service_healthy
     volumes:
       - safarsuite-local-data:/var/lib/safarsuite/local-server
+      - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
 
   safarsuite-app:
     image: ${SAFARSUITE_APP_IMAGE:?Set SAFARSUITE_APP_IMAGE}
@@ -67,13 +71,17 @@ services:
       local-api:
         condition: service_started
     ports:
-      - "${SAFARSUITE_APP_HTTP_PORT:-8090}:8080"
+      - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280"
+      - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280/udp"
     environment:
-      SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-http://local-api:8080}
-      SAFARSUITE_MODULE_GATEWAY_URL: ${SAFARSUITE_MODULE_GATEWAY_URL:-http://local-api:8080}
+      ASPNETCORE_URLS: http://0.0.0.0:5280
+      SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-https://local-api:8080}
+      SAFARSUITE_MODULE_GATEWAY_URL: ${SAFARSUITE_MODULE_GATEWAY_URL:-https://local-api:8080}
       SAFARSUITE_RUNTIME_MANIFEST_PATH: ${SAFARSUITE_RUNTIME_MANIFEST_PATH:-/etc/safarsuite/local-server/runtime-services.manifest.json}
     volumes:
       - safarsuite-local-data:/var/lib/safarsuite/local-server
+      - ./certs/trust:/etc/safarsuite/local-server/certs/trust:ro
+      - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
       - safarsuite-app-data:/var/lib/safarsuite/app
 
 volumes:

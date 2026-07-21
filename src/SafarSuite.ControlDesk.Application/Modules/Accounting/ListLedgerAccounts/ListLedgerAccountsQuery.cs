@@ -6,4 +6,5 @@ public sealed record ListLedgerAccountsQuery(
     string? Type = null,
     string? Status = null,
     bool? IsPostingAccount = null,
-    string? Role = null);
+    string? Role = null,
+    string? ViewMode = null);

@@ -8,10 +8,14 @@ namespace SafarSuite.ControlDesk.Application.Modules.Entitlements.GetLatestEntit
 public sealed class GetLatestEntitlementSnapshotHandler
 {
     private readonly IEntitlementSnapshotRepository _entitlementSnapshots;
+    private readonly IClientAccessRevisionRepository _clientAccessRevisions;
 
-    public GetLatestEntitlementSnapshotHandler(IEntitlementSnapshotRepository entitlementSnapshots)
+    public GetLatestEntitlementSnapshotHandler(
+        IEntitlementSnapshotRepository entitlementSnapshots,
+        IClientAccessRevisionRepository clientAccessRevisions)
     {
         _entitlementSnapshots = entitlementSnapshots;
+        _clientAccessRevisions = clientAccessRevisions;
     }
 
     public async Task<Result<GetLatestEntitlementSnapshotResult>> HandleAsync(
@@ -30,7 +34,18 @@ public sealed class GetLatestEntitlementSnapshotHandler
                     "Entitlement snapshot was not found for this client."));
             }
 
-            return Result<GetLatestEntitlementSnapshotResult>.Success(ToResult(snapshot));
+            var revision = await _clientAccessRevisions.GetByIdAsync(
+                snapshot.ClientAccessRevisionId,
+                cancellationToken);
+
+            if (revision is null)
+            {
+                return Result<GetLatestEntitlementSnapshotResult>.Failure(ApplicationError.NotFound(
+                    nameof(snapshot.ClientAccessRevisionId),
+                    "The approved client access revision for this entitlement snapshot was not found."));
+            }
+
+            return Result<GetLatestEntitlementSnapshotResult>.Success(ToResult(snapshot, revision));
         }
         catch (ArgumentException exception)
         {
@@ -40,12 +55,19 @@ public sealed class GetLatestEntitlementSnapshotHandler
         }
     }
 
-    private static GetLatestEntitlementSnapshotResult ToResult(EntitlementSnapshot snapshot)
+    private static GetLatestEntitlementSnapshotResult ToResult(
+        EntitlementSnapshot snapshot,
+        ClientAccessRevision revision)
     {
         return new GetLatestEntitlementSnapshotResult(
             snapshot.Id.Value,
             snapshot.ClientId.Value,
             snapshot.ContractId.Value,
+            revision.ContractRevisionNumber,
+            revision.ProductCatalogRevisionId.Value,
+            revision.ProductCatalogRevisionNumber,
+            revision.Id.Value,
+            snapshot.EntitlementVersion,
             snapshot.Status.ToString(),
             snapshot.PaidUntil,
             snapshot.GraceUntil,
@@ -53,8 +75,20 @@ public sealed class GetLatestEntitlementSnapshotHandler
             snapshot.AllowedDevices,
             snapshot.AllowedBranches,
             snapshot.IssuedAtUtc,
+            snapshot.EffectiveFromUtc,
+            revision.SupersedesRevisionId?.Value,
+            revision.ApprovedBy,
+            revision.ApprovalReason,
+            revision.ApprovedAtUtc,
             snapshot.Modules.Select(module => new GetLatestEntitlementSnapshotModuleResult(
                 module.ModuleCode.Value,
-                module.IsEnabled)).ToArray());
+                module.IsEnabled)).ToArray(),
+            snapshot.AllowedNamedUsers,
+            snapshot.AllowedConcurrentUsers,
+            snapshot.FeatureLimits.Select(limit => new GetLatestEntitlementSnapshotFeatureLimitResult(
+                limit.ModuleCode.Value,
+                limit.FeatureCode.Value,
+                limit.LimitValue,
+                limit.Unit)).ToArray());
     }
 }

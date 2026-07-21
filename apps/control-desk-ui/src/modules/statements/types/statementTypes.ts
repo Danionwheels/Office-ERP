@@ -7,7 +7,19 @@ export type ClientStatement = {
   payments: ClientStatementPayment[];
   lines: ClientStatementLine[];
   journalPostings: ClientStatementJournalPosting[];
+  registers: ClientStatementRegisters;
 };
+
+export type ClientStatementRegister = "invoices" | "payments" | "lines" | "journalPostings";
+
+export type ClientStatementPageMeta = {
+  pageSize: number;
+  hasMore: boolean;
+  nextCursor?: string | null;
+  filteredCount: number;
+};
+
+export type ClientStatementRegisters = Record<ClientStatementRegister, ClientStatementPageMeta>;
 
 export type ClientStatementCurrencySummary = {
   currencyCode: string;
@@ -71,12 +83,5 @@ export type ClientStatementJournalPosting = {
   totalDebit: number;
   totalCredit: number;
   currencyCode: string;
-  lines: ClientStatementJournalLine[];
-};
-
-export type ClientStatementJournalLine = {
-  ledgerAccountId: string;
-  debit: number;
-  credit: number;
-  description?: string | null;
+  lineCount: number;
 };

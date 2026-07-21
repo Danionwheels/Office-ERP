@@ -27,12 +27,34 @@ public static class ClientPortalAuditEventTypes
     public const string InvitationAccepted = "InvitationAccepted";
     public const string SessionCreated = "SessionCreated";
     public const string SessionRejected = "SessionRejected";
+    public const string SessionRefreshed = "SessionRefreshed";
+    public const string SessionRevoked = "SessionRevoked";
+    public const string MfaEnrollmentStarted = "MfaEnrollmentStarted";
+    public const string MfaEnrollmentConfirmed = "MfaEnrollmentConfirmed";
+    public const string PasswordResetRequested = "PasswordResetRequested";
+    public const string PasswordResetCompleted = "PasswordResetCompleted";
+    public const string PaymentClaimSubmitted = "PaymentClaimSubmitted";
+    public const string PaymentClaimRejected = "PaymentClaimRejected";
+    public const string PaymentProofUploaded = "PaymentProofUploaded";
     public const string SetupTokenCreated = "SetupTokenCreated";
     public const string BootstrapPackageGenerated = "BootstrapPackageGenerated";
+    public const string BootstrapPackageHandedOff = "BootstrapPackageHandedOff";
     public const string LocalServerRegistrationAccepted = "LocalServerRegistrationAccepted";
     public const string LocalServerRegistrationRejected = "LocalServerRegistrationRejected";
     public const string LocalServerDiagnosticsUploaded = "LocalServerDiagnosticsUploaded";
     public const string OfflineRenewalFileGenerated = "OfflineRenewalFileGenerated";
+    public const string AppActivationTokenIssued = "AppActivationTokenIssued";
+    public const string AppActivationTokenRevoked = "AppActivationTokenRevoked";
+    public const string FirstManagerSetupTokenIssued = "FirstManagerSetupTokenIssued";
+    public const string ProviderOperatorCreated = "ProviderOperatorCreated";
+    public const string ProviderOperatorPasswordChanged = "ProviderOperatorPasswordChanged";
+    public const string ProviderOperatorPasswordReset = "ProviderOperatorPasswordReset";
+    public const string ProviderOperatorRecoveryCodesReset = "ProviderOperatorRecoveryCodesReset";
+    public const string ProviderOperatorTotpReset = "ProviderOperatorTotpReset";
+    public const string ProviderOperatorScopesUpdated = "ProviderOperatorScopesUpdated";
+    public const string ProviderOperatorStatusUpdated = "ProviderOperatorStatusUpdated";
+    public const string ProviderOperatorSessionIssued = "ProviderOperatorSessionIssued";
+    public const string ProviderOperatorSessionRejected = "ProviderOperatorSessionRejected";
 }
 
 public static class ClientPortalAuditActors

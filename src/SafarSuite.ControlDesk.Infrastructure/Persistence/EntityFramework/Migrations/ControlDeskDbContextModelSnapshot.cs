@@ -21,7 +21,10 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                 .HasAnnotation("ProductVersion", "10.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.HasSequence("entitlement_version_sequence", "control");
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountCodeRange", b =>
                 {
@@ -217,74 +220,14 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CompanyCode", "Status")
-                        .HasDatabaseName("ix_accounting_periods_company_status");
-
                     b.HasIndex("CompanyCode", "StartsOn")
                         .IsUnique()
                         .HasDatabaseName("ux_accounting_periods_company_start");
 
+                    b.HasIndex("CompanyCode", "Status")
+                        .HasDatabaseName("ix_accounting_periods_company_status");
+
                     b.ToTable("accounting_periods", "control");
-
-                    b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountingPeriodCloseArtifact", "CloseArtifacts", b1 =>
-                        {
-                            b1.Property<int>("accounting_period_close_artifact_row_id")
-                                .ValueGeneratedOnAdd()
-                                .HasColumnType("integer")
-                                .HasColumnName("accounting_period_close_artifact_row_id");
-
-                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("accounting_period_close_artifact_row_id"));
-
-                            b1.Property<int>("BlockedCheckCount")
-                                .HasColumnType("integer")
-                                .HasColumnName("blocked_check_count");
-
-                            b1.Property<int>("CheckCount")
-                                .HasColumnType("integer")
-                                .HasColumnName("check_count");
-
-                            b1.Property<int>("CurrencyCount")
-                                .HasColumnType("integer")
-                                .HasColumnName("currency_count");
-
-                            b1.Property<int>("DraftJournalCount")
-                                .HasColumnType("integer")
-                                .HasColumnName("draft_journal_count");
-
-                            b1.Property<DateTimeOffset>("GeneratedAtUtc")
-                                .HasColumnType("timestamp with time zone")
-                                .HasColumnName("generated_at_utc");
-
-                            b1.Property<string>("GeneratedBy")
-                                .IsRequired()
-                                .HasMaxLength(128)
-                                .HasColumnType("character varying(128)")
-                                .HasColumnName("generated_by");
-
-                            b1.Property<int>("PostedJournalCount")
-                                .HasColumnType("integer")
-                                .HasColumnName("posted_journal_count");
-
-                            b1.Property<string>("SnapshotJson")
-                                .IsRequired()
-                                .HasColumnType("text")
-                                .HasColumnName("snapshot_json");
-
-                            b1.Property<Guid>("accounting_period_id")
-                                .HasColumnType("uuid");
-
-                            b1.HasKey("accounting_period_close_artifact_row_id");
-
-                            b1.HasIndex("accounting_period_id", "GeneratedAtUtc")
-                                .HasDatabaseName("ix_accounting_period_close_artifacts_period_generated");
-
-                            b1.ToTable("accounting_period_close_artifacts", "control");
-
-                            b1.WithOwner()
-                                .HasForeignKey("accounting_period_id");
-                        });
-
-                    b.Navigation("CloseArtifacts");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.JournalEntry", b =>
@@ -292,6 +235,10 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("journal_entry_id");
+
+                    b.Property<Guid?>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -315,6 +262,10 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.Property<DateTimeOffset?>("PostedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("posted_at_utc");
+
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_document_id");
 
                     b.Property<string>("SourceReference")
                         .HasMaxLength(128)
@@ -342,8 +293,14 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.HasIndex("SourceType")
                         .HasDatabaseName("ix_journal_entries_source_type");
 
+                    b.HasIndex("SourceType", "SourceDocumentId")
+                        .HasDatabaseName("ix_journal_entries_source_document");
+
                     b.HasIndex("EntryDate", "CreatedAtUtc", "Id")
                         .HasDatabaseName("ix_journal_entries_entry_date_created_id");
+
+                    b.HasIndex("ClientId", "EntryDate", "CreatedAtUtc", "Id")
+                        .HasDatabaseName("ix_journal_entries_client_date_created_id");
 
                     b.ToTable("journal_entries", "control");
                 });
@@ -368,6 +325,12 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasColumnType("boolean")
                         .HasColumnName("is_posting_account");
 
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("level");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -379,12 +342,6 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("normal_balance");
-
-                    b.Property<string>("Level")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("level");
 
                     b.Property<Guid?>("ParentAccountId")
                         .HasColumnType("uuid")
@@ -411,6 +368,176 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.HasIndex("ParentAccountId");
 
                     b.ToTable("ledger_accounts", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.OpeningBalanceProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("opening_balance_profile_id");
+
+                    b.Property<string>("CompanyCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("company_code");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateOnly>("FiscalYearFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("fiscal_year_from");
+
+                    b.Property<DateOnly>("FiscalYearTo")
+                        .HasColumnType("date")
+                        .HasColumnName("fiscal_year_to");
+
+                    b.Property<Guid?>("ProfitAndLossCarryForwardAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("profit_and_loss_carry_forward_account_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<bool>("TransactionsAllowed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("transactions_allowed");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyCode")
+                        .IsUnique()
+                        .HasDatabaseName("ux_opening_balance_profiles_company");
+
+                    b.HasIndex("ProfitAndLossCarryForwardAccountId")
+                        .HasDatabaseName("ix_opening_balance_profiles_pl_carry_forward_account_id");
+
+                    b.ToTable("opening_balance_profiles", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.VoucherNumberingRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("voucher_numbering_rule_id");
+
+                    b.Property<string>("CompanyCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("company_code");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<int>("NumberPaddingWidth")
+                        .HasColumnType("integer")
+                        .HasColumnName("number_padding_width");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("prefix");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source_type");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyCode", "SourceType")
+                        .IsUnique()
+                        .HasDatabaseName("ux_voucher_numbering_rules_company_source");
+
+                    b.ToTable("voucher_numbering_rules", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Auth.LocalOperator", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operator_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("full_name");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("normalized_email");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("password_hash");
+
+                    b.Property<long>("SecurityVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("security_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasDatabaseName("ux_local_operators_normalized_email");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_local_operators_status");
+
+                    b.ToTable("local_operators", "auth", t =>
+                        {
+                            t.HasCheckConstraint("ck_local_operators_normalized_email", "normalized_email = upper(btrim(email))");
+
+                            t.HasCheckConstraint("ck_local_operators_security_version", "security_version > 0");
+
+                            t.HasCheckConstraint("ck_local_operators_status", "status IN ('Active', 'Disabled')");
+                        });
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Billing.ChargeCode", b =>
@@ -602,6 +729,9 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .IsUnique()
                         .HasDatabaseName("ux_credit_notes_number");
 
+                    b.HasIndex("ClientId", "CreditDate", "CreatedAtUtc", "Id")
+                        .HasDatabaseName("ix_credit_notes_client_credit_created_id");
+
                     b.ToTable("credit_notes", "control");
                 });
 
@@ -658,6 +788,12 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .IsUnique()
                         .HasDatabaseName("ux_invoices_number");
 
+                    b.HasIndex("ClientId", "IssueDate", "CreatedAtUtc", "Id")
+                        .HasDatabaseName("ix_invoices_client_issue_created_id");
+
+                    b.HasIndex("ClientId", "Status", "IssueDate", "CreatedAtUtc", "Id")
+                        .HasDatabaseName("ix_invoices_client_status_issue_created_id");
+
                     b.ToTable("invoices", "control");
                 });
 
@@ -693,6 +829,12 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasColumnType("character varying(256)")
                         .HasColumnName("legal_name");
 
+                    b.Property<string>("SearchText")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("text")
+                        .HasColumnName("search_text")
+                        .HasComputedColumnSql("lower(code || ' ' || display_name || ' ' || legal_name || ' ' || status)", true);
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -708,6 +850,21 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.HasIndex("Code")
                         .IsUnique()
                         .HasDatabaseName("ux_clients_code");
+
+                    b.HasIndex("SearchText")
+                        .HasDatabaseName("ix_clients_search_text");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("SearchText"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("SearchText"), new[] { "gin_trgm_ops" });
+
+                    b.HasIndex("DisplayName", "Code", "Id")
+                        .HasDatabaseName("ix_clients_display_name_code_id");
+
+                    b.HasIndex("LegalName", "Code", "Id")
+                        .HasDatabaseName("ix_clients_legal_name_code_id");
+
+                    b.HasIndex("Status", "Code", "Id")
+                        .HasDatabaseName("ix_clients_status_code_id");
 
                     b.ToTable("clients", "control");
                 });
@@ -863,6 +1020,22 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("activated_at_utc");
 
+                    b.Property<string>("ApprovalReason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("approval_reason");
+
+                    b.Property<DateTimeOffset>("ApprovedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at_utc");
+
+                    b.Property<string>("ApprovedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("approved_by");
+
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uuid")
                         .HasColumnName("client_id");
@@ -877,22 +1050,64 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasColumnType("character varying(40)")
                         .HasColumnName("number");
 
+                    b.Property<Guid>("ProductCatalogRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_catalog_revision_id");
+
+                    b.Property<long>("ProductCatalogRevisionNumber")
+                        .HasColumnType("bigint")
+                        .HasColumnName("product_catalog_revision_number");
+
+                    b.Property<long>("RevisionNumber")
+                        .HasColumnType("bigint")
+                        .HasColumnName("revision_number");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("status");
 
+                    b.Property<Guid?>("SupersedesContractId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supersedes_contract_id");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_contracts_client_active")
+                        .HasFilter("status = 'Active'");
 
                     b.HasIndex("Number")
                         .IsUnique()
                         .HasDatabaseName("ux_client_contracts_number");
 
+                    b.HasIndex("ProductCatalogRevisionId")
+                        .HasDatabaseName("ix_client_contracts_product_catalog_revision");
+
+                    b.HasIndex("SupersedesContractId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_contracts_supersedes")
+                        .HasFilter("supersedes_contract_id IS NOT NULL");
+
+                    b.HasIndex("ClientId", "RevisionNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_contracts_client_revision");
+
                     b.HasIndex("ClientId", "Status")
                         .HasDatabaseName("ix_client_contracts_client_status");
 
-                    b.ToTable("client_contracts", "control");
+                    b.HasIndex("ProductCatalogRevisionId", "ProductCatalogRevisionNumber");
+
+                    b.ToTable("client_contracts", "control", t =>
+                        {
+                            t.HasCheckConstraint("ck_client_contracts_concurrent_users", "allowed_concurrent_users IS NULL OR allowed_concurrent_users >= 0");
+
+                            t.HasCheckConstraint("ck_client_contracts_named_users", "allowed_named_users IS NULL OR allowed_named_users >= 0");
+
+                            t.HasCheckConstraint("ck_client_contracts_user_limit_order", "allowed_named_users IS NULL OR allowed_concurrent_users IS NULL OR allowed_concurrent_users <= allowed_named_users");
+                        });
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.ControlCloud.CloudOutboxMessage", b =>
@@ -904,6 +1119,10 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.Property<int>("AttemptCount")
                         .HasColumnType("integer")
                         .HasColumnName("attempt_count");
+
+                    b.Property<Guid?>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
 
                     b.Property<DateTimeOffset?>("FailedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -961,13 +1180,162 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Status", "MessageType", "OccurredAtUtc")
-                        .HasDatabaseName("ix_cloud_outbox_messages_status_type_occurred");
+                    b.HasIndex("ClientId", "Status")
+                        .HasDatabaseName("ix_cloud_outbox_messages_client_status");
+
+                    b.HasIndex("OccurredAtUtc", "Id")
+                        .IsDescending()
+                        .HasDatabaseName("ix_cloud_outbox_messages_occurred");
+
+                    b.HasIndex("ClientId", "OccurredAtUtc", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_cloud_outbox_messages_client_occurred");
 
                     b.HasIndex("Status", "NextAttemptAtUtc", "AttemptCount")
                         .HasDatabaseName("ix_cloud_outbox_messages_publish_ready");
 
+                    b.HasIndex("Status", "MessageType", "OccurredAtUtc", "Id")
+                        .IsDescending(false, false, true, true)
+                        .HasDatabaseName("ix_cloud_outbox_messages_status_type_occurred");
+
                     b.ToTable("cloud_outbox_messages", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Entitlements.ClientAccessRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_access_revision_id");
+
+                    b.Property<int>("AllowedBranches")
+                        .HasColumnType("integer")
+                        .HasColumnName("allowed_branches");
+
+                    b.Property<int?>("AllowedConcurrentUsers")
+                        .HasColumnType("integer")
+                        .HasColumnName("allowed_concurrent_users");
+
+                    b.Property<int>("AllowedDevices")
+                        .HasColumnType("integer")
+                        .HasColumnName("allowed_devices");
+
+                    b.Property<int?>("AllowedNamedUsers")
+                        .HasColumnType("integer")
+                        .HasColumnName("allowed_named_users");
+
+                    b.Property<string>("ApprovalReason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("approval_reason");
+
+                    b.Property<DateTimeOffset>("ApprovedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at_utc");
+
+                    b.Property<string>("ApprovedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("approved_by");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("contract_id");
+
+                    b.Property<long>("ContractRevisionNumber")
+                        .HasColumnType("bigint")
+                        .HasColumnName("contract_revision_number");
+
+                    b.Property<DateTimeOffset>("EffectiveFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from_utc");
+
+                    b.Property<string>("EvidenceType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("evidence_type");
+
+                    b.Property<DateOnly>("GraceUntil")
+                        .HasColumnType("date")
+                        .HasColumnName("grace_until");
+
+                    b.Property<DateOnly>("OfflineValidUntil")
+                        .HasColumnType("date")
+                        .HasColumnName("offline_valid_until");
+
+                    b.Property<DateOnly>("PaidUntil")
+                        .HasColumnType("date")
+                        .HasColumnName("paid_until");
+
+                    b.Property<Guid>("ProductCatalogRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_catalog_revision_id");
+
+                    b.Property<long>("ProductCatalogRevisionNumber")
+                        .HasColumnType("bigint")
+                        .HasColumnName("product_catalog_revision_number");
+
+                    b.Property<long>("RevisionNumber")
+                        .HasColumnType("bigint")
+                        .HasColumnName("revision_number");
+
+                    b.Property<Guid?>("SourceInvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_invoice_id");
+
+                    b.Property<string>("SourceInvoiceNumber")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("source_invoice_number");
+
+                    b.Property<Guid?>("SupersedesRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supersedes_revision_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_access_revisions_client_root")
+                        .HasFilter("supersedes_revision_id IS NULL");
+
+                    b.HasIndex("ContractId")
+                        .HasDatabaseName("ix_client_access_revisions_contract");
+
+                    b.HasIndex("ProductCatalogRevisionId")
+                        .HasDatabaseName("ix_client_access_revisions_product_catalog_revision");
+
+                    b.HasIndex("SourceInvoiceId")
+                        .HasDatabaseName("ix_client_access_revisions_source_invoice");
+
+                    b.HasIndex("SupersedesRevisionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_access_revisions_supersedes")
+                        .HasFilter("supersedes_revision_id IS NOT NULL");
+
+                    b.HasIndex("ClientId", "EffectiveFromUtc")
+                        .HasDatabaseName("ix_client_access_revisions_client_effective_from");
+
+                    b.HasIndex("ClientId", "RevisionNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_client_access_revisions_client_number");
+
+                    b.HasIndex("ProductCatalogRevisionId", "ProductCatalogRevisionNumber");
+
+                    b.ToTable("client_access_revisions", "control", t =>
+                        {
+                            t.HasCheckConstraint("ck_client_access_revisions_concurrent_users", "allowed_concurrent_users IS NULL OR allowed_concurrent_users >= 0");
+
+                            t.HasCheckConstraint("ck_client_access_revisions_named_users", "allowed_named_users IS NULL OR allowed_named_users >= 0");
+
+                            t.HasCheckConstraint("ck_client_access_revisions_user_limit_order", "allowed_named_users IS NULL OR allowed_concurrent_users IS NULL OR allowed_concurrent_users <= allowed_named_users");
+                        });
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Entitlements.EntitlementSnapshot", b =>
@@ -980,9 +1348,21 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasColumnType("integer")
                         .HasColumnName("allowed_branches");
 
+                    b.Property<int?>("AllowedConcurrentUsers")
+                        .HasColumnType("integer")
+                        .HasColumnName("allowed_concurrent_users");
+
                     b.Property<int>("AllowedDevices")
                         .HasColumnType("integer")
                         .HasColumnName("allowed_devices");
+
+                    b.Property<int?>("AllowedNamedUsers")
+                        .HasColumnType("integer")
+                        .HasColumnName("allowed_named_users");
+
+                    b.Property<Guid>("ClientAccessRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_access_revision_id");
 
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uuid")
@@ -991,6 +1371,14 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.Property<Guid>("ContractId")
                         .HasColumnType("uuid")
                         .HasColumnName("contract_id");
+
+                    b.Property<DateTimeOffset>("EffectiveFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from_utc");
+
+                    b.Property<long>("EntitlementVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("entitlement_version");
 
                     b.Property<DateOnly>("GraceUntil")
                         .HasColumnType("date")
@@ -1016,10 +1404,27 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ClientAccessRevisionId")
+                        .IsUnique();
+
+                    b.HasIndex("ClientId", "EffectiveFromUtc")
+                        .HasDatabaseName("ix_entitlement_snapshots_client_effective_from");
+
+                    b.HasIndex("ClientId", "EntitlementVersion")
+                        .IsUnique()
+                        .HasDatabaseName("ux_entitlement_snapshots_client_version");
+
                     b.HasIndex("ClientId", "IssuedAtUtc")
                         .HasDatabaseName("ix_entitlement_snapshots_client_issued");
 
-                    b.ToTable("entitlement_snapshots", "control");
+                    b.ToTable("entitlement_snapshots", "control", t =>
+                        {
+                            t.HasCheckConstraint("ck_entitlement_snapshots_concurrent_users", "allowed_concurrent_users IS NULL OR allowed_concurrent_users >= 0");
+
+                            t.HasCheckConstraint("ck_entitlement_snapshots_named_users", "allowed_named_users IS NULL OR allowed_named_users >= 0");
+
+                            t.HasCheckConstraint("ck_entitlement_snapshots_user_limit_order", "allowed_named_users IS NULL OR allowed_concurrent_users IS NULL OR allowed_concurrent_users <= allowed_named_users");
+                        });
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.ClientCreditApplication", b =>
@@ -1078,6 +1483,9 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.HasIndex("Reference")
                         .IsUnique()
                         .HasDatabaseName("ux_client_credit_applications_reference");
+
+                    b.HasIndex("ClientId", "AppliedOn", "CreatedAtUtc", "Id")
+                        .HasDatabaseName("ix_client_credit_applications_client_applied_created_id");
 
                     b.ToTable("client_credit_applications", "control");
                 });
@@ -1138,6 +1546,9 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .IsUnique()
                         .HasDatabaseName("ux_client_refunds_reference");
 
+                    b.HasIndex("ClientId", "RefundedOn", "CreatedAtUtc", "Id")
+                        .HasDatabaseName("ix_client_refunds_client_refunded_created_id");
+
                     b.ToTable("client_refunds", "control");
                 });
 
@@ -1165,6 +1576,10 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("method");
+
+                    b.Property<Guid?>("PortalClaimId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("portal_claim_id");
 
                     b.Property<DateOnly>("ReceivedOn")
                         .HasColumnType("date")
@@ -1194,14 +1609,371 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.HasIndex("InvoiceId")
                         .HasDatabaseName("ix_payments_invoice_id");
 
+                    b.HasIndex("PortalClaimId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_payments_portal_claim_id")
+                        .HasFilter("\"portal_claim_id\" IS NOT NULL");
+
                     b.HasIndex("Reference")
                         .HasDatabaseName("ix_payments_reference");
+
+                    b.HasIndex("ClientId", "ReceivedOn", "RecordedAtUtc", "Id")
+                        .HasDatabaseName("ix_payments_client_received_recorded_id");
+
+                    b.HasIndex("ClientId", "Status", "ReceivedOn", "RecordedAtUtc", "Id")
+                        .HasDatabaseName("ix_payments_client_status_received_recorded_id");
 
                     b.ToTable("payments", "control");
                 });
 
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.PortalPaymentClaim", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("claim_id");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<DateTimeOffset>("ImportedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("imported_at_utc");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("invoice_number");
+
+                    b.Property<Guid?>("ProofAttachmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proof_attachment_id");
+
+                    b.Property<string>("ProofContentType")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("proof_content_type");
+
+                    b.Property<string>("ProofFileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("proof_file_name");
+
+                    b.Property<long?>("ProofSizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("proof_size_bytes");
+
+                    b.Property<DateTimeOffset?>("ProofUploadedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("proof_uploaded_at_utc");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("rejection_reason");
+
+                    b.Property<DateTimeOffset?>("ReviewedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at_utc");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("SubmittedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("submitted_at_utc");
+
+                    b.Property<string>("TransferReferenceNumber")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("transfer_reference_number");
+
+                    b.Property<Guid?>("VerifiedPaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("verified_payment_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .HasDatabaseName("ix_portal_payment_claims_client_id");
+
+                    b.HasIndex("InvoiceId")
+                        .HasDatabaseName("ix_portal_payment_claims_invoice_id");
+
+                    b.HasIndex("ClientId", "Status", "SubmittedAtUtc")
+                        .HasDatabaseName("ix_portal_payment_claims_client_status_submitted");
+
+                    b.ToTable("portal_payment_claims", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.ProviderBankDetails", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("provider_bank_details_id");
+
+                    b.Property<string>("AccountNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("account_number");
+
+                    b.Property<string>("AccountTitle")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("account_title");
+
+                    b.Property<string>("BankName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("bank_name");
+
+                    b.Property<string>("BranchOrRoutingInfo")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)")
+                        .HasColumnName("branch_or_routing_info");
+
+                    b.Property<string>("Iban")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("iban");
+
+                    b.Property<bool>("IsConfigured")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_configured");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("provider_bank_details", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.ProductAccessCatalogRecord", b =>
+                {
+                    b.Property<string>("CatalogId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("catalog_id");
+
+                    b.Property<Guid>("BaseCatalogRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("base_catalog_revision_id");
+
+                    b.Property<long>("BaseCatalogRevisionNumber")
+                        .HasColumnType("bigint")
+                        .HasColumnName("base_catalog_revision_number");
+
+                    b.Property<string>("ChangeReason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("change_reason");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("draft_id");
+
+                    b.Property<string>("ModuleGroupsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("module_groups_json");
+
+                    b.Property<string>("ModulesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("modules_json");
+
+                    b.Property<string>("ResourcesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("resources_json");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("updated_by");
+
+                    b.HasKey("CatalogId");
+
+                    b.HasIndex("BaseCatalogRevisionId", "BaseCatalogRevisionNumber");
+
+                    b.ToTable("product_access_catalogs", "control");
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.ProductCatalogRevisionRecord", b =>
+                {
+                    b.Property<Guid>("CatalogRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("catalog_revision_id");
+
+                    b.Property<string>("ChangeReason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("change_reason");
+
+                    b.Property<string>("ModuleGroupsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("module_groups_json");
+
+                    b.Property<string>("ModulesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("modules_json");
+
+                    b.Property<DateTimeOffset>("PublishedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("published_at_utc");
+
+                    b.Property<string>("PublishedBy")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("published_by");
+
+                    b.Property<string>("ResourcesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("resources_json");
+
+                    b.Property<long>("RevisionNumber")
+                        .HasColumnType("bigint")
+                        .HasColumnName("revision_number");
+
+                    b.Property<Guid?>("SupersedesCatalogRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supersedes_catalog_revision_id");
+
+                    b.HasKey("CatalogRevisionId");
+
+                    b.HasAlternateKey("CatalogRevisionId", "RevisionNumber")
+                        .HasName("ak_product_catalog_revisions_id_number");
+
+                    b.HasIndex("RevisionNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ux_product_catalog_revisions_number");
+
+                    b.HasIndex("SupersedesCatalogRevisionId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_product_catalog_revisions_supersedes")
+                        .HasFilter("supersedes_catalog_revision_id IS NOT NULL");
+
+                    b.ToTable("product_catalog_revisions", "control", t =>
+                        {
+                            t.HasCheckConstraint("ck_product_catalog_revisions_lineage", "(revision_number = 1 AND supersedes_catalog_revision_id IS NULL) OR (revision_number > 1 AND supersedes_catalog_revision_id IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountingControlSettings", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
+                        .WithMany()
+                        .HasForeignKey("IncomeSummaryAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
+                        .WithMany()
+                        .HasForeignKey("RetainedEarningsAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
+                        .WithMany()
+                        .HasForeignKey("RoundingAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountingPeriod", b =>
+                {
+                    b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountingPeriodCloseArtifact", "CloseArtifacts", b1 =>
+                        {
+                            b1.Property<int>("accounting_period_close_artifact_row_id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("integer")
+                                .HasColumnName("accounting_period_close_artifact_row_id");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("accounting_period_close_artifact_row_id"));
+
+                            b1.Property<int>("BlockedCheckCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("blocked_check_count");
+
+                            b1.Property<int>("CheckCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("check_count");
+
+                            b1.Property<int>("CurrencyCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("currency_count");
+
+                            b1.Property<int>("DraftJournalCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("draft_journal_count");
+
+                            b1.Property<DateTimeOffset>("GeneratedAtUtc")
+                                .HasColumnType("timestamp with time zone")
+                                .HasColumnName("generated_at_utc");
+
+                            b1.Property<string>("GeneratedBy")
+                                .IsRequired()
+                                .HasMaxLength(128)
+                                .HasColumnType("character varying(128)")
+                                .HasColumnName("generated_by");
+
+                            b1.Property<int>("PostedJournalCount")
+                                .HasColumnType("integer")
+                                .HasColumnName("posted_journal_count");
+
+                            b1.Property<string>("SnapshotJson")
+                                .IsRequired()
+                                .HasColumnType("text")
+                                .HasColumnName("snapshot_json");
+
+                            b1.Property<Guid>("accounting_period_id")
+                                .HasColumnType("uuid");
+
+                            b1.HasKey("accounting_period_close_artifact_row_id");
+
+                            b1.HasIndex("accounting_period_id", "GeneratedAtUtc")
+                                .HasDatabaseName("ix_accounting_period_close_artifacts_period_generated");
+
+                            b1.ToTable("accounting_period_close_artifacts", "control");
+
+                            b1.WithOwner()
+                                .HasForeignKey("accounting_period_id");
+                        });
+
+                    b.Navigation("CloseArtifacts");
+                });
+
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.JournalEntry", b =>
                 {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Accounting.JournalLine", "Lines", b1 =>
                         {
                             b1.Property<int>("journal_line_row_id")
@@ -1307,22 +2079,61 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
-            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.AccountingControlSettings", b =>
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Accounting.OpeningBalanceProfile", b =>
                 {
                     b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
                         .WithMany()
-                        .HasForeignKey("IncomeSummaryAccountId")
+                        .HasForeignKey("ProfitAndLossCarryForwardAccountId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
 
-                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
-                        .WithMany()
-                        .HasForeignKey("RetainedEarningsAccountId")
-                        .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Auth.LocalOperator", b =>
+                {
+                    b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Auth.LocalOperatorRoleGrant", "RoleGrants", b1 =>
+                        {
+                            b1.Property<Guid>("operator_id")
+                                .HasColumnType("uuid");
 
-                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Accounting.LedgerAccount", null)
-                        .WithMany()
-                        .HasForeignKey("RoundingAccountId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                            b1.Property<string>("Value")
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("role");
+
+                            b1.HasKey("operator_id", "Value");
+
+                            b1.ToTable("local_operator_roles", "auth", t =>
+                                {
+                                    t.HasCheckConstraint("ck_local_operator_roles_role", "role IN ('Administrator', 'CommercialOperator', 'FinanceOperator', 'SupportOperator', 'Auditor')");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("operator_id");
+                        });
+
+                    b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Auth.LocalOperatorScopeGrant", "ScopeGrants", b1 =>
+                        {
+                            b1.Property<Guid>("operator_id")
+                                .HasColumnType("uuid");
+
+                            b1.Property<string>("Value")
+                                .HasMaxLength(128)
+                                .HasColumnType("character varying(128)")
+                                .HasColumnName("scope");
+
+                            b1.HasKey("operator_id", "Value");
+
+                            b1.ToTable("local_operator_scopes", "auth", t =>
+                                {
+                                    t.HasCheckConstraint("ck_local_operator_scopes_scope", "scope IN ('control-desk:admin', 'command-center:read', 'clients:manage', 'contracts:manage', 'accounting:manage', 'billing:manage', 'payments:manage', 'entitlements:manage', 'control-cloud:manage', 'diagnostics:read', 'reports:read')");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("operator_id");
+                        });
+
+                    b.Navigation("RoleGrants");
+
+                    b.Navigation("ScopeGrants");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Billing.ChargeCode", b =>
@@ -1549,7 +2360,8 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                             b1.HasIndex("ProductModuleCode")
                                 .HasDatabaseName("ix_invoice_lines_product_module_code");
 
-                            b1.HasIndex("invoice_id");
+                            b1.HasIndex("invoice_id")
+                                .HasDatabaseName("ix_invoice_lines_invoice_id");
 
                             b1.ToTable("invoice_lines", "control");
 
@@ -1643,6 +2455,9 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
 
                             b1.HasKey("Id");
 
+                            b1.HasIndex("client_id")
+                                .HasDatabaseName("ix_client_contacts_client_id");
+
                             b1.HasIndex("client_id", "Role")
                                 .IsUnique()
                                 .HasDatabaseName("ux_client_contacts_primary_role")
@@ -1726,6 +2541,18 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
                         .WithMany()
                         .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Contracts.ClientContract", null)
+                        .WithMany()
+                        .HasForeignKey("SupersedesContractId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.ProductCatalogRevisionRecord", null)
+                        .WithMany()
+                        .HasForeignKey("ProductCatalogRevisionId", "ProductCatalogRevisionNumber")
+                        .HasPrincipalKey("CatalogRevisionId", "RevisionNumber")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -1834,6 +2661,76 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                                 .HasForeignKey("ClientContractId");
                         });
 
+                    b.OwnsOne("SafarSuite.ControlDesk.Domain.Modules.Contracts.UserAllowance", "UserAllowance", b1 =>
+                        {
+                            b1.Property<Guid>("ClientContractId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<int?>("AllowedConcurrentUsers")
+                                .HasColumnType("integer")
+                                .HasColumnName("allowed_concurrent_users");
+
+                            b1.Property<int?>("AllowedNamedUsers")
+                                .HasColumnType("integer")
+                                .HasColumnName("allowed_named_users");
+
+                            b1.HasKey("ClientContractId");
+
+                            b1.ToTable("client_contracts", "control");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ClientContractId");
+                        });
+
+                    b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Contracts.ModuleFeatureLimit", "FeatureLimits", b1 =>
+                        {
+                            b1.Property<int>("client_contract_feature_limit_row_id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("integer")
+                                .HasColumnName("client_contract_feature_limit_row_id");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("client_contract_feature_limit_row_id"));
+
+                            b1.Property<string>("FeatureCode")
+                                .IsRequired()
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("feature_code");
+
+                            b1.Property<long>("LimitValue")
+                                .HasColumnType("bigint")
+                                .HasColumnName("limit_value");
+
+                            b1.Property<string>("ModuleCode")
+                                .IsRequired()
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("module_code");
+
+                            b1.Property<string>("Unit")
+                                .IsRequired()
+                                .HasMaxLength(32)
+                                .HasColumnType("character varying(32)")
+                                .HasColumnName("unit");
+
+                            b1.Property<Guid>("contract_id")
+                                .HasColumnType("uuid");
+
+                            b1.HasKey("client_contract_feature_limit_row_id");
+
+                            b1.HasIndex("contract_id", "ModuleCode", "FeatureCode")
+                                .IsUnique()
+                                .HasDatabaseName("ux_client_contract_feature_limits_contract_key");
+
+                            b1.ToTable("client_contract_feature_limits", "control", t =>
+                                {
+                                    t.HasCheckConstraint("ck_client_contract_feature_limits_value", "limit_value >= 0");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("contract_id");
+                        });
+
                     b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Contracts.ModuleAllowance", "ModuleAllowances", b1 =>
                         {
                             b1.Property<int>("client_contract_module_allowance_row_id")
@@ -1874,6 +2771,8 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                     b.Navigation("DeviceAllowance")
                         .IsRequired();
 
+                    b.Navigation("FeatureLimits");
+
                     b.Navigation("ModuleAllowances");
 
                     b.Navigation("Pricing")
@@ -1881,10 +2780,138 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
 
                     b.Navigation("Term")
                         .IsRequired();
+
+                    b.Navigation("UserAllowance")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Entitlements.ClientAccessRevision", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Contracts.ClientContract", null)
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Billing.Invoice", null)
+                        .WithMany()
+                        .HasForeignKey("SourceInvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Entitlements.ClientAccessRevision", null)
+                        .WithMany()
+                        .HasForeignKey("SupersedesRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.ProductCatalogRevisionRecord", null)
+                        .WithMany()
+                        .HasForeignKey("ProductCatalogRevisionId", "ProductCatalogRevisionNumber")
+                        .HasPrincipalKey("CatalogRevisionId", "RevisionNumber")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Contracts.ModuleFeatureLimit", "FeatureLimits", b1 =>
+                        {
+                            b1.Property<int>("client_access_revision_feature_limit_row_id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("integer")
+                                .HasColumnName("client_access_revision_feature_limit_row_id");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("client_access_revision_feature_limit_row_id"));
+
+                            b1.Property<string>("FeatureCode")
+                                .IsRequired()
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("feature_code");
+
+                            b1.Property<long>("LimitValue")
+                                .HasColumnType("bigint")
+                                .HasColumnName("limit_value");
+
+                            b1.Property<string>("ModuleCode")
+                                .IsRequired()
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("module_code");
+
+                            b1.Property<string>("Unit")
+                                .IsRequired()
+                                .HasMaxLength(32)
+                                .HasColumnType("character varying(32)")
+                                .HasColumnName("unit");
+
+                            b1.Property<Guid>("client_access_revision_id")
+                                .HasColumnType("uuid");
+
+                            b1.HasKey("client_access_revision_feature_limit_row_id");
+
+                            b1.HasIndex("client_access_revision_id", "ModuleCode", "FeatureCode")
+                                .IsUnique()
+                                .HasDatabaseName("ux_client_access_revision_feature_limits_revision_key");
+
+                            b1.ToTable("client_access_revision_feature_limits", "control", t =>
+                                {
+                                    t.HasCheckConstraint("ck_client_access_revision_feature_limits_value", "limit_value >= 0");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("client_access_revision_id");
+                        });
+
+                    b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Entitlements.ClientAccessRevisionModule", "Modules", b1 =>
+                        {
+                            b1.Property<int>("client_access_revision_module_row_id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("integer")
+                                .HasColumnName("client_access_revision_module_row_id");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("client_access_revision_module_row_id"));
+
+                            b1.Property<bool>("IsEnabled")
+                                .HasColumnType("boolean")
+                                .HasColumnName("is_enabled");
+
+                            b1.Property<string>("ModuleCode")
+                                .IsRequired()
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("module_code");
+
+                            b1.Property<Guid>("client_access_revision_id")
+                                .HasColumnType("uuid");
+
+                            b1.HasKey("client_access_revision_module_row_id");
+
+                            b1.HasIndex("client_access_revision_id", "ModuleCode")
+                                .IsUnique()
+                                .HasDatabaseName("ux_client_access_revision_modules_revision_code");
+
+                            b1.ToTable("client_access_revision_modules", "control");
+
+                            b1.WithOwner()
+                                .HasForeignKey("client_access_revision_id");
+                        });
+
+                    b.Navigation("FeatureLimits");
+
+                    b.Navigation("Modules");
                 });
 
             modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Entitlements.EntitlementSnapshot", b =>
                 {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Entitlements.ClientAccessRevision", null)
+                        .WithOne()
+                        .HasForeignKey("SafarSuite.ControlDesk.Domain.Modules.Entitlements.EntitlementSnapshot", "ClientAccessRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
                         .WithMany()
                         .HasForeignKey("ClientId")
@@ -1924,6 +2951,57 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
                             b1.WithOwner()
                                 .HasForeignKey("entitlement_snapshot_id");
                         });
+
+                    b.OwnsMany("SafarSuite.ControlDesk.Domain.Modules.Contracts.ModuleFeatureLimit", "FeatureLimits", b1 =>
+                        {
+                            b1.Property<int>("entitlement_snapshot_feature_limit_row_id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("integer")
+                                .HasColumnName("entitlement_snapshot_feature_limit_row_id");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("entitlement_snapshot_feature_limit_row_id"));
+
+                            b1.Property<string>("FeatureCode")
+                                .IsRequired()
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("feature_code");
+
+                            b1.Property<long>("LimitValue")
+                                .HasColumnType("bigint")
+                                .HasColumnName("limit_value");
+
+                            b1.Property<string>("ModuleCode")
+                                .IsRequired()
+                                .HasMaxLength(64)
+                                .HasColumnType("character varying(64)")
+                                .HasColumnName("module_code");
+
+                            b1.Property<string>("Unit")
+                                .IsRequired()
+                                .HasMaxLength(32)
+                                .HasColumnType("character varying(32)")
+                                .HasColumnName("unit");
+
+                            b1.Property<Guid>("entitlement_snapshot_id")
+                                .HasColumnType("uuid");
+
+                            b1.HasKey("entitlement_snapshot_feature_limit_row_id");
+
+                            b1.HasIndex("entitlement_snapshot_id", "ModuleCode", "FeatureCode")
+                                .IsUnique()
+                                .HasDatabaseName("ux_entitlement_snapshot_feature_limits_snapshot_key");
+
+                            b1.ToTable("entitlement_snapshot_feature_limits", "control", t =>
+                                {
+                                    t.HasCheckConstraint("ck_entitlement_snapshot_feature_limits_value", "limit_value >= 0");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("entitlement_snapshot_id");
+                        });
+
+                    b.Navigation("FeatureLimits");
 
                     b.Navigation("Modules");
                 });
@@ -2046,6 +3124,66 @@ namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Migr
 
                     b.Navigation("Amount")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Domain.Modules.Payments.PortalPaymentClaim", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Clients.Client", null)
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SafarSuite.ControlDesk.Domain.Modules.Billing.Invoice", null)
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.OwnsOne("SafarSuite.ControlDesk.Domain.SharedKernel.Money", "Amount", b1 =>
+                        {
+                            b1.Property<Guid>("PortalPaymentClaimId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("amount");
+
+                            b1.Property<string>("CurrencyCode")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("currency_code");
+
+                            b1.HasKey("PortalPaymentClaimId");
+
+                            b1.ToTable("portal_payment_claims", "control");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PortalPaymentClaimId");
+                        });
+
+                    b.Navigation("Amount")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.ProductAccessCatalogRecord", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.ProductCatalogRevisionRecord", null)
+                        .WithMany()
+                        .HasForeignKey("BaseCatalogRevisionId", "BaseCatalogRevisionNumber")
+                        .HasPrincipalKey("CatalogRevisionId", "RevisionNumber")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.ProductCatalogRevisionRecord", b =>
+                {
+                    b.HasOne("SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.ProductCatalogRevisionRecord", null)
+                        .WithMany()
+                        .HasForeignKey("SupersedesCatalogRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 #pragma warning restore 612, 618
         }

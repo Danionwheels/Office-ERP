@@ -19,10 +19,32 @@ public sealed class HmacClientPortalCredentialService : IClientPortalCredentialS
 
     public string CreateInvitationToken()
     {
-        var tokenBytes = RandomNumberGenerator.GetBytes(
-            Math.Clamp(_options.InvitationTokenBytes, 24, 64));
+        return CreateSecureToken(_options.InvitationTokenBytes);
+    }
 
-        return Base64UrlEncode(tokenBytes);
+    public string CreateSecureToken(int byteCount = 32)
+    {
+        return Base64UrlEncode(RandomNumberGenerator.GetBytes(
+            Math.Clamp(byteCount, 32, 64)));
+    }
+
+    public IReadOnlyCollection<string> CreateRecoveryCodes(int count = 10)
+    {
+        return Enumerable.Range(0, Math.Clamp(count, 1, 20))
+            .Select(_ =>
+            {
+                var text = Convert.ToHexString(RandomNumberGenerator.GetBytes(10));
+                return string.Join('-', text[..5], text[5..10], text[10..15], text[15..20]);
+            })
+            .ToArray();
+    }
+
+    public string NormalizeRecoveryCode(string recoveryCode)
+    {
+        return new string((recoveryCode ?? "")
+            .Where(character => !char.IsWhiteSpace(character) && character != '-')
+            .Select(char.ToUpperInvariant)
+            .ToArray());
     }
 
     public string HashSecret(string secret)

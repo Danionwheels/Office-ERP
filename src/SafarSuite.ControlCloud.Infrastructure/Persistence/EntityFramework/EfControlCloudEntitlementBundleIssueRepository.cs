@@ -27,6 +27,10 @@ public sealed class EfControlCloudEntitlementBundleIssueRepository
                 InstallationId = issue.InstallationId,
                 EntitlementVersion = issue.EntitlementVersion,
                 EntitlementSnapshotId = issue.EntitlementSnapshotId,
+                ClientAccessRevisionId = issue.ClientAccessRevisionId,
+                ContractRevisionNumber = issue.ContractRevisionNumber,
+                ProductCatalogRevisionId = issue.ProductCatalogRevisionId,
+                ProductCatalogRevisionNumber = issue.ProductCatalogRevisionNumber,
                 IssuedAtUtc = issue.IssuedAtUtc,
                 Algorithm = issue.Algorithm,
                 KeyId = issue.KeyId,
@@ -36,7 +40,10 @@ public sealed class EfControlCloudEntitlementBundleIssueRepository
                 PaidUntil = issue.PaidUntil,
                 WarningStartsAt = issue.WarningStartsAt,
                 GraceUntil = issue.GraceUntil,
-                OfflineValidUntil = issue.OfflineValidUntil
+                OfflineValidUntil = issue.OfflineValidUntil,
+                AllowedNamedUsers = issue.AllowedNamedUsers,
+                AllowedConcurrentUsers = issue.AllowedConcurrentUsers,
+                FeatureLimitCount = issue.FeatureLimitCount
             },
             cancellationToken);
     }
@@ -64,6 +71,10 @@ public sealed class EfControlCloudEntitlementBundleIssueRepository
             entity.InstallationId,
             entity.EntitlementVersion,
             entity.EntitlementSnapshotId,
+            entity.ClientAccessRevisionId,
+            entity.ContractRevisionNumber,
+            entity.ProductCatalogRevisionId,
+            entity.ProductCatalogRevisionNumber,
             entity.IssuedAtUtc,
             entity.Algorithm,
             entity.KeyId,
@@ -73,6 +84,9 @@ public sealed class EfControlCloudEntitlementBundleIssueRepository
             entity.PaidUntil,
             entity.WarningStartsAt,
             entity.GraceUntil,
-            entity.OfflineValidUntil);
+            entity.OfflineValidUntil,
+            entity.AllowedNamedUsers,
+            entity.AllowedConcurrentUsers,
+            entity.FeatureLimitCount);
     }
 }

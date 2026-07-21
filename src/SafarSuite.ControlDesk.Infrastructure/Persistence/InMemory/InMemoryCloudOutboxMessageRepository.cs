@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
+using SafarSuite.ControlDesk.Domain.Modules.Clients;
 using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 
 namespace SafarSuite.ControlDesk.Infrastructure.Persistence.InMemory;
@@ -24,13 +25,90 @@ public sealed class InMemoryCloudOutboxMessageRepository : ICloudOutboxMessageRe
         return Task.FromResult(message);
     }
 
-    public Task<IReadOnlyCollection<CloudOutboxMessage>> ListAsync(
-        CloudOutboxMessageStatus? status = null,
-        string? messageType = null,
+    public Task<IReadOnlyCollection<CloudOutboxMessage>> ListPageAsync(
+        CloudOutboxMessageStatus? status,
+        string? messageType,
+        ClientId? clientId,
+        DateTimeOffset? beforeOccurredAtUtc,
+        CloudOutboxMessageId? beforeMessageId,
+        int take,
         CancellationToken cancellationToken = default)
     {
-        var messages = _messagesById.Values.AsEnumerable();
+        var messages = ApplyFilters(_messagesById.Values, status, messageType, clientId);
 
+        if (beforeOccurredAtUtc.HasValue && beforeMessageId.HasValue)
+        {
+            var occurredAtUtc = beforeOccurredAtUtc.Value;
+            var messageId = beforeMessageId.Value.Value;
+            messages = messages.Where(message =>
+                message.OccurredAtUtc < occurredAtUtc
+                || (message.OccurredAtUtc == occurredAtUtc
+                    && message.Id.Value.CompareTo(messageId) < 0));
+        }
+
+        var page = messages
+            .OrderByDescending(message => message.OccurredAtUtc)
+            .ThenByDescending(message => message.Id.Value)
+            .Take(Math.Max(take, 0))
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyCollection<CloudOutboxMessage>>(page);
+    }
+
+    public Task<CloudOutboxMessageRegisterSummary> SummarizeAsync(
+        CloudOutboxMessageStatus? status,
+        string? messageType,
+        ClientId? clientId,
+        DateTimeOffset readyAtUtc,
+        int maximumAttemptCount,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureValidMaximumAttemptCount(maximumAttemptCount);
+
+        var messages = ApplyFilters(_messagesById.Values, status, messageType, clientId).ToArray();
+        var summary = new CloudOutboxMessageRegisterSummary(
+            messages.LongLength,
+            messages.LongCount(message => message.Status == CloudOutboxMessageStatus.Pending),
+            messages.LongCount(message => message.Status == CloudOutboxMessageStatus.Failed),
+            messages.LongCount(message => message.Status == CloudOutboxMessageStatus.Sent),
+            messages.LongCount(message => message.IsReadyForPublishing(readyAtUtc, maximumAttemptCount)),
+            messages.Sum(message => (long)message.AttemptCount));
+
+        return Task.FromResult(summary);
+    }
+
+    public Task<IReadOnlyCollection<CloudOutboxMessage>> ListReadyForPublishingAsync(
+        int batchSize,
+        DateTimeOffset readyAtUtc,
+        int maximumAttemptCount,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureValidMaximumAttemptCount(maximumAttemptCount);
+
+        var messages = _messagesById.Values
+            .Where(message => message.IsReadyForPublishing(readyAtUtc, maximumAttemptCount))
+            .OrderBy(message => message.OccurredAtUtc)
+            .ThenBy(message => message.Id.Value)
+            .Take(batchSize)
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyCollection<CloudOutboxMessage>>(messages);
+    }
+
+    private static void EnsureValidMaximumAttemptCount(int maximumAttemptCount)
+    {
+        if (maximumAttemptCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumAttemptCount));
+        }
+    }
+
+    private static IEnumerable<CloudOutboxMessage> ApplyFilters(
+        IEnumerable<CloudOutboxMessage> messages,
+        CloudOutboxMessageStatus? status,
+        string? messageType,
+        ClientId? clientId)
+    {
         if (status.HasValue)
         {
             messages = messages.Where(message => message.Status == status.Value);
@@ -42,27 +120,11 @@ public sealed class InMemoryCloudOutboxMessageRepository : ICloudOutboxMessageRe
                 string.Equals(message.MessageType, messageType.Trim(), StringComparison.OrdinalIgnoreCase));
         }
 
-        var orderedMessages = messages
-            .OrderByDescending(message => message.OccurredAtUtc)
-            .ThenBy(message => message.Id.Value)
-            .ToArray();
+        if (clientId.HasValue)
+        {
+            messages = messages.Where(message => message.ClientId == clientId.Value);
+        }
 
-        return Task.FromResult<IReadOnlyCollection<CloudOutboxMessage>>(orderedMessages);
-    }
-
-    public Task<IReadOnlyCollection<CloudOutboxMessage>> ListReadyForPublishingAsync(
-        int batchSize,
-        DateTimeOffset readyAtUtc,
-        int maximumAttemptCount,
-        CancellationToken cancellationToken = default)
-    {
-        var messages = _messagesById.Values
-            .Where(message => message.IsReadyForPublishing(readyAtUtc, maximumAttemptCount))
-            .OrderBy(message => message.OccurredAtUtc)
-            .ThenBy(message => message.Id.Value)
-            .Take(batchSize)
-            .ToArray();
-
-        return Task.FromResult<IReadOnlyCollection<CloudOutboxMessage>>(messages);
+        return messages;
     }
 }

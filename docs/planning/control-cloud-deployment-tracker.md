@@ -4,6 +4,8 @@ Date started: 2026-07-01
 
 Use this tracker for the SafarSuite Control Cloud, Client Portal, and local SafarSuite deployment/setup work. Its purpose is to keep cloud, portal, licensing, and local Linux deployment decisions aligned.
 
+The physical deployment boundary is governed by `docs/architecture/final-system-requirements-and-deployment-contract.md`: Linux/cloud hosts Control Cloud/Portal or client-runtime tests, while Control Desk V1 remains entirely on one dedicated office PC.
+
 ## Core Decision
 
 There is one production SafarSuite Control Cloud.
@@ -174,7 +176,7 @@ One backend can serve these areas. Separate permissions decide what each user ca
 | Identity and roles | Provider admins, support users, client users | Basic client contact invitation/user/session foundation exists with provider-key invite management, file/SMTP invitation delivery, and invite/session audit records; real provider/admin users, MFA, password reset, and production mail retry handling pending |
 | Client portal projection | Client-facing invoice/payment/subscription state | Basic backend projection exists |
 | Activation/installations | Installation profiles, setup tokens, registered machines | Basic entitlement installation registry, one-time setup-token registration, Control Desk setup-token/bootstrap controls, signed bootstrap bundle/download generation, Docker Compose template artifacts, and bootstrap package command generation exist; installer/runtime integration pending |
-| Deployment packages | Versioned bundles, manifests, checksums, release channels | Proposed |
+| Deployment packages | Versioned bundles, manifests, checksums, release channels | Basic backend register done: bootstrap package generation now stamps non-secret package metadata onto setup-token records, file/PostgreSQL persistence can list package summaries by client installation, Control Cloud/Control Desk expose provider-gated package register reads, and setup-token/bootstrap-package creation plus bundle download are behind `deployment-packages:write`; release channel/version promotion remains pending |
 | Bootstrap downloads | Online command and offline-assisted bundle download | Basic Control Desk provisioning action, copyable online command package, signed JSON bootstrap bundle download, served `install.sh`, Docker Compose template, environment template, and runtime service manifest exist; real SafarSuite image bundle download pending |
 | Entitlements | Signed license bundles, direct pull, offline renewal files | Basic signing boundary, setup-token-bound installation registration, local-server direct pull/verification/cache/gating, offline renewal file export/import, local import audit persistence, and local clock/replay trust state exist |
 | Command queue | Renew, revoke, change limits, diagnostics, update commands | Basic local execution loop exists for diagnostics and entitlement refresh |
@@ -189,14 +191,14 @@ One backend can serve these areas. Separate permissions decide what each user ca
 | 1 | Document one-cloud rule and deployment rule | Done in this tracker |
 | 2 | Define installation profile model: client, installation ID, mode, token, status, expiry | Basic done |
 | 3 | Add one-time setup token generation and expiry rules | Basic done |
-| 4 | Add deployment package manifest model: version, channel, checksum, signature, required services | Proposed |
+| 4 | Add deployment package manifest model: version, channel, checksum, signature, required services | Basic backend register done: generated bootstrap packages persist package id, local/app versions, bundle file name, bundle checksum, generated time, setup-token status, expiry, and consumption metadata without storing setup-token plaintext; full release-channel/package promotion model remains pending |
 | 5 | Add portal/API endpoint to download bootstrap bundle or copy install command | Basic done: API can generate a bootstrap package with setup token, cloud endpoints, install command, signed bundle metadata, artifact manifest, and a signed JSON bundle download |
 | 6 | Create first Docker Compose local-server template | Basic done: first `docker-compose.yml`, `local-server.env`, and `runtime-services.manifest.json` template artifacts cover local API, worker, agent, database, and optional `safarsuite-app` profile slots |
 | 7 | Create `install.sh` bootstrap script with signature/checksum verification | Basic done: Control Cloud serves the first `install.sh` template; it can verify a supplied bundle checksum, write bootstrap/compose/env files, register online, and only starts Compose when explicitly requested |
 | 8 | Add outbound registration endpoint for local Linux server | Basic done |
 | 9 | Add heartbeat endpoint and portal status view | Basic done: heartbeat endpoint/reporting, shared status endpoint, Control Desk status panel, and `/client-portal/index.html` preview are in place |
 | 10 | Connect first signed entitlement pull after registration | Basic done: entitlement issue now requires a registered installation |
-| 11 | Add command pull/acknowledgement to the local agent | Basic done: local-server application/infrastructure layers can pull signed pending commands, verify HMAC signatures, execute `request_diagnostics` and `refresh_entitlement`, and post Applied/Failed/Rejected acknowledgements |
+| 11 | Add command pull/acknowledgement to the local agent | Basic done: local-server application/infrastructure layers can pull signed pending commands, verify HMAC signatures, execute `request_diagnostics`, `refresh_entitlement`, and Cloud-owned `revoke_app_activation`, persist app activation revocations, expose local revocation status for the app, and post Applied/Failed/Rejected acknowledgements |
 | 12 | Add diagnostics export/upload for failed installs | Basic done: local-server libraries can export cached entitlement/trust-state diagnostics plus local import audit and runtime/bootstrap/service/error facts, then upload them to Control Cloud; runtime manifest boundary exists, deployed log collection pending |
 | 13 | Add support/admin audit for every token, download, install, heartbeat, command, and entitlement | Partial: setup token, bootstrap package, registration accept/reject, invite/session, command, acknowledgement, heartbeat, entitlement issue, offline renewal generation, and local import audit records are recorded; basic audit-events API is available |
 | 14 | Add persisted client user invitations, password credentials, role assignment, and session audit | Basic Control Desk contact invites, provider-key invite management, password credentials, list/resend/revoke, file/SMTP delivery boundary, and invite/session audit done; real provider/admin authorization, MFA, password reset, and production mail retry handling pending |
@@ -204,7 +206,7 @@ One backend can serve these areas. Separate permissions decide what each user ca
 | 16 | Add provider-facing Control Desk setup-token/bootstrap package actions | Basic done: the client desk Cloud tab saves the selected deployment profile, proxies setup-token/bootstrap-package creation to Control Cloud, and displays the generated setup token or install command |
 | 17 | Add provider-facing installation audit history to Control Desk | Basic done: the client desk Cloud tab can refresh setup/bootstrap/registration/diagnostics/renewal audit events for the selected installation through the Control Desk API |
 | 18 | Add provider-facing latest diagnostics review to Control Desk | Basic done: the client desk Cloud tab can refresh and download the latest diagnostics report for the selected installation through the Control Desk API |
-| 19 | Add provider-facing low-risk support command actions | Basic done: the client desk Cloud tab can queue whitelisted `request_diagnostics` and `refresh_entitlement` commands through Control Desk into Control Cloud's signed installation command queue, and the local-server command processor executes and acknowledges those two command types |
+| 19 | Add provider-facing low-risk support command actions | Basic done: the client desk Cloud tab can queue whitelisted `request_diagnostics` and `refresh_entitlement` commands through Control Desk into Control Cloud's signed installation command queue; Cloud-owned app activation revoke queues `revoke_app_activation` directly after revoke, and the local-server command processor executes, persists, exposes local revocation status, and acknowledges all three command types |
 
 ## Later Todo
 

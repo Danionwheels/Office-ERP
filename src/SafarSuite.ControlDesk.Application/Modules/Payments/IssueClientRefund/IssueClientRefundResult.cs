@@ -22,4 +22,11 @@ public sealed record IssueClientRefundJournalLineResult(
     Guid LedgerAccountId,
     decimal Debit,
     decimal Credit,
-    string? Description);
+    string? Description,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountNormalBalance,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus);

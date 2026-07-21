@@ -9,6 +9,10 @@ internal static class ContractResultMapper
         return new ClientContractResult(
             contract.Id.Value,
             contract.ClientId.Value,
+            contract.RevisionNumber,
+            contract.SupersedesContractId?.Value,
+            contract.ProductCatalogRevisionId.Value,
+            contract.ProductCatalogRevisionNumber,
             contract.Number.Value,
             contract.Term.StartsOn,
             contract.Term.EndsOn,
@@ -21,15 +25,29 @@ internal static class ContractResultMapper
             contract.Status.ToString(),
             contract.CreatedAtUtc,
             contract.ActivatedAtUtc,
+            contract.ApprovedBy,
+            contract.ApprovalReason,
+            contract.ApprovedAtUtc,
             contract.ModuleAllowances.Select(module => new ClientContractModuleResult(
                 module.ModuleCode.Value,
-                module.IsEnabled)).ToArray());
+                module.IsEnabled)).ToArray(),
+            contract.UserAllowance.AllowedNamedUsers,
+            contract.UserAllowance.AllowedConcurrentUsers,
+            contract.FeatureLimits.Select(limit => new ClientContractFeatureLimitResult(
+                limit.ModuleCode.Value,
+                limit.FeatureCode.Value,
+                limit.LimitValue,
+                limit.Unit)).ToArray());
     }
 }
 
 public sealed record ClientContractResult(
     Guid ContractId,
     Guid ClientId,
+    long RevisionNumber,
+    Guid? SupersedesContractId,
+    Guid ProductCatalogRevisionId,
+    long ProductCatalogRevisionNumber,
     string ContractNumber,
     DateOnly StartsOn,
     DateOnly EndsOn,
@@ -42,8 +60,20 @@ public sealed record ClientContractResult(
     string Status,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset? ActivatedAtUtc,
-    IReadOnlyCollection<ClientContractModuleResult> Modules);
+    string ApprovedBy,
+    string ApprovalReason,
+    DateTimeOffset ApprovedAtUtc,
+    IReadOnlyCollection<ClientContractModuleResult> Modules,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<ClientContractFeatureLimitResult>? FeatureLimits = null);
 
 public sealed record ClientContractModuleResult(
     string ModuleCode,
     bool IsEnabled);
+
+public sealed record ClientContractFeatureLimitResult(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);

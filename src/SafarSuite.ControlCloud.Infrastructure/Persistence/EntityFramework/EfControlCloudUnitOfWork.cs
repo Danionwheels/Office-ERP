@@ -1,5 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 using SafarSuite.ControlCloud.Application.Common;
+using SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework.Configurations;
 
 namespace SafarSuite.ControlCloud.Infrastructure.Persistence.EntityFramework;
 
@@ -14,7 +17,17 @@ public sealed class EfControlCloudUnitOfWork : IControlCloudUnitOfWork
 
     public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception)
+            when (IsDuplicateClientPortalPaymentReference(exception))
+        {
+            throw new InvalidOperationException(
+                "A payment claim already uses this transfer reference.",
+                exception);
+        }
     }
 
     public async Task ExecuteInTransactionAsync(
@@ -59,4 +72,12 @@ public sealed class EfControlCloudUnitOfWork : IControlCloudUnitOfWork
             throw;
         }
     }
+
+    private static bool IsDuplicateClientPortalPaymentReference(DbUpdateException exception) =>
+        exception.InnerException is PostgresException postgresException
+        && postgresException.SqlState == PostgresErrorCodes.UniqueViolation
+        && string.Equals(
+            postgresException.ConstraintName,
+            ControlCloudClientPortalPaymentClaimEntityConfiguration.ClientReferenceUniqueConstraintName,
+            StringComparison.Ordinal);
 }

@@ -3,4 +3,5 @@ namespace SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccount
 public sealed record GetLedgerAccountActivityQuery(
     Guid LedgerAccountId,
     DateOnly? FromDate = null,
-    DateOnly? ToDate = null);
+    DateOnly? ToDate = null,
+    string? CurrencyCode = null);

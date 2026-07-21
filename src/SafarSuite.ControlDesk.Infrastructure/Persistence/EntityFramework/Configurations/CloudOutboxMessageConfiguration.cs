@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SafarSuite.ControlDesk.Domain.Modules.Clients;
 using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 
 namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Configurations;
@@ -18,6 +19,12 @@ internal sealed class CloudOutboxMessageConfiguration : IEntityTypeConfiguration
                 id => id.Value,
                 value => CloudOutboxMessageId.Create(value))
             .ValueGeneratedNever();
+
+        builder.Property(message => message.ClientId)
+            .HasColumnName("client_id")
+            .HasConversion(
+                clientId => clientId.HasValue ? clientId.Value.Value : (Guid?)null,
+                value => value.HasValue ? ClientId.Create(value.Value) : null);
 
         builder.Property(message => message.MessageType)
             .HasColumnName("message_type")
@@ -67,10 +74,22 @@ internal sealed class CloudOutboxMessageConfiguration : IEntityTypeConfiguration
 
         builder.Property(message => message.FailureReason)
             .HasColumnName("failure_reason")
-            .HasMaxLength(2000);
+            .HasMaxLength(CloudOutboxMessage.MaximumFailureReasonLength);
 
-        builder.HasIndex(message => new { message.Status, message.MessageType, message.OccurredAtUtc })
+        builder.HasIndex(message => new { message.Status, message.MessageType, message.OccurredAtUtc, message.Id })
+            .IsDescending(false, false, true, true)
             .HasDatabaseName("ix_cloud_outbox_messages_status_type_occurred");
+
+        builder.HasIndex(message => new { message.OccurredAtUtc, message.Id })
+            .IsDescending()
+            .HasDatabaseName("ix_cloud_outbox_messages_occurred");
+
+        builder.HasIndex(message => new { message.ClientId, message.OccurredAtUtc, message.Id })
+            .IsDescending(false, true, true)
+            .HasDatabaseName("ix_cloud_outbox_messages_client_occurred");
+
+        builder.HasIndex(message => new { message.ClientId, message.Status })
+            .HasDatabaseName("ix_cloud_outbox_messages_client_status");
 
         builder.HasIndex(message => new { message.Status, message.NextAttemptAtUtc, message.AttemptCount })
             .HasDatabaseName("ix_cloud_outbox_messages_publish_ready");

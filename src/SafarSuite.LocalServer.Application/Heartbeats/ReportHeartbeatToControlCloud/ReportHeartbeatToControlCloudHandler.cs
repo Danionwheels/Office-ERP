@@ -77,7 +77,9 @@ public sealed class ReportHeartbeatToControlCloudHandler
             entitlementState.WarningStartsAt,
             entitlementState.GraceUntil,
             entitlementState.OfflineValidUntil,
-            command.Detail);
+            command.Detail,
+            PairingStatus: command.PairingStatus,
+            EntitlementState: ToEntitlementState(entitlement));
         var report = await _cloudClient.ReportHeartbeatAsync(
             installationId,
             request,
@@ -117,5 +119,37 @@ public sealed class ReportHeartbeatToControlCloudHandler
         var normalized = value?.Trim();
 
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static ControlCloudEntitlementStateValuesResponse? ToEntitlementState(
+        LocalServerCachedEntitlement? entitlement)
+    {
+        if (entitlement is null)
+        {
+            return null;
+        }
+
+        return new ControlCloudEntitlementStateValuesResponse(
+            entitlement.EntitlementVersion,
+            entitlement.EffectiveFromUtc
+            ?? new DateTimeOffset(entitlement.ValidFrom.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+            entitlement.Status,
+            entitlement.PaidUntil,
+            entitlement.WarningStartsAt,
+            entitlement.GraceUntil,
+            entitlement.OfflineValidUntil,
+            entitlement.AllowedDevices,
+            entitlement.AllowedBranches,
+            entitlement.AllowedNamedUsers,
+            entitlement.AllowedConcurrentUsers,
+            entitlement.Modules.Select(module => new ControlCloudEntitlementStateModuleResponse(
+                module.ModuleCode,
+                module.IsEnabled)).ToArray(),
+            (entitlement.FeatureLimits ?? []).Select(limit =>
+                new ControlCloudEntitlementStateFeatureLimitResponse(
+                    limit.ModuleCode,
+                    limit.FeatureCode,
+                    limit.LimitValue,
+                    limit.Unit)).ToArray());
     }
 }

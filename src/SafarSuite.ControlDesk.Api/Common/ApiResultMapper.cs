@@ -33,6 +33,16 @@ internal static class ApiResultMapper
             return StatusCodes.Status404NotFound;
         }
 
+        if (errors.Any(error => error.Code == "forbidden"))
+        {
+            return StatusCodes.Status403Forbidden;
+        }
+
+        if (errors.Any(error => error.Code == "service_unavailable"))
+        {
+            return StatusCodes.Status503ServiceUnavailable;
+        }
+
         return StatusCodes.Status500InternalServerError;
     }
 
@@ -41,8 +51,10 @@ internal static class ApiResultMapper
         return statusCode switch
         {
             StatusCodes.Status400BadRequest => "Request validation failed.",
+            StatusCodes.Status403Forbidden => "The operation is not permitted.",
             StatusCodes.Status404NotFound => "Resource was not found.",
             StatusCodes.Status409Conflict => "Request conflicts with existing data.",
+            StatusCodes.Status503ServiceUnavailable => "External service is unavailable.",
             _ => "Unexpected server error."
         };
     }

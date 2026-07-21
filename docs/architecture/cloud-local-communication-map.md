@@ -4,9 +4,12 @@ Date added: 2026-07-02
 
 Use this as the canonical alignment note for SafarSuite Control Desk, SafarSuite Control Cloud, SafarSuite Client Portal, and deployed SafarSuite local servers.
 
+Physical placement and deployment acceptance are governed by `docs/architecture/final-system-requirements-and-deployment-contract.md`. This communication map cannot be used to infer a separate or Linux-hosted Control Desk server.
+
 Related runtime boundary note:
 
 ```text
+docs/architecture/client-runtime-communication-and-deployment-blueprint.md
 docs/architecture/safarsuite-runtime-integration-boundary.md
 docs/architecture/client-deployment-and-data-sync-boundary.md
 ```
@@ -46,7 +49,8 @@ There is one production SafarSuite Control Cloud. Older CloudServer work is refe
 | Direction | Purpose | Endpoint/Boundary | Status |
 | --- | --- | --- | --- |
 | Control Desk -> Control Cloud | Publish approved commercial/control events | `POST /api/v1/control-desk/messages` | Basic done |
-| Control Cloud -> Client Portal | Client commercial summary | `GET /api/v1/client-portal/clients/{clientId}/commercial-summary` | Basic done |
+| Control Cloud -> Client Portal | Bounded client commercial summary | `GET /api/v1/client-portal/clients/{clientId}/commercial-summary` | Done |
+| Control Cloud -> Client Portal | Keyset-paged commercial documents | `GET /api/v1/client-portal/clients/{clientId}/commercial-documents` | Done |
 | Control Desk -> Control Cloud | Manage client contact portal invitations | `POST /api/v1/clients/{clientId}/contacts/{clientContactId}/portal-invitation`, `GET/POST /api/v1/clients/{clientId}/portal-invitations...` -> provider-key-protected Control Cloud invitation endpoints | Basic done with pluggable delivery and audit |
 | Local server -> Control Cloud | Pull latest signed entitlement bundle | `GET /api/v1/local-server/installations/{installationId}/entitlement-bundle?clientId={clientId}` | Basic done |
 | Control Cloud admin -> Control Cloud | Queue installation command | `POST /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/commands` | Basic done |
@@ -56,7 +60,7 @@ There is one production SafarSuite Control Cloud. Older CloudServer work is refe
 | Local server -> Control Cloud | Register installation with one-time setup token | Provider creates `POST /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/setup-token`; local server consumes `POST /api/v1/local-server/installations/{installationId}/registration` | Basic done |
 | Control Cloud/Support -> Control Cloud | Generate local-server bootstrap package | `POST /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/bootstrap-package` returns setup token, registration endpoints, copyable install command, signed bootstrap bundle metadata, and compose/env artifact checksums; `POST .../bootstrap-package/download` returns the signed JSON bundle artifact | Basic done |
 | Control Cloud/Support -> Control Cloud | Review setup/bootstrap/registration audit trail | `GET /api/v1/control-cloud/audit-events?clientId={clientId}&eventType={eventType}` | Basic done |
-| Control Desk/Client Portal -> Control Cloud | Read installation heartbeat, license, entitlement, and command status | `GET /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/status` and `GET /api/v1/client-portal/clients/{clientId}/installations/{installationId}/status` | Basic portal preview done |
+| Control Desk/Client Portal -> Control Cloud | Read installation heartbeat, license, entitlement, command, and pairing status | `GET /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/status` and `GET /api/v1/client-portal/clients/{clientId}/installations/{installationId}/status` | Pairing status visible in portal preview |
 | Local server -> Control Cloud | Upload support diagnostics bundle | `POST /api/v1/local-server/installations/{installationId}/diagnostics`; support reads latest through `GET /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/diagnostics/latest`; bundle includes entitlement/trust state plus runtime, Docker/Compose, bootstrap, service, and recent-error facts | Basic done |
 | Control Cloud/Support -> Local server | Offline renewal file fallback | `GET /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/offline-renewal-file`; local server imports wrapped signed bundle | Basic done |
 
@@ -177,7 +181,7 @@ Control Cloud exposes one shared status response for Control Desk and Client Por
 GET /api/v1/control-cloud/clients/{clientId}/installations/{installationId}/status
 ```
 
-It reports installation identity, latest heartbeat, reported license state, latest signed entitlement issue, pending command count, latest command acknowledgement summary, and the stored deployment profile. The SafarSuite Control Desk client page has a minimal manual refresh panel, setup-token/bootstrap-package actions that use the saved deployment profile, a recent installation history view backed by Control Cloud audit events, and a read-only latest diagnostics view/download. The first SafarSuite Client Portal preview consumes the same cloud status through its portal route.
+It reports installation identity, latest heartbeat, reported license state, latest signed entitlement issue, pending command count, latest command acknowledgement summary, latest pairing snapshot, and the stored deployment profile. The SafarSuite Control Desk client page has a minimal manual refresh panel, setup-token/bootstrap-package actions that use the saved deployment profile, a recent installation history view backed by Control Cloud audit events, and a read-only latest diagnostics view/download. The first SafarSuite Client Portal preview consumes the same cloud status through its portal route, including pairing mode, device counts, and first-manager approval.
 
 ## Next Alignment Slice
 

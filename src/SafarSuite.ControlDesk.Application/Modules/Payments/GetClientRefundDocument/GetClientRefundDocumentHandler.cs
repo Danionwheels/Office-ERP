@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Application.Common.Results;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Common;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Ports;
@@ -12,15 +13,18 @@ public sealed class GetClientRefundDocumentHandler
 {
     private readonly IClientRefundRepository _refunds;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly ClientCreditBalanceService _creditBalanceService;
 
     public GetClientRefundDocumentHandler(
         IClientRefundRepository refunds,
         IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts,
         ClientCreditBalanceService creditBalanceService)
     {
         _refunds = refunds;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
         _creditBalanceService = creditBalanceService;
     }
 
@@ -59,25 +63,28 @@ public sealed class GetClientRefundDocumentHandler
             cancellationToken);
         var clientBalanceAfter = currentBalance.StatementBalance;
         var clientBalanceBefore = clientBalanceAfter - refund.Amount.Amount;
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
 
         return Result<ClientRefundDocumentResult>.Success(new ClientRefundDocumentResult(
             PaymentDocumentResultFactory.ToIssueClientRefundResult(
                 refund,
                 journalEntry,
                 clientBalanceBefore,
-                clientBalanceAfter)));
+                clientBalanceAfter,
+                ledgerAccountsById)));
     }
 
     private async Task<JournalEntry?> FindJournalAsync(
         ClientRefund refund,
         CancellationToken cancellationToken)
     {
-        var entries = await _journalEntries.ListAsync(
-            sourceType: JournalSourceType.ClientRefund,
-            cancellationToken: cancellationToken);
+        var entries = await _journalEntries.ListForSourceDocumentAsync(
+            JournalSourceType.ClientRefund,
+            refund.Id.Value,
+            cancellationToken);
 
         return entries
-            .Where(entry => string.Equals(entry.SourceReference, refund.Reference.Value, StringComparison.OrdinalIgnoreCase))
             .Where(entry => string.Equals(entry.CurrencyCode, refund.CurrencyCode, StringComparison.OrdinalIgnoreCase))
             .Where(entry => entry.TotalDebit.Amount == refund.Amount.Amount)
             .OrderBy(entry => entry.EntryDate)

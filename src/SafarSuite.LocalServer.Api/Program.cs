@@ -1,4 +1,5 @@
 using SafarSuite.LocalServer.Api.Modules.LocalServer;
+using SafarSuite.LocalServer.Application.Commands.GetAppActivationRevocationStatus;
 using SafarSuite.LocalServer.Application.Commands.Ports;
 using SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommands;
 using SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommandsFromBootstrapConfiguration;
@@ -15,6 +16,7 @@ using SafarSuite.LocalServer.Application.Heartbeats.Ports;
 using SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatFromBootstrapConfiguration;
 using SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatToControlCloud;
 using SafarSuite.LocalServer.Application.ModuleGateway.EvaluateModuleAccess;
+using SafarSuite.LocalServer.Application.Pairing.Ports;
 using SafarSuite.LocalServer.Application.Registration.Ports;
 using SafarSuite.LocalServer.Application.Registration.RegisterInstallationFromBootstrapBundle;
 using SafarSuite.LocalServer.Application.Registration.RegisterInstallationWithControlCloud;
@@ -24,6 +26,7 @@ using SafarSuite.LocalServer.Infrastructure.Commands;
 using SafarSuite.LocalServer.Infrastructure.Diagnostics;
 using SafarSuite.LocalServer.Infrastructure.Entitlements;
 using SafarSuite.LocalServer.Infrastructure.Heartbeats;
+using SafarSuite.LocalServer.Infrastructure.Pairing;
 using SafarSuite.LocalServer.Infrastructure.Registration;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -37,14 +40,38 @@ var entitlementTrustOptions =
 var bootstrapTrustOptions =
     builder.Configuration.GetSection(LocalServerBootstrapTrustOptions.SectionName).Get<LocalServerBootstrapTrustOptions>()
     ?? new LocalServerBootstrapTrustOptions();
+var commandOptions =
+    builder.Configuration.GetSection(LocalServerCommandOptions.SectionName).Get<LocalServerCommandOptions>()
+    ?? new LocalServerCommandOptions();
 var automationOptions =
     builder.Configuration.GetSection(LocalServerRuntimeAutomationOptions.SectionName).Get<LocalServerRuntimeAutomationOptions>()
     ?? new LocalServerRuntimeAutomationOptions();
+var runtimeAccessOptions = LocalServerRuntimeAccessOptions.FromConfiguration(builder.Configuration);
+var pairingOptions = LocalServerPairingOptions.FromConfiguration(builder.Configuration);
+var managerSessionOptions = LocalServerManagerSessionOptions.FromConfiguration(builder.Configuration);
+var pairingAbuseControlOptions =
+    builder.Configuration.GetSection(LocalServerPairingAbuseControlOptions.SectionName).Get<LocalServerPairingAbuseControlOptions>()
+    ?? new LocalServerPairingAbuseControlOptions();
+var pairingStoreOptions =
+    builder.Configuration.GetSection(LocalServerPairingStoreOptions.SectionName).Get<LocalServerPairingStoreOptions>()
+    ?? new LocalServerPairingStoreOptions();
+var deviceCredentialOptions =
+    builder.Configuration.GetSection(LocalServerDeviceCredentialOptions.SectionName).Get<LocalServerDeviceCredentialOptions>()
+    ?? new LocalServerDeviceCredentialOptions();
 
 builder.Services.AddSingleton(controlCloudOptions);
 builder.Services.AddSingleton(entitlementTrustOptions);
 builder.Services.AddSingleton(bootstrapTrustOptions);
+builder.Services.AddSingleton(commandOptions);
 builder.Services.AddSingleton(automationOptions);
+builder.Services.AddSingleton(runtimeAccessOptions);
+builder.Services.AddSingleton(pairingOptions);
+builder.Services.AddSingleton(managerSessionOptions);
+builder.Services.AddSingleton(pairingAbuseControlOptions);
+builder.Services.AddSingleton(pairingStoreOptions);
+builder.Services.AddSingleton(deviceCredentialOptions);
+builder.Services.AddSingleton<LocalServerManagerSessionService>();
+builder.Services.AddSingleton<LocalServerPairingAbuseControlService>();
 builder.Services.AddSingleton<ILocalServerClock, SystemLocalServerClock>();
 builder.Services.AddSingleton<LocalServerEntitlementPolicy>();
 builder.Services.AddSingleton<ILocalServerEntitlementCache, FileLocalServerEntitlementCache>();
@@ -52,6 +79,12 @@ builder.Services.AddSingleton<ILocalServerEntitlementTrustStateStore, FileLocalS
 builder.Services.AddSingleton<ILocalServerEntitlementImportAuditStore, FileLocalServerEntitlementImportAuditStore>();
 builder.Services.AddSingleton<ILocalServerEntitlementBundleVerifier, HmacLocalServerEntitlementBundleVerifier>();
 builder.Services.AddSingleton<ILocalServerInstallationCommandVerifier, HmacLocalServerInstallationCommandVerifier>();
+builder.Services.AddSingleton<ILocalServerAppActivationRevocationStore, FileLocalServerAppActivationRevocationStore>();
+builder.Services.AddSingleton<ILocalServerDevicePairingStore, FileLocalServerDevicePairingStore>();
+builder.Services.AddSingleton<ILocalServerPairingSecurityEventStore, FileLocalServerPairingSecurityEventStore>();
+builder.Services.AddSingleton<ILocalServerFirstManagerSetupTokenVerifier, HmacLocalServerFirstManagerSetupTokenVerifier>();
+builder.Services.AddSingleton<ILocalServerDeviceCredentialService, HmacLocalServerDeviceCredentialService>();
+builder.Services.AddSingleton<ILocalServerHeartbeatPairingStatusProvider, LocalServerHeartbeatPairingStatusProvider>();
 builder.Services.AddSingleton<ILocalServerBootstrapBundleVerifier, HmacLocalServerBootstrapBundleVerifier>();
 builder.Services.AddSingleton<ILocalServerBootstrapConfigurationStore, FileLocalServerBootstrapConfigurationStore>();
 builder.Services.AddSingleton<ILocalServerRuntimeCommandRunner, SystemLocalServerRuntimeCommandRunner>();
@@ -71,6 +104,7 @@ builder.Services.AddScoped<PullEntitlementFromControlCloudHandler>();
 builder.Services.AddScoped<PullEntitlementFromBootstrapConfigurationHandler>();
 builder.Services.AddScoped<EvaluateFeatureAccessHandler>();
 builder.Services.AddScoped<EvaluateModuleAccessGatewayHandler>();
+builder.Services.AddScoped<GetAppActivationRevocationStatusHandler>();
 builder.Services.AddScoped<CreateLocalServerDiagnosticsBundleHandler>();
 builder.Services.AddScoped<UploadDiagnosticsToControlCloudHandler>();
 builder.Services.AddScoped<ProcessInstallationCommandsHandler>();
@@ -89,6 +123,7 @@ app.MapGet("/health", () => Results.Ok(new
     status = "Healthy"
 }));
 
+app.UseLocalServerPairingAbuseControls();
 app.MapLocalServerRuntimeEndpoints();
 
 app.Run();

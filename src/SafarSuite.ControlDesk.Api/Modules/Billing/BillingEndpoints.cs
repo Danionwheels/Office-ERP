@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
@@ -19,7 +20,8 @@ public static class BillingEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/billing")
-            .WithTags("Billing");
+            .WithTags("Billing")
+            .RequireAuthorization(ControlDeskPolicies.BillingManage);
 
         group.MapPost("/charge-codes", CreateChargeCodeAsync);
         group.MapGet("/charge-codes", ListChargeCodesAsync);
@@ -274,11 +276,7 @@ public static class BillingEndpoints
             result.Value.TotalDebit,
             result.Value.TotalCredit,
             result.Value.CurrencyCode,
-            result.Value.JournalLines.Select(line => new IssueInvoiceJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Ok(response);
     }
@@ -312,11 +310,7 @@ public static class BillingEndpoints
             result.Value.TotalDebit,
             result.Value.TotalCredit,
             result.Value.CurrencyCode,
-            result.Value.JournalLines.Select(line => new VoidInvoiceJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Ok(response);
     }
@@ -353,11 +347,7 @@ public static class BillingEndpoints
             result.Value.JournalEntryStatus,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
-            result.Value.JournalLines.Select(line => new IssueCreditNoteJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Created($"/api/v1/billing/credit-notes/{response.CreditNoteId}", response);
     }
@@ -414,11 +404,7 @@ public static class BillingEndpoints
             result.TotalDebit,
             result.TotalCredit,
             result.CurrencyCode,
-            result.JournalLines.Select(line => new IssueInvoiceJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.JournalLines.Select(line => ToResponse(line)).ToArray());
     }
 
     private static VoidInvoiceResponse ToResponse(VoidInvoiceResult result)
@@ -434,11 +420,7 @@ public static class BillingEndpoints
             result.TotalDebit,
             result.TotalCredit,
             result.CurrencyCode,
-            result.JournalLines.Select(line => new VoidInvoiceJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.JournalLines.Select(line => ToResponse(line)).ToArray());
     }
 
     private static IssueCreditNoteResponse ToResponse(IssueCreditNoteResult result)
@@ -456,10 +438,54 @@ public static class BillingEndpoints
             result.JournalEntryStatus,
             result.TotalDebit,
             result.TotalCredit,
-            result.JournalLines.Select(line => new IssueCreditNoteJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.JournalLines.Select(line => ToResponse(line)).ToArray());
+    }
+
+    private static IssueInvoiceJournalLineResponse ToResponse(IssueInvoiceJournalLineResult line)
+    {
+        return new IssueInvoiceJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
+    }
+
+    private static VoidInvoiceJournalLineResponse ToResponse(VoidInvoiceJournalLineResult line)
+    {
+        return new VoidInvoiceJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
+    }
+
+    private static IssueCreditNoteJournalLineResponse ToResponse(IssueCreditNoteJournalLineResult line)
+    {
+        return new IssueCreditNoteJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
     }
 }

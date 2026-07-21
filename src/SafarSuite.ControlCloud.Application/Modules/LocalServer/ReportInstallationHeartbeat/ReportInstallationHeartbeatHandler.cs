@@ -2,6 +2,7 @@ using SafarSuite.ControlCloud.Application.Common;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Domain.Modules.LocalServer;
+using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 
 namespace SafarSuite.ControlCloud.Application.Modules.LocalServer.ReportInstallationHeartbeat;
 
@@ -67,6 +68,14 @@ public sealed class ReportInstallationHeartbeatHandler
                 "License status is not recognized for heartbeat reporting.");
         }
 
+        if (command.EntitlementState is not null
+            && command.EntitlementState.EntitlementVersion != command.EntitlementVersion)
+        {
+            return ReportInstallationHeartbeatResult.Failure(
+                "EntitlementStateInvalid",
+                "Observed entitlement values must describe the reported entitlement version.");
+        }
+
         return await _unitOfWork.ExecuteInTransactionAsync(
             async token =>
             {
@@ -106,7 +115,9 @@ public sealed class ReportInstallationHeartbeatHandler
                     command.GraceUntil,
                     command.OfflineValidUntil,
                     NormalizeOptionalText(command.LocalServerVersion, 80),
-                    NormalizeOptionalText(command.Detail, 1000));
+                    NormalizeOptionalText(command.Detail, 1000),
+                    ToPairingStatus(command.PairingStatus),
+                    ToEntitlementState(command.EntitlementState));
 
                 await _heartbeats.AddAsync(heartbeat, token);
 
@@ -143,5 +154,56 @@ public sealed class ReportInstallationHeartbeatHandler
         return normalized.Length <= maxLength
             ? normalized
             : normalized[..maxLength];
+    }
+
+    private static ControlCloudInstallationPairingStatus? ToPairingStatus(
+        LocalServerPairingStatusResponse? pairingStatus)
+    {
+        if (pairingStatus is null)
+        {
+            return null;
+        }
+
+        return new ControlCloudInstallationPairingStatus(
+            NormalizeOptionalText(pairingStatus.PairingMode, 40)
+                ?? LocalServerPairingModes.ManagerApproval,
+            Math.Max(0, pairingStatus.TotalDeviceCount),
+            Math.Max(0, pairingStatus.PendingDeviceCount),
+            Math.Max(0, pairingStatus.ApprovedDeviceCount),
+            Math.Max(0, pairingStatus.SuspendedDeviceCount),
+            Math.Max(0, pairingStatus.RevokedDeviceCount),
+            pairingStatus.FirstManagerDeviceApproved,
+            pairingStatus.FirstManagerDeviceApprovedAtUtc,
+            pairingStatus.LastDeviceUpdatedAtUtc);
+    }
+
+    private static ControlCloudObservedEntitlementState? ToEntitlementState(
+        ControlCloudEntitlementStateValuesResponse? state)
+    {
+        if (state is null)
+        {
+            return null;
+        }
+
+        return new ControlCloudObservedEntitlementState(
+            state.EntitlementVersion,
+            state.EffectiveFromUtc.ToUniversalTime(),
+            NormalizeOptionalText(state.Status, 32) ?? "Unknown",
+            state.PaidUntil,
+            state.WarningStartsAt,
+            state.GraceUntil,
+            state.OfflineValidUntil,
+            state.AllowedDevices,
+            state.AllowedBranches,
+            state.AllowedNamedUsers,
+            state.AllowedConcurrentUsers,
+            state.Modules.Select(module => new ControlCloudObservedEntitlementModule(
+                NormalizeOptionalText(module.ModuleCode, 64) ?? "UNKNOWN",
+                module.IsEnabled)).ToArray(),
+            state.FeatureLimits.Select(limit => new ControlCloudObservedEntitlementFeatureLimit(
+                NormalizeOptionalText(limit.ModuleCode, 64) ?? "UNKNOWN",
+                NormalizeOptionalText(limit.FeatureCode, 64) ?? "UNKNOWN",
+                Math.Max(0, limit.LimitValue),
+                NormalizeOptionalText(limit.Unit, 32) ?? "COUNT")).ToArray());
     }
 }

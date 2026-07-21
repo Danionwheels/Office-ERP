@@ -6,6 +6,36 @@ export type ClientLookup = {
   status: string;
 };
 
+export type ClientDirectorySort = "code" | "displayName" | "legalName" | "status";
+
+export type ClientDirectorySortDirection = "asc" | "desc";
+
+export type ClientDirectorySummary = {
+  totalCount: number;
+  draftCount: number;
+  activeCount: number;
+  suspendedCount: number;
+  archivedCount: number;
+};
+
+export type ClientDirectoryPage = {
+  clients: ClientLookup[];
+  pageSize: number;
+  hasMore: boolean;
+  nextCursor?: string | null;
+  filteredCount: number;
+  summary: ClientDirectorySummary;
+};
+
+export type ClientDirectoryQuery = {
+  search?: string;
+  status?: string;
+  sort?: ClientDirectorySort;
+  direction?: ClientDirectorySortDirection;
+  take?: number;
+  cursor?: string;
+};
+
 export type ClientSupportNote = {
   text: string;
   createdBy: string;

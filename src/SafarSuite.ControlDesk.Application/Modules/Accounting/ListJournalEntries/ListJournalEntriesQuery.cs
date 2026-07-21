@@ -3,4 +3,7 @@ namespace SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntri
 public sealed record ListJournalEntriesQuery(
     DateOnly? FromDate = null,
     DateOnly? ToDate = null,
-    string? SourceType = null);
+    string? SourceType = null,
+    string? Search = null,
+    int Take = 50,
+    string? Cursor = null);

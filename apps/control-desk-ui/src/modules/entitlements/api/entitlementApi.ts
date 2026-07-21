@@ -4,6 +4,8 @@ import type {
   IssuedEntitlementSnapshot
 } from "../types/entitlementTypes";
 
+const defaultApprovalReason = "Paid invoice and active contract verified in Control Desk.";
+
 export async function getLatestEntitlementSnapshot(
   clientId: string
 ): Promise<EntitlementSnapshot> {
@@ -13,14 +15,18 @@ export async function getLatestEntitlementSnapshot(
 }
 
 export async function issueEntitlementFromPaidInvoiceDefaults(
-  invoiceId: string
+  invoiceId: string,
+  approvalReason = defaultApprovalReason,
+  effectiveFromUtc: string | null = null
 ): Promise<IssuedEntitlementSnapshot> {
   return apiRequest<IssuedEntitlementSnapshot>(
     "/api/v1/entitlements/snapshots/from-paid-invoice/defaults",
     {
       method: "POST",
       body: JSON.stringify({
-        invoiceId
+        invoiceId,
+        approvalReason,
+        effectiveFromUtc
       })
     }
   );

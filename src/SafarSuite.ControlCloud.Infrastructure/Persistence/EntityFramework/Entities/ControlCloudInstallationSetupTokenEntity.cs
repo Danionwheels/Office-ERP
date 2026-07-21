@@ -35,4 +35,16 @@ public sealed class ControlCloudInstallationSetupTokenEntity
     public DateTimeOffset? ConsumedAtUtc { get; set; }
 
     public string? ConsumedLocalServerVersion { get; set; }
+
+    public Guid? BootstrapPackageId { get; set; }
+
+    public DateTimeOffset? BootstrapPackageGeneratedAtUtc { get; set; }
+
+    public string? PackageLocalServerVersion { get; set; }
+
+    public string? PackageSafarSuiteAppVersion { get; set; }
+
+    public string? PackageBundleFileName { get; set; }
+
+    public string? PackageBundleSha256 { get; set; }
 }

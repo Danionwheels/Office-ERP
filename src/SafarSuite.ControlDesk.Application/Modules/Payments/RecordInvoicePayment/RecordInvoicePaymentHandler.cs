@@ -19,6 +19,7 @@ public sealed class RecordInvoicePaymentHandler
     private readonly IInvoiceRepository _invoices;
     private readonly IPaymentRepository _payments;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly PaymentPostingService _postingService;
@@ -32,6 +33,7 @@ public sealed class RecordInvoicePaymentHandler
         IInvoiceRepository invoices,
         IPaymentRepository payments,
         IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts,
         ICloudOutboxMessageRepository cloudOutboxMessages,
         AccountingPeriodPostingGuard periodGuard,
         PaymentPostingService postingService,
@@ -44,6 +46,7 @@ public sealed class RecordInvoicePaymentHandler
         _invoices = invoices;
         _payments = payments;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
         _cloudOutboxMessages = cloudOutboxMessages;
         _periodGuard = periodGuard;
         _postingService = postingService;
@@ -194,7 +197,7 @@ public sealed class RecordInvoicePaymentHandler
                             token);
                     }
 
-                    return ToResult(payment, invoice, journalEntry);
+                    return await ToResultAsync(payment, invoice, journalEntry, token);
                 },
                 cancellationToken);
 
@@ -214,30 +217,20 @@ public sealed class RecordInvoicePaymentHandler
         }
     }
 
-    private static RecordInvoicePaymentResult ToResult(
+    private async Task<RecordInvoicePaymentResult> ToResultAsync(
         Payment payment,
         Invoice invoice,
-        JournalEntry journalEntry)
+        JournalEntry journalEntry,
+        CancellationToken cancellationToken)
     {
-        return new RecordInvoicePaymentResult(
-            payment.Id.Value,
-            invoice.Id.Value,
-            invoice.Number.Value,
-            invoice.Status.ToString(),
-            payment.Status.ToString(),
-            payment.Amount.Amount,
-            invoice.BalanceDue.Amount,
-            payment.Amount.CurrencyCode,
-            journalEntry.Id.Value,
-            journalEntry.Status.ToString(),
-            journalEntry.EntryDate,
-            journalEntry.TotalDebit.Amount,
-            journalEntry.TotalCredit.Amount,
-            journalEntry.Lines.Select(line => new RecordInvoicePaymentJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
+
+        return PaymentDocumentResultFactory.ToRecordInvoicePaymentResult(
+            payment,
+            invoice,
+            journalEntry,
+            ledgerAccountsById);
     }
 
     private static RecordInvoicePaymentResult ToPendingReviewResult(Payment payment, Invoice invoice)

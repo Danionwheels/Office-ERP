@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.GetLatestEntitlementSnapshot;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoiceDefaults;
@@ -12,7 +13,8 @@ public static class EntitlementEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/entitlements")
-            .WithTags("Entitlements");
+            .WithTags("Entitlements")
+            .RequireAuthorization(ControlDeskPolicies.EntitlementsManage);
 
         group.MapPost("/snapshots/from-paid-invoice", IssueFromPaidInvoiceAsync);
         group.MapPost("/snapshots/from-paid-invoice/defaults", IssueFromPaidInvoiceDefaultsAsync);
@@ -24,6 +26,7 @@ public static class EntitlementEndpoints
     private static async Task<IResult> IssueFromPaidInvoiceAsync(
         IssueEntitlementSnapshotFromPaidInvoiceRequest request,
         IssueEntitlementSnapshotFromPaidInvoiceHandler handler,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var command = new IssueEntitlementSnapshotFromPaidInvoiceCommand(
@@ -33,9 +36,19 @@ public static class EntitlementEndpoints
             request.OfflineValidUntil,
             request.AllowedDevices,
             request.AllowedBranches,
+            ResolveActor(httpContext),
+            request.ApprovalReason,
             request.Modules.Select(module => new IssueEntitlementSnapshotModuleCommand(
                 module.ModuleCode,
-                module.IsEnabled)).ToArray());
+                module.IsEnabled)).ToArray(),
+            request.AllowedNamedUsers,
+            request.AllowedConcurrentUsers,
+            (request.FeatureLimits ?? []).Select(limit => new IssueEntitlementSnapshotFeatureLimitCommand(
+                limit.ModuleCode,
+                limit.FeatureCode,
+                limit.LimitValue,
+                limit.Unit)).ToArray(),
+            request.EffectiveFromUtc);
 
         var result = await handler.HandleAsync(command, cancellationToken);
 
@@ -48,6 +61,11 @@ public static class EntitlementEndpoints
             result.Value.EntitlementSnapshotId,
             result.Value.ClientId,
             result.Value.ContractId,
+            result.Value.ContractRevisionNumber,
+            result.Value.ProductCatalogRevisionId,
+            result.Value.ProductCatalogRevisionNumber,
+            result.Value.ClientAccessRevisionId,
+            result.Value.EntitlementVersion,
             result.Value.InvoiceId,
             result.Value.InvoiceNumber,
             result.Value.Status,
@@ -57,9 +75,21 @@ public static class EntitlementEndpoints
             result.Value.AllowedDevices,
             result.Value.AllowedBranches,
             result.Value.IssuedAtUtc,
+            result.Value.EffectiveFromUtc,
+            result.Value.SupersedesClientAccessRevisionId,
+            result.Value.ApprovedBy,
+            result.Value.ApprovalReason,
+            result.Value.ApprovedAtUtc,
             result.Value.Modules.Select(module => new EntitlementModuleResponse(
                 module.ModuleCode,
-                module.IsEnabled)).ToArray());
+                module.IsEnabled)).ToArray(),
+            result.Value.AllowedNamedUsers,
+            result.Value.AllowedConcurrentUsers,
+            (result.Value.FeatureLimits ?? []).Select(limit => new EntitlementFeatureLimitResponse(
+                limit.ModuleCode,
+                limit.FeatureCode,
+                limit.LimitValue,
+                limit.Unit)).ToArray());
 
         return Results.Created($"/api/v1/entitlements/snapshots/{response.EntitlementSnapshotId}", response);
     }
@@ -67,10 +97,15 @@ public static class EntitlementEndpoints
     private static async Task<IResult> IssueFromPaidInvoiceDefaultsAsync(
         IssueEntitlementSnapshotFromPaidInvoiceDefaultsRequest request,
         IssueEntitlementSnapshotFromPaidInvoiceDefaultsHandler handler,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new IssueEntitlementSnapshotFromPaidInvoiceDefaultsCommand(request.InvoiceId),
+            new IssueEntitlementSnapshotFromPaidInvoiceDefaultsCommand(
+                request.InvoiceId,
+                ResolveActor(httpContext),
+                request.ApprovalReason,
+                request.EffectiveFromUtc),
             cancellationToken);
 
         if (result.IsFailure)
@@ -82,6 +117,11 @@ public static class EntitlementEndpoints
             result.Value.EntitlementSnapshotId,
             result.Value.ClientId,
             result.Value.ContractId,
+            result.Value.ContractRevisionNumber,
+            result.Value.ProductCatalogRevisionId,
+            result.Value.ProductCatalogRevisionNumber,
+            result.Value.ClientAccessRevisionId,
+            result.Value.EntitlementVersion,
             result.Value.InvoiceId,
             result.Value.InvoiceNumber,
             result.Value.Status,
@@ -91,9 +131,21 @@ public static class EntitlementEndpoints
             result.Value.AllowedDevices,
             result.Value.AllowedBranches,
             result.Value.IssuedAtUtc,
+            result.Value.EffectiveFromUtc,
+            result.Value.SupersedesClientAccessRevisionId,
+            result.Value.ApprovedBy,
+            result.Value.ApprovalReason,
+            result.Value.ApprovedAtUtc,
             result.Value.Modules.Select(module => new EntitlementModuleResponse(
                 module.ModuleCode,
-                module.IsEnabled)).ToArray());
+                module.IsEnabled)).ToArray(),
+            result.Value.AllowedNamedUsers,
+            result.Value.AllowedConcurrentUsers,
+            (result.Value.FeatureLimits ?? []).Select(limit => new EntitlementFeatureLimitResponse(
+                limit.ModuleCode,
+                limit.FeatureCode,
+                limit.LimitValue,
+                limit.Unit)).ToArray());
 
         return Results.Created($"/api/v1/entitlements/snapshots/{response.EntitlementSnapshotId}", response);
     }
@@ -116,6 +168,11 @@ public static class EntitlementEndpoints
             result.Value.EntitlementSnapshotId,
             result.Value.ClientId,
             result.Value.ContractId,
+            result.Value.ContractRevisionNumber,
+            result.Value.ProductCatalogRevisionId,
+            result.Value.ProductCatalogRevisionNumber,
+            result.Value.ClientAccessRevisionId,
+            result.Value.EntitlementVersion,
             result.Value.Status,
             result.Value.PaidUntil,
             result.Value.GraceUntil,
@@ -123,10 +180,26 @@ public static class EntitlementEndpoints
             result.Value.AllowedDevices,
             result.Value.AllowedBranches,
             result.Value.IssuedAtUtc,
+            result.Value.EffectiveFromUtc,
+            result.Value.SupersedesClientAccessRevisionId,
+            result.Value.ApprovedBy,
+            result.Value.ApprovalReason,
+            result.Value.ApprovedAtUtc,
             result.Value.Modules.Select(module => new EntitlementModuleResponse(
                 module.ModuleCode,
-                module.IsEnabled)).ToArray());
+                module.IsEnabled)).ToArray(),
+            result.Value.AllowedNamedUsers,
+            result.Value.AllowedConcurrentUsers,
+            (result.Value.FeatureLimits ?? []).Select(limit => new EntitlementFeatureLimitResponse(
+                limit.ModuleCode,
+                limit.FeatureCode,
+                limit.LimitValue,
+                limit.Unit)).ToArray());
 
         return Results.Ok(response);
     }
+
+    private static string ResolveActor(HttpContext httpContext) =>
+        httpContext.User.Identity?.Name
+        ?? throw new InvalidOperationException("An authenticated Control Desk operator is required.");
 }

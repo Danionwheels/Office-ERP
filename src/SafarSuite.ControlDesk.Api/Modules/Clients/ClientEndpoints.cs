@@ -1,4 +1,5 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Clients;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ActivateClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.AddClientContact;
@@ -6,9 +7,9 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.AddClientSupportNote;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientAccountingProfile;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientDeployment;
 using SafarSuite.ControlDesk.Application.Modules.Clients.CreateClient;
+using SafarSuite.ControlDesk.Application.Modules.Clients.Financials;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientAccountingProfile;
-using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
 using SafarSuite.ControlDesk.Application.Modules.Clients.InviteClientPortalContact;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientContacts;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientDeployments;
@@ -29,7 +30,8 @@ public static class ClientEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/clients")
-            .WithTags("Clients");
+            .WithTags("Clients")
+            .RequireAuthorization(ControlDeskPolicies.ClientsManage);
 
         group.MapPost("/", CreateAsync);
         group.MapGet("/", ListAsync);
@@ -55,7 +57,11 @@ public static class ClientEndpoints
         group.MapGet("/{clientId:guid}/accounting-profile", GetAccountingProfileAsync);
         group.MapGet("/{clientId:guid}/deployments", ListDeploymentsAsync);
         group.MapPut("/{clientId:guid}/deployments/{installationId}", ConfigureDeploymentAsync);
-        group.MapGet("/{clientId:guid}/statement", GetStatementAsync);
+        group.MapGet("/{clientId:guid}/financial-summary", GetFinancialSummaryAsync);
+        group.MapGet("/{clientId:guid}/invoices", ListInvoicesAsync);
+        group.MapGet("/{clientId:guid}/payments", ListPaymentsAsync);
+        group.MapGet("/{clientId:guid}/financial-activity", ListFinancialActivityAsync);
+        group.MapGet("/{clientId:guid}/journal-postings", ListJournalPostingsAsync);
 
         return endpoints;
     }
@@ -88,10 +94,18 @@ public static class ClientEndpoints
     }
 
     private static async Task<IResult> ListAsync(
+        string? search,
+        string? status,
+        string? sort,
+        string? direction,
+        int? take,
+        string? cursor,
         ListClientsHandler handler,
         CancellationToken cancellationToken)
     {
-        var result = await handler.HandleAsync(cancellationToken);
+        var result = await handler.HandleAsync(
+            new ListClientsQuery(search, status, sort, direction, take ?? 50, cursor),
+            cancellationToken);
 
         if (result.IsFailure)
         {
@@ -104,7 +118,17 @@ public static class ClientEndpoints
                 client.Code,
                 client.LegalName,
                 client.DisplayName,
-                client.Status)).ToArray());
+                client.Status)).ToArray(),
+            result.Value.PageSize,
+            result.Value.HasMore,
+            result.Value.NextCursor,
+            result.Value.FilteredCount,
+            new ClientDirectorySummaryResponse(
+                result.Value.Summary.TotalCount,
+                result.Value.Summary.DraftCount,
+                result.Value.Summary.ActiveCount,
+                result.Value.Summary.SuspendedCount,
+                result.Value.Summary.ArchivedCount));
 
         return Results.Ok(response);
     }
@@ -445,15 +469,15 @@ public static class ClientEndpoints
             : Results.Ok(ToClientDeploymentResponse(result.Value));
     }
 
-    private static async Task<IResult> GetStatementAsync(
+    private static async Task<IResult> GetFinancialSummaryAsync(
         Guid clientId,
         DateOnly? fromDate,
         DateOnly? toDate,
-        GetClientStatementHandler handler,
+        GetClientFinancialSummaryHandler handler,
         CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(
-            new GetClientStatementQuery(clientId, fromDate, toDate),
+            new GetClientFinancialSummaryQuery(clientId, fromDate, toDate),
             cancellationToken);
 
         if (result.IsFailure)
@@ -461,19 +485,49 @@ public static class ClientEndpoints
             return ApiResultMapper.ToErrorResult(result.Errors);
         }
 
-        return Results.Ok(new ClientStatementResponse(
+        return Results.Ok(new ClientFinancialSummaryResponse(
             result.Value.ClientId,
             result.Value.FromDate,
             result.Value.ToDate,
-            result.Value.CurrencySummaries.Select(summary => new ClientStatementCurrencySummaryResponse(
+            result.Value.CurrencySummaries.Select(summary => new ClientFinancialCurrencySummaryResponse(
                 summary.CurrencyCode,
                 summary.TotalInvoiced,
                 summary.TotalPaid,
                 summary.AvailableCredit,
                 summary.BalanceDue,
                 summary.InvoiceCount,
-                summary.OpenInvoiceCount)).ToArray(),
-            result.Value.Invoices.Select(invoice => new ClientStatementInvoiceResponse(
+                summary.OpenInvoiceCount)).ToArray()));
+    }
+
+    private static async Task<IResult> ListInvoicesAsync(
+        Guid clientId,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? search,
+        string? state,
+        int? take,
+        string? cursor,
+        ListClientInvoicesHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListClientInvoicesQuery(
+                clientId,
+                fromDate,
+                toDate,
+                search,
+                state,
+                take ?? 25,
+                cursor),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ClientInvoiceRegisterPageResponse(
+            result.Value.Invoices.Select(invoice => new ClientInvoiceRegisterItemResponse(
                 invoice.InvoiceId,
                 invoice.ContractId,
                 invoice.InvoiceNumber,
@@ -485,7 +539,41 @@ public static class ClientEndpoints
                 invoice.BalanceDue,
                 invoice.CurrencyCode,
                 invoice.JournalEntryId)).ToArray(),
-            result.Value.Payments.Select(payment => new ClientStatementPaymentResponse(
+            result.Value.PageSize,
+            result.Value.HasMore,
+            result.Value.NextCursor,
+            result.Value.FilteredCount));
+    }
+
+    private static async Task<IResult> ListPaymentsAsync(
+        Guid clientId,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? search,
+        string? status,
+        int? take,
+        string? cursor,
+        ListClientPaymentsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListClientPaymentsQuery(
+                clientId,
+                fromDate,
+                toDate,
+                search,
+                status,
+                take ?? 25,
+                cursor),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ClientPaymentRegisterPageResponse(
+            result.Value.Payments.Select(payment => new ClientPaymentRegisterItemResponse(
                 payment.PaymentId,
                 payment.InvoiceId,
                 payment.Reference,
@@ -495,7 +583,39 @@ public static class ClientEndpoints
                 payment.CurrencyCode,
                 payment.ReceivedOn,
                 payment.JournalEntryId)).ToArray(),
-            result.Value.Lines.Select(line => new ClientStatementLineResponse(
+            result.Value.PageSize,
+            result.Value.HasMore,
+            result.Value.NextCursor,
+            result.Value.FilteredCount));
+    }
+
+    private static async Task<IResult> ListFinancialActivityAsync(
+        Guid clientId,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? search,
+        int? take,
+        string? cursor,
+        ListClientFinancialActivityHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListClientFinancialActivityQuery(
+                clientId,
+                fromDate,
+                toDate,
+                search,
+                take ?? 25,
+                cursor),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ClientFinancialActivityPageResponse(
+            result.Value.Lines.Select(line => new ClientFinancialActivityItemResponse(
                 line.EntryDate,
                 line.DocumentType,
                 line.Reference,
@@ -509,7 +629,41 @@ public static class ClientEndpoints
                 line.RunningBalance,
                 line.CurrencyCode,
                 line.JournalEntryId)).ToArray(),
-            result.Value.JournalPostings.Select(posting => new ClientStatementJournalPostingResponse(
+            result.Value.PageSize,
+            result.Value.HasMore,
+            result.Value.NextCursor,
+            result.Value.FilteredCount));
+    }
+
+    private static async Task<IResult> ListJournalPostingsAsync(
+        Guid clientId,
+        DateOnly? fromDate,
+        DateOnly? toDate,
+        string? search,
+        string? sourceType,
+        int? take,
+        string? cursor,
+        ListClientJournalPostingsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListClientJournalPostingsQuery(
+                clientId,
+                fromDate,
+                toDate,
+                search,
+                sourceType,
+                take ?? 20,
+                cursor),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ClientJournalPostingPageResponse(
+            result.Value.JournalPostings.Select(posting => new ClientJournalPostingItemResponse(
                 posting.JournalEntryId,
                 posting.EntryDate,
                 posting.SourceType,
@@ -519,11 +673,11 @@ public static class ClientEndpoints
                 posting.TotalDebit,
                 posting.TotalCredit,
                 posting.CurrencyCode,
-                posting.Lines.Select(line => new ClientStatementJournalLineResponse(
-                    line.LedgerAccountId,
-                    line.Debit,
-                    line.Credit,
-                    line.Description)).ToArray())).ToArray()));
+                posting.LineCount)).ToArray(),
+            result.Value.PageSize,
+            result.Value.HasMore,
+            result.Value.NextCursor,
+            result.Value.FilteredCount));
     }
 
     private static ClientDetailsResponse ToClientDetailsResponse(ClientDetailsResult client)

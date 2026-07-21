@@ -1,9 +1,12 @@
 using SafarSuite.ControlDesk.Domain.SharedKernel;
+using SafarSuite.ControlDesk.Domain.Modules.Clients;
 
 namespace SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 
 public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
 {
+    public const int MaximumFailureReasonLength = 2_000;
+
     private CloudOutboxMessage()
     {
         MessageType = string.Empty;
@@ -14,6 +17,7 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
 
     private CloudOutboxMessage(
         CloudOutboxMessageId id,
+        ClientId? clientId,
         string messageType,
         string subjectType,
         string subjectId,
@@ -21,6 +25,7 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
         DateTimeOffset occurredAtUtc)
         : base(id)
     {
+        ClientId = clientId;
         MessageType = messageType;
         SubjectType = subjectType;
         SubjectId = subjectId;
@@ -28,6 +33,8 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
         OccurredAtUtc = occurredAtUtc;
         Status = CloudOutboxMessageStatus.Pending;
     }
+
+    public ClientId? ClientId { get; private set; }
 
     public string MessageType { get; private set; }
 
@@ -55,6 +62,7 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
 
     public static CloudOutboxMessage Create(
         CloudOutboxMessageId id,
+        ClientId clientId,
         string messageType,
         string subjectType,
         string subjectId,
@@ -63,6 +71,25 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
     {
         return new CloudOutboxMessage(
             id,
+            clientId,
+            CleanRequiredText(messageType, nameof(messageType)),
+            CleanRequiredText(subjectType, nameof(subjectType)),
+            CleanRequiredText(subjectId, nameof(subjectId)),
+            CleanRequiredText(payloadJson, nameof(payloadJson)),
+            occurredAtUtc);
+    }
+
+    public static CloudOutboxMessage CreateSystem(
+        CloudOutboxMessageId id,
+        string messageType,
+        string subjectType,
+        string subjectId,
+        string payloadJson,
+        DateTimeOffset occurredAtUtc)
+    {
+        return new CloudOutboxMessage(
+            id,
+            clientId: null,
             CleanRequiredText(messageType, nameof(messageType)),
             CleanRequiredText(subjectType, nameof(subjectType)),
             CleanRequiredText(subjectId, nameof(subjectId)),
@@ -98,23 +125,29 @@ public sealed class CloudOutboxMessage : Entity<CloudOutboxMessageId>
         Status = CloudOutboxMessageStatus.Failed;
         FailedAtUtc = failedAtUtc;
         NextAttemptAtUtc = nextAttemptAtUtc;
-        FailureReason = reason.Trim();
+        var cleanReason = reason.Trim();
+        FailureReason = cleanReason.Length <= MaximumFailureReasonLength
+            ? cleanReason
+            : cleanReason[..MaximumFailureReasonLength];
     }
 
     public bool IsReadyForPublishing(DateTimeOffset readyAtUtc, int maximumAttemptCount)
     {
-        if (maximumAttemptCount < 1)
+        if (maximumAttemptCount < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(maximumAttemptCount));
         }
 
+        var hasAttemptsRemaining = maximumAttemptCount == 0
+            || AttemptCount < maximumAttemptCount;
+
         if (Status == CloudOutboxMessageStatus.Pending)
         {
-            return AttemptCount < maximumAttemptCount;
+            return hasAttemptsRemaining;
         }
 
         return Status == CloudOutboxMessageStatus.Failed
-            && AttemptCount < maximumAttemptCount
+            && hasAttemptsRemaining
             && NextAttemptAtUtc.HasValue
             && NextAttemptAtUtc.Value <= readyAtUtc;
     }

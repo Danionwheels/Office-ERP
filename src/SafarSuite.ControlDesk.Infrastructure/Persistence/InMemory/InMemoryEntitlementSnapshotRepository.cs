@@ -22,7 +22,8 @@ public sealed class InMemoryEntitlementSnapshotRepository : IEntitlementSnapshot
     {
         var snapshot = _snapshotsById.Values
             .Where(snapshot => snapshot.ClientId == clientId)
-            .OrderByDescending(snapshot => snapshot.IssuedAtUtc)
+            .OrderByDescending(snapshot => snapshot.EntitlementVersion)
+            .ThenByDescending(snapshot => snapshot.IssuedAtUtc)
             .ThenByDescending(snapshot => snapshot.Id.Value)
             .FirstOrDefault();
 

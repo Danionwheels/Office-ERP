@@ -53,6 +53,28 @@ public sealed class ControlCloudInstallationHeartbeatEntityConfiguration
         builder.Property(heartbeat => heartbeat.Detail)
             .HasColumnName("detail")
             .HasMaxLength(1000);
+        builder.Property(heartbeat => heartbeat.PairingMode)
+            .HasColumnName("pairing_mode")
+            .HasMaxLength(40);
+        builder.Property(heartbeat => heartbeat.PairingTotalDeviceCount)
+            .HasColumnName("pairing_total_device_count");
+        builder.Property(heartbeat => heartbeat.PairingPendingDeviceCount)
+            .HasColumnName("pairing_pending_device_count");
+        builder.Property(heartbeat => heartbeat.PairingApprovedDeviceCount)
+            .HasColumnName("pairing_approved_device_count");
+        builder.Property(heartbeat => heartbeat.PairingSuspendedDeviceCount)
+            .HasColumnName("pairing_suspended_device_count");
+        builder.Property(heartbeat => heartbeat.PairingRevokedDeviceCount)
+            .HasColumnName("pairing_revoked_device_count");
+        builder.Property(heartbeat => heartbeat.PairingFirstManagerDeviceApproved)
+            .HasColumnName("pairing_first_manager_device_approved");
+        builder.Property(heartbeat => heartbeat.PairingFirstManagerDeviceApprovedAtUtc)
+            .HasColumnName("pairing_first_manager_device_approved_at_utc");
+        builder.Property(heartbeat => heartbeat.PairingLastDeviceUpdatedAtUtc)
+            .HasColumnName("pairing_last_device_updated_at_utc");
+        builder.Property(heartbeat => heartbeat.ObservedEntitlementStateJson)
+            .HasColumnName("observed_entitlement_state_json")
+            .HasColumnType("jsonb");
 
         builder.HasIndex(heartbeat => heartbeat.ClientId)
             .HasDatabaseName("ix_installation_heartbeats_client_id");

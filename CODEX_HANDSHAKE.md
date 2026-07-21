@@ -1,5 +1,13 @@
 # Codex Handshake: SafarSuite Control Desk Phase
 
+## Direction Reset - 2026-07-11
+
+Read `docs/architecture/final-system-requirements-and-deployment-contract.md` before all older architecture and planning notes. The product charter remains canonical for business ownership, and active priorities live in `docs/planning/active-roadmap-2026-07-11.md`.
+
+SafarSuite Control Desk V1 runs completely on one dedicated office PC: desktop UI, local Office Control API process, and authoritative local PostgreSQL. No separate office server or Linux Control Desk host is required. Durability comes from automated backup and proven replacement-PC restore. Legacy Survey/FAS material is research evidence only; legacy parity is not a product goal.
+
+Current control-model checkpoint: every new entitlement is derived from an immutable approved `ClientAccessRevision`; its Office-owned version and revision ID propagate through Control Cloud signing/status into the SafarSuite Server cache. See the active roadmap for the remaining model breadth and production gaps.
+
 Use this file to start a separate Codex project/thread for the SafarSuite Control Desk phase.
 
 ## Opening Prompt For New Codex Thread
@@ -50,7 +58,7 @@ It will manage:
 - expenses and assets
 - support/admin notes
 
-The office app should become the source of truth for commercial decisions. The cloud/portal should mirror approved client-facing data and issue signed entitlements.
+The Office Control System should be the source of truth for commercial decisions. The desktop app operates that system; the local Office Control API and PostgreSQL on the dedicated office PC preserve its durable truth. The cloud/portal should mirror approved client-facing data and issue signed entitlements.
 
 ## Final Product Direction
 
@@ -71,8 +79,8 @@ Recommended stack:
 ```text
 .NET 10 backend/application layer
 React + TypeScript frontend
-Tauri desktop wrapper for production
-PostgreSQL local database
+Tauri desktop wrapper after the installed local-service lifecycle is proven
+PostgreSQL on the same dedicated office PC behind the local Office Control API
 SafarSuite Control Cloud API integration
 ```
 
@@ -83,8 +91,8 @@ Do not treat this as a normal public web app. The browser is only a development 
 The clean model is:
 
 ```text
-SafarSuite Control Desk
-  internal desktop app
+SafarSuite Office Control System on one dedicated office PC
+  Control Desk desktop UI + local Office Control API + local PostgreSQL
   source of truth for clients, pricing, billing, renewals, device/module limits
 
 SafarSuite Control Cloud + SafarSuite Client Portal
@@ -278,7 +286,9 @@ This proves the new business value before pulling in every legacy Survey/FAS scr
 - SafarSuite Control Desk is office-use only.
 - Final app should be desktop.
 - Development UI can run in browser.
-- `docs/architecture/product-direction.md` is the canonical direction note for keeping Control Desk, Control Cloud, Client Portal, and SafarSuite responsibilities aligned.
+- The desktop is the primary operator surface; V1 office authority runs on the designated PC and is protected by automated backup plus replacement-PC restore.
+- Concurrent multi-PC office hosting is deferred until an explicit topology revision is approved.
+- `docs/architecture/product-charter-2026-07-11.md` is the canonical direction; `docs/architecture/product-direction.md` remains a detailed subsystem alignment note.
 - Cloud sync for client business data is optional.
 - Control Cloud for billing/licensing/portal is still needed.
 - Dynamic pricing is per client and owned by SafarSuite Control Desk.
@@ -298,6 +308,8 @@ This proves the new business value before pulling in every legacy Survey/FAS scr
 - Do not make client business-data cloud sync mandatory.
 - Do not hard-code one payment provider into core billing rules.
 - Do not rely on in-memory activation storage for production.
+- Do not move Control Desk authority to Linux or a separate office server; protect the designated office PC through backup, restore, update, and recovery controls.
+- Do not preserve legacy forms, navigation, or schema for parity alone.
 
 ## Useful Next Question
 

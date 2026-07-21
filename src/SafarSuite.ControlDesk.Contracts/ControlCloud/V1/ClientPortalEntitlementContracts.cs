@@ -14,7 +14,11 @@ public sealed record ClientPortalEntitlementBundlePayloadResponse(
     long EntitlementVersion,
     Guid BundleIssueId,
     Guid EntitlementSnapshotId,
+    Guid ClientAccessRevisionId,
     Guid ContractId,
+    long ContractRevisionNumber,
+    Guid ProductCatalogRevisionId,
+    long ProductCatalogRevisionNumber,
     Guid SourceInvoiceId,
     string SourceInvoiceNumber,
     string Status,
@@ -27,12 +31,22 @@ public sealed record ClientPortalEntitlementBundlePayloadResponse(
     DateOnly OfflineValidUntil,
     int AllowedDevices,
     int AllowedBranches,
-    IReadOnlyCollection<ClientPortalEntitlementBundleModuleResponse> Modules);
+    IReadOnlyCollection<ClientPortalEntitlementBundleModuleResponse> Modules,
+    int? AllowedNamedUsers = null,
+    int? AllowedConcurrentUsers = null,
+    IReadOnlyCollection<ClientPortalEntitlementBundleFeatureLimitResponse>? FeatureLimits = null,
+    DateTimeOffset? EffectiveFromUtc = null);
 
 public sealed record ClientPortalEntitlementBundleModuleResponse(
     string ModuleCode,
     string Status,
     bool IsEnabled);
+
+public sealed record ClientPortalEntitlementBundleFeatureLimitResponse(
+    string ModuleCode,
+    string FeatureCode,
+    long LimitValue,
+    string Unit);
 
 public sealed record ClientPortalEntitlementBundleSignatureResponse(
     string Algorithm,

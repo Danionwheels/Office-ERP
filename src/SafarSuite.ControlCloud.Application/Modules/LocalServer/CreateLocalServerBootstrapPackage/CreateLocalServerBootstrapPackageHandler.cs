@@ -22,19 +22,28 @@ public sealed class CreateLocalServerBootstrapPackageHandler
     };
 
     private readonly CreateInstallationSetupTokenHandler _setupTokenHandler;
+    private readonly IControlCloudInstallationSetupTokenRepository _setupTokens;
     private readonly IControlCloudBootstrapPackageSigner _bootstrapPackageSigner;
+    private readonly IControlCloudAppActivationTokenSigner _appActivationTokenSigner;
     private readonly IClientPortalAuditRecorder _audit;
+    private readonly IControlCloudUnitOfWork _unitOfWork;
     private readonly IControlCloudClock _clock;
 
     public CreateLocalServerBootstrapPackageHandler(
         CreateInstallationSetupTokenHandler setupTokenHandler,
+        IControlCloudInstallationSetupTokenRepository setupTokens,
         IControlCloudBootstrapPackageSigner bootstrapPackageSigner,
+        IControlCloudAppActivationTokenSigner appActivationTokenSigner,
         IClientPortalAuditRecorder audit,
+        IControlCloudUnitOfWork unitOfWork,
         IControlCloudClock clock)
     {
         _setupTokenHandler = setupTokenHandler;
+        _setupTokens = setupTokens;
         _bootstrapPackageSigner = bootstrapPackageSigner;
+        _appActivationTokenSigner = appActivationTokenSigner;
         _audit = audit;
+        _unitOfWork = unitOfWork;
         _clock = clock;
     }
 
@@ -60,6 +69,14 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             return CreateLocalServerBootstrapPackageResult.Failure(
                 "InstallScriptUrlInvalid",
                 "Install script URL must be an absolute HTTP or HTTPS URL.");
+        }
+
+        var secretReadiness = _bootstrapPackageSigner.GetSecretReadiness();
+        if (secretReadiness.Status.Equals("Blocked", StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateLocalServerBootstrapPackageResult.Failure(
+                "BootstrapSigningSecretNotReady",
+                secretReadiness.Detail);
         }
 
         var setupTokenResult = await _setupTokenHandler.HandleAsync(
@@ -89,7 +106,14 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         var safarSuiteAppVersion = NormalizeText(command.SafarSuiteAppVersion) ?? localServerVersion;
         var endpoints = BuildEndpoints(cloudBaseUrl, setupToken.ClientId, setupToken.InstallationId);
         var runtimePlan = BuildRuntimePlan(localServerVersion, safarSuiteAppVersion);
-        var artifacts = BuildArtifacts(cloudBaseUrl, runtimePlan);
+        var appActivationSigningKey = new ControlCloudBootstrapAppActivationSigningKey(
+            _appActivationTokenSigner.SigningKeyId,
+            _appActivationTokenSigner.PublicKeyPem);
+        var artifacts = BuildArtifacts(
+            cloudBaseUrl,
+            runtimePlan,
+            appActivationSigningKey,
+            secretReadiness);
         var deploymentProfile = ToResponse(setupToken.DeploymentProfile);
         var generatedAtUtc = _clock.UtcNow;
         var bootstrapPackageId = Guid.NewGuid();
@@ -101,7 +125,9 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             setupTokenResult.PlainSetupToken!,
             setupToken.DeploymentProfile,
             localServerVersion,
-            safarSuiteAppVersion);
+            safarSuiteAppVersion,
+            appActivationSigningKey,
+            secretReadiness);
         var payload = new ControlCloudBootstrapPackagePayload(
             ControlCloudLocalServerBootstrapPackageFormat.Version,
             bootstrapPackageId,
@@ -119,7 +145,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             installCommand,
             artifacts,
             runtimePlan,
-            endpoints);
+            endpoints,
+            appActivationSigningKey);
         var signedBundle = _bootstrapPackageSigner.Sign(payload);
         var signedBundleResponse = ToResponse(signedBundle);
         var package = new LocalServerBootstrapPackageResponse(
@@ -143,7 +170,19 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             ControlCloudLocalServerBootstrapPackageFormat.BundleContentType,
             ComputeSha256(JsonSerializer.Serialize(signedBundleResponse, BootstrapBundleJsonOptions)),
             signedBundleResponse,
-            ToResponse(runtimePlan));
+            ToResponse(runtimePlan),
+            ToResponse(appActivationSigningKey),
+            ToResponse(secretReadiness));
+
+        setupToken.AttachBootstrapPackage(
+            package.BootstrapPackageId,
+            package.GeneratedAtUtc,
+            package.LocalServerVersion,
+            runtimePlan.SafarSuiteAppVersion,
+            package.BundleFileName,
+            package.BundleSha256);
+        await _setupTokens.SaveAsync(setupToken, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await ControlCloudAuditWriter.TryRecordAsync(
             _audit,
@@ -185,7 +224,9 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         string setupToken,
         ControlCloudInstallationDeploymentProfile deploymentProfile,
         string localServerVersion,
-        string safarSuiteAppVersion)
+        string safarSuiteAppVersion,
+        ControlCloudBootstrapAppActivationSigningKey appActivationSigningKey,
+        ControlCloudBootstrapSecretReadiness secretReadiness)
     {
         return string.Join(
             " ",
@@ -210,16 +251,33 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             $"SAFARSUITE_SYNC_TOPOLOGY_ID={QuoteForShell(deploymentProfile.SyncTopologyId ?? "")}",
             $"SAFARSUITE_LOCAL_SERVER_VERSION={QuoteForShell(localServerVersion)}",
             $"SAFARSUITE_APP_VERSION={QuoteForShell(safarSuiteAppVersion)}",
+            $"SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID={QuoteForShell(secretReadiness.ActiveKeyId)}",
+            $"SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID={QuoteForShell(appActivationSigningKey.SigningKeyId)}",
+            $"SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM={QuoteForShell(EscapeDockerEnvValue(appActivationSigningKey.PublicKeyPem))}",
             "bash",
             "safarsuite-install.sh");
     }
 
     private static IReadOnlyCollection<ControlCloudBootstrapPackageArtifact> BuildArtifacts(
         string cloudBaseUrl,
-        ControlCloudBootstrapRuntimePlan runtimePlan)
+        ControlCloudBootstrapRuntimePlan runtimePlan,
+        ControlCloudBootstrapAppActivationSigningKey appActivationSigningKey,
+        ControlCloudBootstrapSecretReadiness secretReadiness)
     {
         var dockerComposeContent = NormalizeTemplate(DockerComposeTemplate);
-        var envTemplateContent = NormalizeTemplate(EnvironmentTemplate);
+        var envTemplateContent = NormalizeTemplate(EnvironmentTemplate)
+            .Replace(
+                "{{SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID}}",
+                secretReadiness.ActiveKeyId,
+                StringComparison.Ordinal)
+            .Replace(
+                "{{SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID}}",
+                appActivationSigningKey.SigningKeyId,
+                StringComparison.Ordinal)
+            .Replace(
+                "{{SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM}}",
+                EscapeDockerEnvValue(appActivationSigningKey.PublicKeyPem),
+                StringComparison.Ordinal);
         var runtimeManifestContent = NormalizeTemplate(JsonSerializer.Serialize(
             ToResponse(runtimePlan),
             RuntimeManifestJsonOptions));
@@ -273,12 +331,12 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                     ComposeProfile: null,
                     ImageEnvironmentVariable: "SAFARSUITE_LOCAL_SERVER_IMAGE",
                     PublishedPortEnvironmentVariable: "SAFARSUITE_LOCAL_SERVER_HTTP_PORT",
-                    InternalBaseUrl: "http://local-api:8080",
-                    HealthUrl: "http://local-api:8080/health",
+                    InternalBaseUrl: "https://local-api:8080",
+                    HealthUrl: "https://local-api:8080/health",
                     DependsOn: ["local-db"]),
                 new ControlCloudBootstrapRuntimeService(
                     "local-worker",
-                    "Background cloud pull, heartbeat, and command processing",
+                    "Background entitlement pull and heartbeat reporting",
                     StartsByDefault: true,
                     ComposeProfile: null,
                     ImageEnvironmentVariable: "SAFARSUITE_LOCAL_SERVER_IMAGE",
@@ -288,7 +346,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                     DependsOn: ["local-db"]),
                 new ControlCloudBootstrapRuntimeService(
                     "local-agent",
-                    "Host/runtime diagnostics and support command bridge",
+                    "Support command polling, diagnostics, and acknowledgement bridge",
                     StartsByDefault: true,
                     ComposeProfile: null,
                     ImageEnvironmentVariable: "SAFARSUITE_LOCAL_SERVER_IMAGE",
@@ -303,8 +361,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                     ComposeProfile: "app-runtime",
                     ImageEnvironmentVariable: "SAFARSUITE_APP_IMAGE",
                     PublishedPortEnvironmentVariable: "SAFARSUITE_APP_HTTP_PORT",
-                    InternalBaseUrl: "http://safarsuite-app:8080",
-                    HealthUrl: "http://safarsuite-app:8080/health",
+                    InternalBaseUrl: "http://safarsuite-app:5280",
+                    HealthUrl: "http://safarsuite-app:5280/health",
                     DependsOn: ["local-api", "local-db"])
             ]);
     }
@@ -368,7 +426,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                 signedBundle.Payload.InstallCommand,
                 signedBundle.Payload.Artifacts.Select(ToResponse).ToArray(),
                 ToResponse(signedBundle.Payload.Endpoints),
-                ToResponse(signedBundle.Payload.RuntimePlan)),
+                ToResponse(signedBundle.Payload.RuntimePlan),
+                ToResponse(signedBundle.Payload.AppActivationSigningKey)),
             new LocalServerBootstrapPackageSignatureResponse(
                 signedBundle.Signature.Algorithm,
                 signedBundle.Signature.KeyId,
@@ -415,6 +474,26 @@ public sealed class CreateLocalServerBootstrapPackageHandler
             deploymentProfile.SyncTopologyId);
     }
 
+    private static SafarSuiteAppActivationSigningKeyResponse ToResponse(
+        ControlCloudBootstrapAppActivationSigningKey signingKey)
+    {
+        return new SafarSuiteAppActivationSigningKeyResponse(
+            signingKey.SigningKeyId,
+            signingKey.PublicKeyPem);
+    }
+
+    private static LocalServerBootstrapSecretReadinessResponse ToResponse(
+        ControlCloudBootstrapSecretReadiness readiness)
+    {
+        return new LocalServerBootstrapSecretReadinessResponse(
+            readiness.Status,
+            readiness.ActiveKeyId,
+            readiness.HasActiveSecret,
+            readiness.Warnings,
+            readiness.RequiredEnvironmentVariables,
+            readiness.Detail);
+    }
+
     private static LocalServerBootstrapRuntimeServiceResponse ToResponse(
         ControlCloudBootstrapRuntimeService service)
     {
@@ -458,13 +537,22 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         return template.Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
+    private static string EscapeDockerEnvValue(string value)
+    {
+        return "\"" + value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal) + "\"";
+    }
+
     private const string DockerComposeTemplate =
         """
         name: safarsuite-local-server
 
         services:
           local-db:
-            image: postgres:16-alpine
+            image: ${SAFARSUITE_LOCAL_DB_IMAGE:-postgres:16-alpine}
             restart: unless-stopped
             environment:
               POSTGRES_DB: ${SAFARSUITE_LOCAL_DB_NAME:-safarsuite_local}
@@ -491,6 +579,8 @@ public sealed class CreateLocalServerBootstrapPackageHandler
               - "${SAFARSUITE_LOCAL_SERVER_HTTP_PORT:-8080}:8080"
             volumes:
               - safarsuite-local-data:/var/lib/safarsuite/local-server
+              - ./certs/local-api:/etc/safarsuite/local-server/certs/local-api:ro
+              - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
 
           local-worker:
             image: ${SAFARSUITE_LOCAL_SERVER_IMAGE:?Set SAFARSUITE_LOCAL_SERVER_IMAGE}
@@ -503,6 +593,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                 condition: service_healthy
             volumes:
               - safarsuite-local-data:/var/lib/safarsuite/local-server
+              - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
 
           local-agent:
             image: ${SAFARSUITE_LOCAL_SERVER_IMAGE:?Set SAFARSUITE_LOCAL_SERVER_IMAGE}
@@ -515,6 +606,7 @@ public sealed class CreateLocalServerBootstrapPackageHandler
                 condition: service_healthy
             volumes:
               - safarsuite-local-data:/var/lib/safarsuite/local-server
+              - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
 
           safarsuite-app:
             image: ${SAFARSUITE_APP_IMAGE:?Set SAFARSUITE_APP_IMAGE}
@@ -529,13 +621,17 @@ public sealed class CreateLocalServerBootstrapPackageHandler
               local-api:
                 condition: service_started
             ports:
-              - "${SAFARSUITE_APP_HTTP_PORT:-8090}:8080"
+              - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280"
+              - "${SAFARSUITE_APP_HTTP_PORT:-5280}:5280/udp"
             environment:
-              SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-http://local-api:8080}
-              SAFARSUITE_MODULE_GATEWAY_URL: ${SAFARSUITE_MODULE_GATEWAY_URL:-http://local-api:8080}
+              ASPNETCORE_URLS: http://0.0.0.0:5280
+              SAFARSUITE_LOCAL_API_BASE_URL: ${SAFARSUITE_LOCAL_API_BASE_URL:-https://local-api:8080}
+              SAFARSUITE_MODULE_GATEWAY_URL: ${SAFARSUITE_MODULE_GATEWAY_URL:-https://local-api:8080}
               SAFARSUITE_RUNTIME_MANIFEST_PATH: ${SAFARSUITE_RUNTIME_MANIFEST_PATH:-/etc/safarsuite/local-server/runtime-services.manifest.json}
             volumes:
               - safarsuite-local-data:/var/lib/safarsuite/local-server
+              - ./certs/trust:/etc/safarsuite/local-server/certs/trust:ro
+              - ./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro
               - safarsuite-app-data:/var/lib/safarsuite/app
 
         volumes:
@@ -559,12 +655,35 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         SAFARSUITE_LOCAL_SERVER_VERSION={{SAFARSUITE_LOCAL_SERVER_VERSION}}
         SAFARSUITE_LOCAL_SERVER_IMAGE=ghcr.io/safarsuite/local-server:{{SAFARSUITE_LOCAL_SERVER_VERSION}}
         SAFARSUITE_LOCAL_SERVER_HTTP_PORT=8080
+        SAFARSUITE_LOCAL_SERVER_CONFIG_DIR=/etc/safarsuite/local-server
+        SAFARSUITE_LOCAL_SERVER_STATE_DIR=/var/lib/safarsuite/local-server
         SAFARSUITE_APP_VERSION={{SAFARSUITE_APP_VERSION}}
-        SAFARSUITE_APP_IMAGE=ghcr.io/safarsuite/app:{{SAFARSUITE_APP_VERSION}}
-        SAFARSUITE_APP_HTTP_PORT=8090
-        SAFARSUITE_LOCAL_API_BASE_URL=http://local-api:8080
-        SAFARSUITE_MODULE_GATEWAY_URL=http://local-api:8080
+        SAFARSUITE_APP_IMAGE=ghcr.io/danionwheels/localserver:{{SAFARSUITE_APP_VERSION}}
+        SAFARSUITE_APP_HTTP_PORT=5280
+        SAFARSUITE_LOCAL_API_BASE_URL=https://local-api:8080
+        SAFARSUITE_LOCAL_API_ACCESS_KEY=change-me-before-start
+        SAFARSUITE_LOCAL_API_TLS_MODE=GeneratedLocalCa
+        SAFARSUITE_LOCAL_API_ASPNETCORE_URLS=https://0.0.0.0:8080
+        SAFARSUITE_LOCAL_API_CERTIFICATE_PATH=
+        SAFARSUITE_LOCAL_API_CERTIFICATE_PASSWORD=
+        SAFARSUITE_LOCAL_API_CA_CERTIFICATE_PATH=
+        SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES=local-api,localhost
+        SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES=127.0.0.1
+        SAFARSUITE_LOCAL_API_CERTIFICATE_DAYS=825
+        SAFARSUITE_LOCAL_PAIRING_DISPLAY_NAME=
+        SAFARSUITE_LOCAL_PAIRING_HTTPS_URL=
+        SAFARSUITE_LOCAL_PAIRING_MODE=ManagerApproval
+        SAFARSUITE_LOCAL_API_TLS_CERTIFICATE_SHA256=
+        SAFARSUITE_LOCAL_API_TLS_CA_SHA256=
+        SAFARSUITE_LOCAL_PAIRING_PUBLIC_KEY=
+        SAFARSUITE_LOCAL_PAIRING_KEY_SHA256=
+        LocalServer__Pairing__RequestExpiresInHours=24
+        SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_KEY_ID=safarsuite-local-manager-session
+        SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_SECRET=change-me-before-start
+        SAFARSUITE_LOCAL_MANAGER_SESSION_MINUTES=60
+        SAFARSUITE_MODULE_GATEWAY_URL=https://local-api:8080
         SAFARSUITE_RUNTIME_MANIFEST_PATH=/etc/safarsuite/local-server/runtime-services.manifest.json
+        SAFARSUITE_LOCAL_DB_IMAGE=postgres:16-alpine
         SAFARSUITE_LOCAL_DB_NAME=safarsuite_local
         SAFARSUITE_LOCAL_DB_USER=safarsuite
         SAFARSUITE_LOCAL_DB_PASSWORD=change-me-before-start
@@ -573,5 +692,20 @@ public sealed class CreateLocalServerBootstrapPackageHandler
         SAFARSUITE_HEARTBEAT_URL={{SAFARSUITE_HEARTBEAT_URL}}
         SAFARSUITE_PENDING_COMMANDS_URL={{SAFARSUITE_PENDING_COMMANDS_URL}}
         SAFARSUITE_DIAGNOSTICS_URL={{SAFARSUITE_DIAGNOSTICS_URL}}
+        DeploymentSecrets__Provider=Environment
+        LocalServer__BootstrapTrust__SigningKeys__0__KeyId={{SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID}}
+        LocalServer__BootstrapTrust__SigningKeys__0__Secret=change-me-before-start
+        LocalServer__EntitlementTrust__SigningKeys__0__KeyId={{SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID}}
+        LocalServer__EntitlementTrust__SigningKeys__0__Secret=change-me-before-start
+        ActivationSigning__SigningKeyId={{SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID}}
+        ActivationSigning__PublicKeyPem={{SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM}}
+        DeviceCredentials__SigningKeyId=safarsuite-app-device-local
+        DeviceCredentials__SigningSecret=change-me-before-start
+        DeviceCredentials__ExpiresInDays=3650
+        DeviceCredentials__RefreshWindowDays=30
+        DeviceCredentials__RefreshGraceHours=24
+        UserSessions__SigningKeyId=safarsuite-app-session-local
+        UserSessions__SigningSecret=change-me-before-start
+        FirstManagerBootstrap__AllowSetupCodeFallback=false
         """;
 }

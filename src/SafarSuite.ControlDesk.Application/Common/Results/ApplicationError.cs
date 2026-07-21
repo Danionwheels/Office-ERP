@@ -17,8 +17,18 @@ public sealed record ApplicationError(string Code, string Message, string? Targe
         return new ApplicationError("not_found", message, target);
     }
 
+    public static ApplicationError Forbidden(string target, string message)
+    {
+        return new ApplicationError("forbidden", message, target);
+    }
+
     public static ApplicationError Unexpected(string message)
     {
         return new ApplicationError("unexpected", message);
+    }
+
+    public static ApplicationError ServiceUnavailable(string message, string? target = null)
+    {
+        return new ApplicationError("service_unavailable", message, target);
     }
 }

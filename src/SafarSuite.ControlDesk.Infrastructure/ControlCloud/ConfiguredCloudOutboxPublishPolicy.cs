@@ -18,7 +18,7 @@ public sealed class ConfiguredCloudOutboxPublishPolicy : ICloudOutboxPublishPoli
         {
             var configured = _options.Value.MaximumAttemptCount;
 
-            return configured < 1 ? 1 : configured;
+            return configured < 0 ? 1 : configured;
         }
     }
 

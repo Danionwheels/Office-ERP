@@ -1,0 +1,10 @@
+# SafarSuite Control Desk managed host authentication rules.
+# First match wins. PostgreSQL listens on IPv4 loopback only.
+host    postgres                    {{ADMIN_ROLE}}         127.0.0.1/32    scram-sha-256
+host    {{DATABASE_NAME}}           {{ADMIN_ROLE}}         127.0.0.1/32    scram-sha-256
+host    {{DATABASE_NAME}}           {{MIGRATOR_ROLE}}      127.0.0.1/32    scram-sha-256
+host    {{DATABASE_NAME}}           {{APPLICATION_ROLE}}   127.0.0.1/32    scram-sha-256
+host    all                         all                    127.0.0.1/32    reject
+host    all                         all                    ::1/128         reject
+host    all                         all                    0.0.0.0/0       reject
+host    all                         all                    ::0/0           reject

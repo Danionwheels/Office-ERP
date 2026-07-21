@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+set -eu
+
+state_dir="${SAFARSUITE_LOCAL_SERVER_STATE_DIR:-/var/lib/safarsuite/local-server}"
+
+export SAFARSUITE_LOCAL_SERVER_ROLE="api"
+export ASPNETCORE_URLS="${SAFARSUITE_LOCAL_API_ASPNETCORE_URLS:-${ASPNETCORE_URLS:-http://0.0.0.0:8080}}"
+export LocalServer__ControlCloud__BaseUrl="${LocalServer__ControlCloud__BaseUrl:-${SAFARSUITE_CONTROL_CLOUD_URL:-http://localhost:5127}}"
+export LocalServer__BootstrapTrust__ConfigurationStorePath="${LocalServer__BootstrapTrust__ConfigurationStorePath:-$state_dir/bootstrap/local-server-bootstrap-configuration.json}"
+export LocalServer__EntitlementTrust__CacheStorePath="${LocalServer__EntitlementTrust__CacheStorePath:-$state_dir/entitlements/local-server-entitlement-cache.json}"
+export LocalServer__EntitlementTrust__TrustStateStorePath="${LocalServer__EntitlementTrust__TrustStateStorePath:-$state_dir/entitlements/local-server-entitlement-trust-state.json}"
+export LocalServer__EntitlementTrust__ImportAuditStorePath="${LocalServer__EntitlementTrust__ImportAuditStorePath:-$state_dir/entitlements/local-server-entitlement-import-audit.json}"
+export LocalServer__Commands__AppActivationRevocationStorePath="${LocalServer__Commands__AppActivationRevocationStorePath:-$state_dir/commands/local-server-app-activation-revocations.json}"
+export LocalServer__Pairing__DeviceStorePath="${LocalServer__Pairing__DeviceStorePath:-$state_dir/pairing/local-server-device-pairings.json}"
+export LocalServer__Runtime__EnableBackgroundWorker="${LocalServer__Runtime__EnableBackgroundWorker:-false}"
+
+if [ -n "${SAFARSUITE_LOCAL_API_CERTIFICATE_PATH:-}" ]; then
+  export ASPNETCORE_Kestrel__Certificates__Default__Path="$SAFARSUITE_LOCAL_API_CERTIFICATE_PATH"
+fi
+
+if [ -n "${SAFARSUITE_LOCAL_API_CERTIFICATE_PASSWORD:-}" ]; then
+  export ASPNETCORE_Kestrel__Certificates__Default__Password="$SAFARSUITE_LOCAL_API_CERTIFICATE_PASSWORD"
+fi
+
+exec dotnet /app/SafarSuite.LocalServer.Api.dll

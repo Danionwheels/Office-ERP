@@ -1,7 +1,23 @@
 namespace SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 
 public sealed record ListJournalEntriesResult(
-    IReadOnlyCollection<JournalEntrySummaryResult> Entries);
+    IReadOnlyCollection<JournalEntryRegisterItemResult> Entries,
+    int PageSize,
+    bool HasMore,
+    string? NextCursor,
+    long FilteredCount);
+
+public sealed record JournalEntryRegisterItemResult(
+    Guid JournalEntryId,
+    DateOnly EntryDate,
+    string CurrencyCode,
+    string SourceType,
+    string? SourceReference,
+    string? Memo,
+    string Status,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    int LineCount);
 
 public sealed record JournalEntrySummaryResult(
     Guid JournalEntryId,

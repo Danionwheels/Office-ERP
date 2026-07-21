@@ -8,6 +8,69 @@ export type LocalServerDeploymentProfile = {
   syncTopologyId: string | null;
 };
 
+export type ControlCloudConnectionState = {
+  status: "notChecked" | "checking" | "connected" | "unavailable" | "notConfigured";
+  detail: string;
+  checkedAtUtc: string | null;
+};
+
+export type CloudOutboxMessage = {
+  cloudOutboxMessageId: string;
+  clientId: string | null;
+  messageType: string;
+  subjectType: string;
+  subjectId: string;
+  payloadJson: string;
+  status: string;
+  attemptCount: number;
+  occurredAtUtc: string;
+  lastAttemptedAtUtc: string | null;
+  nextAttemptAtUtc: string | null;
+  sentAtUtc: string | null;
+  failedAtUtc: string | null;
+  failureReason: string | null;
+};
+
+export type CloudOutboxMessageRegisterSummary = {
+  totalCount: number;
+  pendingCount: number;
+  failedCount: number;
+  sentCount: number;
+  readyForPublishingCount: number;
+  totalAttemptCount: number;
+};
+
+export type CloudOutboxMessagePage = {
+  messages: CloudOutboxMessage[];
+  pageSize: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+  summary: CloudOutboxMessageRegisterSummary;
+};
+
+export type PublishedCloudOutboxMessage = {
+  cloudOutboxMessageId: string;
+  messageType: string;
+  subjectType: string;
+  subjectId: string;
+  status: string;
+  attemptCount: number;
+  lastAttemptedAtUtc: string | null;
+  nextAttemptAtUtc: string | null;
+  sentAtUtc: string | null;
+  failedAtUtc: string | null;
+  failureReason: string | null;
+  cloudReference: string | null;
+  envelopeSignature: string | null;
+};
+
+export type PublishCloudOutboxMessagesResult = {
+  requestedBatchSize: number;
+  publishedCount: number;
+  failedCount: number;
+  messages: PublishedCloudOutboxMessage[];
+};
+
 export type CreateCloudInstallationProvisioningInput = {
   expiresInHours: number;
   createdBy: string;
@@ -27,6 +90,146 @@ export type CloudInstallationSupportCommandFormInput = {
   reason: string;
   requestedBy: string;
   expiresInHours: string;
+};
+
+export type CloudAppActivationTokenFormInput = {
+  activationRequestId: string;
+  replacesActivationIssueId: string;
+  serverInstallationId: string;
+  fingerprintHash: string;
+  serverPublicKey: string;
+  requestedBy: string;
+};
+
+export type IssueCloudAppActivationTokenInput = {
+  activationRequestId: string | null;
+  replacesActivationIssueId: string | null;
+  serverInstallationId: string;
+  fingerprintHash: string;
+  serverPublicKey: string;
+  requestedBy: string;
+};
+
+export type CloudAppActivationRevocationFormInput = {
+  revokedBy: string;
+  reason: string;
+};
+
+export type CloudFirstManagerSetupTokenFormInput = {
+  pendingDeviceRequestId: string;
+  managerDisplayName: string;
+  managerEmail: string;
+  createdBy: string;
+  expiresInHours: string;
+  purpose: "FirstManagerBootstrap" | "ManagerRecovery";
+  recoveryReason: string;
+};
+
+export type IssueCloudFirstManagerSetupTokenInput = {
+  pendingDeviceRequestId: string;
+  managerDisplayName: string;
+  managerEmail: string;
+  createdBy: string;
+  expiresInHours: number;
+  purpose: "FirstManagerBootstrap" | "ManagerRecovery";
+  recoveryReason: string;
+};
+
+export type RevokeCloudAppActivationIssueInput = {
+  revokedBy: string;
+  reason: string;
+};
+
+export type ProviderAccessOperator = {
+  userId: string;
+  email: string;
+  fullName: string;
+  status: string;
+  scopes: string[];
+  createdAtUtc: string;
+  createdBy: string;
+  updatedAtUtc: string | null;
+  updatedBy: string | null;
+  lastLoginAtUtc: string | null;
+  mfaEnabled?: boolean;
+  totpEnabled?: boolean;
+  totpEnabledAtUtc?: string | null;
+  totpUpdatedAtUtc?: string | null;
+  totpUpdatedBy?: string | null;
+  lastTotpUsedAtUtc?: string | null;
+  recoveryCodeCount?: number;
+  recoveryCodesUpdatedAtUtc?: string | null;
+  recoveryCodesUpdatedBy?: string | null;
+  lastRecoveryCodeUsedAtUtc?: string | null;
+  failedLoginAttemptCount?: number;
+  lastFailedLoginAtUtc?: string | null;
+  lockoutEndsAtUtc?: string | null;
+};
+
+export type ProviderAccessSession = {
+  accessToken: string;
+  tokenType: string;
+  actor: string;
+  scopes: string[];
+  expiresAtUtc: string;
+};
+
+export type ProviderAccessSessionCreateInput = {
+  email: string;
+  password: string;
+  scopes: string[];
+  expiresInMinutes: number;
+  recoveryCode?: string;
+  totpCode?: string;
+};
+
+export type ProviderAccessPasswordChangeInput = {
+  email: string;
+  currentPassword: string;
+  newPassword: string;
+};
+
+export type ProviderAccessOperatorCreateInput = {
+  email: string;
+  fullName: string;
+  password: string;
+  scopes: string[];
+  createdBy: string;
+};
+
+export type ProviderAccessOperatorPasswordInput = {
+  password: string;
+  updatedBy: string;
+};
+
+export type ProviderAccessOperatorRecoveryCodesInput = {
+  count: number;
+  updatedBy: string;
+};
+
+export type ProviderAccessOperatorRecoveryCodesResult = {
+  operator: ProviderAccessOperator;
+  recoveryCodes: string[];
+};
+
+export type ProviderAccessOperatorTotpInput = {
+  updatedBy: string;
+};
+
+export type ProviderAccessOperatorTotpEnrollmentResult = {
+  operator: ProviderAccessOperator;
+  secret: string;
+  otpAuthUri: string;
+};
+
+export type ProviderAccessOperatorScopesInput = {
+  scopes: string[];
+  updatedBy: string;
+};
+
+export type ProviderAccessOperatorStatusInput = {
+  status: string;
+  updatedBy: string;
 };
 
 export type QueueCloudInstallationSupportCommandInput = {
@@ -52,6 +255,55 @@ export type QueuedCloudInstallationSupportCommand = {
   acknowledgementDetail: string | null;
   signatureKeyId: string;
   payloadSha256: string;
+};
+
+export type SafarSuiteAppActivationTokenImport = {
+  activationToken: string;
+  signature: string;
+  signingKeyId: string;
+  tenantId: string;
+  branchId: string;
+  customerCode: string;
+  customerName: string;
+  branchName: string;
+  paidUntil: string;
+  graceEndsOn: string;
+  offlineValidUntil: string;
+  moduleEntitlements: Record<string, boolean>;
+};
+
+export type IssuedSafarSuiteAppActivationToken = {
+  activationIssueId: string;
+  clientId: string;
+  installationId: string;
+  appServerInstallationId: string;
+  activationRequestId: string;
+  replacesActivationIssueId: string | null;
+  entitlementVersion: number;
+  signingKeyId: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+  import: SafarSuiteAppActivationTokenImport;
+};
+
+export type SafarSuiteAppActivationIssue = {
+  activationIssueId: string;
+  clientId: string;
+  installationId: string;
+  appServerInstallationId: string;
+  activationRequestId: string;
+  replacesActivationIssueId: string | null;
+  fingerprintHash: string;
+  serverPublicKeySha256: string;
+  entitlementVersion: number;
+  signingKeyId: string;
+  status: string;
+  requestedBy: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+  revokedAtUtc: string | null;
+  revokedBy: string | null;
+  revocationReason: string | null;
 };
 
 export type LocalServerSetupToken = {
@@ -113,6 +365,55 @@ export type LocalServerBootstrapPackageSignature = {
   value: string;
 };
 
+export type LocalServerBootstrapSecretReadiness = {
+  status: "Ready" | "Review" | "Blocked" | string;
+  activeKeyId: string;
+  hasActiveSecret: boolean;
+  warnings: string[];
+  requiredEnvironmentVariables: string[];
+  detail: string;
+};
+
+export type LocalServerFirstManagerSetupTokenPayload = {
+  formatVersion: string;
+  tokenId: string;
+  clientId: string;
+  installationId: string;
+  pendingDeviceRequestId: string;
+  allowedActions: string[];
+  managerDisplayName: string;
+  managerEmail: string | null;
+  createdBy: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+  purpose: "FirstManagerBootstrap" | "ManagerRecovery";
+  recoveryReason: string | null;
+};
+
+export type LocalServerSignedFirstManagerSetupToken = {
+  payloadJson: string;
+  payload: LocalServerFirstManagerSetupTokenPayload;
+  signature: LocalServerBootstrapPackageSignature;
+};
+
+export type IssuedLocalServerFirstManagerSetupToken = {
+  tokenId: string;
+  clientId: string;
+  installationId: string;
+  pendingDeviceRequestId: string;
+  managerDisplayName: string;
+  managerEmail: string | null;
+  createdBy: string;
+  signingKeyId: string;
+  payloadSha256: string;
+  issuedAtUtc: string;
+  expiresAtUtc: string;
+  signedToken: LocalServerSignedFirstManagerSetupToken;
+  purpose: "FirstManagerBootstrap" | "ManagerRecovery";
+  recoveryReason: string | null;
+  allowedActions: string[] | null;
+};
+
 export type LocalServerBootstrapPackagePayload = {
   formatVersion: string;
   bootstrapPackageId: string;
@@ -144,6 +445,118 @@ export type LocalServerBootstrapPackage = LocalServerBootstrapPackagePayload & {
   bundleContentType: string;
   bundleSha256: string;
   signedBundle: LocalServerSignedBootstrapBundle;
+  secretReadiness: LocalServerBootstrapSecretReadiness | null;
+};
+
+export type LocalServerBootstrapPackageSummary = {
+  bootstrapPackageId: string;
+  setupTokenId: string;
+  clientId: string;
+  installationId: string;
+  packageStatus: string;
+  tokenStatus: string;
+  createdBy: string;
+  deploymentMode: string;
+  deploymentProfile: LocalServerDeploymentProfile;
+  createdAtUtc: string;
+  generatedAtUtc: string;
+  setupTokenExpiresAtUtc: string;
+  consumedAtUtc: string | null;
+  consumedLocalServerVersion: string | null;
+  localServerVersion: string;
+  safarSuiteAppVersion: string;
+  bundleFileName: string;
+  bundleSha256: string;
+};
+
+export type LocalServerBootstrapPackageRegister = {
+  packages: LocalServerBootstrapPackageSummary[];
+};
+
+export const SETUP_PREFLIGHT_ACKNOWLEDGEMENT_KEYS = [
+  "docker-target",
+  "clean-target",
+  "trust-custody",
+  "app-runtime-profile",
+  "windows-local-api-tls"
+] as const;
+
+export type SetupPreflightAcknowledgementKey =
+  typeof SETUP_PREFLIGHT_ACKNOWLEDGEMENT_KEYS[number];
+
+export type CloudBootstrapPackageHandoffFormInput = {
+  channel: string;
+  recipient: string;
+  markedBy: string;
+  preflightAcknowledgements: SetupPreflightAcknowledgementKey[];
+  note: string;
+};
+
+export type MarkCloudBootstrapPackageHandoffInput = {
+  channel: string;
+  recipient: string;
+  markedBy: string;
+  preflightAcknowledgements: string[];
+  note?: string;
+};
+
+export type LocalServerBootstrapPackageHandoff = {
+  bootstrapPackageId: string;
+  setupTokenId: string;
+  clientId: string;
+  installationId: string;
+  handoffStatus: string;
+  channel: string;
+  recipient: string;
+  markedBy: string;
+  preflightAcknowledgements: string[];
+  note: string | null;
+  markedAtUtc: string;
+};
+
+export type LocalServerPairingDescriptor = {
+  formatVersion: "safarsuite-local-pairing-descriptor-v1";
+  clientId: string;
+  providerInstallationId: string;
+  bootstrapPackageId: string;
+  setupTokenId: string;
+  displayName: string;
+  appServerInstallationId?: string;
+  serverInstallationId?: string;
+  siteId?: string;
+  siteRole?: string;
+  customerCode?: string;
+  customerName?: string;
+  branchName?: string;
+  fingerprintHash?: string;
+  tlsCaSha256?: string;
+  tlsCertificateSha256?: string;
+  serverPairingKeySha256?: string;
+  urlCandidates: string[];
+  generatedAtUtc: string;
+  expiresAtUtc?: string;
+  source: "ControlDeskBootstrapPackage" | "ControlCloudPairingDescriptor";
+  bootstrapBundleSha256: string;
+  bootstrapSignatureKeyId: string;
+  notes: string[];
+  signatureAlgorithm?: string;
+  signatureKeyId?: string;
+  payloadSha256?: string;
+  signature?: string;
+};
+
+export type IssueLocalServerPairingDescriptorInput = {
+  bootstrapPackageId?: string;
+  setupTokenId?: string;
+  clientCode?: string;
+  customerName?: string;
+  appServerInstallationId?: string;
+  fingerprintHash?: string;
+  urlCandidates?: string[];
+  tlsCaSha256?: string;
+  tlsCertificateSha256?: string;
+  serverPairingKeySha256?: string;
+  requestedBy?: string;
 };
 
 export type LocalServerDiagnosticCheck = {
@@ -304,12 +717,30 @@ export type LocalServerHeartbeat = {
   localServerVersion: string | null;
   detail: string | null;
   deploymentProfile?: LocalServerDeploymentProfile | null;
+  pairingStatus?: LocalServerPairingStatus | null;
+  entitlementState?: ControlCloudEntitlementStateValues | null;
+};
+
+export type LocalServerPairingStatus = {
+  pairingMode: string;
+  totalDeviceCount: number;
+  pendingDeviceCount: number;
+  approvedDeviceCount: number;
+  suspendedDeviceCount: number;
+  revokedDeviceCount: number;
+  firstManagerDeviceApproved: boolean;
+  firstManagerDeviceApprovedAtUtc: string | null;
+  lastDeviceUpdatedAtUtc: string | null;
 };
 
 export type ControlCloudInstallationEntitlementStatus = {
   bundleIssueId: string;
   entitlementVersion: number;
   entitlementSnapshotId: string;
+  clientAccessRevisionId: string;
+  contractRevisionNumber: number;
+  productCatalogRevisionId: string;
+  productCatalogRevisionNumber: number;
   issuedAtUtc: string;
   paidUntil: string;
   warningStartsAt: string;
@@ -317,6 +748,57 @@ export type ControlCloudInstallationEntitlementStatus = {
   offlineValidUntil: string;
   keyId: string;
   payloadSha256: string;
+  allowedNamedUsers: number | null;
+  allowedConcurrentUsers: number | null;
+  featureLimitCount: number;
+  effectiveFromUtc: string | null;
+};
+
+export type ControlCloudEntitlementStateModule = {
+  moduleCode: string;
+  isEnabled: boolean;
+};
+
+export type ControlCloudEntitlementStateFeatureLimit = {
+  moduleCode: string;
+  featureCode: string;
+  limitValue: number;
+  unit: string;
+};
+
+export type ControlCloudEntitlementStateValues = {
+  entitlementVersion: number;
+  effectiveFromUtc: string;
+  status: string;
+  paidUntil: string;
+  warningStartsAt: string | null;
+  graceUntil: string;
+  offlineValidUntil: string;
+  allowedDevices: number | null;
+  allowedBranches: number | null;
+  allowedNamedUsers: number | null;
+  allowedConcurrentUsers: number | null;
+  modules: ControlCloudEntitlementStateModule[];
+  featureLimits: ControlCloudEntitlementStateFeatureLimit[];
+};
+
+export type ControlCloudEntitlementDifference = {
+  field: string;
+  desiredValue: string | null;
+  deliveredValue: string | null;
+  observedValue: string | null;
+  state: string;
+  detail: string;
+};
+
+export type ControlCloudEntitlementReconciliation = {
+  evaluatedAtUtc: string;
+  state: string;
+  detail: string;
+  desired: ControlCloudEntitlementStateValues | null;
+  delivered: ControlCloudEntitlementStateValues | null;
+  observed: ControlCloudEntitlementStateValues | null;
+  differences: ControlCloudEntitlementDifference[];
 };
 
 export type ControlCloudInstallationCommandStatus = {
@@ -331,6 +813,14 @@ export type ControlCloudInstallationCommandStatus = {
   latestAcknowledgementDetail: string | null;
 };
 
+export type ControlCloudEntitlementSyncStatus = {
+  desiredVersion: number | null;
+  signedVersion: number | null;
+  observedVersion: number | null;
+  state: "InSync" | "Scheduled" | "SigningPending" | "ApplyPending" | "Ahead" | "Unknown" | string;
+  detail: string;
+};
+
 export type ControlCloudInstallationStatus = {
   clientId: string;
   installationId: string;
@@ -341,5 +831,7 @@ export type ControlCloudInstallationStatus = {
   latestEntitlementVersion: number;
   latestHeartbeat: LocalServerHeartbeat | null;
   latestEntitlement: ControlCloudInstallationEntitlementStatus | null;
+  entitlementSync: ControlCloudEntitlementSyncStatus;
   commandStatus: ControlCloudInstallationCommandStatus;
+  reconciliation: ControlCloudEntitlementReconciliation | null;
 };

@@ -150,7 +150,14 @@ public sealed record IssueInvoiceJournalLineResponse(
     Guid LedgerAccountId,
     decimal Debit,
     decimal Credit,
-    string? Description);
+    string? Description,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountNormalBalance,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus);
 
 public sealed record VoidInvoiceRequest(
     DateOnly VoidDate,
@@ -173,7 +180,14 @@ public sealed record VoidInvoiceJournalLineResponse(
     Guid LedgerAccountId,
     decimal Debit,
     decimal Credit,
-    string? Description);
+    string? Description,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountNormalBalance,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus);
 
 public sealed record IssueCreditNoteRequest(
     string CreditNoteNumber,
@@ -199,4 +213,11 @@ public sealed record IssueCreditNoteJournalLineResponse(
     Guid LedgerAccountId,
     decimal Debit,
     decimal Credit,
-    string? Description);
+    string? Description,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountNormalBalance,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus);

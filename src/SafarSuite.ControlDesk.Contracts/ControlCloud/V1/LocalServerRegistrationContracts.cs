@@ -56,6 +56,14 @@ public sealed record LocalServerBootstrapPackageSignatureResponse(
     string PayloadSha256,
     string Value);
 
+public sealed record LocalServerBootstrapSecretReadinessResponse(
+    string Status,
+    string ActiveKeyId,
+    bool HasActiveSecret,
+    IReadOnlyCollection<string> Warnings,
+    IReadOnlyCollection<string> RequiredEnvironmentVariables,
+    string Detail);
+
 public sealed record LocalServerBootstrapPackageArtifactResponse(
     string ArtifactType,
     string FileName,
@@ -102,7 +110,8 @@ public sealed record LocalServerBootstrapPackagePayloadResponse(
     string InstallCommand,
     IReadOnlyCollection<LocalServerBootstrapPackageArtifactResponse> Artifacts,
     LocalServerBootstrapPackageEndpointsResponse Endpoints,
-    LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null);
+    LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null,
+    SafarSuiteAppActivationSigningKeyResponse? AppActivationSigningKey = null);
 
 public sealed record LocalServerSignedBootstrapBundleResponse(
     string PayloadJson,
@@ -130,7 +139,83 @@ public sealed record LocalServerBootstrapPackageResponse(
     string BundleContentType,
     string BundleSha256,
     LocalServerSignedBootstrapBundleResponse SignedBundle,
-    LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null);
+    LocalServerBootstrapRuntimePlanResponse? RuntimePlan = null,
+    SafarSuiteAppActivationSigningKeyResponse? AppActivationSigningKey = null,
+    LocalServerBootstrapSecretReadinessResponse? SecretReadiness = null);
+
+public sealed record LocalServerBootstrapPackageRegisterResponse(
+    IReadOnlyCollection<LocalServerBootstrapPackageSummaryResponse> Packages);
+
+public sealed record LocalServerBootstrapPackageSummaryResponse(
+    Guid BootstrapPackageId,
+    Guid SetupTokenId,
+    Guid ClientId,
+    string InstallationId,
+    string PackageStatus,
+    string TokenStatus,
+    string CreatedBy,
+    string DeploymentMode,
+    LocalServerDeploymentProfileResponse DeploymentProfile,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset GeneratedAtUtc,
+    DateTimeOffset SetupTokenExpiresAtUtc,
+    DateTimeOffset? ConsumedAtUtc,
+    string? ConsumedLocalServerVersion,
+    string LocalServerVersion,
+    string SafarSuiteAppVersion,
+    string BundleFileName,
+    string BundleSha256);
+
+public static class LocalServerBootstrapPackageHandoffPreflight
+{
+    public const string DockerTarget = "docker-target";
+    public const string CleanTarget = "clean-target";
+    public const string TrustCustody = "trust-custody";
+    public const string AppRuntimeProfile = "app-runtime-profile";
+    public const string WindowsLocalApiTls = "windows-local-api-tls";
+
+    public static readonly IReadOnlyCollection<string> RequiredKeys =
+    [
+        DockerTarget,
+        CleanTarget,
+        TrustCustody,
+        AppRuntimeProfile,
+        WindowsLocalApiTls
+    ];
+
+    public static string ToLabel(string key)
+    {
+        return key switch
+        {
+            DockerTarget => "Docker target",
+            CleanTarget => "Clean target",
+            TrustCustody => "Provider trust custody",
+            AppRuntimeProfile => "App runtime profile",
+            WindowsLocalApiTls => "Windows Local API TLS",
+            _ => key
+        };
+    }
+}
+
+public sealed record MarkLocalServerBootstrapPackageHandoffRequest(
+    string Channel,
+    string Recipient,
+    string MarkedBy,
+    IReadOnlyCollection<string> PreflightAcknowledgements,
+    string? Note = null);
+
+public sealed record LocalServerBootstrapPackageHandoffResponse(
+    Guid BootstrapPackageId,
+    Guid SetupTokenId,
+    Guid ClientId,
+    string InstallationId,
+    string HandoffStatus,
+    string Channel,
+    string Recipient,
+    string MarkedBy,
+    IReadOnlyCollection<string> PreflightAcknowledgements,
+    string? Note,
+    DateTimeOffset MarkedAtUtc);
 
 public sealed record RegisterLocalServerInstallationRequest(
     Guid ClientId,

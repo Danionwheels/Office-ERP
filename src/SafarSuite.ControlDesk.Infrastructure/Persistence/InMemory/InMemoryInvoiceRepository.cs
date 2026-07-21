@@ -67,4 +67,6 @@ public sealed class InMemoryInvoiceRepository : IInvoiceRepository
 
         return Task.FromResult(exists);
     }
+
+    internal Invoice[] Snapshot() => _invoicesById.Values.ToArray();
 }

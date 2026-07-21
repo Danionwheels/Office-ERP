@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
+using SafarSuite.ControlDesk.Domain.Modules.Auth;
 using SafarSuite.ControlDesk.Domain.Modules.Billing;
 using SafarSuite.ControlDesk.Domain.Modules.Clients;
 using SafarSuite.ControlDesk.Domain.Modules.Contracts;
@@ -7,6 +8,7 @@ using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Domain.Modules.Entitlements;
 using SafarSuite.ControlDesk.Domain.Modules.Payments;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Configurations;
+using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework.Configurations.Auth;
 
 namespace SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 
@@ -19,6 +21,8 @@ public sealed class ControlDeskDbContext : DbContext
 
     public DbSet<Client> Clients => Set<Client>();
 
+    public DbSet<LocalOperator> LocalOperators => Set<LocalOperator>();
+
     public DbSet<ClientAccountingProfile> ClientAccountingProfiles => Set<ClientAccountingProfile>();
 
     public DbSet<ClientDeployment> ClientDeployments => Set<ClientDeployment>();
@@ -26,6 +30,10 @@ public sealed class ControlDeskDbContext : DbContext
     public DbSet<AccountCodeRange> AccountCodeRanges => Set<AccountCodeRange>();
 
     public DbSet<AccountingControlSettings> AccountingControlSettings => Set<AccountingControlSettings>();
+
+    public DbSet<OpeningBalanceProfile> OpeningBalanceProfiles => Set<OpeningBalanceProfile>();
+
+    public DbSet<VoucherNumberingRule> VoucherNumberingRules => Set<VoucherNumberingRule>();
 
     public DbSet<AccountingPeriod> AccountingPeriods => Set<AccountingPeriod>();
 
@@ -45,22 +53,34 @@ public sealed class ControlDeskDbContext : DbContext
 
     public DbSet<Payment> Payments => Set<Payment>();
 
+    public DbSet<PortalPaymentClaim> PortalPaymentClaims => Set<PortalPaymentClaim>();
+
+    public DbSet<ProviderBankDetails> ProviderBankDetails => Set<ProviderBankDetails>();
+
     public DbSet<ClientRefund> ClientRefunds => Set<ClientRefund>();
 
     public DbSet<ClientCreditApplication> ClientCreditApplications => Set<ClientCreditApplication>();
 
     public DbSet<EntitlementSnapshot> EntitlementSnapshots => Set<EntitlementSnapshot>();
 
+    public DbSet<ClientAccessRevision> ClientAccessRevisions => Set<ClientAccessRevision>();
+
     public DbSet<ClientContract> ClientContracts => Set<ClientContract>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasPostgresExtension("pg_trgm");
         modelBuilder.HasDefaultSchema("control");
+        modelBuilder.HasSequence<long>("entitlement_version_sequence", "control")
+            .StartsAt(1);
         modelBuilder.ApplyConfiguration(new ClientConfiguration());
+        modelBuilder.ApplyConfiguration(new LocalOperatorConfiguration());
         modelBuilder.ApplyConfiguration(new ClientAccountingProfileConfiguration());
         modelBuilder.ApplyConfiguration(new ClientDeploymentConfiguration());
         modelBuilder.ApplyConfiguration(new AccountCodeRangeConfiguration());
         modelBuilder.ApplyConfiguration(new AccountingControlSettingsConfiguration());
+        modelBuilder.ApplyConfiguration(new OpeningBalanceProfileConfiguration());
+        modelBuilder.ApplyConfiguration(new VoucherNumberingRuleConfiguration());
         modelBuilder.ApplyConfiguration(new AccountingPeriodConfiguration());
         modelBuilder.ApplyConfiguration(new LedgerAccountConfiguration());
         modelBuilder.ApplyConfiguration(new JournalEntryConfiguration());
@@ -70,9 +90,14 @@ public sealed class ControlDeskDbContext : DbContext
         modelBuilder.ApplyConfiguration(new CreditNoteConfiguration());
         modelBuilder.ApplyConfiguration(new CloudOutboxMessageConfiguration());
         modelBuilder.ApplyConfiguration(new PaymentConfiguration());
+        modelBuilder.ApplyConfiguration(new PortalPaymentClaimConfiguration());
+        modelBuilder.ApplyConfiguration(new ProviderBankDetailsConfiguration());
         modelBuilder.ApplyConfiguration(new ClientRefundConfiguration());
         modelBuilder.ApplyConfiguration(new ClientCreditApplicationConfiguration());
         modelBuilder.ApplyConfiguration(new EntitlementSnapshotConfiguration());
+        modelBuilder.ApplyConfiguration(new ClientAccessRevisionConfiguration());
         modelBuilder.ApplyConfiguration(new ClientContractConfiguration());
+        modelBuilder.ApplyConfiguration(new ProductCatalogRevisionRecordConfiguration());
+        modelBuilder.ApplyConfiguration(new ProductAccessCatalogRecordConfiguration());
     }
 }

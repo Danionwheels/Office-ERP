@@ -1,0 +1,747 @@
+name: CI Release Gates
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-release-gate:
+    name: backend-release-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      control-desk-db:
+        image: postgres:17
+        env:
+          POSTGRES_DB: safarsuite_control_desk
+          POSTGRES_USER: safarsuite
+          POSTGRES_PASSWORD: ci-control-desk-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U safarsuite -d safarsuite_control_desk"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.301
+
+      - name: Restore solution and tools
+        run: |
+          dotnet restore SafarSuite.ControlDesk.sln
+          dotnet tool restore
+
+      - name: Build solution
+        run: dotnet build SafarSuite.ControlDesk.sln --configuration Release --no-restore
+
+      - name: Run xUnit tests
+        run: dotnet test SafarSuite.ControlDesk.sln --configuration Release --no-build --no-restore
+
+      - name: Prove local operator repository against PostgreSQL
+        env:
+          SAFARSUITE_OPERATOR_REPOSITORY_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=safarsuite_control_desk;Username=safarsuite;Password=ci-control-desk-password
+          SAFARSUITE_REQUIRE_OPERATOR_REPOSITORY_POSTGRES_TEST: "true"
+        run: >-
+          dotnet test tests/SafarSuite.ControlDesk.Api.Tests/SafarSuite.ControlDesk.Api.Tests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --filter FullyQualifiedName~EfLocalOperatorRepositoryPostgresTests
+
+      - name: Run accounting smoke
+        run: dotnet run --project tools/SafarSuite.ControlDesk.AccountingSmoke --configuration Release --no-build --no-restore
+
+      - name: Run PostgreSQL accounting and exact-migration readiness smoke
+        run: >-
+          dotnet run
+          --project tools/SafarSuite.ControlDesk.AccountingSmoke
+          --configuration Release
+          --no-build
+          --no-restore
+          --
+          --provider postgres
+          --connection-string "Host=localhost;Port=5432;Database=safarsuite_control_desk;Username=safarsuite;Password=ci-control-desk-password"
+
+      - name: Prove database outage and readiness recovery
+        shell: bash
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Persistence__Provider: Postgres
+          ConnectionStrings__ControlDesk: Host=localhost;Port=5432;Database=safarsuite_control_desk;Username=safarsuite;Password=ci-control-desk-password
+          ControlCloud__OutboxWorker__Enabled: "false"
+        run: |
+          set -euo pipefail
+          api_log="$RUNNER_TEMP/control-desk-operational-readiness.log"
+          api_content_root="$GITHUB_WORKSPACE/src/SafarSuite.ControlDesk.Api/bin/Release/net10.0"
+          api_dll="$api_content_root/SafarSuite.ControlDesk.Api.dll"
+          db_container="${{ job.services['control-desk-db'].id }}"
+
+          dotnet "$api_dll" \
+            --contentRoot "$api_content_root" \
+            --urls http://127.0.0.1:5188 \
+            >"$api_log" 2>&1 &
+          api_pid=$!
+
+          cleanup() {
+            docker start "$db_container" >/dev/null 2>&1 || true
+            kill -TERM "$api_pid" >/dev/null 2>&1 || true
+            wait "$api_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5188/ready >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if ! curl --fail --silent http://127.0.0.1:5188/health >/dev/null \
+            || ! curl --fail --silent http://127.0.0.1:5188/ready >/dev/null; then
+            cat "$api_log"
+            exit 1
+          fi
+
+          docker stop "$db_container" >/dev/null
+          curl --fail --silent http://127.0.0.1:5188/health >/dev/null
+          readiness_code="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:5188/ready)"
+          test "$readiness_code" = "503"
+
+          docker start "$db_container" >/dev/null
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5188/ready >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:5188/ready >/dev/null
+
+          kill -TERM "$api_pid"
+          wait "$api_pid"
+          trap - EXIT
+
+          grep -q "OfficeHostStarted" "$api_log"
+          grep -q "OfficeReadinessUnavailable" "$api_log"
+          grep -q "OfficeReadinessRestored" "$api_log"
+          grep -q "OfficeHostStopping" "$api_log"
+          grep -q "OfficeHostStopped" "$api_log"
+
+      - name: Prove durable outbox recovery after abrupt host loss
+        shell: bash
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          Persistence__Provider: Postgres
+          ConnectionStrings__ControlDesk: Host=localhost;Port=5432;Database=safarsuite_control_desk;Username=safarsuite;Password=ci-control-desk-password
+          ControlDesk__Logging__File__Enabled: "false"
+          ControlCloud__OutboxWorker__Enabled: "true"
+          ControlCloud__OutboxWorker__BatchSize: "1"
+          ControlCloud__OutboxWorker__PollIntervalSeconds: "1"
+          ControlCloud__Publisher__Mode: Http
+          ControlCloud__Publisher__SourceSystem: SafarSuite.ControlDesk
+          ControlCloud__Publisher__Environment: CI
+          ControlCloud__Publisher__SigningKeyId: ci-outbox-key
+          ControlCloud__Publisher__SigningSecret: ci-outbox-signing-secret-at-least-32-characters
+          ControlCloud__Publisher__EndpointUrl: https://localhost:5443/api/v1/control-desk/messages
+          ControlCloud__Publisher__RequireHttps: "true"
+          ControlCloud__Publisher__MaximumAttemptCount: "0"
+          ControlCloud__Publisher__RetryDelaySeconds: "1"
+          ControlCloud__Publisher__RequestTimeoutSeconds: "5"
+        run: |
+          set -euo pipefail
+          db_container="${{ job.services['control-desk-db'].id }}"
+          message_id="5750a5b1-b3c9-4d72-87e6-b1d3a7c135e1"
+          cloud_ready="$RUNNER_TEMP/control-cloud-ready"
+          accepted_keys="$RUNNER_TEMP/control-cloud-accepted-keys"
+          certificate="$RUNNER_TEMP/control-cloud-ci.crt"
+          private_key="$RUNNER_TEMP/control-cloud-ci.key"
+          first_log="$RUNNER_TEMP/control-desk-outbox-before-crash.log"
+          recovery_log="$RUNNER_TEMP/control-desk-outbox-recovery.log"
+          overlap_log="$RUNNER_TEMP/control-desk-outbox-overlap.log"
+          api_content_root="$GITHUB_WORKSPACE/src/SafarSuite.ControlDesk.Api/bin/Release/net10.0"
+          api_dll="$api_content_root/SafarSuite.ControlDesk.Api.dll"
+          api_pid=""
+          recovery_pid=""
+          overlap_pid=""
+          stub_pid=""
+
+          cleanup() {
+            for pid in "$api_pid" "$recovery_pid" "$overlap_pid" "$stub_pid"; do
+              if test -n "$pid"; then
+                kill -TERM "$pid" >/dev/null 2>&1 || true
+                wait "$pid" >/dev/null 2>&1 || true
+              fi
+            done
+          }
+          trap cleanup EXIT
+
+          docker exec "$db_container" psql \
+            --username safarsuite \
+            --dbname safarsuite_control_desk \
+            --set ON_ERROR_STOP=1 \
+            --command "
+              DELETE FROM control.cloud_outbox_messages;
+              INSERT INTO control.cloud_outbox_messages (
+                cloud_outbox_message_id,
+                client_id,
+                message_type,
+                subject_type,
+                subject_id,
+                payload_json,
+                status,
+                attempt_count,
+                occurred_at_utc)
+              VALUES (
+                '$message_id',
+                NULL,
+                'OfficeOperationsProof',
+                'OfficeHost',
+                'abrupt-recovery',
+                '{\"proof\":\"abrupt-recovery\"}'::jsonb,
+                'Pending',
+                0,
+                now());"
+
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout "$private_key" \
+            -out "$certificate" \
+            -days 1 \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost" \
+            -addext "basicConstraints=critical,CA:TRUE"
+
+          python3 - "$cloud_ready" "$accepted_keys" "$certificate" "$private_key" <<'PY' &
+          import json
+          import pathlib
+          import ssl
+          import sys
+          import time
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+
+          ready_path = pathlib.Path(sys.argv[1])
+          accepted_path = pathlib.Path(sys.argv[2])
+
+          class Handler(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  self.send_response(200)
+                  self.end_headers()
+
+              def do_POST(self):
+                  length = int(self.headers.get("Content-Length", "0"))
+                  payload = json.loads(self.rfile.read(length) or b"{}")
+                  if not ready_path.exists():
+                      self.send_response(503)
+                      self.end_headers()
+                      return
+
+                  time.sleep(1)
+                  with accepted_path.open("a", encoding="utf-8") as output:
+                      output.write(str(payload.get("idempotencyKey", "missing")) + "\n")
+                  self.send_response(200)
+                  self.send_header("X-SafarSuite-Cloud-Message-Id", "ci-abrupt-recovery")
+                  self.end_headers()
+
+              def log_message(self, format, *args):
+                  return
+
+          server = HTTPServer(("127.0.0.1", 5443), Handler)
+          context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          context.load_cert_chain(sys.argv[3], sys.argv[4])
+          server.socket = context.wrap_socket(server.socket, server_side=True)
+          server.serve_forever()
+          PY
+          stub_pid=$!
+
+          for attempt in {1..30}; do
+            if curl --fail --silent --cacert "$certificate" https://localhost:5443/health >/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          curl --fail --silent --cacert "$certificate" https://localhost:5443/health >/dev/null
+
+          export SSL_CERT_FILE="$certificate"
+          dotnet "$api_dll" \
+            --contentRoot "$api_content_root" \
+            --urls http://127.0.0.1:5190 \
+            >"$first_log" 2>&1 &
+          api_pid=$!
+
+          state=""
+          for attempt in {1..80}; do
+            state="$(docker exec "$db_container" psql --username safarsuite --dbname safarsuite_control_desk --tuples-only --no-align --command "SELECT status || ':' || attempt_count FROM control.cloud_outbox_messages WHERE cloud_outbox_message_id = '$message_id';")"
+            if [[ "$state" == Failed:* ]]; then
+              break
+            fi
+            sleep 0.25
+          done
+          [[ "$state" == Failed:* ]]
+
+          for attempt in {1..40}; do
+            if grep -q "OfficeOutboxBatchCompleted" "$first_log"; then
+              break
+            fi
+            sleep 0.1
+          done
+          grep -q "OfficeOutboxBatchCompleted" "$first_log"
+
+          kill -KILL "$api_pid"
+          wait "$api_pid" >/dev/null 2>&1 || true
+          api_pid=""
+          touch "$cloud_ready"
+
+          dotnet "$api_dll" \
+            --contentRoot "$api_content_root" \
+            --urls http://127.0.0.1:5190 \
+            >"$recovery_log" 2>&1 &
+          recovery_pid=$!
+          dotnet "$api_dll" \
+            --contentRoot "$api_content_root" \
+            --urls http://127.0.0.1:5191 \
+            >"$overlap_log" 2>&1 &
+          overlap_pid=$!
+
+          for attempt in {1..120}; do
+            state="$(docker exec "$db_container" psql --username safarsuite --dbname safarsuite_control_desk --tuples-only --no-align --command "SELECT status || ':' || attempt_count FROM control.cloud_outbox_messages WHERE cloud_outbox_message_id = '$message_id';")"
+            if [[ "$state" == Sent:* ]]; then
+              break
+            fi
+            sleep 0.25
+          done
+          [[ "$state" == Sent:* ]]
+
+          kill -TERM "$recovery_pid" "$overlap_pid"
+          wait "$recovery_pid"
+          wait "$overlap_pid"
+          recovery_pid=""
+          overlap_pid=""
+
+          test "$(wc -l < "$accepted_keys")" -eq 1
+          test "$(sort -u "$accepted_keys" | wc -l)" -eq 1
+          grep -q "OfficeOutboxBatchCompleted" "$recovery_log" "$overlap_log"
+
+      - name: Run entitlement and security smoke
+        run: dotnet run --project tools/SafarSuite.LocalServer.EntitlementSmoke --configuration Release --no-build --no-restore
+
+      - name: Validate Control Desk migrations
+        env:
+          SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK: "true"
+        run: >-
+          dotnet tool run dotnet-ef migrations has-pending-model-changes
+          --project src/SafarSuite.ControlDesk.Infrastructure
+          --startup-project src/SafarSuite.ControlDesk.Api
+          --context ControlDeskDbContext
+          --configuration Release
+          --no-build
+
+      - name: Validate Control Cloud migrations
+        env:
+          SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK: "true"
+        run: >-
+          dotnet tool run dotnet-ef migrations has-pending-model-changes
+          --project src/SafarSuite.ControlCloud.Infrastructure/SafarSuite.ControlCloud.Infrastructure.csproj
+          --startup-project src/SafarSuite.ControlCloud.Infrastructure/SafarSuite.ControlCloud.Infrastructure.csproj
+          --context ControlCloudDbContext
+          --configuration Release
+          --no-build
+
+  ui-release-gate:
+    name: ui-release-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: apps/control-desk-ui
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/control-desk-ui/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build production UI
+        run: npm run build
+
+  deployment-release-gate:
+    name: deployment-release-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate staging Compose configuration
+        run: >-
+          docker compose
+          --env-file deploy/staging/.env.example
+          -f deploy/staging/docker-compose.yml
+          config --quiet
+
+      - name: Verify staging Compose security boundaries
+        run: |
+          docker compose \
+            --env-file deploy/staging/.env.example \
+            -f deploy/staging/docker-compose.yml \
+            config --format json |
+          jq -e '
+            (.services.caddy.environment | keys == ["CONTROL_CLOUD_HOST", "CONTROL_DESK_HOST"]) and
+            ((.services["control-cloud-api"].environment | has("CONTROL_DESK_DB_PASSWORD")) | not) and
+            ((.services["control-cloud-api"].environment | has("CONTROL_DESK_SESSION_SIGNING_SECRET")) | not) and
+            ((.services["control-desk-api"].environment | has("CONTROL_CLOUD_DB_PASSWORD")) | not) and
+            ((.services["control-desk-api"].environment | has("CLIENT_PORTAL_SESSION_SIGNING_SECRET")) | not) and
+            ((.services["control-cloud-api"].ports // []) | length == 0) and
+            ((.services["control-desk-api"].ports // []) | length == 0) and
+            ((.services["control-cloud-db"].ports | length) == 1) and
+            (.services["control-cloud-db"].ports[0].host_ip == "127.0.0.1") and
+            (.services["control-cloud-db"].ports[0].target == 5432) and
+            ((.services["control-desk-db"].ports | length) == 1) and
+            (.services["control-desk-db"].ports[0].host_ip == "127.0.0.1") and
+            (.services["control-desk-db"].ports[0].target == 5432)
+          '
+
+  office-windows-package-gate:
+    name: office-windows-package-gate
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.301
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/control-desk-ui/package-lock.json
+
+      - name: Cache pinned office database distributions
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\safarsuite-office-vendor-cache
+          key: office-db-vendor-${{ hashFiles('deploy/office-windows/database/postgresql-distribution.json') }}
+
+      - name: Acquire and verify pinned office database distributions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $distribution = Get-Content -Raw ./deploy/office-windows/database/postgresql-distribution.json | ConvertFrom-Json
+          $cacheRoot = Join-Path $env:RUNNER_TEMP 'safarsuite-office-vendor-cache'
+          New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+
+          $postgresArchive = Join-Path $cacheRoot $distribution.archiveFileName
+          if ((Test-Path -LiteralPath $postgresArchive) -and
+              (Get-FileHash -Algorithm SHA256 -LiteralPath $postgresArchive).Hash -ne $distribution.sha256) {
+            Remove-Item -LiteralPath $postgresArchive -Force
+          }
+          if (-not (Test-Path -LiteralPath $postgresArchive)) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri $distribution.downloadUri -OutFile $postgresArchive
+                break
+              }
+              catch {
+                Remove-Item -LiteralPath $postgresArchive -Force -ErrorAction SilentlyContinue
+                if ($attempt -eq 3) { throw }
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $postgresArchive).Hash -ne $distribution.sha256) {
+            throw 'The PostgreSQL source archive does not match the reviewed SHA-256.'
+          }
+
+          $visualCppRuntime = Join-Path $cacheRoot $distribution.visualCppRuntime.archiveFileName
+          if ((Test-Path -LiteralPath $visualCppRuntime) -and
+              (Get-FileHash -Algorithm SHA256 -LiteralPath $visualCppRuntime).Hash -ne $distribution.visualCppRuntime.sha256) {
+            Remove-Item -LiteralPath $visualCppRuntime -Force
+          }
+          if (-not (Test-Path -LiteralPath $visualCppRuntime)) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri $distribution.visualCppRuntime.downloadUri -OutFile $visualCppRuntime
+                break
+              }
+              catch {
+                Remove-Item -LiteralPath $visualCppRuntime -Force -ErrorAction SilentlyContinue
+                if ($attempt -eq 3) { throw }
+                Start-Sleep -Seconds (5 * $attempt)
+              }
+            }
+          }
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $visualCppRuntime).Hash -ne $distribution.visualCppRuntime.sha256) {
+            throw 'The Microsoft Visual C++ runtime does not match the reviewed SHA-256.'
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $visualCppRuntime
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
+            throw 'The Microsoft Visual C++ runtime signature is invalid.'
+          }
+
+          "OFFICE_POSTGRES_ARCHIVE=$postgresArchive" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_VCPP_RUNTIME=$visualCppRuntime" | Add-Content -LiteralPath $env:GITHUB_ENV
+
+      - name: Prove database lifecycle state machine and runtime filtering
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficeDatabaseLifecycle.Hermetic.ps1
+
+      - name: Prove API payload installer contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeApiPayloadInstaller.Hermetic.ps1
+
+      - name: Prove API service registration contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeApiServiceRegistration.Hermetic.ps1
+
+      - name: Prove non-secret Production settings contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeProductionSettings.Hermetic.ps1
+
+      - name: Prove service activation contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeServiceActivation.Hermetic.ps1
+
+      - name: Prove readiness-gated API activation contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeApiActivation.Hermetic.ps1
+
+      - name: Prove API service repair contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeApiServiceRepair.Hermetic.ps1
+
+      - name: Prove readiness-aware launcher contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeLauncher.Hermetic.ps1
+
+      - name: Prove owned shortcut contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeShortcuts.Hermetic.ps1
+
+      - name: Prove uninstall preservation contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeUninstall.Hermetic.ps1
+
+      - name: Prove one-entry setup contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeSetupEntry.Hermetic.ps1
+
+      - name: Prove first-operator bootstrap contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeFirstOperatorBootstrap.Hermetic.ps1
+
+      - name: Prove complete setup lifecycle contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeSetupLifecycle.Hermetic.ps1
+
+      - name: Validate native setup acceptance contract
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/Test-OfficeNativeSetupAcceptance.Hermetic.ps1
+
+      - name: Prove Control Desk machine-secret ACL implementation
+        shell: pwsh
+        run: >-
+          dotnet test
+          tests/SafarSuite.ControlDesk.Api.Tests/SafarSuite.ControlDesk.Api.Tests.csproj
+          --configuration Release
+          --filter FullyQualifiedName~ControlDeskMachineSecretAclTests
+
+      - name: Prove native machine-secret ACL and normal-user denial
+        shell: powershell
+        run: |
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP 'safarsuite-office-package-evidence'
+          New-Item -ItemType Directory -Force -Path $evidenceRoot | Out-Null
+          ./deploy/office-windows/security/Test-MachineSecretAcl.Native.ps1 `
+            -TestRoot (Join-Path $env:RUNNER_TEMP "safarsuite-machine-secret-acl-$([Guid]::NewGuid().ToString('N'))") `
+            -EvidencePath (Join-Path $evidenceRoot 'machine-secret-acl-evidence.json')
+
+      - name: Prove PostgreSQL lifecycle boundary diagnostics
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficePostgresLifecycleBoundary.Hermetic.ps1
+
+      - name: Build self-contained office package
+        shell: pwsh
+        run: >-
+          ./deploy/office-windows/Build-OfficePackage.ps1
+          -OutputDirectory "$env:RUNNER_TEMP\safarsuite-control-desk-office"
+          -PostgresDistributionArchivePath "$env:OFFICE_POSTGRES_ARCHIVE"
+          -VisualCppRedistributablePath "$env:OFFICE_VCPP_RUNTIME"
+          -ExpectedSourceRevision "$env:GITHUB_SHA"
+          -RequireCleanSource
+
+      - name: Seal immutable office package and extract the tested copy
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $builtPackage = Join-Path $env:RUNNER_TEMP 'safarsuite-control-desk-office'
+          $sealedRoot = Join-Path $env:RUNNER_TEMP 'safarsuite-office-package-sealed'
+          $archivePath = Join-Path $sealedRoot 'safarsuite-control-desk-office-win-x64.zip'
+          $checksumPath = "$archivePath.sha256"
+          $testedPackage = Join-Path $env:RUNNER_TEMP 'safarsuite-control-desk-office-tested'
+          New-Item -ItemType Directory -Path $sealedRoot | Out-Null
+          [IO.Compression.ZipFile]::CreateFromDirectory(
+            $builtPackage,
+            $archivePath,
+            [IO.Compression.CompressionLevel]::Optimal,
+            $false)
+          $archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToUpperInvariant()
+          [IO.File]::WriteAllText($checksumPath, "$archiveHash  $([IO.Path]::GetFileName($archivePath))`n", [Text.UTF8Encoding]::new($false))
+          [IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $testedPackage)
+          $manifest = Get-Content -Raw -LiteralPath (Join-Path $testedPackage 'office-package-manifest.json') | ConvertFrom-Json
+          if ($manifest.sourceRevision -cne $env:GITHUB_SHA -or $manifest.sourceTreeState -ne 'clean') {
+            throw 'The sealed package is not bound to the clean GitHub revision.'
+          }
+          "OFFICE_PACKAGE_TEST_PATH=$testedPackage" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_PACKAGE_ARCHIVE=$archivePath" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_PACKAGE_CHECKSUM=$checksumPath" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_PACKAGE_SHA256=$archiveHash" | Add-Content -LiteralPath $env:GITHUB_ENV
+
+      - name: Smoke same-origin loopback package
+        shell: pwsh
+        run: >-
+          ./deploy/office-windows/Test-OfficePackage.ps1
+          -PackageDirectory "$env:OFFICE_PACKAGE_TEST_PATH"
+          -EvidenceDirectory "$env:RUNNER_TEMP\safarsuite-office-package-evidence"
+
+      - name: Classify raw PostgreSQL runtime dependencies
+        id: postgres_runtime_dependency_probe
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficePostgresRuntimeDependencies.ps1
+          -PackageDirectory "$env:OFFICE_PACKAGE_TEST_PATH"
+          -OfficePackageArchivePath "$env:OFFICE_PACKAGE_ARCHIVE"
+          -OfficePackageArchiveSha256 "$env:OFFICE_PACKAGE_SHA256"
+          -ProbeRoot "$env:RUNNER_TEMP\safarsuite-office-db-loader-probe"
+          -EvidencePath "$env:RUNNER_TEMP\safarsuite-office-db-evidence\runtime-dependency-diagnostic.json"
+
+      - name: Prepare disposable native database proof
+        shell: pwsh
+        run: |
+          $testRoot = Join-Path $env:RUNNER_TEMP "safarsuite-office-db-$([Guid]::NewGuid().ToString('N'))"
+          $evidencePath = Join-Path $env:RUNNER_TEMP 'safarsuite-office-db-evidence\native-lifecycle.json'
+          $boundaryNonce = [Guid]::NewGuid().ToString('N')
+          "OFFICE_DB_TEST_ROOT=$testRoot" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_DB_EVIDENCE=$evidencePath" | Add-Content -LiteralPath $env:GITHUB_ENV
+          "OFFICE_DB_BOUNDARY_NONCE=$boundaryNonce" | Add-Content -LiteralPath $env:GITHUB_ENV
+
+      - name: Prove native PostgreSQL Windows service lifecycle
+        id: native_database_lifecycle
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficeDatabaseLifecycle.NativeCi.ps1
+          -PackageDirectory "$env:OFFICE_PACKAGE_TEST_PATH"
+          -TestRoot "$env:OFFICE_DB_TEST_ROOT"
+          -EvidencePath "$env:OFFICE_DB_EVIDENCE"
+          -OfficePackageArchiveSha256 "$env:OFFICE_PACKAGE_SHA256"
+          -BoundaryInvocationNonce "$env:OFFICE_DB_BOUNDARY_NONCE"
+
+      - name: Clean disposable native database proof
+        if: always()
+        shell: powershell
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:OFFICE_DB_TEST_ROOT)) {
+            Write-Host 'Native database proof was not prepared; no cleanup is required.'
+          }
+          else {
+            ./deploy/office-windows/database/Clear-OfficeDatabaseLifecycle.NativeCi.ps1 `
+              -TestRoot "$env:OFFICE_DB_TEST_ROOT"
+          }
+
+      - name: Validate PostgreSQL lifecycle boundary evidence
+        id: database_boundary_evidence_validation
+        if: always() && steps.postgres_runtime_dependency_probe.outcome != 'skipped'
+        shell: powershell
+        run: >-
+          ./deploy/office-windows/database/Test-OfficePostgresLifecycleBoundaryEvidence.ps1
+          -EvidencePath "$env:RUNNER_TEMP\safarsuite-office-db-evidence\runtime-stage-boundary.json"
+          -LifecycleOutcome "${{ steps.native_database_lifecycle.outcome }}"
+          -ExpectedSourceRevision "$env:GITHUB_SHA"
+          -ExpectedOfficePackageArchiveSha256 "$env:OFFICE_PACKAGE_SHA256"
+          -ExpectedInvocationNonce "$env:OFFICE_DB_BOUNDARY_NONCE"
+
+      - name: Upload native database lifecycle evidence
+        if: always() && steps.postgres_runtime_dependency_probe.outcome != 'skipped' && steps.database_boundary_evidence_validation.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: safarsuite-control-desk-office-database-evidence
+          path: ${{ runner.temp }}\safarsuite-office-db-evidence
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload office package smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safarsuite-control-desk-office-package-evidence
+          path: ${{ runner.temp }}\safarsuite-office-package-evidence
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Verify sealed office package is unchanged
+        shell: pwsh
+        run: |
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $env:OFFICE_PACKAGE_ARCHIVE).Hash.ToUpperInvariant()
+          if ($actual -cne $env:OFFICE_PACKAGE_SHA256) {
+            throw 'The sealed office package changed after it was created.'
+          }
+          $expectedChecksum = "$actual  $([IO.Path]::GetFileName($env:OFFICE_PACKAGE_ARCHIVE))"
+          $actualChecksum = [IO.File]::ReadAllText($env:OFFICE_PACKAGE_CHECKSUM).Trim()
+          if ($actualChecksum -cne $expectedChecksum) {
+            throw 'The uploaded office package checksum file does not describe the tested archive.'
+          }
+
+      - name: Upload office pilot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: safarsuite-control-desk-office-win-x64
+          path: ${{ runner.temp }}\safarsuite-office-package-sealed
+          if-no-files-found: error
+          retention-days: 7

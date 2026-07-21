@@ -10,6 +10,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -20,7 +24,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -29,9 +34,20 @@ button {
 }
 
 button:disabled,
-input:disabled {
+input:disabled,
+select:disabled {
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
 }
 
 .portal-shell {
@@ -58,6 +74,26 @@ input:disabled {
   gap: 12px;
   min-height: 74px;
   padding: 12px;
+}
+
+.header-actions,
+.session-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.header-actions {
+  flex-wrap: wrap;
+}
+
+.session-summary > span {
+  max-width: 320px;
+  overflow-wrap: anywhere;
+  color: #59606a;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .brand-lockup {
@@ -127,8 +163,54 @@ input:disabled {
   padding: 10px;
 }
 
+.auth-zone,
+.authenticated-content {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-copy {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 2px;
+}
+
+.auth-copy strong {
+  color: #17191c;
+  font-size: 16px;
+}
+
+.auth-copy span,
+.security-row p,
+.enrollment-panel p,
+.recovery-panel p {
+  margin: 0;
+  color: #59606a;
+}
+
+.auth-actions {
+  display: grid;
+  gap: 5px;
+  align-items: stretch;
+}
+
+.login-panel {
+  grid-template-columns: minmax(220px, 1.2fr) minmax(170px, 0.8fr) minmax(170px, 0.8fr) minmax(170px, 0.7fr) auto;
+}
+
 .invitation-panel {
   grid-template-columns: minmax(240px, 1.2fr) minmax(190px, 0.8fr) minmax(190px, 0.8fr) auto;
+}
+
+.mfa-panel,
+.password-panel {
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+}
+
+.mfa-methods {
+  display: flex;
+  align-items: end;
+  gap: 6px;
 }
 
 .lookup-panel label {
@@ -137,7 +219,8 @@ input:disabled {
   min-width: 0;
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 34px;
   border: 1px solid #8f969f;
@@ -147,7 +230,9 @@ input {
   background: #ffffff;
 }
 
-input:focus {
+input:focus,
+select:focus,
+button:focus-visible {
   outline: 2px solid #2f74c0;
   outline-offset: 1px;
 }
@@ -162,9 +247,133 @@ button {
   font-weight: 750;
 }
 
+.secondary-button,
+.link-button {
+  color: #1f6e43;
+  background: #ffffff;
+}
+
+.link-button {
+  min-height: auto;
+  border-color: transparent;
+  padding: 2px 5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.compact-button {
+  min-height: 30px;
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+.mfa-code {
+  max-width: 180px;
+  letter-spacing: 0.22em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.security-card {
+  gap: 12px;
+}
+
+.security-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.enrollment-panel,
+.recovery-panel {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #c2c7cd;
+  padding-top: 12px;
+}
+
+.enrollment-details {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.enrollment-details img {
+  width: 180px;
+  height: 180px;
+  border: 1px solid #c2c7cd;
+  border-radius: 4px;
+  padding: 5px;
+  background: #ffffff;
+}
+
+.enrollment-details > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.enrollment-details code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 1px solid #d6d9dd;
+  border-radius: 4px;
+  padding: 7px;
+  background: #f7f8f9;
+  font-weight: 750;
+}
+
+.otp-auth-link {
+  color: #1f6e43;
+  font-weight: 700;
+}
+
+.inline-form {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.inline-form label {
+  display: grid;
+  gap: 4px;
+}
+
+.inline-form label span {
+  color: #59606a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.inline-actions,
+.horizontal-actions {
+  display: flex;
+  flex-direction: row;
+}
+
+.recovery-code-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recovery-code-list li {
+  border: 1px solid #7c8fa4;
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: #33485d;
+  background: #eef3f8;
+  font-family: Consolas, "Courier New", monospace;
+  font-weight: 750;
+}
+
 .portal-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -224,6 +433,12 @@ button {
   overflow-x: auto;
 }
 
+.table-more {
+  justify-self: end;
+  color: #1f6e43;
+  background: #ffffff;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -279,16 +494,374 @@ td {
   background: #f7f8f9;
 }
 
-@media (max-width: 900px) {
-  .lookup-panel,
-  .portal-grid,
-  .detail-zone {
-    grid-template-columns: 1fr;
+.portal-nav {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border: 1px solid #a5abb3;
+  border-radius: 6px;
+  padding: 5px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(32, 37, 43, 0.08);
+}
+
+.portal-nav-button {
+  flex: 0 0 auto;
+  border-color: transparent;
+  padding-inline: 16px;
+  color: #33485d;
+  background: transparent;
+}
+
+.portal-nav-button:hover,
+.portal-nav-button.active {
+  border-color: #82a991;
+  color: #145f36;
+  background: #edf8f0;
+}
+
+.portal-view,
+.billing-view {
+  display: grid;
+  gap: 12px;
+}
+
+.portal-notice {
+  border: 1px solid #b94747;
+  border-radius: 5px;
+  padding: 9px 12px;
+  color: #7d1c1c;
+  background: #fff0f0;
+  font-weight: 700;
+}
+
+.page-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 2px;
+}
+
+.page-heading h2,
+.success-card h2 {
+  margin: 2px 0;
+  color: #17191c;
+  font-size: 24px;
+}
+
+.page-heading p,
+.success-card p,
+.verification-note,
+.empty-state span,
+.payment-form small {
+  margin: 0;
+  color: #59606a;
+}
+
+.compact-heading {
+  align-items: center;
+}
+
+.eyebrow {
+  color: #1f6e43;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.billing-summary-card dl,
+.invoice-totals {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.billing-summary-card dd {
+  font-size: 20px;
+}
+
+.table-header > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.table-filter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #59606a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.table-filter select {
+  width: auto;
+  min-width: 170px;
+}
+
+.billing-table {
+  min-width: 1020px;
+}
+
+.line-items-table,
+.history-table {
+  min-width: 620px;
+}
+
+.billing-table tr.overdue-row td {
+  border-top-color: #e6aaaa;
+  background: #fff4f4;
+}
+
+.billing-table tr.overdue-row td:first-child {
+  box-shadow: inset 3px 0 #b94747;
+}
+
+.row-action {
+  min-height: 28px;
+  padding: 3px 9px;
+  white-space: nowrap;
+  color: #1f6e43;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 25px;
+  border: 1px solid #7c8fa4;
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: #33485d;
+  background: #eef3f8;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.status-badge.paid,
+.status-badge.verified,
+.status-badge.approved {
+  border-color: #4b9465;
+  color: #145f36;
+  background: #edf8f0;
+}
+
+.status-badge.overdue,
+.status-badge.rejected {
+  border-color: #b94747;
+  color: #7d1c1c;
+  background: #fff0f0;
+}
+
+.status-badge.pending,
+.status-badge.pending-verification,
+.status-badge.partial {
+  border-color: #c28a2f;
+  color: #754b0b;
+  background: #fff8e8;
+}
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  border: 1px dashed #b9bec4;
+  border-radius: 5px;
+  padding: 24px 12px;
+  text-align: center;
+}
+
+.compact-empty {
+  justify-items: start;
+  padding: 12px;
+  text-align: left;
+}
+
+.invoice-detail-card > header > div,
+.receipt-card > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.invoice-metadata {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.invoice-totals {
+  justify-self: end;
+  width: min(100%, 680px);
+}
+
+.invoice-totals .remaining-total {
+  border-top: 2px solid #247a4b;
+}
+
+.invoice-totals .remaining-total dd {
+  color: #145f36;
+  font-size: 17px;
+}
+
+.payment-history-zone {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.claim-card-list,
+.claim-history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.claim-list-item {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.2fr) minmax(110px, 0.8fr) minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d6d9dd;
+  border-radius: 5px;
+  padding: 9px;
+  background: #fbfbfc;
+}
+
+.claim-list-item > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.claim-list-item small {
+  overflow-wrap: anywhere;
+  color: #59606a;
+}
+
+.claim-rejection-summary {
+  grid-column: 1 / -1;
+  margin: 0;
+  border-left: 3px solid #b94747;
+  padding-left: 8px;
+  color: #7d1c1c;
+}
+
+.payment-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 12px;
+}
+
+.bank-details-card dl {
+  grid-template-columns: 1fr;
+}
+
+.payment-form label {
+  display: grid;
+  gap: 4px;
+}
+
+.payment-form label > span {
+  color: #59606a;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.payment-form button[type="submit"] {
+  justify-self: end;
+}
+
+.confirmation-card,
+.success-card {
+  justify-self: center;
+  width: min(100%, 760px);
+}
+
+.confirmation-card dl,
+.success-card dl,
+.receipt-card dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.verification-note {
+  border-left: 3px solid #c28a2f;
+  padding: 8px 10px;
+  background: #fff8e8;
+}
+
+.confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.success-card {
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 20px;
+}
+
+.success-card dl,
+.success-card .confirmation-actions {
+  grid-column: 1 / -1;
+}
+
+.success-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #247a4b;
+  font-size: 25px;
+  font-weight: 800;
+}
+
+.receipt-card {
+  width: min(100%, 820px);
+  margin: 0 auto;
+}
+
+.rejection-panel {
+  border: 1px solid #b94747;
+  border-radius: 5px;
+  padding: 10px;
+  color: #7d1c1c;
+  background: #fff0f0;
+}
+
+.rejection-panel p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1120px) {
+  .portal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .portal-card dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+@media (max-width: 900px) {
+  .lookup-panel,
+  .portal-grid,
+  .detail-zone,
+  .payment-history-zone,
+  .payment-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-copy {
+    grid-column: auto;
+  }
+
+  .invoice-metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
 }
 
 @media (max-width: 560px) {
@@ -297,7 +870,101 @@ td {
     flex-direction: column;
   }
 
+  .header-actions,
+  .session-summary,
+  .security-row,
+  .enrollment-details,
+  .inline-form,
+  .horizontal-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .mfa-methods {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .portal-card dl {
     grid-template-columns: 1fr;
+  }
+
+  .page-heading,
+  .table-header,
+  .confirmation-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .table-filter,
+  .table-filter select {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .billing-summary-card dl,
+  .invoice-metadata,
+  .invoice-totals,
+  .confirmation-card dl,
+  .success-card dl,
+  .receipt-card dl {
+    grid-template-columns: 1fr !important;
+  }
+
+  .invoice-totals {
+    justify-self: stretch;
+  }
+
+  .claim-list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .claim-rejection-summary {
+    grid-column: auto;
+  }
+
+  .success-card {
+    grid-template-columns: 1fr;
+  }
+
+  .success-card dl,
+  .success-card .confirmation-actions {
+    grid-column: auto;
+  }
+}
+
+@media print {
+  :root,
+  body {
+    color: #000000;
+    background: #ffffff;
+  }
+
+  .portal-shell {
+    width: 100%;
+    padding: 0;
+  }
+
+  .portal-header,
+  .portal-nav,
+  .portal-notice,
+  .portal-view:not(.print-target),
+  .no-print,
+  .confirmation-actions {
+    display: none !important;
+  }
+
+  .portal-view.print-target {
+    display: block !important;
+  }
+
+  .portal-card {
+    border: 0;
+    box-shadow: none;
+  }
+
+  .receipt-card {
+    width: 100%;
   }
 }

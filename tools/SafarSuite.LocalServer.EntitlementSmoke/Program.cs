@@ -7,6 +7,8 @@ using SafarSuite.ControlCloud.Application.Common;
 using SafarSuite.ControlCloud.Application.Modules.ClientPortal.Ports;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateInstallationSetupToken;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.CreateLocalServerBootstrapPackage;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.IssueLocalServerFirstManagerSetupToken;
+using SafarSuite.ControlCloud.Application.Modules.LocalServer.MarkLocalServerBootstrapPackageHandoff;
 using SafarSuite.ControlCloud.Application.Modules.LocalServer.Ports;
 using SafarSuite.ControlCloud.Domain.Modules.ClientPortal;
 using SafarSuite.ControlCloud.Domain.Modules.LocalServer;
@@ -14,6 +16,7 @@ using SafarSuite.ControlCloud.Infrastructure.ClientPortal;
 using SafarSuite.ControlCloud.Infrastructure.LocalServer;
 using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 using SafarSuite.LocalServer.Application.Commands;
+using SafarSuite.LocalServer.Application.Commands.GetAppActivationRevocationStatus;
 using SafarSuite.LocalServer.Application.Commands.Ports;
 using SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommands;
 using SafarSuite.LocalServer.Application.Commands.ProcessInstallationCommandsFromBootstrapConfiguration;
@@ -27,14 +30,17 @@ using SafarSuite.LocalServer.Application.Entitlements.PullEntitlementFromControl
 using SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatFromBootstrapConfiguration;
 using SafarSuite.LocalServer.Application.Heartbeats.ReportHeartbeatToControlCloud;
 using SafarSuite.LocalServer.Application.ModuleGateway.EvaluateModuleAccess;
+using SafarSuite.LocalServer.Application.Pairing.Ports;
 using SafarSuite.LocalServer.Application.Registration.RegisterInstallationFromBootstrapBundle;
 using SafarSuite.LocalServer.Application.Registration.RegisterInstallationWithControlCloud;
 using SafarSuite.LocalServer.Domain.Entitlements;
+using SafarSuite.LocalServer.Domain.Pairing;
 using SafarSuite.LocalServer.Domain.Registration;
 using SafarSuite.LocalServer.Infrastructure.Commands;
 using SafarSuite.LocalServer.Infrastructure.Diagnostics;
 using SafarSuite.LocalServer.Infrastructure.Entitlements;
 using SafarSuite.LocalServer.Infrastructure.Heartbeats;
+using SafarSuite.LocalServer.Infrastructure.Pairing;
 using SafarSuite.LocalServer.Infrastructure.Registration;
 
 var installationId = "office-main";
@@ -48,9 +54,18 @@ var trustStatePath = Path.Combine(
 var importAuditPath = Path.Combine(
     Path.GetTempPath(),
     $"safarsuite-local-entitlement-import-audit-smoke-{Guid.NewGuid():N}.json");
+var appActivationRevocationPath = Path.Combine(
+    Path.GetTempPath(),
+    $"safarsuite-local-app-activation-revocations-smoke-{Guid.NewGuid():N}.json");
 var bootstrapConfigurationPath = Path.Combine(
     Path.GetTempPath(),
     $"safarsuite-local-bootstrap-configuration-smoke-{Guid.NewGuid():N}.json");
+var pairingStorePath = Path.Combine(
+    Path.GetTempPath(),
+    $"safarsuite-local-device-pairings-smoke-{Guid.NewGuid():N}.json");
+var pairingSecurityEventStorePath = Path.Combine(
+    Path.GetTempPath(),
+    $"safarsuite-local-pairing-security-events-smoke-{Guid.NewGuid():N}.json");
 var trustOptions = new LocalServerEntitlementTrustOptions
 {
     CacheStorePath = cachePath,
@@ -83,6 +98,27 @@ var cache = new FileLocalServerEntitlementCache(trustOptions);
 var trustStateStore = new FileLocalServerEntitlementTrustStateStore(trustOptions);
 var importAuditStore = new FileLocalServerEntitlementImportAuditStore(trustOptions);
 var bootstrapConfigurationStore = new FileLocalServerBootstrapConfigurationStore(bootstrapTrustOptions);
+var pairingStore = new FileLocalServerDevicePairingStore(
+    new LocalServerPairingStoreOptions
+    {
+        DeviceStorePath = pairingStorePath
+    });
+var pairingAbuseOptions = new LocalServerPairingAbuseControlOptions
+{
+    SecurityEventStorePath = pairingSecurityEventStorePath,
+    SecurityEventReadLimit = 50,
+    SecurityEventMaxRecords = 100
+};
+var pairingSecurityEventStore = new FileLocalServerPairingSecurityEventStore(pairingAbuseOptions);
+var firstManagerSetupTokenVerifier = new HmacLocalServerFirstManagerSetupTokenVerifier(
+    bootstrapTrustOptions);
+var deviceCredentialService = new HmacLocalServerDeviceCredentialService(
+    new LocalServerDeviceCredentialOptions
+    {
+        SigningKeyId = "device-smoke",
+        SigningSecret = "device-signing-secret-change-before-cloud",
+        ExpiresInDays = 3650
+    });
 var runtimeCommandRunner = new StaticRuntimeCommandRunner();
 var runtimeDiagnosticsCollector = new ManifestLocalServerRuntimeDiagnosticsCollector(
     bootstrapConfigurationStore,
@@ -112,6 +148,58 @@ var diagnosticsBundleHandler = new CreateLocalServerDiagnosticsBundleHandler(
     importAuditStore,
     runtimeDiagnosticsCollector);
 
+var securityEventAtUtc = new DateTimeOffset(2026, 8, 1, 9, 55, 0, TimeSpan.Zero);
+await pairingSecurityEventStore.RecordEventAsync(
+    new LocalServerPairingSecurityEvent(
+        Guid.NewGuid(),
+        securityEventAtUtc,
+        LocalServerPairingSecurityEventTypes.RateLimited,
+        LocalServerPairingSecuritySeverities.Warning,
+        LocalServerPairingAbuseEndpointGroups.PairingRequest,
+        "remote:smoke",
+        "192.0.2.10",
+        DeviceInstallIdHash: null,
+        DeviceFingerprintHash: "fingerprint-smoke",
+        PairingRequestId: null,
+        DeviceId: null,
+        Count: 13,
+        WindowStartedAtUtc: securityEventAtUtc.AddMinutes(-15),
+        WindowExpiresAtUtc: securityEventAtUtc.AddMinutes(15),
+        Action: LocalServerPairingAbuseActions.Throttle,
+        Detail: "Smoke pairing source exceeded its limit."));
+var pairingSecurityEvents = await pairingSecurityEventStore.ListEventsAsync(10);
+Require(pairingSecurityEvents.Count == 1, "Pairing security event store should persist local abuse events.");
+Require(
+    pairingSecurityEvents.First().EventType == LocalServerPairingSecurityEventTypes.RateLimited
+    && pairingSecurityEvents.First().SourceKey == "remote:smoke",
+    "Pairing security event store should preserve event type and source key.");
+
+await pairingSecurityEventStore.SaveSourceDecisionAsync(
+    new LocalServerPairingAbuseSourceDecision(
+        "remote:smoke",
+        LocalServerPairingAbuseActions.Deny,
+        "Smoke manager deny.",
+        "Smoke Manager",
+        securityEventAtUtc,
+        securityEventAtUtc.AddHours(1)));
+var activeDenyDecision = await pairingSecurityEventStore.GetActiveSourceDecisionAsync(
+    "remote:smoke",
+    securityEventAtUtc.AddMinutes(5));
+Require(activeDenyDecision?.Action == LocalServerPairingAbuseActions.Deny, "Pairing abuse source deny should be active until expiry or release.");
+
+await pairingSecurityEventStore.SaveSourceDecisionAsync(
+    new LocalServerPairingAbuseSourceDecision(
+        "remote:smoke",
+        LocalServerPairingAbuseActions.Release,
+        "Smoke manager release.",
+        "Smoke Manager",
+        securityEventAtUtc.AddMinutes(10),
+        ExpiresAtUtc: null));
+var releasedDecision = await pairingSecurityEventStore.GetActiveSourceDecisionAsync(
+    "remote:smoke",
+    securityEventAtUtc.AddMinutes(11));
+Require(releasedDecision is null, "Pairing abuse source release should clear the latest active deny/quarantine decision.");
+
 var signedBundle = CreateSignedBundle(
     clientId,
     installationId,
@@ -134,6 +222,12 @@ Require(bootstrapPackage.DeploymentProfile.ClientDeploymentMode == SafarSuiteCli
 Require(bootstrapPackage.DeploymentProfile.SiteId == "hq-main", "Bootstrap package should carry the site id.");
 Require(bootstrapPackage.DeploymentProfile.SiteRole == SafarSuiteDeploymentSiteRoles.Hq, "Bootstrap package should carry the site role.");
 Require(bootstrapPackage.SignedBundle.Payload.DeploymentProfile.SyncTopologyId == "sync-main", "Signed bootstrap bundle should carry the sync topology id.");
+Require(bootstrapPackage.AppActivationSigningKey?.SigningKeyId == "app-activation-smoke", "Bootstrap package should carry the app activation signing key id.");
+Require(bootstrapPackage.SignedBundle.Payload.AppActivationSigningKey?.SigningKeyId == "app-activation-smoke", "Signed bootstrap bundle should carry the app activation signing key id.");
+Require(
+    !string.IsNullOrWhiteSpace(bootstrapPackage.AppActivationSigningKey?.PublicKeyPem)
+    && bootstrapPackage.AppActivationSigningKey.PublicKeyPem == bootstrapPackage.SignedBundle.Payload.AppActivationSigningKey?.PublicKeyPem,
+    "Bootstrap package and signed payload should carry the same app activation public key.");
 Require(bootstrapPackage.RuntimePlan?.Services.Count == 4, "Bootstrap package should describe local runtime services.");
 var bootstrapRuntimePlan = bootstrapPackage.RuntimePlan
     ?? throw new InvalidOperationException("Bootstrap runtime plan should exist.");
@@ -141,15 +235,67 @@ Require(bootstrapRuntimePlan.Services.Any(service =>
     service.ServiceName == "safarsuite-app"
     && service.ComposeProfile == "app-runtime"
     && !service.StartsByDefault), "Bootstrap package should include the optional SafarSuite app runtime slot.");
-Require(bootstrapPackage.Artifacts.Any(artifact =>
-    artifact.ArtifactType == "RuntimeServicesManifest"
-    && artifact.Content.Contains("safarsuite-app", StringComparison.Ordinal)), "Bootstrap package should include a runtime service manifest artifact.");
+var dockerComposeArtifact = RequireArtifact(bootstrapPackage, "DockerComposeTemplate");
+var environmentTemplateArtifact = RequireArtifact(bootstrapPackage, "EnvironmentTemplate");
+var runtimeManifestArtifact = RequireArtifact(bootstrapPackage, "RuntimeServicesManifest");
+Require(dockerComposeArtifact.FileName == "docker-compose.yml", "Bootstrap package should include the Docker Compose artifact filename.");
+Require(dockerComposeArtifact.TargetPath.EndsWith("/docker-compose.yml", StringComparison.Ordinal), "Bootstrap Docker Compose artifact should target the runtime config directory.");
+Require(dockerComposeArtifact.Content.Contains("safarsuite-app:", StringComparison.Ordinal), "Bootstrap Docker Compose template should include the SafarSuite app service.");
+Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_LOCAL_DB_IMAGE:-postgres:16-alpine}", StringComparison.Ordinal), "Bootstrap Docker Compose template should allow the local database image to be overridden.");
+Require(dockerComposeArtifact.Content.Contains("profiles:", StringComparison.Ordinal)
+    && dockerComposeArtifact.Content.Contains("- app-runtime", StringComparison.Ordinal), "Bootstrap Docker Compose template should keep the SafarSuite app behind the app-runtime profile.");
+Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_APP_IMAGE:?Set SAFARSUITE_APP_IMAGE}", StringComparison.Ordinal), "Bootstrap Docker Compose template should use the app image environment variable.");
+Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_APP_HTTP_PORT:-5280}:5280", StringComparison.Ordinal), "Bootstrap Docker Compose template should publish the app through the configured host port.");
+Require(dockerComposeArtifact.Content.Contains("${SAFARSUITE_APP_HTTP_PORT:-5280}:5280/udp", StringComparison.Ordinal), "Bootstrap Docker Compose template should publish the app UDP discovery port through the configured host port.");
+Require(dockerComposeArtifact.Content.Contains("SAFARSUITE_MODULE_GATEWAY_URL", StringComparison.Ordinal), "Bootstrap Docker Compose template should wire the app to the local module gateway.");
+Require(dockerComposeArtifact.Content.Contains("SAFARSUITE_LOCAL_API_BASE_URL:-https://local-api:8080", StringComparison.Ordinal), "Bootstrap Docker Compose template should default the app to the HTTPS Local API.");
+Require(dockerComposeArtifact.Content.Contains("SAFARSUITE_MODULE_GATEWAY_URL:-https://local-api:8080", StringComparison.Ordinal), "Bootstrap Docker Compose template should default module-gateway URL to the HTTPS Local API.");
+Require(dockerComposeArtifact.Content.Contains("./runtime-services.manifest.json:/etc/safarsuite/local-server/runtime-services.manifest.json:ro", StringComparison.Ordinal), "Bootstrap Docker Compose template should mount the runtime manifest into local services and app runtime.");
+Require(dockerComposeArtifact.Content.Contains("./certs/local-api:/etc/safarsuite/local-server/certs/local-api:ro", StringComparison.Ordinal), "Bootstrap Docker Compose template should mount local API server certificates only into the local API runtime.");
+Require(dockerComposeArtifact.Content.Contains("./certs/trust:/etc/safarsuite/local-server/certs/trust:ro", StringComparison.Ordinal), "Bootstrap Docker Compose template should mount trusted local API CA certificates into the app runtime.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_SITE_ID", StringComparison.Ordinal), "Bootstrap environment template should carry site identity placeholders.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_SERVER_CONFIG_DIR=/etc/safarsuite/local-server", StringComparison.Ordinal), "Bootstrap environment template should expose the local-server container config directory.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_SERVER_STATE_DIR=/var/lib/safarsuite/local-server", StringComparison.Ordinal), "Bootstrap environment template should expose the shared local-server state directory.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_DB_IMAGE=postgres:16-alpine", StringComparison.Ordinal), "Bootstrap environment template should default the local database image.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_APP_IMAGE=ghcr.io/danionwheels/localserver:{{SAFARSUITE_APP_VERSION}}", StringComparison.Ordinal), "Bootstrap environment template should default the app image to the verified SafarSuite runtime image.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_MODULE_GATEWAY_URL=https://local-api:8080", StringComparison.Ordinal), "Bootstrap environment template should default the app gateway to the HTTPS local API.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_ACCESS_KEY=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the local API access key placeholder.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_BASE_URL=https://local-api:8080", StringComparison.Ordinal), "Bootstrap environment template should default app-to-provider Local API traffic to HTTPS.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_TLS_MODE=GeneratedLocalCa", StringComparison.Ordinal), "Bootstrap environment template should default Local API TLS automation to generated local CA mode.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_ASPNETCORE_URLS=https://0.0.0.0:8080", StringComparison.Ordinal), "Bootstrap environment template should bind the local API over HTTPS by default.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_PATH=", StringComparison.Ordinal), "Bootstrap environment template should expose the local API TLS certificate path.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CA_CERTIFICATE_PATH=", StringComparison.Ordinal), "Bootstrap environment template should expose the trusted local API CA certificate path.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_DNS_NAMES=local-api,localhost", StringComparison.Ordinal), "Bootstrap environment template should expose local API certificate DNS names.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_IP_ADDRESSES=127.0.0.1", StringComparison.Ordinal), "Bootstrap environment template should expose local API certificate IP addresses.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_PAIRING_MODE=ManagerApproval", StringComparison.Ordinal), "Bootstrap environment template should expose the LocalServer pairing mode.");
+Require(environmentTemplateArtifact.Content.Contains("LocalServer__Pairing__RequestExpiresInHours=24", StringComparison.Ordinal), "Bootstrap environment template should expose the default pairing request expiry window.");
+Require(environmentTemplateArtifact.Content.Contains("SAFARSUITE_LOCAL_MANAGER_SESSION_SIGNING_SECRET=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the local manager session signing secret placeholder.");
+Require(environmentTemplateArtifact.Content.Contains("DeploymentSecrets__Provider=Environment", StringComparison.Ordinal), "Bootstrap environment template should select environment-backed app runtime secrets.");
+Require(environmentTemplateArtifact.Content.Contains("ActivationSigning__SigningKeyId=app-activation-smoke", StringComparison.Ordinal), "Bootstrap environment template should carry the app activation signing key id.");
+Require(environmentTemplateArtifact.Content.Contains("ActivationSigning__PublicKeyPem=\"-----BEGIN PUBLIC KEY-----\\n", StringComparison.Ordinal), "Bootstrap environment template should carry the escaped app activation public key.");
+Require(!environmentTemplateArtifact.Content.Contains("{{SAFARSUITE_APP_ACTIVATION_", StringComparison.Ordinal), "Bootstrap environment template should not leave app activation signing placeholders unresolved.");
+Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__SigningSecret=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the app device signing secret placeholder.");
+Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__ExpiresInDays=3650", StringComparison.Ordinal), "Bootstrap environment template should carry the app device credential lifetime.");
+Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__RefreshWindowDays=30", StringComparison.Ordinal), "Bootstrap environment template should carry the app device credential refresh window.");
+Require(environmentTemplateArtifact.Content.Contains("DeviceCredentials__RefreshGraceHours=24", StringComparison.Ordinal), "Bootstrap environment template should carry the app device credential refresh grace.");
+Require(environmentTemplateArtifact.Content.Contains("UserSessions__SigningSecret=change-me-before-start", StringComparison.Ordinal), "Bootstrap environment template should carry the app session signing secret placeholder.");
+Require(environmentTemplateArtifact.Content.Contains("FirstManagerBootstrap__AllowSetupCodeFallback=false", StringComparison.Ordinal), "Bootstrap environment template should keep first-manager fallback setup codes disabled.");
+Require(runtimeManifestArtifact.Content.Contains("\"serviceName\": \"safarsuite-app\"", StringComparison.Ordinal), "Bootstrap runtime manifest should include the SafarSuite app service.");
+Require(runtimeManifestArtifact.Content.Contains("\"internalBaseUrl\": \"https://local-api:8080\"", StringComparison.Ordinal), "Bootstrap runtime manifest should describe the Local API over HTTPS by default.");
+Require(runtimeManifestArtifact.Content.Contains("\"composeProfile\": \"app-runtime\"", StringComparison.Ordinal), "Bootstrap runtime manifest should describe the SafarSuite app profile.");
+Require(runtimeManifestArtifact.Content.Contains("\"publishedPortEnvironmentVariable\": \"SAFARSUITE_APP_HTTP_PORT\"", StringComparison.Ordinal), "Bootstrap runtime manifest should describe the app port variable.");
 Require(bootstrapPackage.Endpoints.DiagnosticsUrl?.EndsWith("/diagnostics", StringComparison.Ordinal) == true, "Bootstrap package should include the diagnostics endpoint.");
 Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_APP_VERSION", StringComparison.Ordinal), "Bootstrap install command should carry SafarSuite app version.");
+Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_APP_ACTIVATION_SIGNING_KEY_ID", StringComparison.Ordinal), "Bootstrap install command should carry the app activation signing key id.");
+Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_APP_ACTIVATION_PUBLIC_KEY_PEM", StringComparison.Ordinal), "Bootstrap install command should carry the app activation public key.");
 Require(bootstrapPackage.InstallCommand.Contains("SAFARSUITE_CLIENT_DEPLOYMENT_MODE", StringComparison.Ordinal), "Bootstrap install command should carry client deployment mode.");
-Require(bootstrapPackage.Artifacts.Any(artifact =>
-    artifact.ArtifactType == "EnvironmentTemplate"
-    && artifact.Content.Contains("SAFARSUITE_SITE_ID", StringComparison.Ordinal)), "Bootstrap environment template should carry site identity placeholders.");
+Require(bootstrapPackage.BundleContentType == ControlCloudLocalServerBootstrapPackageFormat.BundleContentType, "Bootstrap package should expose the signed bundle content type.");
+Require(bootstrapPackage.BundleFileName.StartsWith("safarsuite-bootstrap-", StringComparison.Ordinal), "Bootstrap package should use a stable signed bundle filename prefix.");
+Require(bootstrapPackage.BundleSha256 == ComputeSha256(JsonSerializer.Serialize(
+    bootstrapPackage.SignedBundle,
+    new JsonSerializerOptions(JsonSerializerDefaults.Web))), "Bootstrap bundle checksum should match the downloadable signed bundle.");
+Require(bootstrapPackage.SignedBundle.Signature.PayloadSha256 == ComputeSha256(bootstrapPackage.SignedBundle.PayloadJson), "Bootstrap signature payload checksum should match the signed payload JSON.");
+RequireLocalServerRuntimeImageContract();
 
 var bootstrapRegistrationHandler = new RegisterInstallationFromBootstrapBundleHandler(
     bootstrapVerifier,
@@ -172,6 +318,147 @@ Require(savedBootstrapConfiguration.RegistrationStatus == LocalServerBootstrapRe
 Require(savedBootstrapConfiguration.SignatureKeyId == "bootstrap-smoke", "Bootstrap configuration should retain the trusted signing key id.");
 Require(savedBootstrapConfiguration.Endpoints.HeartbeatUrl.EndsWith("/heartbeat", StringComparison.Ordinal), "Bootstrap configuration should carry the heartbeat endpoint.");
 Require(savedBootstrapConfiguration.DeploymentProfile.SyncTopologyId == "sync-main", "Bootstrap configuration should carry the signed sync topology.");
+
+var firstManagerPairingRequestId = Guid.NewGuid();
+var firstManagerDeviceId = Guid.NewGuid();
+var firstManagerDevice = new LocalServerDevicePairingRecord(
+    firstManagerPairingRequestId,
+    firstManagerDeviceId,
+    clientId,
+    installationId,
+    LocalServerPairingFormats.DevicePairingRequestVersion,
+    "Owner laptop",
+    "first-manager-device-public-key",
+    ComputeSha256("first-manager-device-public-key"),
+    "owner-laptop-fingerprint",
+    "owner",
+    "smoke-app",
+    "server-nonce",
+    "client-nonce",
+    LocalServerDevicePairingRecordStatuses.Pending,
+    LocalServerDevicePairingRecordStatuses.Pending,
+    clock.UtcNow,
+    clock.UtcNow.AddHours(24),
+    clock.UtcNow);
+await pairingStore.SaveAsync(firstManagerDevice);
+var firstManagerCloudInstallations = new InMemoryClientInstallationRepository();
+await firstManagerCloudInstallations.AddAsync(ControlCloudClientInstallation.Register(
+    clientId,
+    installationId,
+    clock.UtcNow,
+    ControlCloudInstallationDeploymentProfile.Create(
+        installationId,
+        ControlCloudBootstrapModes.OnlineBootstrap,
+        SafarSuiteClientDeploymentModes.CloudSyncMultiBranch,
+        "hq-main",
+        SafarSuiteDeploymentSiteRoles.Hq,
+        parentSiteId: null,
+        branchCode: "HQ",
+        syncTopologyId: "sync-main")));
+var cloudFirstManagerSetupTokenIssueRepository = new InMemoryFirstManagerSetupTokenIssueRepository();
+var cloudFirstManagerSetupTokenHandler = new IssueLocalServerFirstManagerSetupTokenHandler(
+    firstManagerCloudInstallations,
+    new HmacControlCloudFirstManagerSetupTokenSigner(
+        new ControlCloudEntitlementSigningOptions
+        {
+            ActiveKeyId = "bootstrap-smoke",
+            SigningKeys =
+            [
+                new ControlCloudEntitlementSigningKeyOptions
+                {
+                    KeyId = "bootstrap-smoke",
+                    Secret = "bootstrap-signing-secret-change-before-cloud"
+                }
+            ]
+        }),
+    cloudFirstManagerSetupTokenIssueRepository,
+    new InMemoryClientPortalAuditRecorder(),
+    new FixedControlCloudClock(clock.UtcNow));
+var cloudFirstManagerSetupTokenResult = await cloudFirstManagerSetupTokenHandler.HandleAsync(
+    new IssueLocalServerFirstManagerSetupTokenCommand(
+        clientId,
+        installationId,
+        firstManagerPairingRequestId,
+        "Owner",
+        "owner@safarsuite.local",
+        "Smoke",
+        ExpiresInHours: 24));
+
+Require(cloudFirstManagerSetupTokenResult.IsSuccess, "Control Cloud should issue a first-manager setup token for a registered installation.");
+var signedFirstManagerToken = cloudFirstManagerSetupTokenResult.Response!.SignedToken;
+var cloudFirstManagerIssue = await cloudFirstManagerSetupTokenIssueRepository.GetByTokenIdAsync(
+    signedFirstManagerToken.Payload.TokenId);
+var firstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify(
+    signedFirstManagerToken,
+    clock.UtcNow);
+var badFirstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify(
+    signedFirstManagerToken with
+    {
+        Signature = signedFirstManagerToken.Signature with { Value = "invalid-first-manager-signature" }
+    },
+    clock.UtcNow);
+var expiredFirstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify(
+    CreateSignedFirstManagerSetupToken(
+        clientId,
+        installationId,
+        firstManagerPairingRequestId,
+        clock.UtcNow.AddHours(-2),
+        "bootstrap-smoke",
+        "bootstrap-signing-secret-change-before-cloud",
+        expiresAtUtc: clock.UtcNow.AddHours(-1)),
+    clock.UtcNow);
+var missingFirstManagerTokenVerification = firstManagerSetupTokenVerifier.Verify(
+    null,
+    clock.UtcNow);
+
+Require(firstManagerTokenVerification.IsSuccess, "Signed first-manager setup token should verify with bootstrap trust.");
+Require(cloudFirstManagerIssue is not null, "Control Cloud should persist first-manager setup token issue metadata.");
+Require(cloudFirstManagerIssue?.PayloadSha256 == signedFirstManagerToken.Signature.PayloadSha256, "Persisted first-manager issue should retain the signed payload hash.");
+Require(firstManagerTokenVerification.Payload?.PendingDeviceRequestId == firstManagerPairingRequestId, "First-manager setup token should bind the pending device request id.");
+Require(badFirstManagerTokenVerification.FailureCode == "SignatureInvalid", "Bad first-manager setup token signature should be rejected.");
+Require(expiredFirstManagerTokenVerification.FailureCode == "FirstManagerSetupTokenExpired", "Expired first-manager setup token should be rejected.");
+Require(missingFirstManagerTokenVerification.FailureCode == "FirstManagerSetupTokenRequired", "Missing first-manager setup token should be rejected.");
+var firstManagerDeviceCredentialId = Guid.NewGuid();
+var signedFirstManagerDeviceCredential = deviceCredentialService.Issue(
+    firstManagerDevice,
+    firstManagerDeviceCredentialId,
+    "FirstManagerDevice",
+    clock.UtcNow);
+var firstManagerDeviceCredential = signedFirstManagerDeviceCredential.CompactToken;
+var firstManagerDeviceCredentialVerification = deviceCredentialService.Verify(
+    firstManagerDeviceCredential,
+    clock.UtcNow);
+var approvedFirstManagerDevice = firstManagerDevice.Approve(
+    "first-manager:owner@safarsuite.local",
+    "FirstManagerDevice",
+    firstManagerDeviceCredentialId.ToString("D"),
+    ComputeSha256(firstManagerDeviceCredential),
+    clock.UtcNow);
+var firstManagerWriteResult = await pairingStore.SaveDeviceAndFirstManagerSetupTokenConsumptionAsync(
+    approvedFirstManagerDevice,
+    new LocalServerFirstManagerSetupTokenConsumptionRecord(
+        signedFirstManagerToken.Payload.TokenId,
+        clientId,
+        installationId,
+        firstManagerPairingRequestId,
+        firstManagerDeviceId,
+        signedFirstManagerToken.Payload.ManagerDisplayName,
+        signedFirstManagerToken.Payload.ManagerEmail,
+        signedFirstManagerToken.Payload.CreatedBy,
+        signedFirstManagerToken.Signature.KeyId,
+        signedFirstManagerToken.Signature.PayloadSha256,
+        signedFirstManagerToken.Payload.IssuedAtUtc,
+        signedFirstManagerToken.Payload.ExpiresAtUtc,
+        clock.UtcNow));
+var consumedFirstManagerToken = await pairingStore.GetFirstManagerSetupTokenConsumptionAsync(
+    signedFirstManagerToken.Payload.TokenId);
+var persistedFirstManagerDevice = await pairingStore.GetByDeviceIdAsync(firstManagerDeviceId);
+
+Require(firstManagerWriteResult.Succeeded, "First-manager setup token should atomically approve the device and record consumption.");
+Require(consumedFirstManagerToken is not null, "Consumed first-manager setup token should be persisted.");
+Require(persistedFirstManagerDevice?.DeviceStatus == LocalServerDevicePairingRecordStatuses.Approved, "First-manager setup token should approve the pending device.");
+Require(firstManagerDeviceCredentialVerification.IsSuccess, "Signed first-manager device credential should verify.");
+Require(firstManagerDeviceCredentialVerification.Payload?.DeviceId == firstManagerDeviceId, "Signed first-manager device credential should bind the approved device.");
 
 var badBootstrapBundle = bootstrapPackage.SignedBundle with
 {
@@ -200,6 +487,26 @@ var pullResult = await pullHandler.HandleAsync(
 
 Require(pullResult.IsSuccess, "Signed entitlement bundle should pull and import from Control Cloud.");
 Require(pullResult.Entitlement!.EntitlementVersion == 100, "Pulled entitlement version should be 100.");
+Require(
+    pullResult.Entitlement.ClientAccessRevisionId != Guid.Empty,
+    "Pulled entitlement should retain the Office access revision id.");
+Require(
+    pullResult.Entitlement.ContractRevisionNumber == 1,
+    "Pulled entitlement should retain the exact Office contract revision number.");
+Require(
+    pullResult.Entitlement.ProductCatalogRevisionId
+        == Guid.Parse("9c1da88b-c763-4bb0-8dda-2d95fe63ec8f")
+    && pullResult.Entitlement.ProductCatalogRevisionNumber == 1,
+    "Pulled entitlement should retain the exact Office product catalog revision.");
+Require(pullResult.Entitlement.AllowedNamedUsers == 40, "Pulled entitlement should retain the named-user allowance.");
+Require(pullResult.Entitlement.AllowedConcurrentUsers == 12, "Pulled entitlement should retain the concurrent-user allowance.");
+Require(
+    pullResult.Entitlement.EffectiveFromUtc == new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero),
+    "Pulled entitlement should retain the exact effective-from instant.");
+var pulledFeatureLimit = pullResult.Entitlement.FindFeatureLimit("accounting", "monthly_postings");
+Require(pulledFeatureLimit is not null, "Pulled entitlement should expose its module feature limit.");
+Require(pulledFeatureLimit!.LimitValue == 5000, "Pulled entitlement should retain the feature-limit value.");
+Require(pulledFeatureLimit.Unit == "COUNT", "Pulled entitlement should retain the feature-limit unit.");
 
 var heartbeatHttpHandler = new StaticHeartbeatHttpMessageHandler();
 var heartbeatClient = new HttpControlCloudHeartbeatClient(
@@ -225,6 +532,8 @@ Require(heartbeatResult.IsSuccess, "Heartbeat should report current entitlement 
 Require(heartbeatResult.Heartbeat!.HeartbeatStatus == "Received", "Heartbeat status should be Received.");
 Require(heartbeatResult.Heartbeat.LicenseStatus == LocalServerEntitlementAccessStates.Active, "Heartbeat license status should be Active.");
 Require(heartbeatHttpHandler.LastRequest?.EntitlementVersion == 100, "Heartbeat should report cached entitlement version 100.");
+Require(heartbeatHttpHandler.LastRequest?.EntitlementState?.AllowedNamedUsers == 40, "Heartbeat should report observed named-user allowance.");
+Require(heartbeatHttpHandler.LastRequest?.EntitlementState?.FeatureLimits.Count == 1, "Heartbeat should report observed feature limits.");
 var postHeartbeatTrustState = await trustStateStore.GetAsync(installationId)
     ?? throw new InvalidOperationException("Trust state should exist after heartbeat.");
 Require(postHeartbeatTrustState.LastSuccessfulCloudTimeUtc == heartbeatResult.Heartbeat.ReceivedAtUtc, "Trust state should record the last trusted Control Cloud time.");
@@ -515,9 +824,32 @@ var refreshCommand = CreateCommandResponse(
         "Command entitlement refresh smoke",
         clock.UtcNow),
     clock.UtcNow.AddMinutes(1));
+var appActivationIssueId = Guid.NewGuid();
+var appServerInstallationId = Guid.NewGuid();
+var appActivationRevocationCommand = CreateCommandResponse(
+    commandSigner,
+    clientId,
+    installationId,
+    commandVersion: 3,
+    LocalServerInstallationCommandTypes.RevokeAppActivation,
+    CreateAppActivationRevocationCommandPayload(
+        clientId,
+        installationId,
+        appServerInstallationId,
+        appActivationIssueId,
+        activationRequestId: Guid.NewGuid(),
+        clock.UtcNow.AddMinutes(2),
+        "Smoke",
+        "Rotate app activation mapping"),
+    clock.UtcNow.AddMinutes(2));
 var commandClient = new StaticInstallationCommandClient(
     installationId,
-    [diagnosticCommand, refreshCommand]);
+    [diagnosticCommand, refreshCommand, appActivationRevocationCommand]);
+var appActivationRevocationStore = new FileLocalServerAppActivationRevocationStore(
+    new LocalServerCommandOptions
+    {
+        AppActivationRevocationStorePath = appActivationRevocationPath
+    });
 var commandDiagnosticsHttpHandler = new StaticDiagnosticsHttpMessageHandler();
 var commandDiagnosticsUploadHandler = new UploadDiagnosticsToControlCloudHandler(
     new HttpControlCloudDiagnosticsClient(
@@ -538,6 +870,8 @@ var commandPullHandler = new PullEntitlementFromControlCloudHandler(
 var commandProcessor = new ProcessInstallationCommandsHandler(
     commandClient,
     new HmacLocalServerInstallationCommandVerifier(trustOptions),
+    appActivationRevocationStore,
+    clock,
     commandPullHandler,
     diagnosticsBundleHandler,
     commandDiagnosticsUploadHandler);
@@ -548,8 +882,8 @@ var commandProcessingResult = await commandProcessorFromBootstrap.HandleAsync(
     new ProcessInstallationCommandsFromBootstrapConfigurationCommand());
 
 Require(commandProcessingResult.IsSuccess, "Local-server command processing should complete.");
-Require(commandProcessingResult.PendingCommandCount == 2, "Command processor should pull two pending commands.");
-Require(commandProcessingResult.AppliedCount == 2, "Diagnostics and refresh commands should be applied.");
+Require(commandProcessingResult.PendingCommandCount == 3, "Command processor should pull three pending commands.");
+Require(commandProcessingResult.AppliedCount == 3, "Diagnostics, refresh, and app activation revocation commands should be applied.");
 Require(commandProcessingResult.Commands.All(command => command.Acknowledged), "Processed commands should be acknowledged to Control Cloud.");
 Require(commandDiagnosticsHttpHandler.LastRequest?.Reason == "Command diagnostics smoke", "Diagnostics command should upload with the command reason.");
 Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Runtime?.RuntimeMode == "DockerCompose", "Command diagnostics should collect runtime mode from the bootstrap manifest.");
@@ -563,7 +897,10 @@ Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Any(service 
 Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Any(service =>
     service.ServiceName == "safarsuite-app"
     && service.ExpectedState == "ProfileDisabled"
-    && service.CurrentState == "ProfileDisabled") == true, "Command diagnostics should include the optional SafarSuite app runtime service slot.");
+    && service.CurrentState == "ProfileDisabled"
+    && service.Detail?.Contains("SAFARSUITE_APP_IMAGE", StringComparison.Ordinal) == true
+    && service.Detail?.Contains("SAFARSUITE_APP_HTTP_PORT", StringComparison.Ordinal) == true
+    && service.Detail?.Contains("http://safarsuite-app:5280/health", StringComparison.Ordinal) == true) == true, "Command diagnostics should include the optional SafarSuite app runtime service slot with manifest intent.");
 Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Any(error =>
     error.Source == "local-api"
     && error.Severity == "Error"
@@ -572,14 +909,64 @@ Require(commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Any(erro
     error.Source == "local-worker"
     && error.Severity == "Warning"
     && error.Message.Contains("heartbeat delayed", StringComparison.OrdinalIgnoreCase)) == true, "Command diagnostics should include recent runtime log warnings.");
-Require(commandClient.Acknowledgements.Count == 2, "Command client should record both acknowledgements.");
+Require(commandClient.Acknowledgements.Count == 3, "Command client should record all three acknowledgements.");
 Require(commandClient.Acknowledgements.Any(ack => ack.Value.ResultStatus == LocalServerInstallationCommandAcknowledgementStatuses.Applied), "At least one command acknowledgement should be applied.");
+var recordedAppActivationRevocation = await appActivationRevocationStore.GetByActivationIssueIdAsync(appActivationIssueId);
+Require(recordedAppActivationRevocation is not null, "App activation revocation command should be recorded locally.");
+Require(recordedAppActivationRevocation?.AppServerInstallationId == appServerInstallationId, "App activation revocation should preserve the app server identity.");
+var appActivationRevocationStatusHandler = new GetAppActivationRevocationStatusHandler(
+    appActivationRevocationStore,
+    bootstrapConfigurationStore,
+    clock);
+var appActivationRevocationStatusResult = await appActivationRevocationStatusHandler.HandleAsync(
+    new GetAppActivationRevocationStatusQuery(
+        clientId,
+        installationId,
+        appServerInstallationId,
+        appActivationIssueId,
+        "fingerprint-smoke",
+        new string('a', 64),
+        "safarsuite-app-smoke"));
+Require(appActivationRevocationStatusResult.IsSuccess, "App activation revocation status should resolve from the local ledger.");
+Require(appActivationRevocationStatusResult.Status?.IsRevoked == true, "Recorded app activation revocation should block the app activation issue.");
+Require(appActivationRevocationStatusResult.Status?.IdentityMatched == true, "Recorded app activation revocation should match the app server identity.");
+Require(appActivationRevocationStatusResult.Status?.RevocationState == LocalServerAppActivationRevocationStates.Revoked, "Recorded app activation revocation should expose the revoked state.");
+var mismatchedAppActivationRevocationStatusResult = await appActivationRevocationStatusHandler.HandleAsync(
+    new GetAppActivationRevocationStatusQuery(
+        clientId,
+        installationId,
+        Guid.NewGuid(),
+        appActivationIssueId,
+        "fingerprint-smoke",
+        new string('a', 64),
+        "safarsuite-app-smoke"));
+Require(mismatchedAppActivationRevocationStatusResult.IsSuccess, "Mismatched app activation revocation status should still resolve.");
+Require(mismatchedAppActivationRevocationStatusResult.Status?.IsRevoked == true, "Mismatched app activation identity should fail closed.");
+Require(mismatchedAppActivationRevocationStatusResult.Status?.IdentityMatched == false, "Mismatched app activation identity should be marked explicitly.");
+Require(mismatchedAppActivationRevocationStatusResult.Status?.RevocationState == LocalServerAppActivationRevocationStates.RevokedIdentityMismatch, "Mismatched app activation identity should expose a stable mismatch state.");
+var unrevokedAppActivationStatusResult = await appActivationRevocationStatusHandler.HandleAsync(
+    new GetAppActivationRevocationStatusQuery(
+        clientId,
+        installationId,
+        appServerInstallationId,
+        Guid.NewGuid(),
+        "fingerprint-smoke",
+        new string('a', 64),
+        "safarsuite-app-smoke"));
+Require(unrevokedAppActivationStatusResult.IsSuccess, "Unrevoked app activation status should resolve from the local ledger.");
+Require(unrevokedAppActivationStatusResult.Status?.IsRevoked == false, "Unknown app activation issue should not be marked revoked locally.");
+Require(unrevokedAppActivationStatusResult.Status?.RevocationState == LocalServerAppActivationRevocationStates.NotRevoked, "Unknown app activation issue should expose the not-revoked state.");
 
 var cachedEntitlement = await cache.GetCurrentAsync();
 
 Require(cachedEntitlement?.EntitlementVersion == 102, "Cached entitlement should be updated by the refresh-entitlement command.");
 var verifiedCachedEntitlement = cachedEntitlement
     ?? throw new InvalidOperationException("Cached entitlement should exist.");
+Require(verifiedCachedEntitlement.AllowedNamedUsers == 40, "Cached entitlement should retain the named-user allowance.");
+Require(verifiedCachedEntitlement.AllowedConcurrentUsers == 12, "Cached entitlement should retain the concurrent-user allowance.");
+Require(
+    verifiedCachedEntitlement.FindFeatureLimit("ACCOUNTING", "MONTHLY_POSTINGS")?.LimitValue == 5000,
+    "Cached entitlement should expose the verified feature limit.");
 var importedEntitlement = pullResult.Entitlement
     ?? throw new InvalidOperationException("Pulled entitlement should exist.");
 
@@ -597,7 +984,24 @@ Console.WriteLine(JsonSerializer.Serialize(
         bootstrapDeploymentMode = bootstrapPackage.DeploymentProfile.ClientDeploymentMode,
         bootstrapSiteId = bootstrapPackage.DeploymentProfile.SiteId,
         bootstrapSiteRole = bootstrapPackage.DeploymentProfile.SiteRole,
+        cloudFirstManagerSetupTokenIssued = cloudFirstManagerSetupTokenResult.IsSuccess,
+        cloudFirstManagerSetupTokenIssuePersisted = cloudFirstManagerIssue is not null,
+        firstManagerSetupTokenStatus = firstManagerTokenVerification.IsSuccess ? "Verified" : firstManagerTokenVerification.FailureCode,
+        badFirstManagerSetupTokenRejected = badFirstManagerTokenVerification.FailureCode,
+        expiredFirstManagerSetupTokenRejected = expiredFirstManagerTokenVerification.FailureCode,
+        missingFirstManagerSetupTokenRejected = missingFirstManagerTokenVerification.FailureCode,
+        firstManagerDeviceStatus = persistedFirstManagerDevice?.DeviceStatus,
+        firstManagerDeviceCredentialVerified = firstManagerDeviceCredentialVerification.IsSuccess,
+        firstManagerSetupTokenConsumed = consumedFirstManagerToken is not null,
+        pairingSecurityEvents = pairingSecurityEvents.Count,
+        pairingAbuseSourceReleaseCleared = releasedDecision is null,
         cachedVersion = verifiedCachedEntitlement.EntitlementVersion,
+        cachedContractRevision = verifiedCachedEntitlement.ContractRevisionNumber,
+        cachedProductCatalogRevisionId = verifiedCachedEntitlement.ProductCatalogRevisionId,
+        cachedProductCatalogRevisionNumber = verifiedCachedEntitlement.ProductCatalogRevisionNumber,
+        cachedAllowedNamedUsers = verifiedCachedEntitlement.AllowedNamedUsers,
+        cachedAllowedConcurrentUsers = verifiedCachedEntitlement.AllowedConcurrentUsers,
+        cachedFeatureLimitCount = verifiedCachedEntitlement.FeatureLimits?.Count ?? 0,
         importedBundleIssueId = importedEntitlement.BundleIssueId,
         pulledAtUtc = pullResult.PulledAtUtc,
         heartbeatStatus = heartbeatResult.Heartbeat.HeartbeatStatus,
@@ -622,6 +1026,9 @@ Console.WriteLine(JsonSerializer.Serialize(
         commandProcessingAcknowledgements = commandClient.Acknowledgements.Count,
         commandDiagnosticsRuntimeServices = commandDiagnosticsHttpHandler.LastRequest?.Bundle.Services?.Count,
         commandDiagnosticsRuntimeErrors = commandDiagnosticsHttpHandler.LastRequest?.Bundle.RecentErrors?.Count,
+        appActivationRevocationState = appActivationRevocationStatusResult.Status?.RevocationState,
+        appActivationRevocationIdentityMismatchState = mismatchedAppActivationRevocationStatusResult.Status?.RevocationState,
+        appActivationNotRevokedState = unrevokedAppActivationStatusResult.Status?.RevocationState,
         moduleGatewayAccountingAllowed = moduleGatewayAllowedResult.Access.IsAllowed,
         moduleGatewayReportsState = moduleGatewayDisabledResult.Access.AccessState,
         moduleGatewayExpiredState = moduleGatewayExpiredResult.Access.AccessState,
@@ -643,16 +1050,20 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
 {
     var cloudClock = new FixedControlCloudClock(
         new DateTimeOffset(2026, 8, 1, 10, 0, 0, TimeSpan.Zero));
+    var setupTokenRepository = new InMemorySetupTokenRepository();
+    var auditRecorder = new InMemoryClientPortalAuditRecorder();
+    var unitOfWork = new PassthroughControlCloudUnitOfWork();
     var setupTokenHandler = new CreateInstallationSetupTokenHandler(
         new StaticCommercialProjectionRepository(clientId),
         new InMemoryClientInstallationRepository(),
-        new InMemorySetupTokenRepository(),
+        setupTokenRepository,
         new StaticSetupTokenService(),
-        new InMemoryClientPortalAuditRecorder(),
-        new PassthroughControlCloudUnitOfWork(),
+        auditRecorder,
+        unitOfWork,
         cloudClock);
     var bootstrapHandler = new CreateLocalServerBootstrapPackageHandler(
         setupTokenHandler,
+        setupTokenRepository,
         new HmacControlCloudBootstrapPackageSigner(
             new ControlCloudEntitlementSigningOptions
             {
@@ -666,7 +1077,13 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
                     }
                 ]
             }),
-        new InMemoryClientPortalAuditRecorder(),
+        new EcdsaControlCloudAppActivationTokenSigner(
+            new ControlCloudAppActivationSigningOptions
+            {
+                ActiveKeyId = "app-activation-smoke"
+            }),
+        auditRecorder,
+        unitOfWork,
         cloudClock);
     var result = await bootstrapHandler.HandleAsync(
         new CreateLocalServerBootstrapPackageCommand(
@@ -687,6 +1104,55 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
             SyncTopologyId: "sync-main"));
 
     Require(result.IsSuccess, "Bootstrap package should generate through the Control Cloud signer.");
+    var generatedPackage = result.BootstrapPackage
+        ?? throw new InvalidOperationException("Bootstrap package should exist.");
+    var secretReadiness = generatedPackage.SecretReadiness
+        ?? throw new InvalidOperationException("Bootstrap package should expose secret readiness.");
+    var readinessJson = JsonSerializer.Serialize(
+        secretReadiness,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    var environmentArtifact = RequireArtifact(generatedPackage, "EnvironmentTemplate");
+
+    Require(secretReadiness.ActiveKeyId == "bootstrap-smoke", "Bootstrap package should expose the non-secret active signing key id.");
+    Require(secretReadiness.RequiredEnvironmentVariables.Contains("SAFARSUITE_ENTITLEMENT_SIGNING_SECRET"), "Bootstrap package should expose the required install-time signing secret variable name.");
+    Require(generatedPackage.InstallCommand.Contains("SAFARSUITE_ENTITLEMENT_SIGNING_KEY_ID='bootstrap-smoke'", StringComparison.Ordinal), "Bootstrap install command should include the active signing key id.");
+    Require(environmentArtifact.Content.Contains("LocalServer__EntitlementTrust__SigningKeys__0__KeyId=bootstrap-smoke", StringComparison.Ordinal), "Bootstrap environment template should carry the active entitlement signing key id.");
+    Require(!readinessJson.Contains("bootstrap-signing-secret-change-before-cloud", StringComparison.Ordinal), "Bootstrap secret readiness should not leak the signing secret value.");
+
+    var handoffHandler = new MarkLocalServerBootstrapPackageHandoffHandler(
+        setupTokenRepository,
+        auditRecorder,
+        cloudClock);
+    var handoffResult = await handoffHandler.HandleAsync(
+        new MarkLocalServerBootstrapPackageHandoffCommand(
+            clientId,
+            installationId,
+            generatedPackage.BootstrapPackageId,
+            Channel: "Secure email",
+            Recipient: "customer.ops@example.test",
+            MarkedBy: "Smoke",
+            PreflightAcknowledgements: LocalServerBootstrapPackageHandoffPreflight.RequiredKeys,
+            Note: "Smoke handoff marker"));
+    var handoffAuditRecord = auditRecorder.Records.LastOrDefault(record =>
+        record.EventType == ClientPortalAuditEventTypes.BootstrapPackageHandedOff
+        && record.Detail.Contains(generatedPackage.BootstrapPackageId.ToString("D"), StringComparison.Ordinal));
+
+    Require(handoffResult.IsSuccess, "Bootstrap package handoff should be marked for an existing package.");
+    Require(handoffResult.Response?.HandoffStatus == "HandedOff", "Bootstrap package handoff response should expose the marked state.");
+    Require(
+        handoffResult.Response is not null
+        && LocalServerBootstrapPackageHandoffPreflight.RequiredKeys.All(key =>
+            handoffResult.Response.PreflightAcknowledgements.Contains(key)),
+        "Bootstrap package handoff response should expose all required setup preflight acknowledgements.");
+    Require(handoffAuditRecord is not null, "Bootstrap package handoff should be recorded in audit history.");
+    Require(
+        handoffAuditRecord!.Detail.Contains("Secure email", StringComparison.Ordinal)
+        && handoffAuditRecord.Detail.Contains("customer.ops@example.test", StringComparison.Ordinal)
+        && handoffAuditRecord.Detail.Contains("Preflight acknowledged", StringComparison.Ordinal),
+        "Bootstrap package handoff audit should include non-secret channel, recipient, and preflight evidence.");
+    Require(
+        !handoffAuditRecord.Detail.Contains(generatedPackage.SetupToken, StringComparison.Ordinal),
+        "Bootstrap package handoff audit should not expose setup-token plaintext.");
 
     var unsupportedModeResult = await bootstrapHandler.HandleAsync(
         new CreateLocalServerBootstrapPackageCommand(
@@ -703,8 +1169,7 @@ static async Task<LocalServerBootstrapPackageResponse> CreateBootstrapPackageAsy
     Require(!unsupportedModeResult.IsSuccess, "Bootstrap package should reject client deployment modes in the bootstrap-mode field.");
     Require(unsupportedModeResult.FailureCode == "BootstrapModeUnsupported", "Unsupported bootstrap mode failure code should be stable.");
 
-    return result.BootstrapPackage
-        ?? throw new InvalidOperationException("Bootstrap package should exist.");
+    return generatedPackage;
 }
 
 async Task<LocalServerFeatureAccessDecision> EvaluateAsync(
@@ -736,6 +1201,36 @@ static string CreateSupportCommandPayload(
             RequestedBy = requestedBy,
             Reason = reason,
             RequestedAtUtc = requestedAtUtc
+        },
+        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+}
+
+static string CreateAppActivationRevocationCommandPayload(
+    Guid clientId,
+    string installationId,
+    Guid appServerInstallationId,
+    Guid activationIssueId,
+    Guid activationRequestId,
+    DateTimeOffset revokedAtUtc,
+    string revokedBy,
+    string reason)
+{
+    return JsonSerializer.Serialize(
+        new
+        {
+            PayloadFormatVersion = "safarsuite-app-activation-revocation-command-v1",
+            CommandType = LocalServerInstallationCommandTypes.RevokeAppActivation,
+            ClientId = clientId,
+            InstallationId = installationId,
+            AppServerInstallationId = appServerInstallationId,
+            ActivationIssueId = activationIssueId,
+            ActivationRequestId = activationRequestId,
+            FingerprintHash = "fingerprint-smoke",
+            ServerPublicKeySha256 = new string('a', 64),
+            SigningKeyId = "app-activation-smoke",
+            RevokedAtUtc = revokedAtUtc,
+            RevokedBy = revokedBy,
+            Reason = reason
         },
         new JsonSerializerOptions(JsonSerializerDefaults.Web));
 }
@@ -829,7 +1324,7 @@ static ClientPortalSignedEntitlementBundleResponse CreateSignedBundle(
     var resolvedGraceUntil = graceUntil ?? new DateOnly(2026, 9, 7);
     var resolvedOfflineValidUntil = offlineValidUntil ?? new DateOnly(2026, 9, 14);
     var payload = new ClientPortalEntitlementBundlePayloadResponse(
-        "1",
+        "5",
         "SafarSuite.ControlCloud",
         "SafarSuite.ClientPortal",
         clientId,
@@ -838,6 +1333,10 @@ static ClientPortalSignedEntitlementBundleResponse CreateSignedBundle(
         Guid.NewGuid(),
         Guid.NewGuid(),
         Guid.NewGuid(),
+        Guid.NewGuid(),
+        1L,
+        Guid.Parse("9c1da88b-c763-4bb0-8dda-2d95fe63ec8f"),
+        1L,
         Guid.NewGuid(),
         "INV-SMOKE-001",
         "Active",
@@ -854,7 +1353,18 @@ static ClientPortalSignedEntitlementBundleResponse CreateSignedBundle(
             new ClientPortalEntitlementBundleModuleResponse("Accounting", "Active", true),
             new ClientPortalEntitlementBundleModuleResponse("Billing", "Active", true),
             new ClientPortalEntitlementBundleModuleResponse("Reports", "Disabled", false)
-        ]);
+        ],
+        AllowedNamedUsers: 40,
+        AllowedConcurrentUsers: 12,
+        FeatureLimits:
+        [
+            new ClientPortalEntitlementBundleFeatureLimitResponse(
+                "ACCOUNTING",
+                "MONTHLY_POSTINGS",
+                5000,
+                "COUNT")
+        ],
+        EffectiveFromUtc: new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero));
     var payloadJson = JsonSerializer.Serialize(
         payload,
         new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -869,6 +1379,46 @@ static ClientPortalSignedEntitlementBundleResponse CreateSignedBundle(
         new ClientPortalEntitlementBundleSignatureResponse(
             "HMAC-SHA256",
             "local-entitlement-dev",
+            payloadSha256,
+            signature));
+}
+
+static LocalServerSignedFirstManagerSetupTokenResponse CreateSignedFirstManagerSetupToken(
+    Guid clientId,
+    string installationId,
+    Guid pendingDeviceRequestId,
+    DateTimeOffset issuedAtUtc,
+    string signingKeyId,
+    string signingSecret,
+    DateTimeOffset? expiresAtUtc = null)
+{
+    var payload = new LocalServerFirstManagerSetupTokenPayloadResponse(
+        LocalServerPairingFormats.FirstManagerSetupTokenVersion,
+        Guid.NewGuid(),
+        clientId,
+        installationId,
+        pendingDeviceRequestId,
+        [
+            LocalServerFirstManagerSetupTokenActions.CreateFirstManager,
+            LocalServerFirstManagerSetupTokenActions.ApproveFirstDevice
+        ],
+        "Owner",
+        "owner@safarsuite.local",
+        "entitlement-smoke",
+        issuedAtUtc,
+        expiresAtUtc ?? issuedAtUtc.AddHours(1));
+    var payloadJson = JsonSerializer.Serialize(
+        payload,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    var payloadSha256 = ComputeSha256(payloadJson);
+    var signature = Sign(signingSecret, payloadJson);
+
+    return new LocalServerSignedFirstManagerSetupTokenResponse(
+        payloadJson,
+        payload,
+        new LocalServerBootstrapPackageSignatureResponse(
+            "HMAC-SHA256",
+            signingKeyId,
             payloadSha256,
             signature));
 }
@@ -896,6 +1446,72 @@ static void Require(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+static LocalServerBootstrapPackageArtifactResponse RequireArtifact(
+    LocalServerBootstrapPackageResponse bootstrapPackage,
+    string artifactType)
+{
+    return bootstrapPackage.Artifacts.SingleOrDefault(artifact => artifact.ArtifactType == artifactType)
+        ?? throw new InvalidOperationException($"Bootstrap package should include the {artifactType} artifact.");
+}
+
+static void RequireLocalServerRuntimeImageContract()
+{
+    var repoRoot = FindRepositoryRoot();
+    var dockerfile = Path.Combine(repoRoot, "src", "SafarSuite.LocalServer.Api", "Dockerfile");
+    var apiCommand = Path.Combine(repoRoot, "src", "SafarSuite.LocalServer.Api", "docker", "safarsuite-local-api");
+    var workerCommand = Path.Combine(repoRoot, "src", "SafarSuite.LocalServer.Api", "docker", "safarsuite-local-worker");
+    var agentCommand = Path.Combine(repoRoot, "src", "SafarSuite.LocalServer.Api", "docker", "safarsuite-local-agent");
+
+    Require(File.Exists(dockerfile), "Local-server Dockerfile should exist.");
+    Require(File.Exists(apiCommand), "Local-server API command shim should exist.");
+    Require(File.Exists(workerCommand), "Local-server worker command shim should exist.");
+    Require(File.Exists(agentCommand), "Local-server agent command shim should exist.");
+
+    var dockerfileContent = File.ReadAllText(dockerfile);
+    var apiCommandContent = File.ReadAllText(apiCommand);
+    var workerCommandContent = File.ReadAllText(workerCommand);
+    var agentCommandContent = File.ReadAllText(agentCommand);
+
+    Require(dockerfileContent.Contains("safarsuite-local-api", StringComparison.Ordinal), "Local-server Dockerfile should install the API command.");
+    Require(dockerfileContent.Contains("safarsuite-local-worker", StringComparison.Ordinal), "Local-server Dockerfile should install the worker command.");
+    Require(dockerfileContent.Contains("safarsuite-local-agent", StringComparison.Ordinal), "Local-server Dockerfile should install the agent command.");
+    Require(dockerfileContent.Contains("SAFARSUITE_LOCAL_SERVER_RUNTIME_BASE_IMAGE", StringComparison.Ordinal), "Local-server Dockerfile should allow the runtime base image to be overridden for local proof builds.");
+    Require(dockerfileContent.Contains("SAFARSUITE_LOCAL_API_ASPNETCORE_URLS=http://0.0.0.0:8080", StringComparison.Ordinal), "Local-server Dockerfile should keep the API bind URL explicit for HTTPS-ready deployments.");
+    Require(dockerfileContent.Contains("/etc/safarsuite/local-server/certs", StringComparison.Ordinal), "Local-server Dockerfile should create the local API certificate directory.");
+    Require(dockerfileContent.Contains("runtime-from-publish", StringComparison.Ordinal), "Local-server Dockerfile should expose a pre-published runtime build target.");
+    Require(dockerfileContent.Contains("ENTRYPOINT []", StringComparison.Ordinal), "Local-server Dockerfile should clear inherited base-image entrypoints.");
+    Require(dockerfileContent.Contains("HEALTHCHECK NONE", StringComparison.Ordinal), "Local-server Dockerfile should clear inherited base-image healthchecks.");
+    Require(dockerfileContent.Contains("USER app", StringComparison.Ordinal), "Local-server runtime image should run as the non-root app user.");
+    Require(apiCommandContent.Contains("LocalServer__Runtime__EnableBackgroundWorker", StringComparison.Ordinal)
+        && apiCommandContent.Contains("false", StringComparison.Ordinal), "Local-server API command should keep background automation disabled.");
+    Require(apiCommandContent.Contains("SAFARSUITE_LOCAL_API_ASPNETCORE_URLS", StringComparison.Ordinal)
+        && apiCommandContent.Contains("SAFARSUITE_LOCAL_API_CERTIFICATE_PATH", StringComparison.Ordinal), "Local-server API command should map HTTPS-ready Local API settings to Kestrel.");
+    Require(workerCommandContent.Contains("LocalServer__Runtime__EnableEntitlementPull", StringComparison.Ordinal)
+        && workerCommandContent.Contains("LocalServer__Runtime__EnableHeartbeat", StringComparison.Ordinal)
+        && workerCommandContent.Contains("LocalServer__Runtime__EnableCommandPolling", StringComparison.Ordinal)
+        && workerCommandContent.Contains("false", StringComparison.Ordinal), "Local-server worker command should run entitlement and heartbeat without command polling.");
+    Require(agentCommandContent.Contains("LocalServer__Runtime__EnableCommandPolling", StringComparison.Ordinal)
+        && agentCommandContent.Contains("LocalServer__Runtime__EnableEntitlementPull", StringComparison.Ordinal)
+        && agentCommandContent.Contains("false", StringComparison.Ordinal), "Local-server agent command should run command polling without entitlement pull.");
+}
+
+static string FindRepositoryRoot()
+{
+    var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
+
+    while (directory is not null)
+    {
+        if (File.Exists(Path.Combine(directory.FullName, "SafarSuite.ControlDesk.sln")))
+        {
+            return directory.FullName;
+        }
+
+        directory = directory.Parent;
+    }
+
+    throw new InvalidOperationException("Repository root could not be found.");
 }
 
 internal sealed class FixedLocalServerClock : ILocalServerClock
@@ -1089,7 +1705,9 @@ internal sealed class StaticHeartbeatHttpMessageHandler : HttpMessageHandler
             heartbeatRequest.GraceUntil,
             heartbeatRequest.OfflineValidUntil,
             heartbeatRequest.LocalServerVersion,
-            heartbeatRequest.Detail);
+            heartbeatRequest.Detail,
+            PairingStatus: heartbeatRequest.PairingStatus,
+            EntitlementState: heartbeatRequest.EntitlementState);
 
         return new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -1259,6 +1877,73 @@ internal sealed class StaticCommercialProjectionRepository
     {
         return Task.CompletedTask;
     }
+
+    public Task ApplyChangeAsync(
+        ControlCloudCommercialProjectionChange change,
+        CancellationToken cancellationToken = default)
+    {
+        if (change is ControlCloudEntitlementIssuedChange entitlementIssued
+            && change.ClientId == _projection.ClientId)
+        {
+            _projection.ApplyEntitlement(
+                entitlementIssued.Entitlement,
+                entitlementIssued.ProjectedAtUtc);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyCollection<ControlCloudCommercialDocumentProjection>> ListDocumentsAsync(
+        Guid clientId,
+        string documentType,
+        DateOnly? beforeDate,
+        Guid? beforeDocumentId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyCollection<ControlCloudCommercialDocumentProjection>>(
+            Array.Empty<ControlCloudCommercialDocumentProjection>());
+    }
+
+    public Task<IReadOnlyCollection<ControlCloudInvoiceProjection>> ListInvoicesAsync(
+        Guid clientId,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyCollection<ControlCloudInvoiceProjection> invoices =
+            _projection.ClientId == clientId
+                ? _projection.Invoices.Values.ToArray()
+                : Array.Empty<ControlCloudInvoiceProjection>();
+
+        return Task.FromResult(invoices);
+    }
+
+    public Task<ControlCloudInvoiceProjection?> GetInvoiceAsync(
+        Guid clientId,
+        Guid invoiceId,
+        CancellationToken cancellationToken = default)
+    {
+        var invoice = _projection.ClientId == clientId
+            && _projection.Invoices.TryGetValue(invoiceId, out var stored)
+                ? stored
+                : null;
+
+        return Task.FromResult(invoice);
+    }
+
+    public Task<IReadOnlyCollection<ControlCloudPaymentProjection>> ListPaymentsAsync(
+        Guid clientId,
+        Guid? invoiceId = null,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyCollection<ControlCloudPaymentProjection> payments =
+            _projection.ClientId == clientId
+                ? _projection.Payments.Values
+                    .Where(payment => invoiceId is null || payment.InvoiceId == invoiceId.Value)
+                    .ToArray()
+                : Array.Empty<ControlCloudPaymentProjection>();
+
+        return Task.FromResult(payments);
+    }
 }
 
 internal sealed class InMemoryClientInstallationRepository
@@ -1317,6 +2002,37 @@ internal sealed class InMemorySetupTokenRepository
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyCollection<ControlCloudInstallationSetupToken>> ListBootstrapPackagesAsync(
+        Guid clientId,
+        string installationId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var setupTokens = _setupTokensByHash.Values
+            .Where(setupToken => setupToken.ClientId == clientId
+                && string.Equals(setupToken.InstallationId, installationId.Trim(), StringComparison.Ordinal)
+                && setupToken.HasBootstrapPackage)
+            .OrderByDescending(setupToken => setupToken.BootstrapPackageGeneratedAtUtc ?? setupToken.CreatedAtUtc)
+            .Take(take)
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyCollection<ControlCloudInstallationSetupToken>>(setupTokens);
+    }
+
+    public Task<ControlCloudInstallationSetupToken?> GetBootstrapPackageAsync(
+        Guid clientId,
+        string installationId,
+        Guid bootstrapPackageId,
+        CancellationToken cancellationToken = default)
+    {
+        var setupToken = _setupTokensByHash.Values.FirstOrDefault(candidate =>
+            candidate.ClientId == clientId
+            && string.Equals(candidate.InstallationId, installationId.Trim(), StringComparison.Ordinal)
+            && candidate.BootstrapPackageId == bootstrapPackageId);
+
+        return Task.FromResult(setupToken);
+    }
+
     public Task SaveAsync(
         ControlCloudInstallationSetupToken setupToken,
         CancellationToken cancellationToken = default)
@@ -1324,6 +2040,30 @@ internal sealed class InMemorySetupTokenRepository
         _setupTokensByHash[setupToken.TokenHash] = setupToken;
 
         return Task.CompletedTask;
+    }
+}
+
+internal sealed class InMemoryFirstManagerSetupTokenIssueRepository
+    : IControlCloudFirstManagerSetupTokenIssueRepository
+{
+    private readonly Dictionary<Guid, ControlCloudFirstManagerSetupTokenIssue> _issues = [];
+
+    public Task AddAsync(
+        ControlCloudFirstManagerSetupTokenIssue issue,
+        CancellationToken cancellationToken = default)
+    {
+        _issues[issue.TokenId] = issue;
+
+        return Task.CompletedTask;
+    }
+
+    public Task<ControlCloudFirstManagerSetupTokenIssue?> GetByTokenIdAsync(
+        Guid tokenId,
+        CancellationToken cancellationToken = default)
+    {
+        _issues.TryGetValue(tokenId, out var issue);
+
+        return Task.FromResult(issue);
     }
 }
 
@@ -1342,10 +2082,16 @@ internal sealed class StaticSetupTokenService : IControlCloudInstallationSetupTo
 
 internal sealed class InMemoryClientPortalAuditRecorder : IClientPortalAuditRecorder
 {
+    private readonly List<ClientPortalAuditRecord> _records = [];
+
+    public IReadOnlyList<ClientPortalAuditRecord> Records => _records;
+
     public Task RecordAsync(
         ClientPortalAuditRecord audit,
         CancellationToken cancellationToken = default)
     {
+        _records.Add(audit);
+
         return Task.CompletedTask;
     }
 }

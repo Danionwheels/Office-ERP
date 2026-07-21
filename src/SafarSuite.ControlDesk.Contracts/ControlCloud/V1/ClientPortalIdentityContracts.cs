@@ -43,15 +43,42 @@ public sealed record AcceptClientPortalInvitationResponse(
     string FullName,
     string Role,
     string AccessToken,
-    DateTimeOffset ExpiresAtUtc);
+    string RefreshToken,
+    DateTimeOffset ExpiresAtUtc,
+    DateTimeOffset IdleExpiresAtUtc);
 
 public sealed record CreateClientPortalSessionRequest(
     Guid ClientId,
     string Email,
-    string Password);
+    string Password,
+    string? TotpCode = null,
+    string? RecoveryCode = null);
 
 public sealed record ClientPortalSessionResponse(
+    Guid UserId,
     Guid ClientId,
     string AccessToken,
+    string RefreshToken,
     DateTimeOffset ExpiresAtUtc,
+    DateTimeOffset IdleExpiresAtUtc,
     string Role);
+
+public sealed record RefreshClientPortalSessionRequest(string RefreshToken);
+
+public sealed record BeginClientPortalMfaEnrollmentResponse(
+    string Secret,
+    string OtpAuthUri,
+    string QrCodeDataUri,
+    IReadOnlyCollection<string> RecoveryCodes);
+
+public sealed record BeginClientPortalMfaEnrollmentRequest(string Password);
+
+public sealed record ConfirmClientPortalMfaEnrollmentRequest(string Code);
+
+public sealed record RequestClientPortalPasswordResetRequest(Guid ClientId, string Email);
+
+public sealed record ValidateClientPortalPasswordResetRequest(string ResetToken);
+
+public sealed record CompleteClientPortalPasswordResetRequest(string ResetToken, string NewPassword);
+
+public sealed record ClientPortalPasswordResetValidationResponse(bool IsValid);

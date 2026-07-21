@@ -2,6 +2,8 @@
 
 Date started: 2026-06-30
 
+Direction update: 2026-07-18. Active product and scale requirements are governed by `docs/architecture/product-charter-2026-07-11.md`; final topology and deployment acceptance are governed by `docs/architecture/final-system-requirements-and-deployment-contract.md`; execution is tracked in `docs/planning/active-roadmap-2026-07-11.md`.
+
 These requirements are not simply old Survey/FAS clone work. They are the reason the new SafarSuite Control Desk exists.
 
 ## Commercial Control
@@ -46,9 +48,9 @@ These requirements are not simply old Survey/FAS clone work. They are the reason
 | Audit every change | Record who changed pricing/license/payment status | High | Partial in CloudServer |
 | Key rotation | Signing keys must support production rotation | High | Partial concept |
 
-## Current Focus
+## Original Implementation Focus
 
-The active implementation path is:
+The implementation path recorded when this note was created was:
 
 ```text
 client maintenance (basic done)
@@ -85,11 +87,11 @@ The first installation/deployment profile foundation now exists in Control Cloud
 
 | Requirement | Description | Priority | Status |
 | --- | --- | --- | --- |
-| Desktop packaging | Final product must run as desktop app | High | Open |
+| Desktop packaging | Final product must install and operate on one dedicated office PC without a separate server or Linux dependency | High | Open |
 | Dev browser UI | React UI may run in browser during development | High | Client desk active |
-| Local database | Office data stored locally in PostgreSQL | High | Open |
+| Office-local database | Office truth stored in PostgreSQL on the same dedicated office PC behind the local Office Control API | High | Topology accepted; packaging and recovery open |
 | Backup/export | Office can back up and export critical data | High | Open |
-| Multi-user office access | Multiple office staff can use app if needed | Medium | Open |
+| Authorized office operators | Authorized staff may use the designated office PC; concurrent multi-PC hosting is deferred until explicitly approved | Medium | V1 boundary accepted |
 | Role permissions | Owner/admin/accounts/support roles | High | Open |
 
 ## First Acceptance Flow

@@ -10,8 +10,7 @@ public sealed class ControlDeskDbContextFactory : IDesignTimeDbContextFactory<Co
 
     public ControlDeskDbContext CreateDbContext(string[] args)
     {
-        var connectionString = Environment.GetEnvironmentVariable("SAFARSUITE_CONTROL_DESK_CONNECTION_STRING")
-            ?? DefaultDevelopmentConnectionString;
+        var connectionString = ResolveConnectionString();
 
         var options = new DbContextOptionsBuilder<ControlDeskDbContext>()
             .UseNpgsql(
@@ -20,5 +19,27 @@ public sealed class ControlDeskDbContextFactory : IDesignTimeDbContextFactory<Co
             .Options;
 
         return new ControlDeskDbContext(options);
+    }
+
+    private static string ResolveConnectionString()
+    {
+        var configured = Environment.GetEnvironmentVariable(
+            "SAFARSUITE_CONTROL_DESK_CONNECTION_STRING");
+
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured.Trim();
+        }
+
+        var allowDevelopmentFallback = Environment.GetEnvironmentVariable(
+            "SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK");
+
+        if (string.Equals(allowDevelopmentFallback, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return DefaultDevelopmentConnectionString;
+        }
+
+        throw new InvalidOperationException(
+            "SAFARSUITE_CONTROL_DESK_CONNECTION_STRING is required for EF operations. Set SAFARSUITE_ALLOW_DEVELOPMENT_DB_FALLBACK=true only for deliberate local development tooling.");
     }
 }

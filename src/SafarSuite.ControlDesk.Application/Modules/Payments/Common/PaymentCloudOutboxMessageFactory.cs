@@ -2,6 +2,7 @@ using System.Text.Json;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
 using SafarSuite.ControlDesk.Domain.Modules.Billing;
+using SafarSuite.ControlDesk.Domain.Modules.Clients;
 using SafarSuite.ControlDesk.Domain.Modules.ControlCloud;
 using SafarSuite.ControlDesk.Domain.Modules.Payments;
 
@@ -40,9 +41,11 @@ public sealed class PaymentCloudOutboxMessageFactory
             payment.ReceivedOn,
             journalEntry.Id.Value,
             journalEntry.EntryDate,
-            journalEntry.Status.ToString());
+            journalEntry.Status.ToString(),
+            payment.PortalClaimId?.Value);
 
         return CreateMessage(
+            invoice.ClientId,
             "PaymentRecorded",
             "Payment",
             payment.Id.Value.ToString(),
@@ -69,9 +72,31 @@ public sealed class PaymentCloudOutboxMessageFactory
             journalEntry.EntryDate);
 
         return CreateMessage(
+            invoice.ClientId,
             "ClientPaidStatusChanged",
             "Client",
             invoice.ClientId.Value.ToString(),
+            payload);
+    }
+
+    public CloudOutboxMessage CreatePortalPaymentClaimDecided(
+        PortalPaymentClaim claim,
+        PaymentId? paymentId,
+        string? reason)
+    {
+        var payload = new PortalPaymentClaimDecidedCloudPayload(
+            claim.Id.Value,
+            claim.ClientId.Value,
+            claim.Status.ToString().ToLowerInvariant(),
+            paymentId?.Value,
+            claim.ReviewedAtUtc ?? _clock.UtcNow,
+            string.IsNullOrWhiteSpace(reason) ? null : reason.Trim());
+
+        return CreateMessage(
+            claim.ClientId,
+            "PortalPaymentClaimDecided",
+            "PortalPaymentClaim",
+            claim.Id.Value.ToString(),
             payload);
     }
 
@@ -99,6 +124,7 @@ public sealed class PaymentCloudOutboxMessageFactory
             originalJournalEntry.Id.Value);
 
         return CreateMessage(
+            invoice.ClientId,
             "PaymentReversed",
             "Payment",
             payment.Id.Value.ToString(),
@@ -128,6 +154,7 @@ public sealed class PaymentCloudOutboxMessageFactory
             journalEntry.Status.ToString());
 
         return CreateMessage(
+            refund.ClientId,
             "ClientRefundIssued",
             "ClientRefund",
             refund.Id.Value.ToString(),
@@ -164,6 +191,7 @@ public sealed class PaymentCloudOutboxMessageFactory
             application.AppliedOn);
 
         return CreateMessage(
+            application.ClientId,
             "ClientCreditApplied",
             "ClientCreditApplication",
             application.Id.Value.ToString(),
@@ -171,6 +199,7 @@ public sealed class PaymentCloudOutboxMessageFactory
     }
 
     private CloudOutboxMessage CreateMessage<TPayload>(
+        ClientId clientId,
         string messageType,
         string subjectType,
         string subjectId,
@@ -178,6 +207,7 @@ public sealed class PaymentCloudOutboxMessageFactory
     {
         return CloudOutboxMessage.Create(
             CloudOutboxMessageId.Create(_idGenerator.NewGuid()),
+            clientId,
             messageType,
             subjectType,
             subjectId,
@@ -200,7 +230,16 @@ public sealed class PaymentCloudOutboxMessageFactory
         DateOnly ReceivedOn,
         Guid JournalEntryId,
         DateOnly PostingDate,
-        string JournalEntryStatus);
+        string JournalEntryStatus,
+        Guid? PortalClaimId);
+
+    private sealed record PortalPaymentClaimDecidedCloudPayload(
+        Guid ClaimId,
+        Guid ClientId,
+        string Status,
+        Guid? PaymentId,
+        DateTimeOffset ReviewedAtUtc,
+        string? RejectionReason);
 
     private sealed record ClientPaidStatusChangedCloudPayload(
         string EventVersion,

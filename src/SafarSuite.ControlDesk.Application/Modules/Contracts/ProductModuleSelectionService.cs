@@ -13,17 +13,17 @@ public sealed class ProductModuleSelectionService
         _catalog = catalog;
     }
 
-    public async Task<Result<IReadOnlyCollection<ModuleAllowance>>> BuildAllowancesAsync(
+    public async Task<Result<ProductModuleSelectionResult>> BuildAllowancesAsync(
         IReadOnlyCollection<ProductModuleSelection> selections,
         CancellationToken cancellationToken = default)
     {
         var errors = new List<ApplicationError>();
-        var catalog = await _catalog.ListAsync(cancellationToken);
+        var catalogRevision = await _catalog.GetPublishedRevisionAsync(cancellationToken);
+        var catalog = catalogRevision.Definition.Modules;
         var activeCatalog = catalog
             .Where(module => module.IsActive)
             .ToDictionary(module => module.ModuleCode.Value, StringComparer.Ordinal);
         var allCatalog = catalog.ToDictionary(module => module.ModuleCode.Value, StringComparer.Ordinal);
-        var useCatalogRules = activeCatalog.Count > 0;
         var allowances = new Dictionary<string, ModuleAllowance>(StringComparer.Ordinal);
 
         foreach (var selection in selections)
@@ -54,7 +54,7 @@ public sealed class ProductModuleSelectionService
 
             ProductModuleCatalogItem? catalogItem = null;
 
-            if (useCatalogRules && !activeCatalog.TryGetValue(moduleCode.Value, out catalogItem))
+            if (!activeCatalog.TryGetValue(moduleCode.Value, out catalogItem))
             {
                 var message = allCatalog.ContainsKey(moduleCode.Value)
                     ? $"Module code {moduleCode.Value} is not active in the product module catalog."
@@ -82,30 +82,37 @@ public sealed class ProductModuleSelectionService
 
         if (errors.Count > 0)
         {
-            return Result<IReadOnlyCollection<ModuleAllowance>>.Failure(errors);
+            return Result<ProductModuleSelectionResult>.Failure(errors);
         }
 
         if (allowances.Count == 0)
         {
-            return Result<IReadOnlyCollection<ModuleAllowance>>.Failure(ApplicationError.Validation(
+            return Result<ProductModuleSelectionResult>.Failure(ApplicationError.Validation(
                 nameof(selections),
                 "At least one module is required."));
         }
 
         if (!allowances.Values.Any(module => module.IsEnabled))
         {
-            return Result<IReadOnlyCollection<ModuleAllowance>>.Failure(ApplicationError.Validation(
+            return Result<ProductModuleSelectionResult>.Failure(ApplicationError.Validation(
                 nameof(selections),
                 "At least one module must be enabled."));
         }
 
-        return Result<IReadOnlyCollection<ModuleAllowance>>.Success(
+        return Result<ProductModuleSelectionResult>.Success(new ProductModuleSelectionResult(
+            catalogRevision.Id,
+            catalogRevision.RevisionNumber,
             allowances.Values
                 .OrderBy(module => module.ModuleCode.Value, StringComparer.Ordinal)
-                .ToArray());
+                .ToArray()));
     }
 }
 
 public sealed record ProductModuleSelection(
     string ModuleCode,
     bool IsEnabled);
+
+public sealed record ProductModuleSelectionResult(
+    ProductCatalogRevisionId CatalogRevisionId,
+    long CatalogRevisionNumber,
+    IReadOnlyCollection<ModuleAllowance> Allowances);

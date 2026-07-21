@@ -38,7 +38,14 @@ public sealed record RecordInvoicePaymentJournalLineResponse(
     Guid LedgerAccountId,
     decimal Debit,
     decimal Credit,
-    string? Description);
+    string? Description,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountNormalBalance,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus);
 
 public sealed record ApproveInvoicePaymentRequest(
     Guid CashOrBankAccountId,
@@ -66,7 +73,14 @@ public sealed record ApproveInvoicePaymentJournalLineResponse(
     Guid LedgerAccountId,
     decimal Debit,
     decimal Credit,
-    string? Description);
+    string? Description,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountNormalBalance,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus);
 
 public sealed record RejectInvoicePaymentRequest(
     string DecisionNote);
@@ -102,7 +116,14 @@ public sealed record ReverseInvoicePaymentJournalLineResponse(
     Guid LedgerAccountId,
     decimal Debit,
     decimal Credit,
-    string? Description);
+    string? Description,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountNormalBalance,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus);
 
 public sealed record IssueClientRefundRequest(
     Guid ClientId,
@@ -141,7 +162,14 @@ public sealed record IssueClientRefundJournalLineResponse(
     Guid LedgerAccountId,
     decimal Debit,
     decimal Credit,
-    string? Description);
+    string? Description,
+    string? LedgerAccountCode,
+    string? LedgerAccountName,
+    string? LedgerAccountType,
+    string? LedgerAccountNormalBalance,
+    string? LedgerAccountLevel,
+    bool? IsPostingAccount,
+    string? LedgerAccountStatus);
 
 public sealed record ApplyClientCreditRequest(
     Guid ClientId,

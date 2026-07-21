@@ -8,6 +8,17 @@ public interface IJournalEntryRepository
 
     Task<JournalEntry?> GetByIdAsync(JournalEntryId id, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<JournalEntry>> ListForSourceDocumentAsync(
+        JournalSourceType sourceType,
+        Guid sourceDocumentId,
+        CancellationToken cancellationToken = default);
+
+    Task<int> GetMaximumVoucherSequenceAsync(
+        JournalSourceType sourceType,
+        string prefix,
+        int sequenceYear,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<JournalEntry>> ListAsync(
         DateOnly? fromDate = null,
         DateOnly? toDate = null,

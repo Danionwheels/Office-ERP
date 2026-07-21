@@ -1,13 +1,26 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
+using SafarSuite.ControlDesk.Api.Modules.ControlCloud;
+using SafarSuite.ControlDesk.Api.Modules.Health;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.BootstrapStandardChartOfAccounts;
+using SafarSuite.ControlDesk.Application.Modules.Auth;
+using SafarSuite.ControlDesk.Application.Modules.Auth.AuthenticateLocalOperator;
+using SafarSuite.ControlDesk.Application.Modules.Auth.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CloseAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.AccountingSetup;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountingControlSettings;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureAccountCodeRange;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureDefaultAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureOpeningBalanceProfile;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ConfigureVoucherNumberingRule;
 using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.CreateLedgerAccount;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingControlSettings;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountCodeRangeValidation;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetBalanceSheet;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntry;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetJournalEntrySourceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountReconciliation;
@@ -15,12 +28,21 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountRepa
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetLedgerAccountActivity;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseJournalPreview;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetAccountingPeriodCloseReadiness;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetOpeningBalanceProfile;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetProfitAndLossStatement;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.GetRevenueSummary;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.GetTrialBalance;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountCodeRanges;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListAccountingPeriods;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListJournalEntries;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ListLedgerAccounts;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.ListVoucherNumberingRules;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.PostManualJournalEntry;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PostOpeningBalanceImport;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewChartOfAccountsImportText;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewJournalVoucherNumber;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImport;
+using SafarSuite.ControlDesk.Application.Modules.Accounting.PreviewOpeningBalanceImportText;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.ReopenAccountingPeriod;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.SuggestLedgerAccountCode;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.UpdateLedgerAccount;
@@ -29,12 +51,14 @@ using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateChargeCode;
 using SafarSuite.ControlDesk.Application.Modules.Billing.CreateClientChargeRule;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GenerateInvoiceDraft;
+using SafarSuite.ControlDesk.Application.Modules.Billing.GetAccountsReceivableAging;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GetCreditNoteDocument;
 using SafarSuite.ControlDesk.Application.Modules.Billing.GetInvoiceDocument;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueCreditNote;
 using SafarSuite.ControlDesk.Application.Modules.Billing.IssueInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Billing.ListChargeCodes;
 using SafarSuite.ControlDesk.Application.Modules.Billing.ListClientChargeRules;
+using SafarSuite.ControlDesk.Application.Modules.Billing.ListOutstandingInvoices;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Billing.VoidInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ActivateClient;
@@ -43,9 +67,9 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.AddClientSupportNote;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientAccountingProfile;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ConfigureClientDeployment;
 using SafarSuite.ControlDesk.Application.Modules.Clients.CreateClient;
+using SafarSuite.ControlDesk.Application.Modules.Clients.Financials;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientAccountingProfile;
-using SafarSuite.ControlDesk.Application.Modules.Clients.GetClientStatement;
 using SafarSuite.ControlDesk.Application.Modules.Clients.InviteClientPortalContact;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientContacts;
 using SafarSuite.ControlDesk.Application.Modules.Clients.ListClientDeployments;
@@ -57,23 +81,49 @@ using SafarSuite.ControlDesk.Application.Modules.Clients.ResendClientPortalInvit
 using SafarSuite.ControlDesk.Application.Modules.Clients.RevokeClientPortalInvitation;
 using SafarSuite.ControlDesk.Application.Modules.Clients.SuspendClient;
 using SafarSuite.ControlDesk.Application.Modules.Clients.UpdateClient;
+using SafarSuite.ControlDesk.Application.Modules.CommandCenter.ListClientWorkQueue;
+using SafarSuite.ControlDesk.Application.Modules.CommandCenter.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Contracts;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.CreateClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.GetClientContract;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ListClientContracts;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.ListProductAccessCatalog;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.ListProductCatalogRevisions;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ListProductModules;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.PublishProductAccessCatalogCommand;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.PublishProductCatalogRevision;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.ReplaceActiveClientContract;
+using SafarSuite.ControlDesk.Application.Modules.Contracts.SaveProductAccessCatalog;
 using SafarSuite.ControlDesk.Application.Modules.Contracts.SuspendClientContract;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ChangeProviderAccessOperatorPassword;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationBootstrapPackage;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateCloudInstallationSetupToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperator;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.CreateProviderAccessOperatorSession;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationDiagnostics;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.GetCloudInstallationStatus;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudAppActivationToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudFirstManagerSetupToken;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.IssueCloudPairingDescriptor;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudAppActivationIssues;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationBootstrapPackages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudInstallationAuditEvents;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListCloudOutboxMessages;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ListProviderAccessOperators;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.MarkCloudInstallationBootstrapPackageHandoff;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.PublishPendingCloudOutboxMessages;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.QueueCloudInstallationSupportCommand;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorPassword;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorRecoveryCodes;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.ResetProviderAccessOperatorTotp;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.RevokeCloudAppActivationIssue;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorScopes;
+using SafarSuite.ControlDesk.Application.Modules.ControlCloud.UpdateProviderAccessOperatorStatus;
+using SafarSuite.ControlDesk.Application.Modules.Diagnostics.GetOfficeDiagnosticsSummary;
+using SafarSuite.ControlDesk.Application.Modules.Diagnostics.GetOfficeReadiness;
+using SafarSuite.ControlDesk.Application.Modules.Diagnostics.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.GetLatestEntitlementSnapshot;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoice;
 using SafarSuite.ControlDesk.Application.Modules.Entitlements.IssueEntitlementSnapshotFromPaidInvoiceDefaults;
@@ -83,15 +133,24 @@ using SafarSuite.ControlDesk.Application.Modules.Payments.ApproveInvoicePayment;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Common;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetClientRefundDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetInvoicePaymentDocument;
+using SafarSuite.ControlDesk.Application.Modules.Payments.GetPortalPaymentClaimProof;
+using SafarSuite.ControlDesk.Application.Modules.Payments.GetProviderBankDetails;
+using SafarSuite.ControlDesk.Application.Modules.Payments.ImportPortalPaymentClaims;
 using SafarSuite.ControlDesk.Application.Modules.Payments.Ports;
 using SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayment;
 using SafarSuite.ControlDesk.Application.Modules.Payments.RejectInvoicePayment;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ReverseInvoicePayment;
 using SafarSuite.ControlDesk.Application.Modules.Payments.IssueClientRefund;
+using SafarSuite.ControlDesk.Application.Modules.Payments.ListPaymentReceiptsReport;
+using SafarSuite.ControlDesk.Application.Modules.Payments.ListPortalPaymentClaims;
+using SafarSuite.ControlDesk.Application.Modules.Payments.RejectPortalPaymentClaim;
+using SafarSuite.ControlDesk.Application.Modules.Payments.UpdateProviderBankDetails;
+using SafarSuite.ControlDesk.Application.Modules.Payments.VerifyPortalPaymentClaim;
 using SafarSuite.ControlDesk.Infrastructure.ControlCloud;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.EntityFramework;
 using SafarSuite.ControlDesk.Infrastructure.Persistence.InMemory;
 using SafarSuite.ControlDesk.Infrastructure.ProductModules;
+using SafarSuite.ControlDesk.Infrastructure.Security;
 using SafarSuite.ControlDesk.Infrastructure.System;
 
 namespace SafarSuite.ControlDesk.Api.Composition;
@@ -102,32 +161,65 @@ public static class ControlDeskServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddControlDeskAuthentication(configuration);
+        services.AddSingleton<ILocalOperatorPasswordCodec, Pbkdf2LocalOperatorPasswordCodec>();
+        services.Configure<ControlDeskClockOptions>(
+            configuration.GetSection(ControlDeskClockOptions.SectionName));
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IIdGenerator, GuidIdGenerator>();
         services.Configure<ControlCloudPublisherOptions>(
             configuration.GetSection(ControlCloudPublisherOptions.SectionName));
         services.Configure<ControlCloudStatusOptions>(
             configuration.GetSection(ControlCloudStatusOptions.SectionName));
+        services.AddOptions<ControlCloudOutboxWorkerOptions>()
+            .Bind(configuration.GetSection(ControlCloudOutboxWorkerOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<
+            IValidateOptions<ControlCloudOutboxWorkerOptions>,
+            ControlCloudOutboxWorkerOptionsValidator>();
         services.Configure<ControlCloudPortalInvitationOptions>(
             configuration.GetSection(ControlCloudPortalInvitationOptions.SectionName));
         services.Configure<ProductModuleCatalogOptions>(
             configuration.GetSection(ProductModuleCatalogOptions.SectionName));
+        services.Configure<ProductKernelCommandIssuerOptions>(
+            configuration.GetSection(ProductKernelCommandIssuerOptions.SectionName));
+        services.AddHttpContextAccessor();
         services.AddSingleton<ControlCloudEnvelopeBuilder>();
         services.AddSingleton<ICloudOutboxPublishPolicy, ConfiguredCloudOutboxPublishPolicy>();
-        services.AddSingleton<IProductModuleCatalog, ConfiguredProductModuleCatalog>();
+        services.AddSingleton<
+            ICloudOutboxPublisherAvailability,
+            ConfiguredCloudOutboxPublisherAvailability>();
+        services.AddSingleton<CloudOutboxAutomationState>();
+        services.AddSingleton<ICloudOutboxAutomationState>(provider =>
+            provider.GetRequiredService<CloudOutboxAutomationState>());
+        services.AddSingleton<ControlCloudOutboxPublishCoordinator>();
+        services.AddHostedService<ControlCloudOutboxPublisherWorker>();
+        services.AddSingleton<OfficeReadinessTransitionRecorder>();
+        services.AddSingleton<ConfiguredProductModuleCatalog>();
+        services.AddScoped<IProductModuleCatalog, PersistedProductModuleCatalog>();
+        services.AddScoped<
+            IControlCloudProviderAccessCredentialSource,
+            HttpContextControlCloudProviderAccessCredentialSource>();
         AddControlCloudPublisher(services, configuration);
         services.AddHttpClient<IControlCloudInstallationStatusClient, HttpControlCloudInstallationStatusClient>();
+        services.AddHttpClient<IControlCloudReachabilityProbe, HttpControlCloudReachabilityProbe>(client =>
+            client.Timeout = TimeSpan.FromSeconds(4));
         services.AddHttpClient<IControlCloudInstallationProvisioningClient, HttpControlCloudInstallationProvisioningClient>();
         services.AddHttpClient<IControlCloudInstallationDiagnosticsClient, HttpControlCloudInstallationDiagnosticsClient>();
         services.AddHttpClient<IControlCloudInstallationCommandClient, HttpControlCloudInstallationCommandClient>();
         services.AddHttpClient<IControlCloudAuditClient, HttpControlCloudAuditClient>();
         services.AddHttpClient<IClientPortalInvitationClient, HttpClientPortalInvitationClient>();
+        services.AddHttpClient<IControlCloudProviderAccessClient, HttpControlCloudProviderAccessClient>();
+        services.AddHttpClient<IControlCloudPaymentClaimClient, HttpControlCloudPaymentClaimClient>();
+        services.AddHttpClient<IProductKernelCommandIssuerClient, HttpProductKernelCommandIssuerClient>();
 
         AddPersistence(services, configuration);
 
+        services.AddScoped<AuthenticateLocalOperatorHandler>();
         services.AddScoped<CreateClientValidator>();
         services.AddScoped<CreateClientHandler>();
         services.AddScoped<ListClientsHandler>();
+        services.AddScoped<ListClientWorkQueueHandler>();
         services.AddScoped<GetClientHandler>();
         services.AddScoped<UpdateClientValidator>();
         services.AddScoped<UpdateClientHandler>();
@@ -149,23 +241,42 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<ConfigureClientDeploymentValidator>();
         services.AddScoped<ConfigureClientDeploymentHandler>();
         services.AddScoped<ListClientDeploymentsHandler>();
-        services.AddScoped<GetClientStatementHandler>();
+        services.AddScoped<GetClientFinancialSummaryHandler>();
+        services.AddScoped<ListClientInvoicesHandler>();
+        services.AddScoped<ListClientPaymentsHandler>();
+        services.AddScoped<ListClientFinancialActivityHandler>();
+        services.AddScoped<ListClientJournalPostingsHandler>();
         services.AddScoped<ProductModuleSelectionService>();
         services.AddScoped<CreateClientContractValidator>();
         services.AddScoped<CreateClientContractHandler>();
         services.AddScoped<GetClientContractHandler>();
         services.AddScoped<ListClientContractsHandler>();
+        services.AddScoped<ListProductAccessCatalogHandler>();
+        services.AddScoped<ListProductCatalogRevisionsHandler>();
         services.AddScoped<ListProductModulesHandler>();
+        services.AddScoped<PublishProductAccessCatalogCommandHandler>();
+        services.AddScoped<PublishProductCatalogRevisionHandler>();
+        services.AddScoped<SaveProductAccessCatalogHandler>();
         services.AddScoped<SuspendClientContractHandler>();
         services.AddScoped<ReplaceActiveClientContractHandler>();
         services.AddScoped<AccountingSetupDefaults>();
+        services.AddScoped<BootstrapStandardChartOfAccountsHandler>();
         services.AddScoped<ConfigureAccountCodeRangeValidator>();
         services.AddScoped<ConfigureAccountCodeRangeHandler>();
         services.AddScoped<ListAccountCodeRangesHandler>();
+        services.AddScoped<GetAccountCodeRangeValidationHandler>();
         services.AddScoped<AccountingControlSettingsResultFactory>();
+        services.AddScoped<OpeningBalanceProfileResultFactory>();
+        services.AddScoped<OpeningBalanceProfilePostingGuard>();
         services.AddScoped<GetAccountingControlSettingsHandler>();
         services.AddScoped<ConfigureAccountingControlSettingsHandler>();
+        services.AddScoped<ConfigureDefaultAccountingControlSettingsHandler>();
+        services.AddScoped<GetOpeningBalanceProfileHandler>();
+        services.AddScoped<ConfigureOpeningBalanceProfileHandler>();
+        services.AddScoped<ListVoucherNumberingRulesHandler>();
+        services.AddScoped<ConfigureVoucherNumberingRuleHandler>();
         services.AddScoped<AccountingPeriodPostingGuard>();
+        services.AddScoped<JournalVoucherNumberService>();
         services.AddScoped<AccountingPeriodCloseReadinessService>();
         services.AddScoped<GetAccountingPeriodCloseReadinessHandler>();
         services.AddScoped<GetAccountingPeriodCloseJournalPreviewHandler>();
@@ -181,24 +292,50 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<ListLedgerAccountsHandler>();
         services.AddScoped<GetLedgerAccountReconciliationHandler>();
         services.AddScoped<GetLedgerAccountRepairPlanHandler>();
+        services.AddScoped<PreviewChartOfAccountsImportTextHandler>();
         services.AddScoped<SuggestLedgerAccountCodeHandler>();
         services.AddScoped<ListJournalEntriesHandler>();
         services.AddScoped<GetJournalEntryHandler>();
         services.AddScoped<GetJournalEntrySourceDocumentHandler>();
         services.AddScoped<PostManualJournalEntryValidator>();
         services.AddScoped<PostManualJournalEntryHandler>();
+        services.AddScoped<PreviewJournalVoucherNumberHandler>();
+        services.AddScoped<PreviewOpeningBalanceImportHandler>();
+        services.AddScoped<PreviewOpeningBalanceImportTextHandler>();
+        services.AddScoped<PostOpeningBalanceImportHandler>();
         services.AddScoped<VoidManualJournalEntryValidator>();
         services.AddScoped<VoidManualJournalEntryHandler>();
         services.AddScoped<GetLedgerAccountActivityHandler>();
         services.AddScoped<GetTrialBalanceHandler>();
+        services.AddScoped<GetRevenueSummaryHandler>();
+        services.AddScoped<GetProfitAndLossStatementHandler>();
+        services.AddScoped<GetBalanceSheetHandler>();
         services.AddScoped<ListCloudOutboxMessagesHandler>();
         services.AddScoped<GetCloudInstallationStatusHandler>();
         services.AddScoped<GetCloudInstallationDiagnosticsHandler>();
+        services.AddScoped<ListCloudInstallationBootstrapPackagesHandler>();
         services.AddScoped<ListCloudInstallationAuditEventsHandler>();
+        services.AddScoped<ListCloudAppActivationIssuesHandler>();
+        services.AddScoped<ListProviderAccessOperatorsHandler>();
+        services.AddScoped<CreateProviderAccessOperatorHandler>();
+        services.AddScoped<CreateProviderAccessOperatorSessionHandler>();
+        services.AddScoped<ChangeProviderAccessOperatorPasswordHandler>();
+        services.AddScoped<ResetProviderAccessOperatorPasswordHandler>();
+        services.AddScoped<ResetProviderAccessOperatorRecoveryCodesHandler>();
+        services.AddScoped<ResetProviderAccessOperatorTotpHandler>();
+        services.AddScoped<UpdateProviderAccessOperatorScopesHandler>();
+        services.AddScoped<UpdateProviderAccessOperatorStatusHandler>();
         services.AddScoped<CreateCloudInstallationSetupTokenHandler>();
         services.AddScoped<CreateCloudInstallationBootstrapPackageHandler>();
+        services.AddScoped<MarkCloudInstallationBootstrapPackageHandoffHandler>();
+        services.AddScoped<IssueCloudAppActivationTokenHandler>();
+        services.AddScoped<IssueCloudFirstManagerSetupTokenHandler>();
+        services.AddScoped<IssueCloudPairingDescriptorHandler>();
+        services.AddScoped<RevokeCloudAppActivationIssueHandler>();
         services.AddScoped<QueueCloudInstallationSupportCommandHandler>();
         services.AddScoped<PublishPendingCloudOutboxMessagesHandler>();
+        services.AddScoped<GetOfficeReadinessHandler>();
+        services.AddScoped<GetOfficeDiagnosticsSummaryHandler>();
         services.AddScoped<IssueEntitlementSnapshotFromPaidInvoiceValidator>();
         services.AddScoped<IssueEntitlementSnapshotFromPaidInvoiceHandler>();
         services.AddScoped<IssueEntitlementSnapshotFromPaidInvoiceDefaultsHandler>();
@@ -219,9 +356,12 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<IssueInvoiceHandler>();
         services.AddScoped<VoidInvoiceValidator>();
         services.AddScoped<VoidInvoiceHandler>();
+        services.AddScoped<GetAccountsReceivableAgingHandler>();
+        services.AddScoped<ListOutstandingInvoicesHandler>();
         services.AddScoped<PaymentPostingService>();
         services.AddScoped<ClientCreditBalanceService>();
         services.AddScoped<PaymentCloudOutboxMessageFactory>();
+        services.AddScoped<ProviderBankDetailsCloudOutboxMessageFactory>();
         services.AddScoped<RecordInvoicePaymentValidator>();
         services.AddScoped<RecordInvoicePaymentHandler>();
         services.AddScoped<ApproveInvoicePaymentValidator>();
@@ -236,6 +376,14 @@ public static class ControlDeskServiceRegistration
         services.AddScoped<IssueClientRefundHandler>();
         services.AddScoped<ApplyClientCreditValidator>();
         services.AddScoped<ApplyClientCreditHandler>();
+        services.AddScoped<ListPaymentReceiptsReportHandler>();
+        services.AddScoped<ListPortalPaymentClaimsHandler>();
+        services.AddScoped<ImportPortalPaymentClaimsHandler>();
+        services.AddScoped<VerifyPortalPaymentClaimHandler>();
+        services.AddScoped<RejectPortalPaymentClaimHandler>();
+        services.AddScoped<GetPortalPaymentClaimProofHandler>();
+        services.AddScoped<GetProviderBankDetailsHandler>();
+        services.AddScoped<UpdateProviderBankDetailsHandler>();
 
         return services;
     }
@@ -253,7 +401,15 @@ public static class ControlDeskServiceRegistration
 
         if (mode.Equals("Http", StringComparison.OrdinalIgnoreCase))
         {
-            services.AddHttpClient<ICloudOutboxPublisher, HttpControlCloudOutboxPublisher>();
+            services.AddHttpClient<ICloudOutboxPublisher, HttpControlCloudOutboxPublisher>()
+                .ConfigureHttpClient((provider, client) =>
+                {
+                    var options = provider
+                        .GetRequiredService<IOptions<ControlCloudPublisherOptions>>()
+                        .Value;
+                    client.Timeout = TimeSpan.FromSeconds(
+                        Math.Clamp(options.RequestTimeoutSeconds, 5, 120));
+                });
 
             return;
         }
@@ -284,23 +440,44 @@ public static class ControlDeskServiceRegistration
             });
 
             services.AddScoped<IClientRepository, EfClientRepository>();
+            services.AddScoped<ILocalOperatorRepository, EfLocalOperatorRepository>();
+            services.AddScoped<IClientDirectoryReader, EfClientDirectoryReader>();
+            services.AddScoped<IClientFinancialReader, EfClientFinancialReader>();
+            services.AddScoped<IClientWorkQueueReader, EfClientWorkQueueReader>();
             services.AddScoped<IContractRepository, EfContractRepository>();
+            services.AddScoped<IProductModuleReferenceReader, EfProductModuleReferenceReader>();
+            services.AddScoped<IProductCatalogRepository, EfProductAccessCatalogRepository>();
             services.AddScoped<IClientAccountingProfileRepository, EfClientAccountingProfileRepository>();
             services.AddScoped<IClientDeploymentRepository, EfClientDeploymentRepository>();
             services.AddScoped<IAccountCodeRangeRepository, EfAccountCodeRangeRepository>();
             services.AddScoped<IAccountingControlSettingsRepository, EfAccountingControlSettingsRepository>();
+            services.AddScoped<IOpeningBalanceProfileRepository, EfOpeningBalanceProfileRepository>();
+            services.AddScoped<IVoucherNumberingRuleRepository, EfVoucherNumberingRuleRepository>();
             services.AddScoped<IAccountingPeriodRepository, EfAccountingPeriodRepository>();
             services.AddScoped<ILedgerAccountRepository, EfLedgerAccountRepository>();
             services.AddScoped<IJournalEntryRepository, EfJournalEntryRepository>();
+            services.AddScoped<IJournalEntryRegisterReader, EfJournalEntryRegisterReader>();
+            services.AddScoped<IRevenueSummaryReader, EfRevenueSummaryReader>();
             services.AddScoped<IChargeCodeRepository, EfChargeCodeRepository>();
             services.AddScoped<IClientChargeRuleRepository, EfClientChargeRuleRepository>();
             services.AddScoped<IInvoiceRepository, EfInvoiceRepository>();
+            services.AddScoped<IBillingReportReader, EfBillingReportReader>();
             services.AddScoped<ICreditNoteRepository, EfCreditNoteRepository>();
             services.AddScoped<ICloudOutboxMessageRepository, EfCloudOutboxMessageRepository>();
+            services.AddScoped<
+                ICloudOutboxPublicationLeaseProvider,
+                EfCloudOutboxPublicationLeaseProvider>();
+            services.AddScoped<IOfficeDatabaseReadinessProbe, EfOfficeDatabaseReadinessProbe>();
             services.AddScoped<IPaymentRepository, EfPaymentRepository>();
+            services.AddScoped<IPortalPaymentClaimRepository, EfPortalPaymentClaimRepository>();
+            services.AddScoped<IProviderBankDetailsRepository, EfProviderBankDetailsRepository>();
+            services.AddScoped<IPaymentReportReader, EfPaymentReportReader>();
             services.AddScoped<IClientRefundRepository, EfClientRefundRepository>();
             services.AddScoped<IClientCreditApplicationRepository, EfClientCreditApplicationRepository>();
             services.AddScoped<IEntitlementSnapshotRepository, EfEntitlementSnapshotRepository>();
+            services.AddScoped<IClientAccessRevisionRepository, EfClientAccessRevisionRepository>();
+            services.AddScoped<IEntitlementVersionAllocator, EfEntitlementVersionAllocator>();
+            services.AddScoped<EfClientWorkQueueProjector>();
             services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 
             return;
@@ -312,24 +489,58 @@ public static class ControlDeskServiceRegistration
                 $"Unsupported Persistence:Provider '{provider}'. Use 'InMemory' or 'Postgres'.");
         }
 
-        services.AddSingleton<IClientRepository, InMemoryClientRepository>();
-        services.AddSingleton<IContractRepository, InMemoryContractRepository>();
+        services.AddSingleton<InMemoryClientRepository>();
+        services.AddSingleton<InMemoryLocalOperatorRepository>(provider => new(
+            ControlDeskDevelopmentOperatorFixtures.Create(
+                provider.GetRequiredService<IOptions<ControlDeskOperatorAccessOptions>>().Value)));
+        services.AddSingleton<ILocalOperatorRepository>(provider =>
+            provider.GetRequiredService<InMemoryLocalOperatorRepository>());
+        services.AddSingleton<IClientRepository>(provider =>
+            provider.GetRequiredService<InMemoryClientRepository>());
+        services.AddSingleton<IClientDirectoryReader>(provider =>
+            provider.GetRequiredService<InMemoryClientRepository>());
+        services.AddSingleton<IClientFinancialReader, InMemoryClientFinancialReader>();
+        services.AddSingleton<IClientWorkQueueReader, InMemoryClientWorkQueueReader>();
+        services.AddSingleton<InMemoryContractRepository>();
+        services.AddSingleton<IContractRepository>(provider =>
+            provider.GetRequiredService<InMemoryContractRepository>());
+        services.AddSingleton<IProductModuleReferenceReader>(provider =>
+            provider.GetRequiredService<InMemoryContractRepository>());
+        services.AddSingleton<IProductCatalogRepository, InMemoryProductAccessCatalogRepository>();
         services.AddSingleton<IClientAccountingProfileRepository, InMemoryClientAccountingProfileRepository>();
         services.AddSingleton<IClientDeploymentRepository, InMemoryClientDeploymentRepository>();
         services.AddSingleton<IAccountCodeRangeRepository, InMemoryAccountCodeRangeRepository>();
         services.AddSingleton<IAccountingControlSettingsRepository, InMemoryAccountingControlSettingsRepository>();
+        services.AddSingleton<IOpeningBalanceProfileRepository, InMemoryOpeningBalanceProfileRepository>();
+        services.AddSingleton<IVoucherNumberingRuleRepository, InMemoryVoucherNumberingRuleRepository>();
         services.AddSingleton<IAccountingPeriodRepository, InMemoryAccountingPeriodRepository>();
         services.AddSingleton<ILedgerAccountRepository, InMemoryLedgerAccountRepository>();
         services.AddSingleton<IJournalEntryRepository, InMemoryJournalEntryRepository>();
+        services.AddSingleton<IJournalEntryRegisterReader, InMemoryJournalEntryRegisterReader>();
+        services.AddSingleton<IRevenueSummaryReader, InMemoryRevenueSummaryReader>();
         services.AddSingleton<IChargeCodeRepository, InMemoryChargeCodeRepository>();
         services.AddSingleton<IClientChargeRuleRepository, InMemoryClientChargeRuleRepository>();
-        services.AddSingleton<IInvoiceRepository, InMemoryInvoiceRepository>();
+        services.AddSingleton<InMemoryInvoiceRepository>();
+        services.AddSingleton<IInvoiceRepository>(provider =>
+            provider.GetRequiredService<InMemoryInvoiceRepository>());
+        services.AddSingleton<IBillingReportReader, InMemoryBillingReportReader>();
         services.AddSingleton<ICreditNoteRepository, InMemoryCreditNoteRepository>();
         services.AddSingleton<ICloudOutboxMessageRepository, InMemoryCloudOutboxMessageRepository>();
-        services.AddSingleton<IPaymentRepository, InMemoryPaymentRepository>();
+        services.AddSingleton<
+            ICloudOutboxPublicationLeaseProvider,
+            InMemoryCloudOutboxPublicationLeaseProvider>();
+        services.AddSingleton<IOfficeDatabaseReadinessProbe, InMemoryOfficeDatabaseReadinessProbe>();
+        services.AddSingleton<InMemoryPaymentRepository>();
+        services.AddSingleton<IPaymentRepository>(provider =>
+            provider.GetRequiredService<InMemoryPaymentRepository>());
+        services.AddSingleton<IPaymentReportReader, InMemoryPaymentReportReader>();
+        services.AddSingleton<IPortalPaymentClaimRepository, InMemoryPortalPaymentClaimRepository>();
+        services.AddSingleton<IProviderBankDetailsRepository, InMemoryProviderBankDetailsRepository>();
         services.AddSingleton<IClientRefundRepository, InMemoryClientRefundRepository>();
         services.AddSingleton<IClientCreditApplicationRepository, InMemoryClientCreditApplicationRepository>();
         services.AddSingleton<IEntitlementSnapshotRepository, InMemoryEntitlementSnapshotRepository>();
+        services.AddSingleton<IClientAccessRevisionRepository, InMemoryClientAccessRevisionRepository>();
+        services.AddSingleton<IEntitlementVersionAllocator, InMemoryEntitlementVersionAllocator>();
         services.AddScoped<IUnitOfWork, NoOpUnitOfWork>();
     }
 }

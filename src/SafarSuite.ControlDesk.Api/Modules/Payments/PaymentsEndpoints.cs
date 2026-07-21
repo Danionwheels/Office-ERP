@@ -1,12 +1,22 @@
 using SafarSuite.ControlDesk.Api.Common;
+using SafarSuite.ControlDesk.Api.Modules.Auth;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ApplyClientCredit;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ApproveInvoicePayment;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetClientRefundDocument;
 using SafarSuite.ControlDesk.Application.Modules.Payments.GetInvoicePaymentDocument;
+using SafarSuite.ControlDesk.Application.Modules.Payments.GetPortalPaymentClaimProof;
+using SafarSuite.ControlDesk.Application.Modules.Payments.GetProviderBankDetails;
+using SafarSuite.ControlDesk.Application.Modules.Payments.ImportPortalPaymentClaims;
 using SafarSuite.ControlDesk.Application.Modules.Payments.IssueClientRefund;
+using SafarSuite.ControlDesk.Application.Modules.Payments.ListPortalPaymentClaims;
+using SafarSuite.ControlDesk.Application.Modules.Payments.Common;
+using SafarSuite.ControlDesk.Application.Modules.Payments.RejectPortalPaymentClaim;
 using SafarSuite.ControlDesk.Application.Modules.Payments.RejectInvoicePayment;
 using SafarSuite.ControlDesk.Application.Modules.Payments.RecordInvoicePayment;
 using SafarSuite.ControlDesk.Application.Modules.Payments.ReverseInvoicePayment;
+using SafarSuite.ControlDesk.Application.Modules.Payments.UpdateProviderBankDetails;
+using SafarSuite.ControlDesk.Application.Modules.Payments.VerifyPortalPaymentClaim;
+using SafarSuite.ControlDesk.Contracts.ControlCloud.V1;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Billing;
 using SafarSuite.ControlDesk.Contracts.ControlDeskApi.V1.Payments;
 
@@ -18,7 +28,8 @@ public static class PaymentsEndpoints
     {
         var group = endpoints
             .MapGroup("/api/v1/payments")
-            .WithTags("Payments");
+            .WithTags("Payments")
+            .RequireAuthorization(ControlDeskPolicies.PaymentsManage);
 
         group.MapPost("/invoice-payments", RecordInvoicePaymentAsync);
         group.MapGet("/invoice-payments/{paymentId:guid}", GetInvoicePaymentDocumentAsync);
@@ -28,8 +39,138 @@ public static class PaymentsEndpoints
         group.MapPost("/client-refunds", IssueClientRefundAsync);
         group.MapGet("/client-refunds/{refundId:guid}", GetClientRefundDocumentAsync);
         group.MapPost("/client-credit-applications", ApplyClientCreditAsync);
+        group.MapGet("/portal-payment-claims", ListPortalPaymentClaimsAsync);
+        group.MapPost("/portal-payment-claims/import", ImportPortalPaymentClaimsAsync);
+        group.MapPost("/portal-payment-claims/{claimId:guid}/verify", VerifyPortalPaymentClaimAsync);
+        group.MapPost("/portal-payment-claims/{claimId:guid}/reject", RejectPortalPaymentClaimAsync);
+        group.MapGet("/portal-payment-claims/{claimId:guid}/proof", GetPortalPaymentClaimProofAsync);
+        group.MapGet("/provider-bank-details", GetProviderBankDetailsAsync);
+        group.MapPut("/provider-bank-details", UpdateProviderBankDetailsAsync);
 
         return endpoints;
+    }
+
+    private static async Task<IResult> ListPortalPaymentClaimsAsync(
+        Guid? clientId,
+        ListPortalPaymentClaimsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ListPortalPaymentClaimsQuery(clientId),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(new ClientPortalPaymentClaimListResponse(
+                result.Value.Select(ToResponse).ToArray()));
+    }
+
+    private static async Task<IResult> ImportPortalPaymentClaimsAsync(
+        Guid clientId,
+        ImportPortalPaymentClaimsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new ImportPortalPaymentClaimsCommand(clientId),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ApiResultMapper.ToErrorResult(result.Errors);
+        }
+
+        return Results.Ok(new ImportPortalPaymentClaimsResponse(
+            result.Value.ClientId,
+            result.Value.RetrievedCount,
+            result.Value.ImportedCount,
+            result.Value.AlreadyImportedCount,
+            result.Value.IgnoredCount,
+            result.Value.Claims.Select(ToResponse).ToArray()));
+    }
+
+    private static async Task<IResult> VerifyPortalPaymentClaimAsync(
+        Guid claimId,
+        VerifyPortalPaymentClaimRequest request,
+        VerifyPortalPaymentClaimHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new VerifyPortalPaymentClaimCommand(
+                claimId,
+                request.CashOrBankAccountId,
+                request.AccountsReceivableAccountId,
+                request.PostingDate,
+                request.DecisionNote),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(new VerifyPortalPaymentClaimResponse(
+                ToResponse(result.Value.Claim),
+                ToResponse(result.Value.Payment)));
+    }
+
+    private static async Task<IResult> RejectPortalPaymentClaimAsync(
+        Guid claimId,
+        RejectClientPortalPaymentClaimRequest request,
+        RejectPortalPaymentClaimHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new RejectPortalPaymentClaimCommand(claimId, request.Reason),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(ToResponse(result.Value));
+    }
+
+    private static async Task<IResult> GetPortalPaymentClaimProofAsync(
+        Guid claimId,
+        GetPortalPaymentClaimProofHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new GetPortalPaymentClaimProofQuery(claimId),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.File(
+                result.Value.Content,
+                result.Value.ContentType,
+                result.Value.FileName,
+                enableRangeProcessing: false);
+    }
+
+    private static async Task<IResult> GetProviderBankDetailsAsync(
+        GetProviderBankDetailsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(ToResponse(result.Value));
+    }
+
+    private static async Task<IResult> UpdateProviderBankDetailsAsync(
+        UpdateProviderBankDetailsRequest request,
+        UpdateProviderBankDetailsHandler handler,
+        CancellationToken cancellationToken)
+    {
+        var result = await handler.HandleAsync(
+            new UpdateProviderBankDetailsCommand(
+                request.BankName,
+                request.AccountTitle,
+                request.AccountNumber,
+                request.Iban,
+                request.BranchOrRoutingInfo),
+            cancellationToken);
+
+        return result.IsFailure
+            ? ApiResultMapper.ToErrorResult(result.Errors)
+            : Results.Ok(ToResponse(result.Value));
     }
 
     private static async Task<IResult> RecordInvoicePaymentAsync(
@@ -69,11 +210,7 @@ public static class PaymentsEndpoints
             result.Value.PostingDate,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
-            result.Value.JournalLines.Select(line => new RecordInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Created($"/api/v1/payments/invoice-payments/{response.PaymentId}", response);
     }
@@ -130,11 +267,7 @@ public static class PaymentsEndpoints
             result.Value.PostingDate,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
-            result.Value.JournalLines.Select(line => new ApproveInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Ok(response);
     }
@@ -191,11 +324,7 @@ public static class PaymentsEndpoints
             result.Value.OriginalJournalEntryId,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
-            result.Value.JournalLines.Select(line => new ReverseInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Ok(response);
     }
@@ -240,11 +369,7 @@ public static class PaymentsEndpoints
             result.Value.PostingDate,
             result.Value.TotalDebit,
             result.Value.TotalCredit,
-            result.Value.JournalLines.Select(line => new IssueClientRefundJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.Value.JournalLines.Select(line => ToResponse(line)).ToArray());
 
         return Results.Created($"/api/v1/payments/client-refunds/{response.RefundId}", response);
     }
@@ -346,11 +471,7 @@ public static class PaymentsEndpoints
             result.PostingDate,
             result.TotalDebit,
             result.TotalCredit,
-            result.JournalLines.Select(line => new RecordInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.JournalLines.Select(line => ToResponse(line)).ToArray());
     }
 
     private static ReverseInvoicePaymentResponse ToResponse(ReverseInvoicePaymentResult result)
@@ -370,11 +491,7 @@ public static class PaymentsEndpoints
             result.OriginalJournalEntryId,
             result.TotalDebit,
             result.TotalCredit,
-            result.JournalLines.Select(line => new ReverseInvoicePaymentJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.JournalLines.Select(line => ToResponse(line)).ToArray());
     }
 
     private static IssueClientRefundResponse ToResponse(IssueClientRefundResult result)
@@ -395,10 +512,106 @@ public static class PaymentsEndpoints
             result.PostingDate,
             result.TotalDebit,
             result.TotalCredit,
-            result.JournalLines.Select(line => new IssueClientRefundJournalLineResponse(
-                line.LedgerAccountId,
-                line.Debit,
-                line.Credit,
-                line.Description)).ToArray());
+            result.JournalLines.Select(line => ToResponse(line)).ToArray());
+    }
+
+    private static RecordInvoicePaymentJournalLineResponse ToResponse(RecordInvoicePaymentJournalLineResult line)
+    {
+        return new RecordInvoicePaymentJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
+    }
+
+    private static ApproveInvoicePaymentJournalLineResponse ToResponse(ApproveInvoicePaymentJournalLineResult line)
+    {
+        return new ApproveInvoicePaymentJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
+    }
+
+    private static ReverseInvoicePaymentJournalLineResponse ToResponse(ReverseInvoicePaymentJournalLineResult line)
+    {
+        return new ReverseInvoicePaymentJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
+    }
+
+    private static IssueClientRefundJournalLineResponse ToResponse(IssueClientRefundJournalLineResult line)
+    {
+        return new IssueClientRefundJournalLineResponse(
+            line.LedgerAccountId,
+            line.Debit,
+            line.Credit,
+            line.Description,
+            line.LedgerAccountCode,
+            line.LedgerAccountName,
+            line.LedgerAccountType,
+            line.LedgerAccountNormalBalance,
+            line.LedgerAccountLevel,
+            line.IsPostingAccount,
+            line.LedgerAccountStatus);
+    }
+
+    private static ClientPortalPaymentClaimResponse ToResponse(PortalPaymentClaimResult result)
+    {
+        return new ClientPortalPaymentClaimResponse(
+            result.ClaimId,
+            result.ClientId,
+            result.InvoiceId,
+            result.InvoiceNumber,
+            result.Amount,
+            result.CurrencyCode,
+            result.TransferReferenceNumber,
+            result.ProofAttachmentId,
+            result.ProofAttachment is null
+                ? null
+                : new ClientPortalAttachmentSummaryResponse(
+                    result.ProofAttachment.AttachmentId,
+                    result.ProofAttachment.FileName,
+                    result.ProofAttachment.ContentType,
+                    result.ProofAttachment.SizeBytes,
+                    result.ProofAttachment.UploadedAtUtc),
+            result.Status,
+            result.SubmittedAtUtc,
+            result.ReviewedAtUtc,
+            result.RejectionReason);
+    }
+
+    private static ClientPortalBankDetailsResponse ToResponse(ProviderBankDetailsResult result)
+    {
+        return new ClientPortalBankDetailsResponse(
+            result.IsConfigured,
+            result.BankName,
+            result.AccountTitle,
+            result.AccountNumber,
+            result.Iban,
+            result.BranchOrRoutingInfo);
     }
 }

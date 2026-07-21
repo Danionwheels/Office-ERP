@@ -3,6 +3,7 @@ using SafarSuite.ControlDesk.Application.Common.Abstractions;
 using SafarSuite.ControlDesk.Application.Common.Results;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Common;
 using SafarSuite.ControlDesk.Application.Modules.Accounting.Ports;
+using SafarSuite.ControlDesk.Application.Modules.Billing.Common;
 using SafarSuite.ControlDesk.Application.Modules.Billing.Ports;
 using SafarSuite.ControlDesk.Application.Modules.ControlCloud.Ports;
 using SafarSuite.ControlDesk.Domain.Modules.Accounting;
@@ -17,6 +18,7 @@ public sealed class VoidInvoiceHandler
 
     private readonly IInvoiceRepository _invoices;
     private readonly IJournalEntryRepository _journalEntries;
+    private readonly ILedgerAccountRepository _ledgerAccounts;
     private readonly AccountingPeriodPostingGuard _periodGuard;
     private readonly ICloudOutboxMessageRepository _cloudOutboxMessages;
     private readonly IUnitOfWork _unitOfWork;
@@ -27,6 +29,7 @@ public sealed class VoidInvoiceHandler
     public VoidInvoiceHandler(
         IInvoiceRepository invoices,
         IJournalEntryRepository journalEntries,
+        ILedgerAccountRepository ledgerAccounts,
         AccountingPeriodPostingGuard periodGuard,
         ICloudOutboxMessageRepository cloudOutboxMessages,
         IUnitOfWork unitOfWork,
@@ -36,6 +39,7 @@ public sealed class VoidInvoiceHandler
     {
         _invoices = invoices;
         _journalEntries = journalEntries;
+        _ledgerAccounts = ledgerAccounts;
         _periodGuard = periodGuard;
         _cloudOutboxMessages = cloudOutboxMessages;
         _unitOfWork = unitOfWork;
@@ -112,7 +116,7 @@ public sealed class VoidInvoiceHandler
                         CreateInvoiceVoidedOutboxMessage(invoice, originalJournal, reversalJournal, command),
                         token);
 
-                    return ToResult(invoice, originalJournal, reversalJournal, command.VoidDate);
+                    return await ToResultAsync(invoice, originalJournal, reversalJournal, command.VoidDate, token);
                 },
                 cancellationToken);
 
@@ -136,12 +140,12 @@ public sealed class VoidInvoiceHandler
         Invoice invoice,
         CancellationToken cancellationToken)
     {
-        var journalEntries = await _journalEntries.ListAsync(
-            sourceType: JournalSourceType.BillingInvoice,
-            cancellationToken: cancellationToken);
+        var journalEntries = await _journalEntries.ListForSourceDocumentAsync(
+            JournalSourceType.BillingInvoice,
+            invoice.Id.Value,
+            cancellationToken);
 
         return journalEntries
-            .Where(entry => entry.SourceReference == invoice.Number.Value)
             .Where(entry => entry.Status == JournalEntryStatus.Posted)
             .OrderBy(entry => entry.EntryDate)
             .ThenBy(entry => entry.CreatedAtUtc)
@@ -153,11 +157,12 @@ public sealed class VoidInvoiceHandler
         Invoice invoice,
         CancellationToken cancellationToken)
     {
-        var journalEntries = await _journalEntries.ListAsync(
-            sourceType: JournalSourceType.BillingInvoiceVoid,
-            cancellationToken: cancellationToken);
+        var journalEntries = await _journalEntries.ListForSourceDocumentAsync(
+            JournalSourceType.BillingInvoiceVoid,
+            invoice.Id.Value,
+            cancellationToken);
 
-        return journalEntries.Any(entry => entry.SourceReference == invoice.Number.Value);
+        return journalEntries.Count > 0;
     }
 
     private JournalEntry CreateReversalJournal(
@@ -172,7 +177,9 @@ public sealed class VoidInvoiceHandler
             JournalSourceType.BillingInvoiceVoid,
             invoice.Number.Value,
             $"Void invoice {invoice.Number.Value}: {command.Reason.Trim()}",
-            _clock.UtcNow);
+            _clock.UtcNow,
+            invoice.ClientId,
+            invoice.Id.Value);
 
         foreach (var line in originalJournal.Lines)
         {
@@ -220,6 +227,7 @@ public sealed class VoidInvoiceHandler
 
         return CloudOutboxMessage.Create(
             CloudOutboxMessageId.Create(_idGenerator.NewGuid()),
+            invoice.ClientId,
             "InvoiceVoided",
             "Invoice",
             invoice.Id.Value.ToString(),
@@ -227,28 +235,21 @@ public sealed class VoidInvoiceHandler
             _clock.UtcNow);
     }
 
-    private static VoidInvoiceResult ToResult(
+    private async Task<VoidInvoiceResult> ToResultAsync(
         Invoice invoice,
         JournalEntry originalJournal,
         JournalEntry reversalJournal,
-        DateOnly voidDate)
+        DateOnly voidDate,
+        CancellationToken cancellationToken)
     {
-        return new VoidInvoiceResult(
-            invoice.Id.Value,
-            invoice.Number.Value,
-            invoice.Status.ToString(),
-            originalJournal.Id.Value,
-            reversalJournal.Id.Value,
-            reversalJournal.Status.ToString(),
-            voidDate,
-            reversalJournal.TotalDebit.Amount,
-            reversalJournal.TotalCredit.Amount,
-            reversalJournal.CurrencyCode,
-            reversalJournal.Lines.Select(line => new VoidInvoiceJournalLineResult(
-                line.LedgerAccountId.Value,
-                line.Debit.Amount,
-                line.Credit.Amount,
-                line.Description)).ToArray());
+        var ledgerAccountsById = JournalLineLedgerAccountMetadataFactory.ToLookup(
+            await _ledgerAccounts.ListAsync(cancellationToken: cancellationToken));
+
+        return BillingDocumentResultFactory.ToVoidInvoiceResult(
+            invoice,
+            originalJournal,
+            reversalJournal,
+            ledgerAccountsById);
     }
 
     private sealed record InvoiceVoidedCloudPayload(

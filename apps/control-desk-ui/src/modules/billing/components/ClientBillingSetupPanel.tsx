@@ -5,92 +5,32 @@ import {
   FilePlus2,
   FileX2,
   Landmark,
-  ListTree,
   PlusCircle,
   ReceiptText,
   RefreshCw,
-  Save,
-  type LucideIcon
+  Save
 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import type { ClientContract, ProductModule } from "../../contracts/types/contractTypes";
+import {
+  AccountDefaults,
+  BillingFlowRegister,
+  BillingPostingBridge,
+  BillingPostingResult
+} from "./shared/BillingWorkflow";
 import type {
-  ClientAccountingProfile,
-  ClientDetails,
-  ConfigureClientAccountingProfileInput
-} from "../../clients/types/clientTypes";
-import type {
-  ChargeCodeFormInput,
-  ChargeCodeLookup,
-  ClientChargeRule,
-  ClientChargeRuleFormInput,
-  IssueCreditNoteInput,
-  IssuedCreditNote,
-  InvoiceDraft,
-  InvoiceDraftFormInput,
-  IssueInvoiceFormInput,
-  IssuedInvoice,
-  LedgerAccountFormInput,
-  VoidedInvoice,
-  VoidInvoiceInput
-} from "../types/billingTypes";
-
-type BillingStep = "accounting" | "rules" | "draft" | "issue";
-
-type ClientBillingSetupPanelProps = {
-  client: ClientDetails | null;
-  contracts: ClientContract[];
-  productModules: ProductModule[];
-  initialStep?: BillingStep;
-  accountingProfile: ClientAccountingProfile | null;
-  accountingProfileMissing: boolean;
-  chargeCodes: ChargeCodeLookup[];
-  receivableAccountValue: LedgerAccountFormInput;
-  revenueAccountValue: LedgerAccountFormInput;
-  accountingProfileValue: ConfigureClientAccountingProfileInput;
-  chargeCodeValue: ChargeCodeFormInput;
-  chargeRuleValue: ClientChargeRuleFormInput;
-  invoiceDraftValue: InvoiceDraftFormInput;
-  issueInvoiceValue: IssueInvoiceFormInput;
-  latestChargeRule: ClientChargeRule | null;
-  invoiceDraft: InvoiceDraft | null;
-  issuedInvoice: IssuedInvoice | null;
-  voidedInvoice: VoidedInvoice | null;
-  issuedCreditNote: IssuedCreditNote | null;
-  isBusy: boolean;
-  onReceivableAccountChange: (value: LedgerAccountFormInput) => void;
-  onRevenueAccountChange: (value: LedgerAccountFormInput) => void;
-  onAccountingProfileChange: (value: ConfigureClientAccountingProfileInput) => void;
-  onChargeCodeChange: (value: ChargeCodeFormInput) => void;
-  onChargeRuleChange: (value: ClientChargeRuleFormInput) => void;
-  onInvoiceDraftChange: (value: InvoiceDraftFormInput) => void;
-  onIssueInvoiceChange: (value: IssueInvoiceFormInput) => void;
-  onCreateReceivableAccount: () => Promise<void>;
-  onCreateRevenueAccount: () => Promise<void>;
-  onSaveAccountingProfile: () => Promise<void>;
-  onCreateChargeCode: () => Promise<void>;
-  onRefreshChargeCodes: () => Promise<void>;
-  onCreateChargeRule: () => Promise<void>;
-  onGenerateInvoiceDraft: () => Promise<void>;
-  onIssueInvoice: () => Promise<void>;
-  onVoidInvoice: (input: VoidInvoiceInput) => Promise<void>;
-  onIssueCreditNote: (input: IssueCreditNoteInput) => Promise<void>;
-  onViewJournalEntry: (journalEntryId: string) => Promise<void>;
-};
-
-type ModuleBillingSuggestion = {
-  module: ProductModule;
-  contract: ClientContract;
-  existingChargeCode: ChargeCodeLookup | null;
-};
-
-type BillingStepItem = {
-  step: BillingStep;
-  label: string;
-  summary: string;
-  tone: "neutral" | "ready" | "warning";
-  Icon: LucideIcon;
-};
+  BillingStep,
+  ClientBillingSetupPanelProps,
+  ModuleBillingSuggestion
+} from "../types/billingWorkflowTypes";
+import {
+  chargeRulePatchForChargeCode,
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  getBillingStepItems,
+  getModuleBillingSuggestions,
+  toDateInputValue
+} from "../utils/billingWorkflowModel";
 
 export function ClientBillingSetupPanel({
   client,
@@ -325,25 +265,17 @@ export function ClientBillingSetupPanel({
           <span>Billing setup</span>
           <h2>{activeBillingStepItem.label}</h2>
         </div>
-        <div className="billing-step-summary-grid">
-          {billingSteps.map((step) => (
-            <button
-              className={`billing-step-summary ${step.tone}${
-                activeBillingStep === step.step ? " active" : ""
-              }`}
-              key={step.step}
-              type="button"
-              onClick={() => setActiveBillingStep(step.step)}
-            >
-              <step.Icon size={16} />
-              <span>
-                <strong>{step.label}</strong>
-                <small>{step.summary}</small>
-              </span>
-            </button>
-          ))}
+        <div className={`billing-step-current ${activeBillingStepItem.tone}`}>
+          <span>Current status</span>
+          <strong>{activeBillingStepItem.summary}</strong>
         </div>
       </header>
+
+      <BillingFlowRegister
+        activeStep={activeBillingStep}
+        onSelectStep={setActiveBillingStep}
+        steps={billingSteps}
+      />
 
       <div
         className={`client-panel billing-accounting-panel billing-light-panel${
@@ -1095,6 +1027,16 @@ export function ClientBillingSetupPanel({
               </tbody>
             </table>
 
+            <BillingPostingBridge
+              accountingProfile={accountingProfile}
+              chargeCodeValue={chargeCodeValue}
+              chargeCodes={chargeCodes}
+              chargeRuleValue={chargeRuleValue}
+              invoiceDraft={invoiceDraft}
+              issueInvoiceValue={issueInvoiceValue}
+              issuedInvoice={issuedInvoice}
+            />
+
             <form
               className={`billing-subform issue${
                 activeBillingStep === "issue" ? "" : " billing-step-hidden"
@@ -1153,39 +1095,20 @@ export function ClientBillingSetupPanel({
         )}
 
         {issuedInvoice !== null && (
-          <dl
-            className={`billing-result-facts issued${
-              activeBillingStep === "issue" ? "" : " billing-step-hidden"
-            }`}
-          >
-            <div>
-              <dt>Issued</dt>
-              <dd>{issuedInvoice.invoiceStatus}</dd>
-            </div>
-            <div>
-              <dt>Journal</dt>
-              <dd className="fact-action-value">
-                <span>{issuedInvoice.journalEntryStatus}</span>
-                <button
-                  className="table-icon-button"
-                  type="button"
-                  onClick={() => void onViewJournalEntry(issuedInvoice.journalEntryId)}
-                  disabled={isBusy}
-                  title="Open related journal"
-                >
-                  <ListTree size={14} />
-                </button>
-              </dd>
-            </div>
-            <div>
-              <dt>Debit</dt>
-              <dd>{formatMoney(issuedInvoice.totalDebit, issuedInvoice.currencyCode)}</dd>
-            </div>
-            <div>
-              <dt>Credit</dt>
-              <dd>{formatMoney(issuedInvoice.totalCredit, issuedInvoice.currencyCode)}</dd>
-            </div>
-          </dl>
+          <BillingPostingResult
+            actionLabel="Issued"
+            actionStatus={issuedInvoice.invoiceStatus}
+            className={activeBillingStep === "issue" ? "" : "billing-step-hidden"}
+            currencyCode={issuedInvoice.currencyCode}
+            journalEntryId={issuedInvoice.journalEntryId}
+            journalEntryStatus={issuedInvoice.journalEntryStatus}
+            journalLines={issuedInvoice.journalLines}
+            onViewJournalEntry={onViewJournalEntry}
+            totalCredit={issuedInvoice.totalCredit}
+            totalDebit={issuedInvoice.totalDebit}
+            isBusy={isBusy}
+            tableLabel="Invoice journal lines"
+          />
         )}
 
         {canVoidInvoice && (
@@ -1233,39 +1156,21 @@ export function ClientBillingSetupPanel({
         )}
 
         {voidedInvoice !== null && (
-          <dl
-            className={`billing-result-facts issued${
-              activeBillingStep === "issue" ? "" : " billing-step-hidden"
-            }`}
-          >
-            <div>
-              <dt>Voided</dt>
-              <dd>{voidedInvoice.invoiceStatus}</dd>
-            </div>
-            <div>
-              <dt>Reversal</dt>
-              <dd className="fact-action-value">
-                <span>{voidedInvoice.reversalJournalEntryStatus}</span>
-                <button
-                  className="table-icon-button"
-                  type="button"
-                  onClick={() => void onViewJournalEntry(voidedInvoice.reversalJournalEntryId)}
-                  disabled={isBusy}
-                  title="Open reversal journal"
-                >
-                  <ListTree size={14} />
-                </button>
-              </dd>
-            </div>
-            <div>
-              <dt>Debit</dt>
-              <dd>{formatMoney(voidedInvoice.totalDebit, voidedInvoice.currencyCode)}</dd>
-            </div>
-            <div>
-              <dt>Credit</dt>
-              <dd>{formatMoney(voidedInvoice.totalCredit, voidedInvoice.currencyCode)}</dd>
-            </div>
-          </dl>
+          <BillingPostingResult
+            actionLabel="Voided"
+            actionStatus={voidedInvoice.invoiceStatus}
+            className={activeBillingStep === "issue" ? "" : "billing-step-hidden"}
+            currencyCode={voidedInvoice.currencyCode}
+            journalEntryId={voidedInvoice.reversalJournalEntryId}
+            journalEntryStatus={voidedInvoice.reversalJournalEntryStatus}
+            journalLines={voidedInvoice.journalLines}
+            onViewJournalEntry={onViewJournalEntry}
+            totalCredit={voidedInvoice.totalCredit}
+            totalDebit={voidedInvoice.totalDebit}
+            isBusy={isBusy}
+            journalLabel="Reversal"
+            tableLabel="Void reversal lines"
+          />
         )}
 
         {canIssueCreditNote && (
@@ -1322,197 +1227,23 @@ export function ClientBillingSetupPanel({
         )}
 
         {issuedCreditNote !== null && (
-          <dl
-            className={`billing-result-facts issued${
-              activeBillingStep === "issue" ? "" : " billing-step-hidden"
-            }`}
-          >
-            <div>
-              <dt>Credit note</dt>
-              <dd>{issuedCreditNote.creditNoteStatus}</dd>
-            </div>
-            <div>
-              <dt>Amount</dt>
-              <dd>{formatMoney(issuedCreditNote.amount, issuedCreditNote.currencyCode)}</dd>
-            </div>
-            <div>
-              <dt>Journal</dt>
-              <dd className="fact-action-value">
-                <span>{issuedCreditNote.journalEntryStatus}</span>
-                <button
-                  className="table-icon-button"
-                  type="button"
-                  onClick={() => void onViewJournalEntry(issuedCreditNote.journalEntryId)}
-                  disabled={isBusy}
-                  title="Open related journal"
-                >
-                  <ListTree size={14} />
-                </button>
-              </dd>
-            </div>
-            <div>
-              <dt>Debit</dt>
-              <dd>{formatMoney(issuedCreditNote.totalDebit, issuedCreditNote.currencyCode)}</dd>
-            </div>
-            <div>
-              <dt>Credit</dt>
-              <dd>{formatMoney(issuedCreditNote.totalCredit, issuedCreditNote.currencyCode)}</dd>
-            </div>
-          </dl>
+          <BillingPostingResult
+            actionLabel="Credit note"
+            actionStatus={issuedCreditNote.creditNoteStatus}
+            amount={issuedCreditNote.amount}
+            className={activeBillingStep === "issue" ? "" : "billing-step-hidden"}
+            currencyCode={issuedCreditNote.currencyCode}
+            journalEntryId={issuedCreditNote.journalEntryId}
+            journalEntryStatus={issuedCreditNote.journalEntryStatus}
+            journalLines={issuedCreditNote.journalLines}
+            onViewJournalEntry={onViewJournalEntry}
+            totalCredit={issuedCreditNote.totalCredit}
+            totalDebit={issuedCreditNote.totalDebit}
+            isBusy={isBusy}
+            tableLabel="Credit note lines"
+          />
         )}
       </div>
     </section>
   );
-}
-
-function AccountDefaults({ account }: { account: LedgerAccountFormInput }) {
-  return (
-    <div className="billing-account-defaults">
-      <span>{formatLedgerAccountCode(account.code)}</span>
-      <span>{account.type}</span>
-      <span>{account.normalBalance}</span>
-      <span>{account.isPostingAccount ? "Posting account" : "Header account"}</span>
-    </div>
-  );
-}
-
-function formatLedgerAccountCode(code: string): string {
-  return /^\d{9}$/.test(code)
-    ? `${code.slice(0, 5)}-${code.slice(5)}`
-    : code;
-}
-
-type BillingStepInput = {
-  accountingProfile: ClientAccountingProfile | null;
-  accountingProfileMissing: boolean;
-  chargeCodes: ChargeCodeLookup[];
-  latestChargeRule: ClientChargeRule | null;
-  invoiceDraft: InvoiceDraft | null;
-  issuedInvoice: IssuedInvoice | null;
-};
-
-function getBillingStepItems({
-  accountingProfile,
-  accountingProfileMissing,
-  chargeCodes,
-  latestChargeRule,
-  invoiceDraft,
-  issuedInvoice
-}: BillingStepInput): BillingStepItem[] {
-  return [
-    {
-      step: "accounting",
-      label: "Accounting profile",
-      summary: accountingProfileMissing || accountingProfile === null
-        ? "Missing"
-        : `${accountingProfile.defaultCurrencyCode} linked`,
-      tone: accountingProfileMissing || accountingProfile === null ? "warning" : "ready",
-      Icon: Banknote
-    },
-    {
-      step: "rules",
-      label: "Charge rules",
-      summary: latestChargeRule === null
-        ? `${chargeCodes.length} charge codes`
-        : `${latestChargeRule.status} ${formatMoney(
-            latestChargeRule.totalLineAmount,
-            latestChargeRule.currencyCode
-          )}`,
-      tone: latestChargeRule === null ? "neutral" : "ready",
-      Icon: CircleDollarSign
-    },
-    {
-      step: "draft",
-      label: "Invoice draft",
-      summary: invoiceDraft === null
-        ? "No draft"
-        : `${invoiceDraft.status} ${formatMoney(invoiceDraft.balanceDue, invoiceDraft.currencyCode)}`,
-      tone: invoiceDraft === null ? "warning" : "ready",
-      Icon: FilePlus2
-    },
-    {
-      step: "issue",
-      label: "Invoice issue",
-      summary: issuedInvoice === null ? "Not issued" : issuedInvoice.invoiceStatus,
-      tone: issuedInvoice === null ? "neutral" : "ready",
-      Icon: FileCheck2
-    }
-  ];
-}
-
-function chargeRulePatchForChargeCode(
-  chargeCodeId: string,
-  chargeCodes: ChargeCodeLookup[]
-): Partial<ClientChargeRuleFormInput> {
-  const chargeCode = chargeCodes.find((item) => item.chargeCodeId === chargeCodeId);
-
-  if (chargeCode === undefined) {
-    return {};
-  }
-
-  return {
-    unitPriceAmount: chargeCode.defaultUnitPriceAmount.toFixed(2),
-    currencyCode: chargeCode.currencyCode,
-    descriptionOverride: chargeCode.name
-  };
-}
-
-function getModuleBillingSuggestions(
-  contracts: ClientContract[],
-  productModules: ProductModule[],
-  chargeCodes: ChargeCodeLookup[]
-): ModuleBillingSuggestion[] {
-  const activeContract = getActiveContract(contracts);
-
-  if (activeContract === null) {
-    return [];
-  }
-
-  const enabledModuleCodes = new Set(
-    activeContract.modules
-      .filter((module) => module.isEnabled)
-      .map((module) => module.moduleCode)
-  );
-
-  return productModules
-    .filter((module) =>
-      module.isActive
-      && module.commercialMode === "PaidAddOn"
-      && module.billingDefaults !== null
-      && module.billingDefaults !== undefined
-      && enabledModuleCodes.has(module.moduleCode))
-    .map((module) => ({
-      module,
-      contract: activeContract,
-      existingChargeCode: chargeCodes.find(
-        (chargeCode) => chargeCode.code === module.billingDefaults!.chargeCode
-      ) ?? null
-    }));
-}
-
-function getActiveContract(contracts: ClientContract[]): ClientContract | null {
-  return contracts.find((contract) => contract.status.toLowerCase() === "active")
-    ?? contracts[0]
-    ?? null;
-}
-
-function formatMoney(amount: number, currencyCode: string): string {
-  return `${amount.toFixed(2)} ${currencyCode}`;
-}
-
-function toDateInputValue(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium"
-  }).format(new Date(`${value}T00:00:00`));
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(value));
 }

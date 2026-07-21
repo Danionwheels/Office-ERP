@@ -34,7 +34,7 @@ public sealed class HmacClientPortalSessionService : IClientPortalSessionService
         }
 
         var now = _clock.UtcNow;
-        var expiresAtUtc = now.AddMinutes(Math.Max(5, _options.SessionMinutes));
+        var expiresAtUtc = now.AddMinutes(Math.Max(5, _options.AccessTokenMinutes));
         var payload = new ClientPortalSessionTokenPayload(
             clientId,
             NormalizeRole(role),

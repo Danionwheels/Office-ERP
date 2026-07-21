@@ -40,11 +40,16 @@ public sealed class AcceptClientPortalInvitationHandler
                 "Invitation token is required before accepting a portal invite.");
         }
 
-        if (command.Password.Length < 8)
+        if (string.IsNullOrWhiteSpace(command.Password) || command.Password.Length < 8)
         {
             return AcceptClientPortalInvitationResult.Failure(
                 "PasswordTooShort",
                 "Password must be at least 8 characters.");
+        }
+
+        if (command.Password.Length > 256)
+        {
+            return AcceptClientPortalInvitationResult.Failure("PasswordTooLong", "Password cannot exceed 256 characters.");
         }
 
         return await _unitOfWork.ExecuteInTransactionAsync(
@@ -98,7 +103,12 @@ public sealed class AcceptClientPortalInvitationHandler
                 await _identities.AddUserAsync(user, token);
                 await _identities.SaveInvitationAsync(invitation, token);
 
-                var session = await _sessions.CreateSessionAsync(user.ClientId, user.Role, token);
+                var session = await _sessions.CreateSessionAsync(
+                    user.UserId,
+                    user.ClientId,
+                    user.Role,
+                    user.SecurityVersion,
+                    token);
 
                 if (session.IsSuccess)
                 {
@@ -123,7 +133,9 @@ public sealed class AcceptClientPortalInvitationHandler
                         user.FullName,
                         user.Role,
                         session.AccessToken!,
-                        session.ExpiresAtUtc!.Value);
+                        session.RefreshToken!,
+                        session.ExpiresAtUtc!.Value,
+                        session.IdleExpiresAtUtc!.Value);
                 }
 
                 return AcceptClientPortalInvitationResult.Failure(

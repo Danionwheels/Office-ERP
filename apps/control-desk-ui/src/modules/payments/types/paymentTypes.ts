@@ -41,6 +41,13 @@ export type RecordedInvoicePaymentJournalLine = {
   debit: number;
   credit: number;
   description?: string | null;
+  ledgerAccountCode?: string | null;
+  ledgerAccountName?: string | null;
+  ledgerAccountType?: string | null;
+  ledgerAccountNormalBalance?: string | null;
+  ledgerAccountLevel?: string | null;
+  isPostingAccount?: boolean | null;
+  ledgerAccountStatus?: string | null;
 };
 
 export type ApproveInvoicePaymentInput = {
@@ -144,3 +151,63 @@ export type AppliedClientCredit = {
   appliedOn: string;
   creditApplicationStatus: string;
 };
+
+export type PortalPaymentClaimAttachment = {
+  attachmentId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedAtUtc: string;
+};
+
+export type PortalPaymentClaim = {
+  claimId: string;
+  clientId: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  amount: number;
+  currencyCode: string;
+  transferReferenceNumber: string;
+  proofAttachmentId?: string | null;
+  proofAttachment?: PortalPaymentClaimAttachment | null;
+  status: string;
+  submittedAtUtc: string;
+  reviewedAtUtc?: string | null;
+  rejectionReason?: string | null;
+};
+
+export type PortalPaymentClaimList = {
+  claims: PortalPaymentClaim[];
+};
+
+export type ImportPortalPaymentClaimsResult = {
+  clientId: string;
+  retrievedCount: number;
+  importedCount: number;
+  alreadyImportedCount: number;
+  ignoredCount: number;
+  claims: PortalPaymentClaim[];
+};
+
+export type VerifyPortalPaymentClaimInput = {
+  cashOrBankAccountId: string;
+  accountsReceivableAccountId: string;
+  postingDate: string;
+  decisionNote?: string | null;
+};
+
+export type VerifyPortalPaymentClaimResult = {
+  claim: PortalPaymentClaim;
+  payment: RecordedInvoicePayment;
+};
+
+export type ProviderBankDetails = {
+  isConfigured: boolean;
+  bankName: string;
+  accountTitle: string;
+  accountNumber: string;
+  iban: string;
+  branchOrRoutingInfo: string;
+};
+
+export type UpdateProviderBankDetailsInput = Omit<ProviderBankDetails, "isConfigured">;

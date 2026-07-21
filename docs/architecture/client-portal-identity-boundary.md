@@ -53,9 +53,9 @@ POST /api/v1/client-portal/invitations/accept
 POST /api/v1/client-portal/sessions
 ```
 
-The Control Desk client profile can request a portal invitation for a selected contact. Control Desk validates the local client/contact, maps the contact role to a simple portal role, and calls Control Cloud with the provider invitation key.
+The Control Desk client profile can request a portal invitation for a selected contact. Control Desk validates the local client/contact, maps the contact role to a simple portal role, and calls Control Cloud with provider authorization.
 
-Control Cloud requires `X-SafarSuite-Provider-Key` before creating an invitation. This is a basic internal/provider gate for the local phase, not the final provider-user authorization model.
+Control Cloud invitation management now accepts scoped provider bearer sessions and requires the `client-portal:manage` scope before creating, listing, resending, or revoking invitations. Provider sessions can be minted from durable provider-operator credentials through `POST /api/v1/provider-access/operator-sessions`; `provider-operators:manage` protects list/create/password-reset/scope/status administration under `/api/v1/provider-access/operators`, and Control Desk exposes that administration through the Client Desk Cloud workspace. The shared-secret session endpoint and legacy `X-SafarSuite-Provider-Key` header remain as compatibility bootstrap paths while MFA, password reset, and production secret custody are built.
 
 Invitation creation stores only a hash of the one-time invitation token.
 
@@ -87,6 +87,7 @@ The login response is a signed, expiring bearer token scoped to one client.
 
 ```text
 GET /api/v1/client-portal/clients/{clientId}/commercial-summary
+GET /api/v1/client-portal/clients/{clientId}/commercial-documents?documentType={type}&take={1..100}&cursor={cursor}
 GET /api/v1/client-portal/clients/{clientId}/entitlement-bundle?installationId={installationId}
 GET /api/v1/client-portal/clients/{clientId}/installations/{installationId}/status
 ```

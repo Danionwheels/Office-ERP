@@ -25,8 +25,10 @@ public sealed class EfEntitlementSnapshotRepository : IEntitlementSnapshotReposi
     {
         return await _dbContext.EntitlementSnapshots
             .Include(snapshot => snapshot.Modules)
+            .Include(snapshot => snapshot.FeatureLimits)
             .Where(snapshot => snapshot.ClientId == clientId)
-            .OrderByDescending(snapshot => snapshot.IssuedAtUtc)
+            .OrderByDescending(snapshot => snapshot.EntitlementVersion)
+            .ThenByDescending(snapshot => snapshot.IssuedAtUtc)
             .ThenByDescending(snapshot => snapshot.Id)
             .FirstOrDefaultAsync(cancellationToken);
     }

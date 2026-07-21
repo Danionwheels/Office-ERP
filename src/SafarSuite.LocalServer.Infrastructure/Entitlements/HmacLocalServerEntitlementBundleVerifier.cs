@@ -128,6 +128,42 @@ public sealed class HmacLocalServerEntitlementBundleVerifier
                 "Entitlement bundle dates are not ordered correctly.");
         }
 
+        if (payload.AllowedNamedUsers < 0
+            || payload.AllowedConcurrentUsers < 0
+            || (payload.AllowedNamedUsers.HasValue
+                && payload.AllowedConcurrentUsers.HasValue
+                && payload.AllowedConcurrentUsers.Value > payload.AllowedNamedUsers.Value))
+        {
+            return Failure(
+                "EntitlementUserLimitsInvalid",
+                "Entitlement bundle user limits are not valid.");
+        }
+
+        var modules = payload.Modules ?? [];
+        var featureLimits = payload.FeatureLimits ?? [];
+        var enabledModuleCodes = modules
+            .Where(module => module.IsEnabled)
+            .Select(module => module.ModuleCode.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var duplicateFeatureLimit = featureLimits
+            .GroupBy(
+                limit => $"{limit.ModuleCode.Trim()}:{limit.FeatureCode.Trim()}",
+                StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1)?.Key;
+
+        if (duplicateFeatureLimit is not null
+            || featureLimits.Any(limit =>
+                string.IsNullOrWhiteSpace(limit.ModuleCode)
+                || string.IsNullOrWhiteSpace(limit.FeatureCode)
+                || string.IsNullOrWhiteSpace(limit.Unit)
+                || limit.LimitValue < 0
+                || !enabledModuleCodes.Contains(limit.ModuleCode.Trim())))
+        {
+            return Failure(
+                "EntitlementFeatureLimitsInvalid",
+                "Entitlement bundle feature limits are invalid, duplicated, or reference a disabled module.");
+        }
+
         var entitlement = new LocalServerCachedEntitlement(
             payload.BundleVersion,
             payload.Issuer,
@@ -137,7 +173,13 @@ public sealed class HmacLocalServerEntitlementBundleVerifier
             payload.EntitlementVersion,
             payload.BundleIssueId,
             payload.EntitlementSnapshotId,
+            payload.ClientAccessRevisionId == Guid.Empty
+                ? payload.EntitlementSnapshotId
+                : payload.ClientAccessRevisionId,
             payload.ContractId,
+            payload.ContractRevisionNumber,
+            payload.ProductCatalogRevisionId,
+            payload.ProductCatalogRevisionNumber,
             payload.SourceInvoiceId,
             payload.SourceInvoiceNumber,
             payload.Status,
@@ -150,7 +192,7 @@ public sealed class HmacLocalServerEntitlementBundleVerifier
             payload.OfflineValidUntil,
             payload.AllowedDevices,
             payload.AllowedBranches,
-            payload.Modules
+            modules
                 .OrderBy(module => module.ModuleCode, StringComparer.Ordinal)
                 .Select(module => new LocalServerEntitlementModule(
                     module.ModuleCode,
@@ -162,7 +204,20 @@ public sealed class HmacLocalServerEntitlementBundleVerifier
             bundle.Signature.KeyId,
             bundle.Signature.PayloadSha256,
             bundle.Signature.Value,
-            importedAtUtc);
+            importedAtUtc,
+            payload.AllowedNamedUsers,
+            payload.AllowedConcurrentUsers,
+            featureLimits
+                .OrderBy(limit => limit.ModuleCode, StringComparer.Ordinal)
+                .ThenBy(limit => limit.FeatureCode, StringComparer.Ordinal)
+                .Select(limit => new LocalServerEntitlementFeatureLimit(
+                    limit.ModuleCode,
+                    limit.FeatureCode,
+                    limit.LimitValue,
+                    limit.Unit))
+                .ToArray(),
+            payload.EffectiveFromUtc
+            ?? new DateTimeOffset(payload.ValidFrom.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
 
         return LocalServerEntitlementBundleVerificationResult.Success(entitlement);
     }

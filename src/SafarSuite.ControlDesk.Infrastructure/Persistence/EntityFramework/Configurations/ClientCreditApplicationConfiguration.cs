@@ -87,6 +87,15 @@ internal sealed class ClientCreditApplicationConfiguration : IEntityTypeConfigur
         builder.HasIndex(application => application.ClientId)
             .HasDatabaseName("ix_client_credit_applications_client_id");
 
+        builder.HasIndex(application => new
+            {
+                application.ClientId,
+                application.AppliedOn,
+                application.CreatedAtUtc,
+                application.Id
+            })
+            .HasDatabaseName("ix_client_credit_applications_client_applied_created_id");
+
         builder.HasIndex(application => application.InvoiceId)
             .HasDatabaseName("ix_client_credit_applications_invoice_id");
 

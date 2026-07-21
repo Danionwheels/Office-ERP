@@ -22,7 +22,12 @@ public sealed record ControlCloudBootstrapPackagePayload(
     string InstallCommand,
     IReadOnlyCollection<ControlCloudBootstrapPackageArtifact> Artifacts,
     ControlCloudBootstrapRuntimePlan RuntimePlan,
-    ControlCloudBootstrapPackageEndpoints Endpoints);
+    ControlCloudBootstrapPackageEndpoints Endpoints,
+    ControlCloudBootstrapAppActivationSigningKey AppActivationSigningKey);
+
+public sealed record ControlCloudBootstrapAppActivationSigningKey(
+    string SigningKeyId,
+    string PublicKeyPem);
 
 public sealed record ControlCloudBootstrapPackageArtifact(
     string ArtifactType,
@@ -65,3 +70,11 @@ public sealed record ControlCloudBootstrapPackageSignature(
     string KeyId,
     string PayloadSha256,
     string Value);
+
+public sealed record ControlCloudBootstrapSecretReadiness(
+    string Status,
+    string ActiveKeyId,
+    bool HasActiveSecret,
+    IReadOnlyCollection<string> Warnings,
+    IReadOnlyCollection<string> RequiredEnvironmentVariables,
+    string Detail);
