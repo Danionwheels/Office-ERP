@@ -1,3 +1,4 @@
+using Microsoft.Extensions.FileProviders;
 using SafarSuite.ControlDesk.Api.Composition;
 using SafarSuite.ControlDesk.Api.Modules.Accounting;
 using SafarSuite.ControlDesk.Api.Modules.Auth;
@@ -31,8 +32,13 @@ var installedProductionSettingsPath = Path.Combine(
     "ControlDesk",
     "Config",
     "appsettings.Production.json");
+var installedProductionSettingsDirectory = Path.GetDirectoryName(installedProductionSettingsPath)!;
 builder.Configuration
-    .AddJsonFile(installedProductionSettingsPath, optional: true, reloadOnChange: false)
+    .AddJsonFile(
+        new PhysicalFileProvider(installedProductionSettingsDirectory),
+        Path.GetFileName(installedProductionSettingsPath),
+        optional: true,
+        reloadOnChange: false)
     .AddEnvironmentVariables();
 
 builder.Logging.ClearProviders();
