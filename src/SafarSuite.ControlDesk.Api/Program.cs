@@ -25,6 +25,16 @@ var webApplicationOptions = WindowsServiceHelpers.IsWindowsService()
 
 var builder = WebApplication.CreateBuilder(webApplicationOptions);
 
+var installedProductionSettingsPath = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+    "SafarSuite",
+    "ControlDesk",
+    "Config",
+    "appsettings.Production.json");
+builder.Configuration
+    .AddJsonFile(installedProductionSettingsPath, optional: true, reloadOnChange: false)
+    .AddEnvironmentVariables();
+
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
