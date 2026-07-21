@@ -31,6 +31,12 @@ function Assert-NoReparse([string]$Root) {
     }
 }
 
+function ConvertTo-OfficeHexString([byte[]]$Bytes) {
+    # BitConverter is available on the Windows PowerShell/.NET Framework
+    # surface used by the installer; Convert.ToHexString is not.
+    return ([BitConverter]::ToString($Bytes)).Replace('-', '')
+}
+
 Assert-NoReparse $packagePath
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
 if ([string]$manifest.product -ne 'SafarSuite Control Desk' -or
@@ -46,12 +52,26 @@ $backupPath = Join-Path $installRoot ('.previous-' + [Guid]::NewGuid().ToString(
 
 New-Item -ItemType Directory -Force -Path $installRoot, $stagePath | Out-Null
 try {
-    Copy-Item -LiteralPath (Join-Path $packagePath '*') -Destination $stagePath -Recurse -Force
+    # Enumerate entries explicitly. Using -LiteralPath with a wildcard treats
+    # the wildcard as literal on Windows PowerShell and can silently leave an
+    # empty staging directory.
+    Get-ChildItem -LiteralPath $packagePath -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $stagePath -Recurse -Force
+    }
     Assert-NoReparse $stagePath
     $payloadHash = (Get-ChildItem -LiteralPath $stagePath -Recurse -File | Sort-Object FullName | ForEach-Object {
         (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash
-    }) -join '' | ForEach-Object { [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($_)) } |
-        ForEach-Object { [Convert]::ToHexString($_) }
+    }) -join '' | ForEach-Object {
+        # Windows PowerShell 5.1 may run on a .NET Framework surface where the
+        # .NET 5+ SHA256.HashData convenience API is unavailable.
+        $sha256 = [Security.Cryptography.SHA256]::Create()
+        try {
+            ConvertTo-OfficeHexString $sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes($_))
+        }
+        finally {
+            $sha256.Dispose()
+        }
+    }
     $receipt = [ordered]@{
         product = 'SafarSuite Control Desk'
         serviceName = 'SafarSuiteControlDeskApi'

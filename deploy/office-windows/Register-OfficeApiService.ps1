@@ -16,7 +16,10 @@ $receiptPath = Join-Path $InstallRoot 'api-installation-receipt.json'
 $serviceReceiptPath = Join-Path $ProgramDataRoot 'Service\api-service-receipt.json'
 $configRoot = Join-Path $ProgramDataRoot 'Config'
 $logRoot = Join-Path $ProgramDataRoot 'Logs'
+$machineSecretDirectory = Join-Path $ProgramDataRoot 'Secrets\Machine'
+$machineSecretPath = Join-Path $machineSecretDirectory 'control-desk-machine-secrets.v1.json'
 if (-not (Test-Path -LiteralPath $apiPath -PathType Leaf) -or -not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) { throw 'The owned API payload and installation receipt are required before service registration.' }
+if (-not (Test-Path -LiteralPath $machineSecretDirectory -PathType Container) -or -not (Test-Path -LiteralPath $machineSecretPath -PathType Leaf)) { throw 'The protected machine-secret envelope is required before API service registration.' }
 
 $existing = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
 if ($null -ne $existing) {
@@ -35,6 +38,51 @@ function Set-OfficeApiAcl([string]$Path, [string]$ServiceRights) {
     if ($LASTEXITCODE -ne 0) { throw "Could not converge ACLs for '$Path'." }
 }
 
+function Set-OfficeMachineSecretAcl([string]$Directory, [string]$Envelope) {
+    $systemSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+    $administratorsSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+    $serviceSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-80-2177609957-237951300-3651597395-3114367455-1078186923')
+
+    $directorySecurity = [Security.AccessControl.DirectorySecurity]::new()
+    $directorySecurity.SetOwner($systemSid)
+    $directorySecurity.SetAccessRuleProtection($true, $false)
+    $directoryInheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+    foreach ($identity in @($systemSid, $administratorsSid)) {
+        [void]$directorySecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            $identity,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            $directoryInheritance,
+            [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow))
+    }
+    [void]$directorySecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+        $serviceSid,
+        [Security.AccessControl.FileSystemRights]::ReadAndExecute,
+        [Security.AccessControl.InheritanceFlags]::None,
+        [Security.AccessControl.PropagationFlags]::None,
+        [Security.AccessControl.AccessControlType]::Allow))
+    Set-Acl -LiteralPath $Directory -AclObject $directorySecurity
+
+    $fileSecurity = [Security.AccessControl.FileSecurity]::new()
+    $fileSecurity.SetOwner($systemSid)
+    $fileSecurity.SetAccessRuleProtection($true, $false)
+    foreach ($identity in @($systemSid, $administratorsSid)) {
+        [void]$fileSecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            $identity,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.InheritanceFlags]::None,
+            [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow))
+    }
+    [void]$fileSecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+        $serviceSid,
+        [Security.AccessControl.FileSystemRights]::Read,
+        [Security.AccessControl.InheritanceFlags]::None,
+        [Security.AccessControl.PropagationFlags]::None,
+        [Security.AccessControl.AccessControlType]::Allow))
+    Set-Acl -LiteralPath $Envelope -AclObject $fileSecurity
+}
+
 if ($PSCmdlet.ShouldProcess($ServiceName, 'Register or verify demand-start API service')) {
     if ($null -eq $existing) {
         & sc.exe create $ServiceName binPath= $binPath start= demand obj= 'NT SERVICE\SafarSuiteControlDeskApi' DisplayName= 'SafarSuite Control Desk API' | Out-Null
@@ -47,6 +95,7 @@ if ($PSCmdlet.ShouldProcess($ServiceName, 'Register or verify demand-start API s
     Set-OfficeApiAcl $InstallRoot 'RX'
     Set-OfficeApiAcl $configRoot 'M'
     Set-OfficeApiAcl $logRoot 'M'
+    Set-OfficeMachineSecretAcl $machineSecretDirectory $machineSecretPath
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $serviceReceiptPath) | Out-Null
     [ordered]@{ product = 'SafarSuite Control Desk'; serviceName = $ServiceName; serviceAccount = 'NT SERVICE\SafarSuiteControlDeskApi'; executable = [IO.Path]::GetFullPath($apiPath); dependsOn = @($DatabaseServiceName); startupType = 'demand'; registeredAtUtc = [DateTimeOffset]::UtcNow.ToString('O') } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $serviceReceiptPath -Encoding utf8
 }

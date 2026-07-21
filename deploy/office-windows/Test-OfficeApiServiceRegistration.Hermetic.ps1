@@ -10,6 +10,7 @@ $checks = [ordered]@{
     receipt = $source.Contains('api-service-receipt.json')
     payloadReceipt = $source.Contains('api-installation-receipt.json')
     aclConvergence = $source.Contains('icacls.exe') -and $source.Contains('Set-OfficeApiAcl')
+    machineSecretAcl = $source.Contains('control-desk-machine-secrets.v1.json') -and $source.Contains('Set-OfficeMachineSecretAcl') -and $source.Contains('2177609957-237951300-3651597395-3114367455-1078186923')
 }
 foreach ($check in $checks.GetEnumerator()) { if (-not $check.Value) { throw "API service contract check failed: $($check.Key)" } }
 Write-Host "API service registration hermetic contract: passed ($($checks.Count) checks)"
