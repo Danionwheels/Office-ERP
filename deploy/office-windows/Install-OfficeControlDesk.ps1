@@ -82,7 +82,10 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
         throw "The packaged first-operator bootstrap executable is missing: $FirstOperatorExecutablePath"
     }
 
-    $connectionString = "Host=127.0.0.1;Port=54329;Database=safarsuite_control_desk;Username=safarsuite;Passfile=$([IO.Path]::GetFullPath($applicationPassfilePath))"
+    # The managed database exposes the least-privilege application role, not the
+    # development-only `safarsuite` role. The HBA file intentionally rejects
+    # every other local role, so the bootstrap connection must use this role.
+    $connectionString = "Host=127.0.0.1;Port=54329;Database=safarsuite_control_desk;Username=safarsuite_control_desk_app;Passfile=$([IO.Path]::GetFullPath($applicationPassfilePath))"
     $priorConnectionString = [Environment]::GetEnvironmentVariable('ControlDesk__ConnectionStrings__ControlDesk', 'Process')
     try {
         [Environment]::SetEnvironmentVariable('ControlDesk__ConnectionStrings__ControlDesk', $connectionString, 'Process')

@@ -11,6 +11,7 @@ $checks = [ordered]@{
     applicationPassfile = $source.Contains('application.pgpass')
     productionSettings = $source.Contains('New-OfficeProductionSettings.ps1') -and $source.Contains('appsettings.Production.json')
     firstOperator = $source.Contains('SafarSuite.ControlDesk.FirstOperator.exe') -and $source.Contains('ControlDesk__ConnectionStrings__ControlDesk')
+    applicationRole = $source.Contains('Username=safarsuite_control_desk_app')
     operatorCheckpoint = $source.Contains("checkpoint = 'OperatorReady'")
     noDestructiveRerun = $source.Contains('First-operator provisioning failed or was refused')
     apiPayload = $source.Contains('Install-OfficeApiPayload.ps1') -and $source.Contains('ApiPayloadInstalled')

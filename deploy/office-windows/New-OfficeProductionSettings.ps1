@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Force -Path $ConfigRoot | Out-Null
 $settings = [ordered]@{
     Persistence = [ordered]@{ Provider = 'Postgres' }
     ConnectionStrings = [ordered]@{
-        ControlDesk = "Host=127.0.0.1;Port=54329;Database=safarsuite_control_desk;Username=safarsuite;Passfile=$([IO.Path]::GetFullPath($ApplicationPassfilePath))"
+        ControlDesk = "Host=127.0.0.1;Port=54329;Database=safarsuite_control_desk;Username=safarsuite_control_desk_app;Passfile=$([IO.Path]::GetFullPath($ApplicationPassfilePath))"
     }
     ControlDesk = [ordered]@{
         Logging = [ordered]@{ File = [ordered]@{ Enabled = $true; DirectoryPath = (Join-Path (Split-Path -Parent $ConfigRoot) 'Logs') } }
