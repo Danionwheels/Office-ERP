@@ -10,6 +10,24 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $databaseInstaller = Join-Path $PSScriptRoot 'database\Install-OfficeDatabase.ps1'
+
+function Invoke-OfficeSetupPowerShellStep {
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [hashtable]$Parameters = @{},
+        [Parameter(Mandatory)] [string]$FailureMessage
+    )
+
+    # A nested PowerShell script does not guarantee that LASTEXITCODE is reset.
+    # Clear inherited native state before each step, then honor a real native
+    # failure while still allowing the step to throw its detailed exception.
+    $global:LASTEXITCODE = 0
+    & $Path @Parameters
+    if ($global:LASTEXITCODE -ne 0) {
+        throw $FailureMessage
+    }
+}
+
 $databaseParameters = @{
     PackageDirectory = $PackageDirectory
     ProgramFilesRoot = $ProgramFilesRoot
@@ -20,8 +38,10 @@ $databaseParameters = @{
 if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight and database-ready setup')) {
     $checkpoint = 'Starting'
     try {
-    $databaseResult = & $databaseInstaller @databaseParameters
-    if ($LASTEXITCODE -ne 0) { throw 'The database setup entry failed.' }
+    $databaseResult = Invoke-OfficeSetupPowerShellStep `
+        -Path $databaseInstaller `
+        -Parameters $databaseParameters `
+        -FailureMessage 'The database setup entry failed.'
     $checkpoint = 'DatabaseReady'
 
     $applicationPassfilePath = Join-Path $ProgramDataRoot 'Secrets\Database\application.pgpass'
@@ -30,10 +50,13 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
     }
 
     $settingsGenerator = Join-Path $PSScriptRoot 'New-OfficeProductionSettings.ps1'
-    & $settingsGenerator `
-        -ConfigRoot (Join-Path $ProgramDataRoot 'Config') `
-        -ApplicationPassfilePath $applicationPassfilePath
-    if ($LASTEXITCODE -ne 0) { throw 'Production settings generation failed.' }
+    Invoke-OfficeSetupPowerShellStep `
+        -Path $settingsGenerator `
+        -Parameters @{
+            ConfigRoot = Join-Path $ProgramDataRoot 'Config'
+            ApplicationPassfilePath = $applicationPassfilePath
+        } `
+        -FailureMessage 'Production settings generation failed.'
 
     if ([string]::IsNullOrWhiteSpace($FirstOperatorExecutablePath)) {
         $FirstOperatorExecutablePath = Join-Path $PackageDirectory 'Setup\SafarSuite.ControlDesk.FirstOperator.exe'
@@ -46,6 +69,7 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
     $priorConnectionString = [Environment]::GetEnvironmentVariable('ControlDesk__ConnectionStrings__ControlDesk', 'Process')
     try {
         [Environment]::SetEnvironmentVariable('ControlDesk__ConnectionStrings__ControlDesk', $connectionString, 'Process')
+        $global:LASTEXITCODE = 0
         & $FirstOperatorExecutablePath
         if ($LASTEXITCODE -ne 0) { throw 'First-operator provisioning failed or was refused.' }
     }
@@ -55,8 +79,10 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
     $checkpoint = 'OperatorReady'
 
     $apiPayloadInstaller = Join-Path $PSScriptRoot 'Install-OfficeApiPayload.ps1'
-    & $apiPayloadInstaller -PackageDirectory $PackageDirectory -ProgramFilesRoot $ProgramFilesRoot
-    if ($LASTEXITCODE -ne 0) { throw 'API payload installation failed.' }
+    Invoke-OfficeSetupPowerShellStep `
+        -Path $apiPayloadInstaller `
+        -Parameters @{ PackageDirectory = $PackageDirectory; ProgramFilesRoot = $ProgramFilesRoot } `
+        -FailureMessage 'API payload installation failed.'
     $checkpoint = 'ApiPayloadInstalled'
 
     $installRoot = Join-Path $ProgramFilesRoot 'SafarSuite\ControlDesk'
@@ -66,23 +92,29 @@ if ($PSCmdlet.ShouldProcess('SafarSuite Control Desk', 'Run elevated preflight a
         -Destination (Join-Path $launcherDirectory 'Start-OfficeControlDesk.ps1') -Force
 
     $registerService = Join-Path $PSScriptRoot 'Register-OfficeApiService.ps1'
-    & $registerService -InstallRoot $installRoot -ProgramDataRoot $ProgramDataRoot
-    if ($LASTEXITCODE -ne 0) { throw 'API service registration failed.' }
+    Invoke-OfficeSetupPowerShellStep `
+        -Path $registerService `
+        -Parameters @{ InstallRoot = $installRoot; ProgramDataRoot = $ProgramDataRoot } `
+        -FailureMessage 'API service registration failed.'
     $checkpoint = 'ApiRegistered'
 
     $configureActivation = Join-Path $PSScriptRoot 'Configure-OfficeServiceActivation.ps1'
-    & $configureActivation
-    if ($LASTEXITCODE -ne 0) { throw 'Service activation configuration failed.' }
+    Invoke-OfficeSetupPowerShellStep `
+        -Path $configureActivation `
+        -FailureMessage 'Service activation configuration failed.'
     $checkpoint = 'ServicesConfigured'
 
     $installShortcuts = Join-Path $PSScriptRoot 'Install-OfficeShortcuts.ps1'
-    & $installShortcuts -InstallRoot $installRoot
-    if ($LASTEXITCODE -ne 0) { throw 'Shortcut installation failed.' }
+    Invoke-OfficeSetupPowerShellStep `
+        -Path $installShortcuts `
+        -Parameters @{ InstallRoot = $installRoot } `
+        -FailureMessage 'Shortcut installation failed.'
     $checkpoint = 'ShortcutsInstalled'
 
     $activateApi = Join-Path $PSScriptRoot 'Activate-OfficeApiService.ps1'
-    & $activateApi
-    if ($LASTEXITCODE -ne 0) { throw 'Final API readiness activation failed.' }
+    Invoke-OfficeSetupPowerShellStep `
+        -Path $activateApi `
+        -FailureMessage 'Final API readiness activation failed.'
     $checkpoint = 'Ready'
 
     [pscustomobject]@{
